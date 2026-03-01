@@ -1,0 +1,95 @@
+backend/
+│
+├── 📁 app/
+│   │
+│   ├── 📁 api/
+│   │   └── 📁 v1/
+│   │       ├── 📁 routes/
+│   │       │   ├── auth.py           ← /register /login /logout /reset-password
+│   │       │   ├── users.py          ← /me /update-contact
+│   │       │   ├── profiles.py       ← /profile /quiz /update
+│   │       │   ├── itineraries.py    ← /generate /modify /approve /cancel
+│   │       │   ├── bookings.py       ← /book /cancel /history
+│   │       │   ├── places.py         ← /explore /favorites /save
+│   │       │   ├── feedback.py       ← /submit /history
+│   │       │   ├── logs.py           ← /activity (admin only)
+│   │       │   └── health.py         ← /health
+│   │       └── __init__.py
+│   │
+│   ├── 📁 models/
+│   │   ├── user.py
+│   │   ├── profile.py
+│   │   ├── itinerary.py
+│   │   ├── booking.py
+│   │   ├── place.py
+│   │   ├── feedback.py
+│   │   └── log.py
+│   │
+│   ├── 📁 schemas/
+│   │   ├── auth.py
+│   │   ├── user.py
+│   │   ├── profile.py
+│   │   ├── itinerary.py
+│   │   ├── booking.py
+│   │   ├── place.py
+│   │   └── feedback.py
+│   │
+│   ├── 📁 services/
+│   │   ├── auth_service.py
+│   │   ├── user_service.py
+│   │   ├── profile_service.py
+│   │   ├── itinerary_service.py
+│   │   ├── booking_service.py
+│   │   ├── places_service.py
+│   │   ├── feedback_service.py
+│   │   └── log_service.py
+│   │
+│   ├── 📁 repositories/
+│   │   ├── base_repo.py
+│   │   ├── user_repo.py
+│   │   ├── profile_repo.py
+│   │   ├── itinerary_repo.py
+│   │   ├── booking_repo.py
+│   │   ├── place_repo.py
+│   │   ├── feedback_repo.py
+│   │   └── log_repo.py
+│   │
+│   ├── 📁 core/
+│   │   ├── database.py
+│   │   ├── redis.py
+│   │   ├── config.py
+│   │   ├── security.py
+│   │   ├── firebase.py
+│   │   └── dependencies.py
+│   │
+│   ├── 📁 clients/
+│   │   └── ai_client.py
+│   │
+│   ├── 📁 middleware/
+│   │   ├── logging_middleware.py
+│   │   └── rate_limit_middleware.py
+│   │
+│   ├── 📁 exceptions/
+│   │   ├── auth_exceptions.py
+│   │   ├── not_found.py
+│   │   └── validation_errors.py
+│   │
+│   ├── 📁 utils/
+│   │   ├── logger.py
+│   │   └── helpers.py
+│   │
+│   └── main.py
+│
+├── 📁 migrations/
+│   └── versions/
+│
+├── 📁 tests/
+│   ├── test_auth.py
+│   ├── test_itinerary.py
+│   ├── test_booking.py
+│   └── test_profile.py
+│
+├── requirements.txt
+├── alembic.ini
+├── .env.example
+└── README.md
