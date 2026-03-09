@@ -31,3 +31,36 @@ def register(
     db.commit()
     db.refresh(new_user)
     return new_user
+
+@router.post("/login", response_model=UserResponse)
+def login(
+    current_user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    user = db.query(User).filter(
+        User.user_id == current_user["uid"]
+    ).first()
+
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    return user
+
+
+"""------------ Test Only ------------"""
+
+@router.post("/test-register")
+def test_register(
+    body: RegisterRequest,
+    db: Session = Depends(get_db)
+):
+    new_user = User(
+        user_id=str(uuid.uuid4()),
+        full_name=body.full_name,
+        phone=body.phone,
+        email=body.email,
+    )
+    db.add(new_user)
+    db.commit()
+    db.refresh(new_user)
+    return new_user
