@@ -1,0 +1,4 @@
+langchain-google-genai
+langchain-core
+pydantic-settings
+python-dotenv
