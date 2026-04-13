@@ -1,5 +1,3 @@
-from http.client import HTTPException
-from app.models.profile import UserProfile
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
@@ -59,7 +57,7 @@ def test_submit_quiz(
         interests=profile.interests or [],
         suggested_questions=profile.suggested_questions or [],
         quiz_completed=profile.quiz_completed,
-    ) 
+    )    
     
 @router.get("/profile", response_model=PersonaResponse)
 def get_profile(
