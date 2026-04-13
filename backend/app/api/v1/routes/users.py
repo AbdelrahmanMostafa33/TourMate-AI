@@ -1,9 +1,12 @@
+from http.client import HTTPException
+from app.models.profile import UserProfile
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.core.security import get_current_user
-from app.schemas.profile import PersonaResponse, QuizSubmitRequest
+from app.schemas.profile import PersonaResponse
+from app.schemas.profile import QuizSubmitRequest
 from app.services.profile_service import save_quiz, save_default_persona
 
 router = APIRouter()
