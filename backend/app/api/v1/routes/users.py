@@ -42,4 +42,20 @@ def skip_quiz(
         interests=profile.interests or [],
         suggested_questions=profile.suggested_questions or [],
         quiz_completed=profile.quiz_completed,
-    )
+)
+@router.post("/quiz/test", response_model=PersonaResponse)
+def test_submit_quiz(
+    body: QuizSubmitRequest,
+    db: Session = Depends(get_db)
+):
+    fake_user_id = "newuser123"
+    profile = save_quiz(fake_user_id, body, db)
+
+    return PersonaResponse(
+        persona_name=profile.persona_name,
+        persona_bio=profile.persona_bio,
+        interests=profile.interests or [],
+        suggested_questions=profile.suggested_questions or [],
+        quiz_completed=profile.quiz_completed,
+    )    
+    
