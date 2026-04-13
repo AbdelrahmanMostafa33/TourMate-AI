@@ -32,19 +32,26 @@ def register(
     db.refresh(new_user)
     return new_user
 
-@router.post("/login", response_model=UserResponse)
-def login(
-    current_user: dict = Depends(get_current_user),
-    db: Session = Depends(get_db)
-):
-    user = db.query(User).filter(
-        User.user_id == current_user["uid"]
-    ).first()
+@router.post("/login")
+def login(user=Depends(get_current_user), db: Session = Depends(get_db)):
 
-    if not user:
-        raise HTTPException(status_code=404, detail="User not found")
+    firebase_uid = user["uid"]
+    email = user.get("email")
 
-    return user
+    db_user = db.query(User).filter(User.user_id == firebase_uid).first()
+
+    if not db_user:
+        db_user = User(
+            user_id=firebase_uid,
+            email=email,
+            role="user",
+            is_active=True
+        )
+        db.add(db_user)
+        db.commit()
+        db.refresh(db_user)
+
+    return db_user
 
 
 """------------ Test Only ------------"""
