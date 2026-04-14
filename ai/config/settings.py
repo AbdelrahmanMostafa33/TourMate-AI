@@ -25,6 +25,8 @@ class Settings(BaseSettings):
         env_file_encoding="utf-8"         # File encoding
     )
 
+    backend_base_url: str = "http://localhost:8000"
+
 
 # Create an instance of Settings; loads variables automatically
 settings = Settings()
