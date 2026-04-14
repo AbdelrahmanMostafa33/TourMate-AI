@@ -42,7 +42,6 @@ def save_quiz(user_id: str, data: QuizSubmitRequest, db: Session) -> UserProfile
 
 
 def save_default_persona(user_id: str, db: Session) -> UserProfile:
-
     profile = db.query(UserProfile).filter(
         UserProfile.user_id == user_id
     ).first()
@@ -53,15 +52,29 @@ def save_default_persona(user_id: str, db: Session) -> UserProfile:
 
     profile.persona_name = "The Open Explorer"
     profile.persona_bio = (
-        "You're a free spirit who enjoys discovering new places "
-        "without a fixed plan. Every trip is a new adventure!"
-    )
+    "You're a free spirit who enjoys discovering new places "
+    "without a fixed plan. Every trip is a new adventure!"
+)
     profile.suggested_questions = [
-        "What's a good place to visit this weekend?",
-        "Surprise me with a travel idea!",
-        "What are the most popular destinations right now?"
-    ]
+    "What's a good place to visit this weekend?",
+    "Surprise me with a travel idea!",
+    "What are the most popular destinations right now?"
+]
     profile.quiz_completed = False
+
+
+    profile.accommodation_styles = []
+    profile.dining_preferences = []
+    profile.interests = []
+    profile.traveler_types = []
+
+
+    profile.adventure_relaxing = 50
+    profile.nature_culture = 50
+    profile.popular_local = 50
+    profile.budget_level = 50
+    profile.early_night = 50
+    profile.independent_social = 50
 
     db.commit()
     db.refresh(profile)

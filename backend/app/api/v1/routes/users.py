@@ -109,4 +109,39 @@ def update_interests(
 
     db.commit()
     return {"message": "Profile updated successfully"}
-    
+
+@router.get("/profile/full")
+def get_full_profile(
+    current_user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    user_id = current_user["uid"]
+    profile = db.query(UserProfile).filter(
+        UserProfile.user_id == user_id
+    ).first()
+    if not profile:
+        raise HTTPException(status_code=404, detail="Profile not found")
+    return {
+        # Persona
+        "persona_name": profile.persona_name,
+        "persona_bio": profile.persona_bio,
+        "suggested_questions": profile.suggested_questions,
+        "quiz_completed": profile.quiz_completed,
+        # Basic Info
+        "age": profile.age,
+        "sex": profile.sex,
+        "travel_companion": profile.travel_companion,
+        "location": profile.location,
+        # Sliders
+        "adventure_relaxing": profile.adventure_relaxing,
+        "nature_culture": profile.nature_culture,
+        "popular_local": profile.popular_local,
+        "budget_level": profile.budget_level,
+        "early_night": profile.early_night,
+        "independent_social": profile.independent_social,
+        # Multi-select
+        "accommodation_styles": profile.accommodation_styles,
+        "dining_preferences": profile.dining_preferences,
+        "interests": profile.interests,
+        "traveler_types": profile.traveler_types,
+    }
