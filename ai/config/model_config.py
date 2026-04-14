@@ -1,6 +1,6 @@
 # Import the settings object from your config module
 # This object already has your environment variables loaded (like gemini_api_key)
-from config.settings import settings
+from ai.config.settings import settings
 
 
 # Define constants for your Gemini LLM configuration

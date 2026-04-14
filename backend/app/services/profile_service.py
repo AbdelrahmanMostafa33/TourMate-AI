@@ -1,6 +1,7 @@
 from sqlalchemy.orm import Session
 from app.models.profile import UserProfile
 from app.schemas.profile import QuizSubmitRequest
+from ai.profiling.cold_start import generate_persona
 
 
 def save_quiz(user_id: str, data: QuizSubmitRequest, db: Session) -> UserProfile:
@@ -29,10 +30,11 @@ def save_quiz(user_id: str, data: QuizSubmitRequest, db: Session) -> UserProfile
     profile.traveler_types = data.traveler_types
     profile.quiz_completed = True
 
-    # TODO: AI 
-    profile.persona_name = "Explorer"
-    profile.persona_bio = "AI persona coming soon"
-    profile.suggested_questions = []
+    # ✅ AI 
+    persona = generate_persona(data.model_dump())
+    profile.persona_name = persona["persona_name"]
+    profile.persona_bio = persona["persona_bio"]
+    profile.suggested_questions = persona["suggested_questions"]
 
     db.commit()
     db.refresh(profile)

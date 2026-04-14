@@ -2,7 +2,7 @@
 from langchain_google_genai import ChatGoogleGenerativeAI
 
 # Import the Gemini model configuration constants from your config module
-from config.model_config import (
+from ai.config.model_config import (
     GEMINI_MODEL,        # Model name
     GEMINI_TEMPERATURE,  # Controls randomness
     GEMINI_MAX_TOKENS,   # Max tokens to generate

@@ -1,6 +1,6 @@
 # ai/profiling/cold_start.py
 
-from services.gemini_client import get_gemini_llm
+from ai.services.gemini_client import get_gemini_llm
 from langchain_core.messages import HumanMessage
 import json
 
