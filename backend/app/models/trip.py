@@ -1,24 +1,29 @@
+import enum
 from sqlalchemy import (
     Column, String, Integer, Float, Numeric,
     Date, DateTime, Time, Text, Enum, ForeignKey, JSON
 )
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
-import enum
+from enum import Enum as PyEnum
  
 from app.core.database import Base
 # ─── Enums ────────────────────────────────────────────────────────────────────
  
-class TripStatus(str, enum.Enum):
+class TripStatus(str, PyEnum):
     planning   = "planning"
     active     = "active"
     completed  = "completed"
  
-class ActivityType(str, enum.Enum):
+class ActivityType(str, PyEnum):
     attraction = "attraction"
     hotel      = "hotel"
     restaurant = "restaurant"
     transport  = "transport"
+    
+class InputMode(str, PyEnum):
+    ai_chat = "ai_chat"
+    manual  = "manual"
  
 # ─── Trip ─────────────────────────────────────────────────────────────────────
  
@@ -26,7 +31,7 @@ class Trip(Base):
     __tablename__ = "trips"
  
     trip_id             = Column(String, primary_key=True)
-    user_id             = Column(String, ForeignKey("users.id"), nullable=False, index=True)
+    user_id             = Column(String, ForeignKey("users.user_id"), nullable=False, index=True)
     destination_city    = Column(String, nullable=False)
     destination_country = Column(String, nullable=False)
     start_date          = Column(Date, nullable=False)

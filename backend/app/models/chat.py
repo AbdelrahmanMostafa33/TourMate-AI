@@ -1,21 +1,16 @@
+import enum
 from sqlalchemy import (
     Column, String, Integer, Float, Numeric,
     Date, DateTime, Time, Text, Enum, ForeignKey, JSON
 )
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
-import enum
+from enum import Enum as PyEnum
  
 from app.core.database import Base
 
 # ─── Enums ────────────────────────────────────────────────────────────────────
- 
-class InputMode(str, enum.Enum):
-    ai_chat = "ai_chat"
-    manual  = "manual"
- 
- 
-class MessageRole(str, enum.Enum):
+class MessageRole(str, PyEnum):
     user      = "user"
     assistant = "assistant"
     
@@ -26,7 +21,7 @@ class Conversation(Base):
  
     conversation_id = Column(String, primary_key=True)
     trip_id         = Column(String, ForeignKey("trips.trip_id", ondelete="CASCADE"), nullable=False, index=True)
-    user_id         = Column(String, ForeignKey("users.id"),     nullable=False, index=True)
+    user_id         = Column(String, ForeignKey("users.user_id"),     nullable=False, index=True)
     created_at      = Column(DateTime, default=func.now())
  
     # Relationships
