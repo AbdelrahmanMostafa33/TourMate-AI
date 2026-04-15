@@ -1,8 +1,5 @@
-# ai/graph/nodes.py
-
-from graph.state import TripState
-from tools.profile_tool import load_mock_profile
-
+from ai.graph.state import TripState
+from ai.tools.profile_tool import load_mock_profile
 
 
 # (state: TripState) → parameter state with type hint TripState (our shared dictionary type).

@@ -1,9 +1,8 @@
 # ai/tools/profile_tool.py
 
 import httpx
-from graph.state import BehavioralProfile
-from config.settings import settings
-
+from ai.graph.state import BehavioralProfile
+from ai.config.settings import settings
 
 async def load_behavioral_profile(user_id: str, token: str) -> BehavioralProfile:
     """

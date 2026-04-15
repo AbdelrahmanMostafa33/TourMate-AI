@@ -2,9 +2,9 @@
 
 from langgraph.graph import StateGraph, END
 
-from graph.state import TripState
-from graph.nodes import planning_node, optimization_node, validation_node, load_profile_node
-from graph.edges import should_optimize, should_validate, should_retry_or_end
+from ai.graph.state import TripState
+from ai.graph.nodes import planning_node, optimization_node, validation_node, load_profile_node
+from ai.graph.edges import should_optimize, should_validate, should_retry_or_end
 
 
 def build_graph():

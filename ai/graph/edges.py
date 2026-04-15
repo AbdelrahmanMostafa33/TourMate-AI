@@ -1,6 +1,6 @@
 # ai/graph/edges.py
 
-from graph.state import TripState
+from ai.graph.state import TripState
 
 def should_optimize(state: TripState) -> str:
     """
