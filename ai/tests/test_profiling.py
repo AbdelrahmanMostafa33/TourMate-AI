@@ -6,9 +6,12 @@ from pathlib import Path
 # ── Ensure project root is in Python path ───────────────────────────
 # This allows importing modules like `profiling.cold_start`
 # when running the file directly (not via pytest)
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from profiling.cold_start import generate_persona, build_default_persona
+from ai.profiling.cold_start import generate_persona, build_default_persona
+from ai.tools.profile_tool import load_mock_profile
+from ai.graph.state import BehavioralProfile   
+from ai.graph.graph_builder import build_graph
 
 
 def test_generate_persona_with_gemini():
@@ -90,8 +93,71 @@ def test_default_persona():
     print("Default persona returned correctly")
 
 
+def test_load_mock_profile():
+    """
+    Tests that load_mock_profile() returns a valid BehavioralProfile.
+
+    Pure unit test — no network or LLM calls.
+    Validates that the mock is fully populated and structurally correct.
+    """
+
+    profile = load_mock_profile()
+
+    assert profile["user_id"] is not None
+    assert profile["quiz_completed"] is True
+    assert isinstance(profile["interests"], list)
+    assert len(profile["interests"]) > 0
+    assert profile["persona_name"] is not None
+    assert profile["persona_bio"] is not None
+    assert len(profile["suggested_questions"]) == 3
+
+    print(f"\nMock profile loaded: {profile['persona_name']}")
+
+
+def test_graph_runs_with_mock_profile():
+    """
+    End-to-end test: runs the full compiled graph using the mock profile.
+
+    Verifies that:
+    - The graph starts with load_profile_node
+    - State flows through planner → optimizer → validator
+    - Final state contains expected keys
+    - No errors are raised
+    """
+
+    graph = build_graph()
+
+    initial_state = {
+        "user_id": "test_user_001",
+        "user_message": "Plan me a 2-day trip to Cairo",
+        "profile": None,
+        "draft_itinerary": None,
+        "optimized_itinerary": None,
+        "is_valid": None,
+        "next_agent": None,
+        "error": None,
+        "agent_messages": [],
+    }
+
+    result = graph.invoke(initial_state)
+
+    assert result["profile"] is not None, "Profile should be loaded by load_profile_node"
+    assert result["profile"]["persona_name"] == "The Curious Culture Seeker"
+    assert result["draft_itinerary"] is not None, "Planner should produce a draft"
+    assert result["optimized_itinerary"] is not None, "Optimizer should produce a result"
+    assert result["is_valid"] is True, "Validator should mark itinerary as valid"
+    assert result.get("error") is None, "No errors should occur in the happy path"
+
+    print(f"\nGraph ran successfully end-to-end with mock profile.")
+    print(f"   Persona: {result['profile']['persona_name']}")
+    print(f"   Draft status: {result['draft_itinerary']['status']}")
+    print(f"   Is valid: {result['is_valid']}")
+
+
 if __name__ == "__main__":
     # ── Allow running tests directly without pytest ─────────────────
     # Useful for quick debugging during development
     test_generate_persona_with_gemini()
     test_default_persona()
+    test_load_mock_profile()
+    test_graph_runs_with_mock_profile()

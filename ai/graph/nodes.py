@@ -1,6 +1,7 @@
 # ai/graph/nodes.py
 
 from graph.state import TripState
+from tools.profile_tool import load_mock_profile
 
 
 
@@ -84,4 +85,26 @@ def validation_node(state: TripState) -> TripState:
     # PLACEHOLDER — real logic comes in Sprint 4
     state["is_valid"] = True
     
+    return state
+
+
+def load_profile_node(state: TripState) -> TripState:
+    """
+    ENTRY NODE — Loads the user's behavioral profile into TripState.
+
+    Sprint 2: Uses load_mock_profile() as a stand-in until the backend
+    profile endpoints (Tasks 2.4/2.5) are ready. Switching to the real
+    HTTP call requires only replacing load_mock_profile() with
+    await load_behavioral_profile(user_id, token).
+
+    Runs before the planner so every downstream agent has access to
+    the profile via state["profile"].
+    """
+    user_id = state.get("user_id", "mock_user_001")
+    print(f"[LoadProfile] Loading profile for user: {user_id}")
+
+    profile = load_mock_profile(user_id=user_id)
+    state["profile"] = profile
+
+    print(f"[LoadProfile] Profile loaded: {profile.get('persona_name', 'unknown persona')}")
     return state

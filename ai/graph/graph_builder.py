@@ -3,8 +3,8 @@
 from langgraph.graph import StateGraph, END
 
 from graph.state import TripState
-from graph.nodes import planning_node, optimization_node, validation_node
-from graph.edges import should_optimize, should_validate
+from graph.nodes import planning_node, optimization_node, validation_node, load_profile_node
+from graph.edges import should_optimize, should_validate, should_retry_or_end
 
 
 def build_graph():
@@ -27,12 +27,16 @@ def build_graph():
     # Step B: Add each agent node to the graph
     # First argument = the name you'll use in edges
     # Second argument = the actual Python function to call
+    graph.add_node("load_profile", load_profile_node)
     graph.add_node("planner", planning_node)
     graph.add_node("optimizer", optimization_node)
     graph.add_node("validator", validation_node)
     
-    # Step C: Set the entry point — which agent runs FIRST?
-    graph.set_entry_point("planner")
+    # Step C: Set the entry point — load profile runs FIRST
+    graph.set_entry_point("load_profile")
+
+    # Fixed edge: after profile loads, always go to planner
+    graph.add_edge("load_profile", "planner")
     
     # Step D: Add conditional edges (arrows with decision logic)
     # "After planner runs, call should_optimize() to decide next node"
@@ -55,8 +59,15 @@ def build_graph():
         }
     )
     
-    # Simple fixed edge: after validator always go to END
-    graph.add_edge("validator", END)
+    # Conditional edge: after validator, retry or end based on is_valid
+    graph.add_conditional_edges(
+        "validator",
+        should_retry_or_end,
+        {
+            "planner": "planner",
+            "end": END
+        }
+    )
     
     # Step E: Compile — this validates your graph and makes it runnable
     compiled_graph = graph.compile()

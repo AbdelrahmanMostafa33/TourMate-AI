@@ -77,3 +77,46 @@ async def load_behavioral_profile(user_id: str, token: str) -> BehavioralProfile
         # ── Quiz status ─────────────────────────────────────────────
         quiz_completed=data.get("quiz_completed", False),
     )
+
+def load_mock_profile(user_id: str = "mock_user_001") -> BehavioralProfile:
+    """
+    Returns a hardcoded BehavioralProfile for development and testing.
+
+    Used in Sprint 2 while backend Tasks 2.4/2.5 are not yet complete.
+    Swapping to the real profile requires only changing the call in nodes.py
+    from load_mock_profile() to await load_behavioral_profile().
+
+    Args:
+        user_id: Optional override for the mock user ID.
+
+    Returns:
+        A fully populated BehavioralProfile.
+    """
+    return BehavioralProfile(
+        user_id=user_id,
+        age=27,
+        sex="female",
+        travel_companion="partner",
+        location="Cairo",
+        adventure_relaxing=70,
+        nature_culture=60,
+        popular_local=40,
+        budget_level=45,
+        early_night=55,
+        independent_social=50,
+        accommodation_styles=["boutique hotel", "airbnb"],
+        dining_preferences=["local cuisine", "street food"],
+        interests=["history", "art", "food"],
+        traveler_types=["culture seeker", "foodie"],
+        persona_name="The Curious Culture Seeker",
+        persona_bio=(
+            "You love diving into the history and art of a destination, "
+            "exploring local food scenes, and finding hidden gems off the tourist trail."
+        ),
+        suggested_questions=[
+            "What are the best historical sites to visit?",
+            "Where can I find authentic local food?",
+            "What cultural experiences shouldn't I miss?"
+        ],
+        quiz_completed=True,
+    )
