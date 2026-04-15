@@ -7,6 +7,18 @@ from sqlalchemy.sql import func
 import enum
  
 from app.core.database import Base
+
+# ─── Enums ────────────────────────────────────────────────────────────────────
+ 
+class InputMode(str, enum.Enum):
+    ai_chat = "ai_chat"
+    manual  = "manual"
+ 
+ 
+class MessageRole(str, enum.Enum):
+    user      = "user"
+    assistant = "assistant"
+    
 # ─── Conversation ─────────────────────────────────────────────────────────────
  
 class Conversation(Base):
