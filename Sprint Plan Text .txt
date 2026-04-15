@@ -1,0 +1,157 @@
+You're right! I forgot the Priority column. Here is the complete sprint planning with priority added back:
+
+---
+
+# 🗓️ TourMate AI — Final Agile Sprint Planning
+
+Board Type: Scrum | Sprint Duration: 1 Week | Total Sprints: 7
+Team: 2 Frontend · 2 Backend · 2 AI
+
+> Each sprint was conducted over a one-week period, followed by a sprint review and retrospective meeting to evaluate progress and refine the backlog. QA activities were embedded within each sprint to ensure iterative validation and continuous quality assurance.
+
+---
+
+## 🏷️ Role Legend
+
+| Role | Who | Tools |
+|------|-----|-------|
+| 🎨 Frontend | 2 Frontend Devs | Flutter, FlutterFire SDK |
+| ⚙️ Backend | 2 Backend Devs | FastAPI, PostgreSQL, Firebase |
+| 🤖 AI | 2 AI Devs | LangGraph, Google Gemini LLM/VLM |
+| 🔄 Full Stack | Mixed | Involves coordination across roles |
+
+## 🏷️ Priority Legend
+
+| Priority | Meaning |
+|----------|---------|
+| 🔴 High | Must be done this sprint, blocks other tasks |
+| 🟡 Medium | Important but not blocking |
+| 🟢 Low | Nice to have, can slip to next sprint |
+
+---
+
+## 🚀 Sprint 1 — Auth Setup
+
+| # | Task | Epic | Phase | Role | Priority |
+|---|------|------|-------|------|----------|
+| 1.1 | Set up FastAPI (Python) backend project structure in VS Code | 🏗️ Infrastructure | 🔨 Build | ⚙️ Backend | 🔴 High |
+| 1.2 | Initialize PostgreSQL schema (users, profiles, itineraries) | 🏗️ Infrastructure | 🔨 Build | ⚙️ Backend | 🔴 High |
+| 1.3 | Set up Flutter mobile project structure in VS Code | 🏗️ Infrastructure | 🔨 Build | 🎨 Frontend | 🔴 High |
+| 1.4 | Build Splash, Sign In & Sign Up screens (Flutter) | 🔵 Auth & Access Control | 🔨 Build | 🎨 Frontend | 🔴 High |
+| 1.5 | Integrate Firebase Authentication for Email/Password registration & login — FR #01 | 🔵 Auth & Access Control | 🔨 Build | ⚙️ Backend | 🔴 High |
+| 1.6 | Integrate Google OAuth via Firebase Auth & FlutterFire SDK — FR #01 | 🔵 Auth & Access Control | 🔨 Build | ⚙️ Backend | 🟡 Medium |
+| 1.7 | Implement password reset via Firebase email verification — FR #02 | 🔵 Auth & Access Control | 🔨 Build | ⚙️ Backend | 🟡 Medium |
+| 1.8 | Set up LangGraph project skeleton & define agent graph structure (Planning, Optimization, Validation) | 🟠 AI Itinerary Generation | 🔨 Build | 🤖 AI | 🔴 High |
+| 1.9 | Configure Google Gemini API connection & test LLM response pipeline | 🟠 AI Itinerary Generation | 🔨 Build | 🤖 AI | 🔴 High |
+| 1.10 | Unit test Firebase Auth integration & session handling | ⚪ QA & Testing | 🧪 Test | ⚙️ Backend | 🔴 High |
+| 1.11 | Integration test: login flow end-to-end (Flutter → Firebase → FastAPI) | ⚪ QA & Testing | 🧪 Test | 🔄 Full Stack | 🔴 High |
+| 1.12 | Partial UAT: Validate auth screens with First-Time Tourist persona | ⚪ QA & Testing | 👤 Partial UAT | 🔄 Full Stack | 🟡 Medium |
+
+> Sprint 1 Deliverable: At the end of Sprint 1, users can successfully register, log in via Email/Password or Google OAuth, and reset their password. The AI team has the LangGraph skeleton and Gemini API connection ready as the foundation for all future AI agents.
+
+---
+
+## 🚀 Sprint 2 — User Profiling
+
+| # | Task | Epic | Phase | Role | Priority |
+|---|------|------|-------|------|----------|
+| 2.1 | Build onboarding quiz screens (Flutter) | 🟢 Intelligent Profiling | 🔨 Build | 🎨 Frontend | 🔴 High |
+| 2.2 | Build "Update Contact Info" settings screen (Flutter) — FR #03 | 🔵 Auth & Access Control | 🔨 Build | 🎨 Frontend | 🟢 Low |
+| 2.3 | Implement FastAPI endpoint to save quiz responses to PostgreSQL — FR #04 | 🔵 Auth & Access Control | 🔨 Build | ⚙️ Backend | 🔴 High |
+| 2.4 | Develop behavioral profile model in PostgreSQL (budget, pace, interests) — FR #05 | 🟢 Intelligent Profiling | 🔨 Build | ⚙️ Backend | 🔴 High |
+| 2.5 | Implement profile update logic from interaction history — FR #05 | 🟢 Intelligent Profiling | 🔨 Build | ⚙️ Backend | 🟡 Medium |
+| 2.6 | Design & implement agent shared state schema connecting with PostgreSQL behavioral profile — FR #06 | 🟠 AI Itinerary Generation | 🔨 Build | 🤖 AI | 🔴 High |
+| 2.7 |angGraph pipeline → full itinerary output displayed in Flutter | ⚪ QA & Testing | 🧪 Test | 🔄 Full Stack | 🔴 High |
+| 4.11 | Partial UAT: Validate itinerary quality & feasibility with Frequent Traveler persona | ⚪ QA & Testing | 👤 Partial UAT | 🔄 Full Stack | 🟡 Medium |
+
+> Sprint 4 Deliverable: At the end of Sprint 4, the system autonomously generates complete, optimized, and personalized multi-day travel itineraries displayed clearly in a day-by-day format within the app.
+
+---
+
+## 🚀 Sprint 5 — Booking Sim
+
+| # | Task | Epic | Phase | Role | Priority |
+|---|------|------|-------|------|----------|
+| 5.1 | Build modify itinerary UI with chat interface (Flutter) — FR #12 | 🟠 AI Itinerary Generation | 🔨 Build | 🎨 Frontend | 🔴 High |
+| 5.2 | Build user confirmation screen before finalizing plan (Flutter) — FR #14 | 🔴 Booking Simulation | 🔨 Build | 🎨 Frontend | 🔴 High |
+| 5.3 | Build "Trip Library" screen to browse upcoming/past booked plans (Flutter) | 🔴 Booking Simulation | 🔨 Build | 🎨 Frontend | 🟡 Medium |
+| 5.4 | Implement Booking Simulation engine in FastAPI (simulated accommodation & activity booking) — FR #13 | 🔴 Booking Simulation | 🔨 Build | ⚙️ Backend | 🔴 High |
+| 5.5 | Implement trip cancellation & mid-plan modification support — FR #14 | 🔴 Booking Simulation | 🔨 Build | ⚙️ Backend | 🟡 Medium |
+| 5.6 | Implement natural language modification commands via Gemini LLM (remove/replace/reorder) — FR #12 | 🟠 AI Itinerary Generation | 🔨 Build | 🤖 AI | 🔴 High |
+| 5.7 | Refine LangGraph agent responses based on Sprint 4 UAT feedback | 🟠 AI Itinerary Generation | 🔨 Build | 🤖 AI | 🟡 Medium |
+| 5.8 | Unit test booking simulation engine (FastAPI endpoints) | ⚪ QA & Testing | 🧪 Test | ⚙️ Backend | 🔴 High |
+| 5.9 | Integration test: modify → confirm → simulate booking flow end-to-end | ⚪ QA & Testing | 🧪 Test | 🔄 Full Stack | 🔴 High |
+| 5.10 | Partial UAT: Validate booking flow with First-Time Tourist persona | ⚪ QA & Testing | 👤 Partial UAT | 🔄 Full Stack | 🟡 Medium |
+
+> Sprint 5 Deliverable: At the end of Sprint 5, users can interactively modify generated itineraries using natural language and complete a simulated end-to-end booking process with full control at every step.
+
+---
+
+## 🚀 Sprint 6 — Explore & Profile
+
+| # | Task | Epic | Phase | Role | Priority |
+|---|------|------|-------|------|----------|
+| 6.1 | Build Explore Destinations screen — browse Cairo attractions via Overpass API (Flutter) | 🟠 AI Itinerary Generation | 🔨 Build | 🎨 Frontend | 🔴 High |
+| 6.2 | Build User Profile screen — display personal info, travel bio, interests (Flutter) | 🔵 Auth & Access Control | 🔨 Build | 🎨 Frontend | 🟡 Medium |
+| 6.3 | Implement "Save Favorite Places" feature stored in PostgreSQL | 🟢 Intelligent Profiling | 🔨 Build | ⚙️ Backend | 🟡 Medium |
+| 6.4 | Integrate OSRM for distance/travel time display between saved places | 🏗️ Infrastructure | 🔨 Build | ⚙️ Backend | 🟡 Medium |
+| 6.5 | Connect POI service to itinerary recommendation pipeline | 🟠 AI Itinerary Generation | 🔨 Build | 🤖 AI | 🔴 High |
+| 6.6 | Connect saved favorites & updated profile to LangGraph agent state | 🟢 Intelligent Profiling | 🔨 Build | 🤖 AI | 🟡 Medium |
+| 6.7 | Implement Personality Quiz re-take feature — FR #04 | 🟢 Intelligent Profiling | 🔨 Build | 🎨 Frontend | 🟢 Low |
+| 6.8 | Unit test Overpass API client module & OSRM integration | ⚪ QA & Testing | 🧪 Test | ⚙️ Backend | 🟡 Medium |
+| 6.9 | Integration test: saved favorites in PostgreSQL → reflected in next itinerary output | ⚪ QA & Testing | 🧪 Test | 🔄 Full Stack | 🟡 Medium |
+| 6.10 | Partial UAT: Validate explore & profile screens with Local Explorer persona | ⚪ QA & Testing | 👤 Partial UAT | 🔄 Full Stack | 🟡 Medium |
+
+> Sprint 6 Deliverable: At the end of Sprint 6, users can explore destinations in Cairo, save favorite places, and manage their profile — all feeding back into the personalization engine to improve future itinerary recommendations.
+
+---
+
+## 🚀 Sprint 7 — Logging & Learn
+
+| # | Task | Epic | Phase | Role |
+Priority |
+|---|------|------|-------|------|----------|
+| 7.1 | Build admin log viewer screen (Flutter) | 🟤 Transparency & Learning | 🔨 Build | 🎨 Frontend | 🟡 Medium |
+| 7.2 | Build in-app user feedback collection UI on completed plans — FR #16 | 🟤 Transparency & Learning | 🔨 Build | 🎨 Frontend | 🔴 High |
+| 7.3 | Implement system logging for all LangGraph agent actions in PostgreSQL — FR #15 | 🟤 Transparency & Learning | 🔨 Build | ⚙️ Backend | 🔴 High |
+| 7.4 | Integrate feedback into behavioral profile refinement loop in PostgreSQL — FR #05/#16 | 🟢 Intelligent Profiling | 🔨 Build | ⚙️ Backend | 🔴 High |
+| 7.5 | Implement Data-Driven Insights & Reports dashboard (FastAPI + Flutter) | 🟤 Transparency & Learning | 🔨 Build | ⚙️ Backend | 🟡 Medium |
+| 7.6 | Refine LangGraph agents using collected feedback & interaction history — FR #16 | 🟠 AI Itinerary Generation | 🔨 Build | 🤖 AI | 🔴 High |
+| 7.7 | Performance reporting & agent evaluation metrics (FastAPI) | 🟤 Transparency & Learning | 🔨 Build | 🤖 AI | 🟢 Low |
+| 7.8 | Unit test logging pipeline (PostgreSQL) & feedback storage | ⚪ QA & Testing | 🧪 Test | ⚙️ Backend | 🔴 High |
+| 7.9 | Integration test: user feedback → PostgreSQL → behavioral profile update | ⚪ QA & Testing | 🧪 Test | 🔄 Full Stack | 🔴 High |
+| 7.10 | Partial UAT: Validate full system feedback flow with Frequent Traveler persona | ⚪ QA & Testing | 👤 Partial UAT | 🔄 Full Stack | 🟡 Medium |
+
+> Sprint 7 Deliverable: At the end of Sprint 7, the system logs all AI decisions transparently, collects user feedback on completed plans, and feeds it back into the behavioral profile — closing the adaptive personalization loop.
+
+---
+
+## 📊 Team Workload Per Sprint
+
+| Sprint | 🎨 Frontend | ⚙️ Backend | 🤖 AI | 🔄 Full Stack |
+|--------|------------|-----------|-------|--------------|
+| Sprint 1 — Auth Setup | 2 | 4 | 2 | 2 |
+| Sprint 2 — User Profiling | 2 | 3 | 2 | 2 |
+| Sprint 3 — Multimodal Chat | 2 | 2 | 3 | 2 |
+| Sprint 4 — Itinerary Engine | 2 | 2 | 4 | 2 |
+| Sprint 5 — Booking Sim | 3 | 2 | 2 | 2 |
+| Sprint 6 — Explore & Profile | 3 | 2 | 2 | 2 |
+| Sprint 7 — Logging & Learn | 2 | 3 | 2 | 2 |
+
+---
+
+## 📊 Final Epic Task Count
+
+| Epic | Total Tasks |
+|------|-------------|
+| 🏗️ Infrastructure | 4 tasks |
+| 🔵 Auth & Access Control | 6 tasks |
+| 🟢 Intelligent Profiling | 10 tasks |
+| 🟡 Multimodal Input | 5 tasks |
+| 🟠 AI Itinerary Generation | 15 tasks |
+| 🔴 Booking Simulation | 5 tasks |
+| 🟤 Transparency & Learning | 6 tasks |
+| ⚪ QA & Testing | 21 tasks |
+| Total | 72 tasks |
+
+Now every task has its Priority column clearly defined. Would you like to export this as a Word or Excel file?
