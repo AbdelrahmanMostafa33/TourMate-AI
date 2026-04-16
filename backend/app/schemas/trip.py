@@ -29,13 +29,21 @@ class ActivityCreate(BaseModel):
     duration_hours: Optional[float] = None
     notes:          Optional[str]   = None
 
-class ActivityResponse(ActivityCreate):
-    activity_id: int
-    day_id:      int
-    created_at:  datetime
+class ActivityResponse(BaseModel):
+    activity_id:    int
+    name:           str
+    type:           ActivityType
+    time:           Optional[time]   = None # type: ignore
+    duration_hours: Optional[float]  = None
+    notes:          Optional[str]    = None
+    order_in_day:   Optional[int]    = None
+    location_name:  Optional[str]    = None
+    lat:            Optional[float]  = None
+    lng:            Optional[float]  = None
 
     class Config:
         from_attributes = True
+
 
 
 class TripDayCreate(BaseModel):
@@ -43,11 +51,10 @@ class TripDayCreate(BaseModel):
     date:       Optional[date] = None # type: ignore
     activities: Optional[List[ActivityCreate]] = []
 
-class TripDayResponse(BaseModel):
+class DayResponse(BaseModel):
     day_id:     int
-    trip_id:    str
     day_number: int
-    date:       Optional[date]
+    date:       Optional[date] = None # type: ignore
     activities: List[ActivityResponse] = []
 
     class Config:
@@ -66,21 +73,15 @@ class TripCreate(BaseModel):
 
 class TripResponse(BaseModel):
     trip_id:             str
-    user_id:             str
     destination_city:    str
     destination_country: str
-    start_date:          date
-    end_date:            date
+    status:              str
     duration_days:       int
-    status:              TripStatus
-    budget_total:        Optional[float]
-    traveler_count:      int
-    input_mode:          InputMode
-    created_at:          datetime
-    days:                List[TripDayResponse] = []
+    days:                List[DayResponse] = []
 
     class Config:
         from_attributes = True
+
 
 class TripSummary(BaseModel):
 

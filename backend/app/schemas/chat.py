@@ -2,7 +2,7 @@ from pydantic import BaseModel
 from typing import Optional, List, Any
 from datetime import date, datetime, time
 from enum import Enum
-
+from schemas.trip import TripResponse
 
 
 class MessageRole(str, Enum):
@@ -44,3 +44,23 @@ class ConversationSummary(BaseModel):
 
     class Config:
         from_attributes = True
+
+class ChatRequest(BaseModel):
+    message:  str
+    trip_id:  Optional[str] = None  # None = رحلة جديدة
+
+
+class MessageResponse(BaseModel):
+    message_id: str
+    role:       str
+    content:    str
+    actions:    Optional[List[Any]] = None
+
+    class Config:
+        from_attributes = True
+
+
+class ChatResponse(BaseModel):
+    trip_id:          str
+    message:          str
+    itinerary:        Optional[TripResponse] = None
