@@ -18,7 +18,7 @@ class MessageRole(str, PyEnum):
  
 class Conversation(Base):
     __tablename__ = "conversations"
- 
+    __table_args__ = {'extend_existing': True}
     conversation_id = Column(String, primary_key=True)
     trip_id         = Column(String, ForeignKey("trips.trip_id", ondelete="CASCADE"), nullable=False, index=True)
     user_id         = Column(String, ForeignKey("users.user_id"),     nullable=False, index=True)
@@ -33,7 +33,7 @@ class Conversation(Base):
  
 class Message(Base):
     __tablename__ = "messages"
- 
+    __table_args__ = {'extend_existing': True}
     message_id      = Column(String, primary_key=True)
     conversation_id = Column(String, ForeignKey("conversations.conversation_id", ondelete="CASCADE"), nullable=False, index=True)
     role            = Column(Enum(MessageRole), nullable=False)
