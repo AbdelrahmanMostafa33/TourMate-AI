@@ -77,3 +77,82 @@ async def get_all_trips(
         .order_by(Trip.created_at.desc())
     )
     return result.scalars().all()
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# GET /trips/{trip_id}  ← بيانات رحلة معينة (كاملة)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@router.get("/{trip_id}", response_model=TripResponse)
+async def get_trip(
+    trip_id:      str,
+    current_user: dict         = Depends(get_current_user),
+    db:           AsyncSession = Depends(get_db),
+):
+    result = await db.execute(
+        select(Trip)
+        .options(
+            selectinload(Trip.days)
+            .selectinload(TripDay.activities)
+        )
+        .where(
+            Trip.trip_id == trip_id,
+            Trip.user_id == current_user["uid"],
+        )
+    )
+    trip = result.scalar_one_or_none()
+    if not trip:
+        raise HTTPException(status_code=404, detail="Trip not found")
+    return trip
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# GET /trips/{trip_id}/itinerary  ← للخريطة (Flutter بيناديه لما يستقبل itinerary_updated)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@router.get("/{trip_id}/itinerary", response_model=TripResponse)
+async def get_itinerary(
+    trip_id:      str,
+    current_user: dict         = Depends(get_current_user),
+    db:           AsyncSession = Depends(get_db),
+):
+    result = await db.execute(
+        select(Trip)
+        .options(
+            selectinload(Trip.days)
+            .selectinload(TripDay.activities)
+        )
+        .where(
+            Trip.trip_id == trip_id,
+            Trip.user_id == current_user["uid"],
+        )
+    )
+    trip = result.scalar_one_or_none()
+    if not trip:
+        raise HTTPException(status_code=404, detail="Trip not found")
+    return trip
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# PATCH /trips/{trip_id}/status  ← تحديث status الرحلة
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@router.patch("/{trip_id}/status")
+async def update_trip_status(
+    trip_id:      str,
+    body:         TripStatusUpdate,
+    current_user: dict         = Depends(get_current_user),
+    db:           AsyncSession = Depends(get_db),
+):
+    result = await db.execute(
+        select(Trip).where(
+            Trip.trip_id == trip_id,
+            Trip.user_id == current_user["uid"],
+        )
+    )
+    trip = result.scalar_one_or_none()
+    if not trip:
+        raise HTTPException(status_code=404, detail="Trip not found")
+
+    trip.status = body.status
+    await db.commit()
+    return {"trip_id": trip_id, "status": trip.status}
