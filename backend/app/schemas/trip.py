@@ -1,7 +1,8 @@
 from pydantic import BaseModel
-from typing import Optional, List, Any
+from typing import Optional, List
 from datetime import date, datetime, time
 from enum import Enum
+
 
 class TripStatus(str, Enum):
     planning  = "planning"
@@ -17,74 +18,88 @@ class ActivityType(str, Enum):
     hotel      = "hotel"
     restaurant = "restaurant"
     transport  = "transport"
-    
+
+
+# ─── Activity ────────────────────────────────────────────────────────────────
+
 class ActivityCreate(BaseModel):
     name:           str
     type:           ActivityType
-    location_name:  Optional[str]   = None   # ← جديد
-    latitude:       Optional[float] = None   # ← جديد (الخريطة)
-    longitude:      Optional[float] = None   # ← جديد (الخريطة)
-    order_in_day:   Optional[int]   = None   # ← جديد (الترتيب)
-    time:           Optional[time]  = None # type: ignore
+    location_name:  Optional[str]   = None
+    latitude:       Optional[float] = None
+    longitude:      Optional[float] = None
+    order_in_day:   Optional[int]   = None
+    time:           Optional[time]  = None  # type: ignore
     duration_hours: Optional[float] = None
     notes:          Optional[str]   = None
 
 class ActivityResponse(BaseModel):
     activity_id:    int
+    day_id:         int
     name:           str
     type:           ActivityType
-    time:           Optional[time]   = None # type: ignore
+    time:           Optional[time]   = None  # type: ignore
     duration_hours: Optional[float]  = None
     notes:          Optional[str]    = None
     order_in_day:   Optional[int]    = None
     location_name:  Optional[str]    = None
     lat:            Optional[float]  = None
     lng:            Optional[float]  = None
+    created_at:     datetime
 
     class Config:
         from_attributes = True
 
 
+# ─── TripDay ─────────────────────────────────────────────────────────────────
 
 class TripDayCreate(BaseModel):
     day_number: int
-    date:       Optional[date] = None # type: ignore
+    date:       Optional[date] = None  # type: ignore
     activities: Optional[List[ActivityCreate]] = []
 
-class DayResponse(BaseModel):
+class TripDayResponse(BaseModel):
     day_id:     int
+    trip_id:    str
     day_number: int
-    date:       Optional[date] = None # type: ignore
+    date:       Optional[date] = None
     activities: List[ActivityResponse] = []
 
     class Config:
         from_attributes = True
-        
+
+
+# ─── Trip ────────────────────────────────────────────────────────────────────
+
 class TripCreate(BaseModel):
-    user_id:             str             # ← جديد (مؤقت، بعدين هيجي من JWT)
+    # user_id بييجي من الـ JWT — مش من الـ body
     destination_city:    str
     destination_country: str
-    start_date:          Optional[date]
-    end_date:            Optional[date]
-    duration_days:       Optional[int]   = 1
+    start_date:          date
+    end_date:            date
     budget_total:        Optional[float] = None
     traveler_count:      Optional[int]   = 1
     input_mode:          Optional[InputMode] = InputMode.ai_chat
 
 class TripResponse(BaseModel):
     trip_id:             str
+    user_id:             str
     destination_city:    str
     destination_country: str
-    status:              str
+    start_date:          date
+    end_date:            date
     duration_days:       int
-    days:                List[DayResponse] = []
+    status:              TripStatus
+    budget_total:        Optional[float] = None
+    traveler_count:      int
+    input_mode:          InputMode
+    created_at:          datetime
+    days:                List[TripDayResponse] = []
 
     class Config:
         from_attributes = True
 
-
 class TripSummary(BaseModel):
-
     trip_id:             str
     destination_city:    str
     destination_country: str
@@ -98,4 +113,3 @@ class TripSummary(BaseModel):
 
 class TripStatusUpdate(BaseModel):
     status: TripStatus
-
