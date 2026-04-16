@@ -21,7 +21,11 @@ class ActivityType(str, Enum):
 class ActivityCreate(BaseModel):
     name:           str
     type:           ActivityType
-    time:           Optional[time]  = None  # type: ignore
+    location_name:  Optional[str]   = None   # ← جديد
+    latitude:       Optional[float] = None   # ← جديد (الخريطة)
+    longitude:      Optional[float] = None   # ← جديد (الخريطة)
+    order_in_day:   Optional[int]   = None   # ← جديد (الترتيب)
+    time:           Optional[time]  = None # type: ignore
     duration_hours: Optional[float] = None
     notes:          Optional[str]   = None
 
@@ -50,6 +54,7 @@ class TripDayResponse(BaseModel):
         from_attributes = True
         
 class TripCreate(BaseModel):
+    user_id:             str             # ← جديد (مؤقت، بعدين هيجي من JWT)
     destination_city:    str
     destination_country: str
     start_date:          Optional[date]
