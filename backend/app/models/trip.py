@@ -67,15 +67,20 @@ class TripDay(Base):
  
 class TripActivity(Base):
     __tablename__ = "trip_activities"
- 
+
     activity_id    = Column(Integer, primary_key=True, autoincrement=True)
     day_id         = Column(Integer, ForeignKey("trip_days.day_id", ondelete="CASCADE"), nullable=False, index=True)
     name           = Column(String, nullable=False)
     type           = Column(Enum(ActivityType), nullable=False)
     time           = Column(Time,  nullable=True)
     duration_hours = Column(Float, nullable=True)
-    notes          = Column(Text,  nullable=True)
+    notes          = Column(Text,  nullable=True) 
+    order_in_day   = Column(Integer, default=0)
+    location_name  = Column(String,  nullable=True)
+    lat            = Column(Float,   nullable=True)
+    lng            = Column(Float,   nullable=True)
+    
     created_at     = Column(DateTime, default=func.now())
- 
+
     # Relationships
     day = relationship("TripDay", back_populates="activities")
