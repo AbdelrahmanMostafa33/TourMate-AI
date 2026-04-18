@@ -6,33 +6,44 @@ from typing import Dict
 class ConnectionManager:
 
     def __init__(self):
-        # trip_id → WebSocket
+        # key → WebSocket  (key = trip_id أو "new_" + user_id)
         self.active: Dict[str, WebSocket] = {}
-        # trip_id → Lock
+        # key → Lock
         self.locks:  Dict[str, asyncio.Lock] = {}
 
-    async def connect(self, trip_id: str, websocket: WebSocket):
+    async def connect(self, key: str, websocket: WebSocket):
+        """وصّل websocket جديد (بيعمل accept)"""
         await websocket.accept()
-        self.active[trip_id] = websocket
-        if trip_id not in self.locks:
-            self.locks[trip_id] = asyncio.Lock()
+        self.active[key] = websocket
+        if key not in self.locks:
+            self.locks[key] = asyncio.Lock()
 
-    def disconnect(self, trip_id: str):
-        self.active.pop(trip_id, None)
-        self.locks.pop(trip_id, None)
+    def connect_existing(self, key: str, websocket: WebSocket):
+        """ربط websocket موجود بـ key جديد (من غير accept)
+           بيتستخدم لما الـ chat/new يتحول لـ trip_id"""
+        self.active[key] = websocket
+        if key not in self.locks:
+            self.locks[key] = asyncio.Lock()
 
-    def get_lock(self, trip_id: str) -> asyncio.Lock:
-        if trip_id not in self.locks:
-            self.locks[trip_id] = asyncio.Lock()
-        return self.locks[trip_id]
+    def disconnect(self, key: str):
+        """فصل الاتصال"""
+        self.active.pop(key, None)
+        self.locks.pop(key, None)
 
-    async def send(self, trip_id: str, data: dict):
-        ws = self.active.get(trip_id)
+    def get_lock(self, key: str) -> asyncio.Lock:
+        """جيب الـ lock (أو أنشئ واحد جديد)"""
+        if key not in self.locks:
+            self.locks[key] = asyncio.Lock()
+        return self.locks[key]
+
+    async def send(self, key: str, data: dict):
+        """بعت رسالة JSON للـ client"""
+        ws = self.active.get(key)
         if ws:
             try:
                 await ws.send_json(data)
             except Exception:
-                self.disconnect(trip_id)
+                self.disconnect(key)
 
 
 manager = ConnectionManager()
