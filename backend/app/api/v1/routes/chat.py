@@ -101,6 +101,28 @@ async def execute_actions(actions: list, trip: Trip, db: AsyncSession) -> list:
             await db.flush()
             action["generated_id"] = new_activity.activity_id
 
+        # ── UPDATE_ACTIVITY ← جديد ───────────────────────────────────────────
+        elif action_type == "UPDATE_ACTIVITY":
+            activity_id = data.get("activity_id")
+            if activity_id:
+                result = await db.execute(
+                    select(TripActivity).where(
+                        TripActivity.activity_id == activity_id
+                    )
+                )
+                act = result.scalar_one_or_none()
+                if act:
+                    if data.get("name"):           act.name           = data["name"]
+                    if data.get("time"):           act.time           = data["time"]
+                    if data.get("notes"):          act.notes          = data["notes"]
+                    if data.get("duration_hours"): act.duration_hours = data["duration_hours"]
+                    if data.get("location_name"):  act.location_name  = data["location_name"]
+                    if data.get("lat"):            act.lat            = data["lat"]
+                    if data.get("lng"):            act.lng            = data["lng"]
+                    if data.get("order_in_day") is not None:
+                        act.order_in_day = data["order_in_day"]
+                    await db.flush()
+
         # ── DELETE_ACTIVITY ──────────────────────────────────────────────────
         elif action_type == "DELETE_ACTIVITY":
             activity_id = data.get("activity_id")
@@ -309,6 +331,8 @@ async def websocket_chat(
 
     except WebSocketDisconnect:
         manager.disconnect(trip_id)
+        
+#-------------------------------------------------------------------------------------
 
 @router.websocket("/ws/chat/new")
 async def websocket_new_chat(
