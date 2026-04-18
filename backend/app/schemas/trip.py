@@ -62,7 +62,7 @@ class TripDayResponse(BaseModel):
     day_id:     int
     trip_id:    str
     day_number: int
-    date:       Optional[date] = None
+    date: date | None
     activities: List[ActivityResponse] = []
 
     class Config:
