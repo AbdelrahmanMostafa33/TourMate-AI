@@ -310,6 +310,176 @@ async def websocket_chat(
     except WebSocketDisconnect:
         manager.disconnect(trip_id)
 
+@router.websocket("/ws/chat/new")
+async def websocket_new_chat(
+    websocket: WebSocket,
+    token:     str          = Query(...),
+    db:        AsyncSession = Depends(get_db),
+):
+    # ── Auth ─────────────────────────────────────────────────────────────────
+    user = verify_token(token)
+    if not user:
+        await websocket.close(code=4001)
+        return
+
+    user_id = user["uid"]
+    await manager.connect("new_" + user_id, websocket)
+
+    try:
+        await websocket.accept()
+
+        # ── جيب الـ Profile ───────────────────────────────────────────────────
+        profile_result = await db.execute(
+            select(UserProfile).where(UserProfile.user_id == user_id)
+        )
+        profile      = profile_result.scalar_one_or_none()
+        profile_data = {}
+        if profile:
+            profile_data = {
+                "persona_name":       profile.persona_name,
+                "interests":          profile.interests,
+                "budget_level":       profile.budget_level,
+                "adventure_relaxing": profile.adventure_relaxing,
+                "travel_companion":   profile.travel_companion,
+            }
+
+        # ── State ─────────────────────────────────────────────────────────────
+        trip_id         = None   # ← مفيش trip لسه
+        conversation_id = None
+        history_list    = []
+
+        while True:
+            # ── استقبل رسالة ─────────────────────────────────────────────────
+            data      = await websocket.receive_json()
+            user_text = data.get("message", "").strip()
+            if not user_text:
+                continue
+
+            # ── لو Trip اتعمل قبل كده، احفظ الرسالة ─────────────────────────
+            if conversation_id:
+                user_msg = Message(
+                    message_id      = str(uuid.uuid4()),
+                    conversation_id = conversation_id,
+                    role            = MessageRole.user,
+                    content         = user_text,
+                )
+                db.add(user_msg)
+                await db.commit()
+
+            # ── بعت typing ───────────────────────────────────────────────────
+            await websocket.send_json({"type": "typing"})
+
+            # ── كلم الـ AI ────────────────────────────────────────────────────
+            full_response = ""
+            actions       = []
+
+            try:
+                from ai.chat.chat_handler import handle_message_stream
+                async for chunk in handle_message_stream({
+                    "message":      user_text,
+                    "user_profile": profile_data,
+                    "history":      history_list,
+                    "trip_data":    None,           # ← الفرق الأساسي
+                }):
+                    if chunk["type"] == "text":
+                        full_response += chunk["content"]
+                        await websocket.send_json({
+                            "type": "token",
+                            "data": chunk["content"],
+                        })
+                    elif chunk["type"] == "actions":
+                        actions = chunk["data"]
+
+            except Exception:
+                full_response = "تمام! جاري تجهيز الرحلة... (AI placeholder)"
+                for token_chunk in full_response.split():
+                    await websocket.send_json({
+                        "type": "token",
+                        "data": token_chunk + " ",
+                    })
+
+            await websocket.send_json({"type": "done"})
+
+            # ── شوف لو فيه CREATE_TRIP في الـ actions ────────────────────────
+            for action in actions:
+                if action.get("type") == "CREATE_TRIP":
+                    action_data = action.get("data", {})
+
+                    # عمل الـ Trip في DB
+                    start_date = action_data.get("start_date")
+                    end_date   = action_data.get("end_date")
+                    delta      = 1
+                    if start_date and end_date:
+                        from datetime import date
+                        delta = (
+                            date.fromisoformat(end_date) -
+                            date.fromisoformat(start_date)
+                        ).days + 1
+
+                    new_trip = Trip(
+                        trip_id             = str(uuid.uuid4()),
+                        user_id             = user_id,
+                        destination_city    = action_data.get("destination_city", ""),
+                        destination_country = action_data.get("destination_country", ""),
+                        start_date          = action_data.get("start_date"),
+                        end_date            = action_data.get("end_date"),
+                        duration_days       = delta,
+                        budget_total        = action_data.get("budget_total"),
+                        traveler_count      = action_data.get("traveler_count", 1),
+                    )
+                    db.add(new_trip)
+                    await db.flush()
+
+                    # عمل TripDays
+                    if start_date:
+                        from datetime import date, timedelta
+                        for i in range(delta):
+                            db.add(TripDay(
+                                trip_id    = new_trip.trip_id,
+                                day_number = i + 1,
+                                date       = date.fromisoformat(start_date) + timedelta(days=i),
+                            ))
+
+                    # عمل Conversation
+                    new_conv = Conversation(
+                        conversation_id = str(uuid.uuid4()),
+                        trip_id         = new_trip.trip_id,
+                        user_id         = user_id,
+                    )
+                    db.add(new_conv)
+                    await db.flush()
+
+                    trip_id         = new_trip.trip_id
+                    conversation_id = new_conv.conversation_id
+
+                    await db.commit()
+
+                    # ← الفرق الأساسي: بعت trip_id للـ Flutter
+                    await websocket.send_json({
+                        "type":    "trip_created",
+                        "trip_id": trip_id,
+                    })
+
+            # ── احفظ رد الـ AI ────────────────────────────────────────────────
+            if conversation_id and full_response:
+                ai_msg = Message(
+                    message_id      = str(uuid.uuid4()),
+                    conversation_id = conversation_id,
+                    role            = MessageRole.assistant,
+                    content         = full_response,
+                    actions         = actions if actions else None,
+                )
+                db.add(ai_msg)
+                await db.commit()
+
+            # ── حدّث الـ history ──────────────────────────────────────────────
+            history_list.append({"role": "user",      "content": user_text})
+            history_list.append({"role": "assistant", "content": full_response})
+            if len(history_list) > 20:
+                history_list = history_list[-20:]
+
+    except WebSocketDisconnect:
+        manager.disconnect("new_" + user_id)
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # GET /chat/{trip_id}/history
