@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
 from app.core.database import get_db
 from app.core.security import get_current_user
 from app.models.user import User
@@ -8,48 +9,59 @@ import uuid
 
 router = APIRouter()
 
+
 @router.post("/register", response_model=UserResponse)
-def register(
-    body: RegisterRequest,
-    current_user: dict = Depends(get_current_user),
-    db: Session = Depends(get_db)
+async def register(
+    body:         RegisterRequest,
+    current_user: dict         = Depends(get_current_user),
+    db:           AsyncSession = Depends(get_db),
 ):
     firebase_uid = current_user["uid"]
-    email = current_user.get("email")
+    email        = current_user.get("email")
 
-    existing = db.query(User).filter(User.user_id == firebase_uid).first()
+    result = await db.execute(
+        select(User).where(User.user_id == firebase_uid)
+    )
+    existing = result.scalar_one_or_none()
+
     if existing:
         raise HTTPException(status_code=400, detail="User already exists")
 
     new_user = User(
-        user_id=firebase_uid,
-        email=email,
-        full_name=body.full_name,
-        phone=body.phone,
+        user_id   = firebase_uid,
+        email     = email,
+        full_name = body.full_name,
+        phone     = body.phone,
     )
     db.add(new_user)
-    db.commit()
-    db.refresh(new_user)
+    await db.commit()
+    await db.refresh(new_user)
     return new_user
 
+
 @router.post("/login")
-def login(user=Depends(get_current_user), db: Session = Depends(get_db)):
-
+async def login(
+    user: dict         = Depends(get_current_user),
+    db:   AsyncSession = Depends(get_db),
+):
     firebase_uid = user["uid"]
-    email = user.get("email")
+    email        = user.get("email")
 
-    db_user = db.query(User).filter(User.user_id == firebase_uid).first()
+    result = await db.execute(
+        select(User).where(User.user_id == firebase_uid)
+    )
+    db_user = result.scalar_one_or_none()
 
     if not db_user:
         db_user = User(
-            user_id=firebase_uid,
-            email=email,
-            role="user",
-            is_active=True
+            user_id   = firebase_uid,
+            email     = email,
+            role      = "user",
+            is_active = True,
         )
         db.add(db_user)
-        db.commit()
-        db.refresh(db_user)
+        await db.commit()
+        await db.refresh(db_user)
 
     return db_user
 
@@ -57,17 +69,17 @@ def login(user=Depends(get_current_user), db: Session = Depends(get_db)):
 """------------ Test Only ------------"""
 
 @router.post("/test-register")
-def test_register(
+async def test_register(
     body: RegisterRequest,
-    db: Session = Depends(get_db)
+    db:   AsyncSession = Depends(get_db),
 ):
     new_user = User(
-        user_id=str(uuid.uuid4()),
-        full_name=body.full_name,
-        phone=body.phone,
-        email=body.email,
+        user_id   = str(uuid.uuid4()),
+        full_name = body.full_name,
+        phone     = body.phone,
+        email     = body.email,
     )
     db.add(new_user)
-    db.commit()
-    db.refresh(new_user)
+    await db.commit()
+    await db.refresh(new_user)
     return new_user
