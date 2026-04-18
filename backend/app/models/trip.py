@@ -37,10 +37,17 @@ class Trip(Base):
     start_date          = Column(Date, nullable=False)
     end_date            = Column(Date, nullable=False)
     duration_days       = Column(Integer, default=1)
-    status              = Column(Enum(TripStatus), default=TripStatus.planning, nullable=False)
+    status              = Column(
+    Enum(TripStatus, name="trip_status"),
+    default=TripStatus.planning,
+    nullable=False
+)
     budget_total        = Column(Numeric(10, 2), nullable=True)
     traveler_count      = Column(Integer, default=1)
-    input_mode          = Column(Enum(InputMode), default=InputMode.ai_chat)
+    input_mode = Column(
+    Enum(InputMode, name="input_mode"), 
+    default=InputMode.ai_chat
+)
     created_at          = Column(DateTime, default=func.now())
  
     # Relationships
