@@ -75,8 +75,8 @@ class TripCreate(BaseModel):
     # user_id بييجي من الـ JWT — مش من الـ body
     destination_city:    str
     destination_country: str
-    start_date:          date
-    end_date:            date
+    start_date:          Optional[date]
+    end_date:            Optional[date]
     budget_total:        Optional[float] = None
     traveler_count:      Optional[int]   = 1
     input_mode:          Optional[InputMode] = InputMode.ai_chat
@@ -86,8 +86,8 @@ class TripResponse(BaseModel):
     user_id:             str
     destination_city:    str
     destination_country: str
-    start_date:          date
-    end_date:            date
+    start_date:          Optional[date]
+    end_date:            Optional[date]
     duration_days:       int
     status:              TripStatus
     budget_total:        Optional[float] = None
@@ -103,8 +103,8 @@ class TripSummary(BaseModel):
     trip_id:             str
     destination_city:    str
     destination_country: str
-    start_date:          date
-    end_date:            date
+    start_date:          Optional[date]
+    end_date:            Optional[date]
     duration_days:       int
     status:              TripStatus
 
