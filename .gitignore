@@ -252,6 +252,12 @@ app.*.symbols
 !**/android/gradle/wrapper/gradle-wrapper.jar
 !**/android/gradle/wrapper/gradle-wrapper.properties
 
+# Dart code generation (build_runner output)
+*.g.dart
+*.freezed.dart
+*.mocks.dart
+*.gen.dart
+
 
 # =============================================================================
 # SECRETS & CREDENTIALS
@@ -270,6 +276,10 @@ GoogleService-Info.plist
 firebase_options.dart
 service_account*.json
 *_credentials.json
+
+# Firebase CLI (contains live project IDs & hosting config)
+firebase.json
+.firebaserc
 
 # API keys / config (use .env.example as a safe template instead)
 config/secrets.yaml
