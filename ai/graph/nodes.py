@@ -1,5 +1,34 @@
 from ai.graph.state import TripState
 from ai.tools.profile_tool import load_mock_profile
+from ai.chat.intent_parser import parse_intent
+
+
+def intent_parser_node(state: TripState) -> TripState:
+    """
+    ENTRY NODE — Classifies user intent using Llama 3.1 8B.
+
+    Populates TripState with structured fields extracted from the raw
+    user_message so downstream agents don't need to re-parse text.
+    Sets intent_type to route the graph correctly in the next edge.
+    """
+    user_message = state.get("user_message", "")
+    print(f"[IntentParser] Parsing: {user_message[:80]}")
+
+    intent = parse_intent(user_message)
+
+    # Write extracted fields into shared state
+    state["intent_type"]           = intent.get("intent_type", "general_chat")
+    state["destination_city"]      = intent.get("destination_city")
+    state["destination_country"]   = intent.get("destination_country")
+    state["duration_days"]         = intent.get("duration_days")
+    state["travel_dates"]          = intent.get("travel_dates")
+    state["special_requests"]      = intent.get("special_requests")
+    state["missing_fields"]        = intent.get("missing_fields", [])
+
+    print(f"[IntentParser] intent_type={state['intent_type']}, "
+          f"destination={state['destination_city']}, "
+          f"duration={state['duration_days']}d")
+    return state
 
 
 # (state: TripState) → parameter state with type hint TripState (our shared dictionary type).

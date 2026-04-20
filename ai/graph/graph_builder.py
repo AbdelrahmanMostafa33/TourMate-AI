@@ -3,8 +3,16 @@
 from langgraph.graph import StateGraph, END
 
 from ai.graph.state import TripState
-from ai.graph.nodes import planning_node, optimization_node, validation_node, load_profile_node
+from ai.graph.nodes import (
+    planning_node, optimization_node, validation_node,
+    load_profile_node, intent_parser_node          
+)
 from ai.graph.edges import should_optimize, should_validate, should_retry_or_end
+
+
+def route_after_intent(state: TripState) -> str:
+    """Routes after intent parsing based on intent_type."""
+    return state.get("intent_type", "general_chat")
 
 
 def build_graph():
@@ -21,19 +29,28 @@ def build_graph():
     Returns a compiled graph object that FastAPI will call.
     """
     
-    # Step A: Create the blank graph, tell it what state shape to use
     graph = StateGraph(TripState)
-    
-    # Step B: Add each agent node to the graph
-    # First argument = the name you'll use in edges
-    # Second argument = the actual Python function to call
-    graph.add_node("load_profile", load_profile_node)
-    graph.add_node("planner", planning_node)
-    graph.add_node("optimizer", optimization_node)
-    graph.add_node("validator", validation_node)
-    
-    # Step C: Set the entry point — load profile runs FIRST
-    graph.set_entry_point("load_profile")
+
+    # Add the new entry node
+    graph.add_node("intent_parser", intent_parser_node)   # ← new
+    graph.add_node("load_profile",  load_profile_node)
+    graph.add_node("planner",       planning_node)
+    graph.add_node("optimizer",     optimization_node)
+    graph.add_node("validator",     validation_node)
+
+    # New entry point
+    graph.set_entry_point("intent_parser")
+
+    # Route based on intent
+    graph.add_conditional_edges(
+        "intent_parser",
+        route_after_intent,
+        {
+            "plan_trip":           "load_profile",   # full pipeline
+            "needs_clarification": END,              # Task 3.7 will handle this
+            "general_chat":        END,              # direct reply, no pipeline
+        }
+    )
 
     # Fixed edge: after profile loads, always go to planner
     graph.add_edge("load_profile", "planner")
