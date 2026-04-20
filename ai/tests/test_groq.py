@@ -1,9 +1,9 @@
 import sys
 from pathlib import Path
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from langchain_core.messages import HumanMessage
-from services.groq_client import get_planning_llm, get_fast_llm, analyze_image
+from ai.services.groq_client import get_planning_llm, get_fast_llm, analyze_image
+from ai.chat.intent_parser import parse_intent
 
 
 def test_groq_text():
@@ -102,8 +102,27 @@ def test_groq_vision():
     print(f"[OK] Vision response: {result}")
     assert result and len(result) > 0
 
+def test_intent_plan_trip():
+    result = parse_intent("Plan me a 3-day trip to Cairo")
+    assert result["intent_type"] == "plan_trip"
+    assert result["destination_city"].lower() == "cairo"
+    assert result["duration_days"] == 3
+    assert result["missing_fields"] == []
+
+def test_intent_needs_clarification():
+    result = parse_intent("I want to travel somewhere nice")
+    assert result["intent_type"] == "needs_clarification"
+    assert "destination" in result["missing_fields"]
+
+def test_intent_general_chat():
+    result = parse_intent("What's the best time to visit Egypt?")
+    assert result["intent_type"] == "general_chat"
 
 if __name__ == "__main__":
-    test_groq_text()
-    test_groq_fast()
-    test_groq_vision()
+    # test_groq_text()
+    # test_groq_fast()
+    # test_groq_vision()
+
+    test_intent_plan_trip()
+    test_intent_needs_clarification()
+    test_intent_general_chat()

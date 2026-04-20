@@ -114,6 +114,14 @@ class TripState(TypedDict):
     error: Optional[str]
     # Stores error message if any step fails
 
+    # Add these keys to the TripState TypedDict in ai/graph/state.py
+    intent_type:         str           # "plan_trip" | "needs_clarification" | "general_chat"
+    destination_city:    Optional[str]
+    destination_country: Optional[str]
+    duration_days:       Optional[int]
+    travel_dates:        Optional[str]
+    special_requests:    Optional[str]
+    missing_fields:      list[str]     # fields the user hasn't provided yet
 
     # ── Agent Trace / Debugging ─────────────────────────────────────
     agent_messages: Annotated[List[str], operator.add]
