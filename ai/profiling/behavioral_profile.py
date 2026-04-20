@@ -1,7 +1,7 @@
 # ai/profiling/behavioral_profile.py
 
 from typing import Optional
-from graph.state import BehavioralProfile
+from ai.graph.state import BehavioralProfile
 
 
 def get_slider_label(value: Optional[int], low_label: str, high_label: str, threshold: int = 50) -> str:
