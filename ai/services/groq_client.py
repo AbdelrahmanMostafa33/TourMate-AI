@@ -2,7 +2,7 @@ from langchain_groq import ChatGroq
 from langchain_core.messages import HumanMessage
 import base64
 
-from config.model_config import (
+from ai.config.model_config import (
     GROQ_VISION_MODEL,
     GROQ_PLANNING_MODEL,
     GROQ_FAST_MODEL,

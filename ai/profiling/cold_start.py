@@ -1,6 +1,6 @@
 # ai/profiling/cold_start.py
 
-from ai.services.gemini_client import get_gemini_llm
+from ai.services.groq_client import get_fast_llm
 from langchain_core.messages import HumanMessage
 import json
 
@@ -25,8 +25,8 @@ def generate_persona(quiz_data: dict) -> dict:
         - persona_bio: 2–3 sentence description of preferences
         - suggested_questions: Example queries to guide user interaction
     """
-    # Initialize LLM client (Gemini via LangChain wrapper)
-    llm = get_gemini_llm()
+    # Initialize LLM client (Groq via LangChain wrapper)
+    llm = get_fast_llm()
 
     # ── Convert structured quiz data into readable text ─────────────
     # These strings are injected into the prompt to give the LLM context

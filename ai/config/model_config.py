@@ -1,4 +1,4 @@
-from config.settings import settings
+from ai.config.settings import settings
 
 # Text & agent models
 GROQ_PLANNING_MODEL     = "llama-3.3-70b-versatile"
