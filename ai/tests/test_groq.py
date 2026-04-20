@@ -119,9 +119,9 @@ def test_intent_general_chat():
     assert result["intent_type"] == "general_chat"
 
 if __name__ == "__main__":
-    # test_groq_text()
-    # test_groq_fast()
-    # test_groq_vision()
+    test_groq_text()
+    test_groq_fast()
+    test_groq_vision()
 
     test_intent_plan_trip()
     test_intent_needs_clarification()
