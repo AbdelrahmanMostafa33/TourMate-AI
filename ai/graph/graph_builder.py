@@ -10,6 +10,11 @@ from ai.graph.nodes import (
 from ai.graph.edges import should_optimize, should_validate, should_retry_or_end
 
 
+def route_after_intent(state: TripState) -> str:
+    """Routes after intent parsing based on intent_type."""
+    return state.get("intent_type", "general_chat")
+
+
 def build_graph():
     """
     This function assembles the full agent graph.
