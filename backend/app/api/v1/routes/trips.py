@@ -8,37 +8,33 @@ import uuid
 from app.core.database import get_db
 from app.core.security import get_current_user
 from app.models.trip import Trip, TripDay, TripActivity
+from app.models.chat import Conversation, Message, MessageRole
 from app.schemas.trip import TripCreate, TripResponse, TripSummary, TripStatusUpdate
 
 router = APIRouter()
 
 
+# ─── Helper ──────────────────────────────────────────────────────────────────
 
 def build_auto_message(data: TripCreate, delta: int) -> str:
-    """Automatic trip message only — persona will be sent via WebSocket"""
-
     msg = (
         f"Plan my trip to {data.destination_city}, {data.destination_country} "
         f"for {delta} days"
     )
-
     if data.start_date and data.end_date:
         msg += f" from {data.start_date} to {data.end_date}"
-
     if data.traveler_count and data.traveler_count > 1:
         msg += f", for {data.traveler_count} travelers"
-
     if data.budget_total:
         msg += f", with a total budget of ${data.budget_total}"
-
     if data.preferences:
         msg += f", my preferences are: {data.preferences}"
-
     return msg
 
-# ═══════════════════════════════════════════════════════════════════════════════
-# POST /trips/  ← إنشاء رحلة جديدة
-# ═══════════════════════════════════════════════════════════════════════════════
+
+# ═════════════════════════════════════════════════════════════════════════════
+# POST /trips/
+# ═════════════════════════════════════════════════════════════════════════════
 
 @router.post("/")
 async def create_trip(
@@ -47,8 +43,14 @@ async def create_trip(
     db:           AsyncSession = Depends(get_db),
 ):
     user_id = current_user["uid"]
-    delta   = (data.end_date - data.start_date).days + 1
 
+    # ── حساب المدة ───────────────────────────────────────────────────────
+    if data.start_date and data.end_date:
+        delta = (data.end_date - data.start_date).days + 1
+    else:
+        delta = 1
+
+    # ── إنشاء Trip ───────────────────────────────────────────────────────
     trip = Trip(
         trip_id             = str(uuid.uuid4()),
         user_id             = user_id,
@@ -64,15 +66,44 @@ async def create_trip(
     db.add(trip)
     await db.flush()
 
-    for i in range(delta):
-        db.add(TripDay(
-            trip_id    = trip.trip_id,
-            day_number = i + 1,
-            date       = data.start_date + timedelta(days=i),
-        ))
+    # ── إنشاء الأيام ────────────────────────────────────────────────────
+    if data.start_date:
+        for i in range(delta):
+            db.add(TripDay(
+                trip_id    = trip.trip_id,
+                day_number = i + 1,
+                date       = data.start_date + timedelta(days=i),
+            ))
+    else:
+        for i in range(delta):
+            db.add(TripDay(
+                trip_id    = trip.trip_id,
+                day_number = i + 1,
+            ))
+
+    # ── إنشاء Conversation ───────────────────────────────────────────────
+    conversation = Conversation(
+        conversation_id = str(uuid.uuid4()),
+        trip_id         = trip.trip_id,
+        user_id         = user_id,
+    )
+    db.add(conversation)
+    await db.flush()
+
+    # ── بناء auto_message وحفظها كأول رسالة ──────────────────────────────
+    auto_message = build_auto_message(data, delta)
+
+    first_msg = Message(
+        message_id      = str(uuid.uuid4()),
+        conversation_id = conversation.conversation_id,
+        role            = MessageRole.user,
+        content         = auto_message,
+    )
+    db.add(first_msg)
 
     await db.commit()
 
+    # ── جيب الـ Trip كامل ────────────────────────────────────────────────
     result = await db.execute(
         select(Trip)
         .options(
@@ -83,16 +114,16 @@ async def create_trip(
     )
     trip_obj = result.scalar_one()
 
-    # ── auto_message عن الرحلة بس ─────────────────────────────
-    auto_message = build_auto_message(data, delta)
-
     response = TripResponse.model_validate(trip_obj).model_dump()
-    response["auto_message"] = auto_message
+    response["auto_message"]    = auto_message
+    response["conversation_id"] = conversation.conversation_id
 
     return response
-# ═══════════════════════════════════════════════════════════════════════════════
-# GET /trips/  ← كل رحلات اليوزر (summary)
-# ═══════════════════════════════════════════════════════════════════════════════
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# GET /trips/
+# ═════════════════════════════════════════════════════════════════════════════
 
 @router.get("/", response_model=list[TripSummary])
 async def get_all_trips(
@@ -106,9 +137,10 @@ async def get_all_trips(
     )
     return result.scalars().all()
 
-# ═══════════════════════════════════════════════════════════════════════════════
-# GET /trips/{trip_id}  ← بيانات رحلة معينة (كاملة)
-# ═══════════════════════════════════════════════════════════════════════════════
+
+# ═════════════════════════════════════════════════════════════════════════════
+# GET /trips/{trip_id}
+# ═════════════════════════════════════════════════════════════════════════════
 
 @router.get("/{trip_id}", response_model=TripResponse)
 async def get_trip(
@@ -133,9 +165,9 @@ async def get_trip(
     return trip
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
-# GET /trips/{trip_id}/itinerary  ← للخريطة (Flutter بيناديه لما يستقبل itinerary_updated)
-# ═══════════════════════════════════════════════════════════════════════════════
+# ═════════════════════════════════════════════════════════════════════════════
+# GET /trips/{trip_id}/itinerary
+# ═════════════════════════════════════════════════════════════════════════════
 
 @router.get("/{trip_id}/itinerary", response_model=TripResponse)
 async def get_itinerary(
@@ -160,9 +192,9 @@ async def get_itinerary(
     return trip
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
-# PATCH /trips/{trip_id}/status  ← تحديث status الرحلة
-# ═══════════════════════════════════════════════════════════════════════════════
+# ═════════════════════════════════════════════════════════════════════════════
+# PATCH /trips/{trip_id}/status
+# ═════════════════════════════════════════════════════════════════════════════
 
 @router.patch("/{trip_id}/status")
 async def update_trip_status(
