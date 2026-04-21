@@ -9,9 +9,11 @@ class TripStatus(str, Enum):
     active    = "active"
     completed = "completed"
 
+
 class InputMode(str, Enum):
     ai_chat = "ai_chat"
     manual  = "manual"
+
 
 class ActivityType(str, Enum):
     attraction = "attraction"
@@ -32,6 +34,7 @@ class ActivityCreate(BaseModel):
     time:           Optional[time]  = None
     duration_hours: Optional[float] = None
     notes:          Optional[str]   = None
+
 
 class ActivityResponse(BaseModel):
     activity_id:    int
@@ -58,6 +61,7 @@ class TripDayCreate(BaseModel):
     date:       Optional[date] = None
     activities: Optional[List[ActivityCreate]] = []
 
+
 class TripDayResponse(BaseModel):
     day_id:     int
     trip_id:    str
@@ -74,12 +78,13 @@ class TripDayResponse(BaseModel):
 class TripCreate(BaseModel):
     destination_city:    str
     destination_country: str
-    start_date:          Optional[date]
-    end_date:            Optional[date]
-    budget_total:        Optional[float]    = None
-    traveler_count:      Optional[int]      = 1
+    start_date:          Optional[date]  = None
+    end_date:            Optional[date]  = None
+    budget_total:        Optional[float] = None
+    traveler_count:      Optional[int]   = 1
     input_mode:          Optional[InputMode] = InputMode.ai_chat
-    preferences:         Optional[str]      = None      
+    preferences:         Optional[str]   = None
+
 
 class TripResponse(BaseModel):
     trip_id:             str
@@ -95,7 +100,8 @@ class TripResponse(BaseModel):
     input_mode:          InputMode
     created_at:          datetime
     days:                List[TripDayResponse] = []
-    auto_message:        Optional[str]  = None          
+    auto_message:        Optional[str] = None
+    conversation_id:     Optional[str] = None          # ← جديد
 
     class Config:
         from_attributes = True
@@ -112,6 +118,7 @@ class TripSummary(BaseModel):
 
     class Config:
         from_attributes = True
+
 
 class TripStatusUpdate(BaseModel):
     status: TripStatus
