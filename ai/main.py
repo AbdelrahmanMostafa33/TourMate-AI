@@ -1,6 +1,6 @@
 # ai/main.py
 
-from graph.graph_builder import trip_graph
+from ai.graph.graph_builder import trip_graph
 
 def test_skeleton():
     """

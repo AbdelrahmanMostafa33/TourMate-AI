@@ -1,0 +1,3 @@
+cd D:\Projects\TourMate-AI
+pip install -r ai/requirements.txt
+pip install -e .
