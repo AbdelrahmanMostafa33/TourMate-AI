@@ -174,166 +174,6 @@ async def get_or_create_conversation(
     return conversation
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
-# WS /ws/chat/{trip_id}?token=<firebase_token>
-# ═══════════════════════════════════════════════════════════════════════════════
-
-@router.websocket("/ws/chat/{trip_id}")
-async def websocket_chat(
-    trip_id:   str,
-    websocket: WebSocket,
-    token:     str          = Query(...),          # ← Firebase token كـ query param
-    db:        AsyncSession = Depends(get_db),
-):
-    # ── Auth: تحقق من الـ token قبل أي حاجة ─────────────────────────────────
-    user = verify_token(token)
-    if not user:
-        await websocket.close(code=4001)           # 4001 = Unauthorized
-        return
-
-    user_id = user["uid"]
-
-    await manager.connect(trip_id, websocket)
-    lock = manager.get_lock(trip_id)
-
-    try:
-        # ── جيب الـ Trip وتأكد إن اليوزر صاحبها ─────────────────────────────
-        result = await db.execute(
-            select(Trip)
-            .options(
-                selectinload(Trip.days)
-                .selectinload(TripDay.activities)
-            )
-            .where(
-                Trip.trip_id == trip_id,
-                Trip.user_id == user_id,            # ← ownership check
-            )
-        )
-        trip = result.scalar_one_or_none()
-        if not trip:
-            await manager.send(trip_id, {"type": "error", "data": "Trip not found"})
-            await websocket.close(code=4004)
-            return
-
-        # ── جيب أو أنشئ Conversation ─────────────────────────────────────────
-        conversation = await get_or_create_conversation(trip_id, user_id, db)
-        await db.commit()
-
-        while True:
-            # ── استقبل رسالة من الموبايل ─────────────────────────────────────
-            data      = await websocket.receive_json()
-            user_text = data.get("message", "").strip()
-            if not user_text:
-                continue
-
-            # ── احفظ رسالة اليوزر ────────────────────────────────────────────
-            user_msg = Message(
-                message_id      = str(uuid.uuid4()),
-                conversation_id = conversation.conversation_id,
-                role            = MessageRole.user,
-                content         = user_text,
-            )
-            db.add(user_msg)
-            await db.commit()
-
-            # ── Lock: منع رسالتين يتعالجوا في نفس الوقت ─────────────────────
-            async with lock:
-
-                # ── جيب آخر 10 رسايل كـ context ─────────────────────────────
-                history_result = await db.execute(
-                    select(Message)
-                    .where(Message.conversation_id == conversation.conversation_id)
-                    .order_by(Message.created_at.desc())
-                    .limit(10)
-                )
-                history_list = [
-                    {"role": m.role.value, "content": m.content}
-                    for m in reversed(history_result.scalars().all())
-                ]
-
-                # ── جيب الـ UserProfile ───────────────────────────────────────
-                profile_result = await db.execute(
-                    select(UserProfile).where(UserProfile.user_id == user_id)
-                )
-                profile      = profile_result.scalar_one_or_none()
-                profile_data = {}
-                if profile:
-                    profile_data = {
-                        "persona_name":       profile.persona_name,
-                        "interests":          profile.interests,
-                        "budget_level":       profile.budget_level,
-                        "adventure_relaxing": profile.adventure_relaxing,
-                        "travel_companion":   profile.travel_companion,
-                    }
-
-                # ── جيب الـ trip snapshot ─────────────────────────────────────
-                await db.refresh(trip)
-                trip_snapshot = build_trip_snapshot(trip)
-
-                # ── بعت "typing" للموبايل ─────────────────────────────────────
-                await manager.send(trip_id, {"type": "typing"})
-
-                # ── كلم الـ AI (Streaming) ────────────────────────────────────
-                full_response = ""
-                actions       = []
-
-                try:
-                    from ai.chat.chat_handler import handle_message_stream
-                    async for chunk in handle_message_stream({
-                        "message":      user_text,
-                        "user_profile": profile_data,
-                        "history":      history_list,
-                        "trip_data":    trip_snapshot,
-                    }):
-                        if chunk["type"] == "text":
-                            full_response += chunk["content"]
-                            await manager.send(trip_id, {
-                                "type": "token",
-                                "data": chunk["content"],
-                            })
-                        elif chunk["type"] == "actions":
-                            actions = chunk["data"]
-
-                except Exception:
-                    # Placeholder لحد ما الـ AI Team يخلصوا
-                    full_response = "تمام! جاري تجهيز الرحلة... (AI placeholder)"
-                    for token_chunk in full_response.split():
-                        await manager.send(trip_id, {
-                            "type": "token",
-                            "data": token_chunk + " ",
-                        })
-
-                # ── بعت "done" ───────────────────────────────────────────────
-                await manager.send(trip_id, {"type": "done", "data": None})
-
-                # ── نفذ الـ actions على الـ DB ────────────────────────────────
-                await db.refresh(trip)
-                updated_actions = await execute_actions(actions, trip, db)
-
-                # ── احفظ رد الـ AI ────────────────────────────────────────────
-                ai_msg = Message(
-                    message_id      = str(uuid.uuid4()),
-                    conversation_id = conversation.conversation_id,
-                    role            = MessageRole.assistant,
-                    content         = full_response,
-                    actions         = updated_actions if updated_actions else None,
-                )
-                db.add(ai_msg)
-                await db.commit()
-
-                # ── لو فيه أماكن جديدة، بعت إشارة للخريطة ───────────────────
-                if updated_actions:
-                    await manager.send(trip_id, {
-                        "type": "actions",
-                        "data": updated_actions,
-                    })
-                    await manager.send(trip_id, {"type": "itinerary_updated"})
-
-    except WebSocketDisconnect:
-        manager.disconnect(trip_id)
-        
-#-------------------------------------------------------------------------------------
-
 @router.websocket("/ws/chat/new")
 async def websocket_new_chat(
     websocket: WebSocket,
@@ -531,6 +371,166 @@ async def websocket_new_chat(
 
     except WebSocketDisconnect:
         manager.disconnect(ws_key)
+# ═══════════════════════════════════════════════════════════════════════════════
+# WS /ws/chat/{trip_id}?token=<firebase_token>
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@router.websocket("/ws/chat/{trip_id}")
+async def websocket_chat(
+    trip_id:   str,
+    websocket: WebSocket,
+    token:     str          = Query(...),          # ← Firebase token كـ query param
+    db:        AsyncSession = Depends(get_db),
+):
+    # ── Auth: تحقق من الـ token قبل أي حاجة ─────────────────────────────────
+    user = verify_token(token)
+    if not user:
+        await websocket.close(code=4001)           # 4001 = Unauthorized
+        return
+
+    user_id = user["uid"]
+
+    await manager.connect(trip_id, websocket)
+    lock = manager.get_lock(trip_id)
+
+    try:
+        # ── جيب الـ Trip وتأكد إن اليوزر صاحبها ─────────────────────────────
+        result = await db.execute(
+            select(Trip)
+            .options(
+                selectinload(Trip.days)
+                .selectinload(TripDay.activities)
+            )
+            .where(
+                Trip.trip_id == trip_id,
+                Trip.user_id == user_id,            # ← ownership check
+            )
+        )
+        trip = result.scalar_one_or_none()
+        if not trip:
+            await manager.send(trip_id, {"type": "error", "data": "Trip not found"})
+            await websocket.close(code=4004)
+            return
+
+        # ── جيب أو أنشئ Conversation ─────────────────────────────────────────
+        conversation = await get_or_create_conversation(trip_id, user_id, db)
+        await db.commit()
+
+        while True:
+            # ── استقبل رسالة من الموبايل ─────────────────────────────────────
+            data      = await websocket.receive_json()
+            user_text = data.get("message", "").strip()
+            if not user_text:
+                continue
+
+            # ── احفظ رسالة اليوزر ────────────────────────────────────────────
+            user_msg = Message(
+                message_id      = str(uuid.uuid4()),
+                conversation_id = conversation.conversation_id,
+                role            = MessageRole.user,
+                content         = user_text,
+            )
+            db.add(user_msg)
+            await db.commit()
+
+            # ── Lock: منع رسالتين يتعالجوا في نفس الوقت ─────────────────────
+            async with lock:
+
+                # ── جيب آخر 10 رسايل كـ context ─────────────────────────────
+                history_result = await db.execute(
+                    select(Message)
+                    .where(Message.conversation_id == conversation.conversation_id)
+                    .order_by(Message.created_at.desc())
+                    .limit(10)
+                )
+                history_list = [
+                    {"role": m.role.value, "content": m.content}
+                    for m in reversed(history_result.scalars().all())
+                ]
+
+                # ── جيب الـ UserProfile ───────────────────────────────────────
+                profile_result = await db.execute(
+                    select(UserProfile).where(UserProfile.user_id == user_id)
+                )
+                profile      = profile_result.scalar_one_or_none()
+                profile_data = {}
+                if profile:
+                    profile_data = {
+                        "persona_name":       profile.persona_name,
+                        "interests":          profile.interests,
+                        "budget_level":       profile.budget_level,
+                        "adventure_relaxing": profile.adventure_relaxing,
+                        "travel_companion":   profile.travel_companion,
+                    }
+
+                # ── جيب الـ trip snapshot ─────────────────────────────────────
+                await db.refresh(trip)
+                trip_snapshot = build_trip_snapshot(trip)
+
+                # ── بعت "typing" للموبايل ─────────────────────────────────────
+                await manager.send(trip_id, {"type": "typing"})
+
+                # ── كلم الـ AI (Streaming) ────────────────────────────────────
+                full_response = ""
+                actions       = []
+
+                try:
+                    from ai.chat.chat_handler import handle_message_stream
+                    async for chunk in handle_message_stream({
+                        "message":      user_text,
+                        "user_profile": profile_data,
+                        "history":      history_list,
+                        "trip_data":    trip_snapshot,
+                    }):
+                        if chunk["type"] == "text":
+                            full_response += chunk["content"]
+                            await manager.send(trip_id, {
+                                "type": "token",
+                                "data": chunk["content"],
+                            })
+                        elif chunk["type"] == "actions":
+                            actions = chunk["data"]
+
+                except Exception:
+                    # Placeholder لحد ما الـ AI Team يخلصوا
+                    full_response = "تمام! جاري تجهيز الرحلة... (AI placeholder)"
+                    for token_chunk in full_response.split():
+                        await manager.send(trip_id, {
+                            "type": "token",
+                            "data": token_chunk + " ",
+                        })
+
+                # ── بعت "done" ───────────────────────────────────────────────
+                await manager.send(trip_id, {"type": "done", "data": None})
+
+                # ── نفذ الـ actions على الـ DB ────────────────────────────────
+                await db.refresh(trip)
+                updated_actions = await execute_actions(actions, trip, db)
+
+                # ── احفظ رد الـ AI ────────────────────────────────────────────
+                ai_msg = Message(
+                    message_id      = str(uuid.uuid4()),
+                    conversation_id = conversation.conversation_id,
+                    role            = MessageRole.assistant,
+                    content         = full_response,
+                    actions         = updated_actions if updated_actions else None,
+                )
+                db.add(ai_msg)
+                await db.commit()
+
+                # ── لو فيه أماكن جديدة، بعت إشارة للخريطة ───────────────────
+                if updated_actions:
+                    await manager.send(trip_id, {
+                        "type": "actions",
+                        "data": updated_actions,
+                    })
+                    await manager.send(trip_id, {"type": "itinerary_updated"})
+
+    except WebSocketDisconnect:
+        manager.disconnect(trip_id)
+        
+#-------------------------------------------------------------------------------------
+
 # ═══════════════════════════════════════════════════════════════════════════════
 # GET /chat/{trip_id}/history
 # ═══════════════════════════════════════════════════════════════════════════════
