@@ -10,9 +10,10 @@ class Settings(BaseSettings):
 
     model_config = ConfigDict(
         env_file=str(BASE_DIR / ".env"),
-        env_file_encoding="utf-8"
+        env_file_encoding="utf-8",
+        extra="ignore"
     )
-
+    
     backend_base_url: str = "http://localhost:8000"
 
 settings = Settings()
