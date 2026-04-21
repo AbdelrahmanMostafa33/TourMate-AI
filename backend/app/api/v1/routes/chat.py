@@ -190,15 +190,36 @@ async def get_profile_data(user_id: str, db: AsyncSession) -> dict:
         select(UserProfile).where(UserProfile.user_id == user_id)
     )
     profile = profile_result.scalar_one_or_none()
-    if profile:
-        return {
-            "persona_name":       profile.persona_name,
-            "interests":          profile.interests,
-            "budget_level":       profile.budget_level,
-            "adventure_relaxing": profile.adventure_relaxing,
-            "travel_companion":   profile.travel_companion,
-        }
-    return {}
+
+    if not profile:
+        return {}
+
+    return {
+        # ── Basic Info ───────────────────────────────────────────────
+        "age":                  profile.age,
+        "sex":                  profile.sex,
+        "travel_companion":     profile.travel_companion,
+        "location":             profile.location,
+
+        # ── Sliders ──────────────────────────────────────────────────
+        "adventure_relaxing":   profile.adventure_relaxing,
+        "nature_culture":       profile.nature_culture,
+        "popular_local":        profile.popular_local,
+        "budget_level":         profile.budget_level,
+        "early_night":          profile.early_night,
+        "independent_social":   profile.independent_social,
+
+        # ── Multi-select ─────────────────────────────────────────────
+        "accommodation_styles": profile.accommodation_styles or [],
+        "dining_preferences":   profile.dining_preferences or [],
+        "interests":            profile.interests or [],
+        "traveler_types":       profile.traveler_types or [],
+
+        # ── AI Persona ───────────────────────────────────────────────
+        "persona_name":         profile.persona_name,
+        "persona_bio":          profile.persona_bio,
+        "suggested_questions":  profile.suggested_questions or [],
+    }
 
 
 # ═════════════════════════════════════════════════════════════════════════════

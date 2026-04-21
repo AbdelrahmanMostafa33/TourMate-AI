@@ -1,37 +1,44 @@
-from sqlalchemy import Column, String, Integer, JSON, DateTime, Boolean,ForeignKey
+# app/models/profile.py
+
+from sqlalchemy import (
+    Column, String, Integer, Float, Text, DateTime, ForeignKey, JSON
+)
+from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
+
 from app.core.database import Base
+
 
 class UserProfile(Base):
     __tablename__ = "user_profiles"
 
-    user_id          = Column(String, ForeignKey("users.user_id"), primary_key=True)
+    profile_id          = Column(Integer, primary_key=True, autoincrement=True)
+    user_id             = Column(String, ForeignKey("users.user_id"), nullable=False, unique=True, index=True)
 
-    age              = Column(Integer)
-    sex              = Column(String)
-    travel_companion = Column(String)
-    location         = Column(String)
+    # ── Basic Info ───────────────────────────────────────────────────────
+    age                 = Column(Integer, nullable=True)
+    sex                 = Column(String, nullable=True)
+    travel_companion    = Column(String, nullable=True)
+    location            = Column(String, nullable=True)
 
-    # Sliders
-    adventure_relaxing  = Column(Integer)
-    nature_culture      = Column(Integer)
-    popular_local       = Column(Integer)
-    budget_level        = Column(Integer)
-    early_night         = Column(Integer)
-    independent_social  = Column(Integer)
+    # ── Sliders (0–100) ─────────────────────────────────────────────────
+    adventure_relaxing  = Column(Integer, nullable=True)
+    nature_culture      = Column(Integer, nullable=True)
+    popular_local       = Column(Integer, nullable=True)
+    budget_level        = Column(Integer, nullable=True)
+    early_night         = Column(Integer, nullable=True)
+    independent_social  = Column(Integer, nullable=True)
 
-    # Multi-select
-    accommodation_styles = Column(JSON)
-    dining_preferences   = Column(JSON)
-    interests            = Column(JSON)
-    traveler_types       = Column(JSON)
+    # ── Multi-select (JSON arrays) ───────────────────────────────────────
+    accommodation_styles = Column(JSON, nullable=True)    # ["hotel", "hostel", "airbnb"]
+    dining_preferences   = Column(JSON, nullable=True)    # ["street_food", "fine_dining"]
+    interests            = Column(JSON, nullable=True)    # ["history", "food", "beaches"]
+    traveler_types       = Column(JSON, nullable=True)    # ["solo", "backpacker"]
 
-    # Persona
-    persona_name        = Column(String, nullable=True)
-    persona_bio         = Column(String, nullable=True)
-    suggested_questions = Column(JSON, nullable=True)
+    # ── AI-Generated Persona ─────────────────────────────────────────────
+    persona_name         = Column(String, nullable=True)
+    persona_bio          = Column(Text, nullable=True)
+    suggested_questions  = Column(JSON, nullable=True)    # ["What's the best...", ...]
 
-    # Flag
-    quiz_completed = Column(Boolean, default=False)
-    created_at     = Column(DateTime, server_default=func.now())
-    updated_at     = Column(DateTime, onupdate=func.now())
+    created_at           = Column(DateTime, default=func.now())
+    updated_at           = Column(DateTime, default=func.now(), onupdate=func.now())
