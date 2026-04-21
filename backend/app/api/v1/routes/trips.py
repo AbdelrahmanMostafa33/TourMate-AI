@@ -13,6 +13,29 @@ from app.schemas.trip import TripCreate, TripResponse, TripSummary, TripStatusUp
 router = APIRouter()
 
 
+
+def build_auto_message(data: TripCreate, delta: int) -> str:
+    """Automatic trip message only — persona will be sent via WebSocket"""
+
+    msg = (
+        f"Plan my trip to {data.destination_city}, {data.destination_country} "
+        f"for {delta} days"
+    )
+
+    if data.start_date and data.end_date:
+        msg += f" from {data.start_date} to {data.end_date}"
+
+    if data.traveler_count and data.traveler_count > 1:
+        msg += f", for {data.traveler_count} travelers"
+
+    if data.budget_total:
+        msg += f", with a total budget of ${data.budget_total}"
+
+    if data.preferences:
+        msg += f", my preferences are: {data.preferences}"
+
+    return msg
+
 # ═══════════════════════════════════════════════════════════════════════════════
 # POST /trips/  ← إنشاء رحلة جديدة
 # ═══════════════════════════════════════════════════════════════════════════════

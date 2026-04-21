@@ -29,7 +29,7 @@ class ActivityCreate(BaseModel):
     latitude:       Optional[float] = None
     longitude:      Optional[float] = None
     order_in_day:   Optional[int]   = None
-    time:           Optional[time]  = None  # type: ignore
+    time:           Optional[time]  = None
     duration_hours: Optional[float] = None
     notes:          Optional[str]   = None
 
@@ -38,7 +38,7 @@ class ActivityResponse(BaseModel):
     day_id:         int
     name:           str
     type:           ActivityType
-    time:           Optional[time]   = None  # type: ignore
+    time:           Optional[time]   = None
     duration_hours: Optional[float]  = None
     notes:          Optional[str]    = None
     order_in_day:   Optional[int]    = None
@@ -55,14 +55,14 @@ class ActivityResponse(BaseModel):
 
 class TripDayCreate(BaseModel):
     day_number: int
-    date:       Optional[date] = None  # type: ignore
+    date:       Optional[date] = None
     activities: Optional[List[ActivityCreate]] = []
 
 class TripDayResponse(BaseModel):
     day_id:     int
     trip_id:    str
     day_number: int
-    date: date | None
+    date:       date | None
     activities: List[ActivityResponse] = []
 
     class Config:
@@ -72,14 +72,14 @@ class TripDayResponse(BaseModel):
 # ─── Trip ────────────────────────────────────────────────────────────────────
 
 class TripCreate(BaseModel):
-    # user_id بييجي من الـ JWT — مش من الـ body
     destination_city:    str
     destination_country: str
     start_date:          Optional[date]
     end_date:            Optional[date]
-    budget_total:        Optional[float] = None
-    traveler_count:      Optional[int]   = 1
+    budget_total:        Optional[float]    = None
+    traveler_count:      Optional[int]      = 1
     input_mode:          Optional[InputMode] = InputMode.ai_chat
+    preferences:         Optional[str]      = None      
 
 class TripResponse(BaseModel):
     trip_id:             str
@@ -95,9 +95,11 @@ class TripResponse(BaseModel):
     input_mode:          InputMode
     created_at:          datetime
     days:                List[TripDayResponse] = []
+    auto_message:        Optional[str]  = None          
 
     class Config:
         from_attributes = True
+
 
 class TripSummary(BaseModel):
     trip_id:             str
