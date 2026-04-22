@@ -131,7 +131,7 @@ embeddings_cache/
 *.pkl
 
 # Local LLM model weights
-models/
+/models/
 *.gguf
 *.bin
 *.safetensors
