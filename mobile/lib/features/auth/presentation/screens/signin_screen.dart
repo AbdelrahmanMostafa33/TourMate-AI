@@ -3,6 +3,7 @@ import 'package:flutter/gestures.dart';
 import '../../../../core/auth/firebase_auth_service.dart';
 import '../../../../core/network/service_locator.dart';
 import '../../data/repository/auth_repository.dart';
+import '../../data/repository/profile_repository.dart';
 import '../widgets/custom_textfield.dart';
 import '../../../../core/errors/auth_error_handler.dart';
 
@@ -20,44 +21,58 @@ class _SignInScreenState extends State<SignInScreen> {
 
   bool loading = false;
 
-  Future<void> login() async {
+Future<void> login() async {
+  setState(() => loading = true);
 
-    setState(() => loading = true);
+  try {
+    final firebase = locator<FirebaseAuthService>();
+    final profileRepo = locator<ProfileRepository>();
+    final authRepo = locator<AuthRepository>();
+    /// 1. Firebase login
+    await firebase.signIn(
+      emailController.text,
+      passwordController.text,
+    );
 
-    try {
+    /// 2. Backend login (GET USER DATA)    
+    await authRepo.login();
+    final profile = await profileRepo.getProfile();
+    if (!mounted) return;
 
-      final firebase =
-          locator<FirebaseAuthService>();
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text("Login successful")),
+    );
 
-      final repo =
-          locator<AuthRepository>();
+    /// 3. NAVIGATION LOGIC 🔥
+    profile.when(
+    success: (profile) {
+    if (profile.quizCompleted) {
+      Navigator.pushReplacementNamed(context, "/profile");
+    } else {
+      Navigator.pushReplacementNamed(context, "/quiz-decision");
+      }
+    },
+    failure: (message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: Colors.red,
+      ),
+    );
+  },
+);
 
-      /// Firebase login
-      await firebase.signIn(
-        emailController.text,
-        passwordController.text,
-      );
-
-      /// Backend login
-      await repo.login();
-
-      if(!mounted) return;
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Login successful")),
-      );
-
-    } catch(e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(handleAuthError(e)),    // ✅ nice
-          backgroundColor: Colors.red.shade700,
-        ),
-      );
-    }
-
-    setState(() => loading = false);
+  } catch (e) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(handleAuthError(e)),
+        backgroundColor: Colors.red.shade700,
+      ),
+    );
   }
+
+  setState(() => loading = false);
+}
 
 Future<void> googleLogin() async {
 
@@ -67,6 +82,7 @@ Future<void> googleLogin() async {
 
     final firebase = locator<FirebaseAuthService>();
     final repo = locator<AuthRepository>();
+    final profileRepo = locator<ProfileRepository>();
 
     await firebase.signInWithGoogle();
 
@@ -74,9 +90,27 @@ Future<void> googleLogin() async {
 
     if(!mounted) return;
 
+    final profile = await profileRepo.getProfile();
+    if (!mounted) return;
+
+    /// 3. NAVIGATION LOGIC 🔥
+    profile.when(
+    success: (profile) {
+    if (profile.quizCompleted) {
+      Navigator.pushReplacementNamed(context, "/profile");
+    } else {
+      Navigator.pushReplacementNamed(context, "/quiz-decision");
+      }
+    },
+    failure: (message) {
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text("Google Login successful")),
+      SnackBar(
+        content: Text(message),
+        backgroundColor: Colors.red,
+      ),
     );
+  },
+);
 
   } catch(e) {
     ScaffoldMessenger.of(context).showSnackBar(

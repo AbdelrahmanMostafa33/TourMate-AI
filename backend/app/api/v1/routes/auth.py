@@ -7,6 +7,8 @@ from app.models.user import User
 from app.schemas.user import RegisterRequest, UserResponse
 import uuid
 
+from app.services.profile_service import save_default_persona
+
 router = APIRouter()
 
 
@@ -36,6 +38,8 @@ async def register(
     db.add(new_user)
     await db.commit()
     await db.refresh(new_user)
+
+    await save_default_persona(firebase_uid, db)
     return new_user
 
 

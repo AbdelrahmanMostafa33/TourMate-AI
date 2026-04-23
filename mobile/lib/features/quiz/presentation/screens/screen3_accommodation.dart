@@ -6,7 +6,8 @@ import '../widgets/save_exit_button.dart';
 
 class Screen3Accommodation extends StatefulWidget {
   final QuizAnswers answers;
-  final VoidCallback onNext, onBack, onSaveExit;
+  final VoidCallback onNext, onBack;
+  final Future<void> Function() onSaveExit;
 
   const Screen3Accommodation({
     super.key,

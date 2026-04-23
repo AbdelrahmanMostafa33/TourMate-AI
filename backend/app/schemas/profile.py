@@ -27,6 +27,7 @@ class PersonaResponse(BaseModel):
     persona_bio: str          
     interests: List[str]
     suggested_questions: List[str]
+    quiz_completed: bool
 
     class Config:
         from_attributes = True
