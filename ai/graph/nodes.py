@@ -134,3 +134,31 @@ def load_profile_node(state: TripState) -> TripState:
 
     print(f"[LoadProfile] Profile loaded: {profile.get('persona_name', 'unknown persona')}")
     return state
+
+def vision_node(state: TripState) -> TripState:
+    """
+    VISION NODE — Processes a user-uploaded image via Groq Vision (Llama 4 Scout).
+
+    Runs the full vision pipeline in one call:
+      1. analyze_travel_image()  — sends image to Groq VLM, gets raw JSON
+      2. extract_features()      — validates and types the raw JSON
+      3. fuse_vision_into_state()— merges features into TripState
+
+    Skips silently if no image was uploaded (image_bytes is None or empty),
+    so text-only requests flow through the graph unchanged.
+
+    Runs AFTER load_profile_node and BEFORE intent_parser_node so that
+    vision-enriched interests and budget are available when the planner runs.
+    """
+    from ai.vision.multimodal_fusion import run_vision_pipeline
+
+    image_bytes = state.get("image_bytes")
+
+    if not image_bytes:
+        print("[VisionNode] No image in state — skipping vision pipeline.")
+        # Ensure the field exists in state even when unused
+        state["image_features"] = None
+        return state
+
+    print(f"[VisionNode] Image found ({len(image_bytes):,} bytes) — running vision pipeline...")
+    return run_vision_pipeline(state, image_bytes)

@@ -123,6 +123,18 @@ class TripState(TypedDict):
     special_requests:    Optional[str]
     missing_fields:      list[str]     # fields the user hasn't provided yet
 
+
+    # ── Vision / Multimodal Input ───────────────────────────────────
+    image_bytes: Optional[bytes]
+    # Raw bytes of the image uploaded by the user (JPEG or PNG).
+    # Set by the API layer before the graph runs; consumed by vision_node.
+    # Set to None when the request is text-only.
+
+    image_features: Optional[dict]
+    # Validated VisualFeatures dict produced by the vision pipeline.
+    # Written by vision_node via multimodal_fusion.fuse_vision_into_state().
+    # None until the vision node has run (or when no image was uploaded).
+
     # ── Agent Trace / Debugging ─────────────────────────────────────
     agent_messages: Annotated[List[str], operator.add]
     """

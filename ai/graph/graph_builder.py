@@ -5,7 +5,7 @@ from langgraph.graph import StateGraph, END
 from ai.graph.state import TripState
 from ai.graph.nodes import (
     planning_node, optimization_node, validation_node,
-    load_profile_node, intent_parser_node          
+    load_profile_node, intent_parser_node, vision_node
 )
 from ai.graph.edges import should_optimize, should_validate, should_retry_or_end
 
@@ -34,6 +34,7 @@ def build_graph():
     # Add the new entry node
     graph.add_node("intent_parser", intent_parser_node)   # ← new
     graph.add_node("load_profile",  load_profile_node)
+    graph.add_node("vision",        vision_node)       # Sprint 3 — Task 3.6
     graph.add_node("planner",       planning_node)
     graph.add_node("optimizer",     optimization_node)
     graph.add_node("validator",     validation_node)
@@ -52,8 +53,11 @@ def build_graph():
         }
     )
 
-    # Fixed edge: after profile loads, always go to planner
-    graph.add_edge("load_profile", "planner")
+    # Fixed edges: profile → vision → planner
+    # vision_node self-skips when no image_bytes are present,
+    # so text-only requests pass through it unchanged.
+    graph.add_edge("load_profile", "vision")
+    graph.add_edge("vision",       "planner")
     
     # Step D: Add conditional edges (arrows with decision logic)
     # "After planner runs, call should_optimize() to decide next node"
