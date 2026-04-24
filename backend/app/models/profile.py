@@ -1,7 +1,7 @@
 # app/models/profile.py
 
 from sqlalchemy import (
-    Column, String, Integer, Float, Text, DateTime, ForeignKey, JSON
+    Column, String, Integer, Float, Text, DateTime, ForeignKey, JSON, Boolean 
 )
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
@@ -42,3 +42,5 @@ class UserProfile(Base):
 
     created_at           = Column(DateTime, default=func.now())
     updated_at           = Column(DateTime, default=func.now(), onupdate=func.now())
+    
+    quiz_completed = Column(Boolean, default=False, nullable=False)

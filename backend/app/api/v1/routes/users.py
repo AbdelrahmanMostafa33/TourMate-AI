@@ -1,6 +1,5 @@
-from http.client import HTTPException
 from app.models.profile import UserProfile
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException 
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db

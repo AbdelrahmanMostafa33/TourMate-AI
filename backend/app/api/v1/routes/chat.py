@@ -12,6 +12,7 @@ from app.models.trip import Trip, TripDay, TripActivity
 from app.models.chat import Conversation, Message, MessageRole
 from app.models.profile import UserProfile
 from app.ws.manager import manager
+from datetime import time as dt_time
 
 router = APIRouter()
 
@@ -51,7 +52,22 @@ def build_trip_snapshot(trip: Trip) -> dict:
         ],
     }
 
+#--------------------------------------------------------
 
+
+def parse_time(raw_time) -> dt_time | None:
+    """حوّل أي شكل time لـ datetime.time object"""
+    if raw_time is None:
+        return None
+    if isinstance(raw_time, dt_time):
+        return raw_time
+    if isinstance(raw_time, str):
+        try:
+            parts = raw_time.strip().split(":")
+            return dt_time(int(parts[0]), int(parts[1]))
+        except (ValueError, IndexError):
+            return None
+    return None
 # ═════════════════════════════════════════════════════════════════════════════
 # Helper: نفذ الـ actions على الـ DB
 # ═════════════════════════════════════════════════════════════════════════════
@@ -94,7 +110,7 @@ async def execute_actions(actions: list, trip: Trip, db: AsyncSession) -> list:
                 day_id         = day.day_id,
                 name           = data.get("name", ""),
                 type           = data.get("type", "attraction"),
-                time           = data.get("time"),
+                time = parse_time(data.get("time")),
                 duration_hours = data.get("duration_hours"),
                 notes          = data.get("notes"),
                 order_in_day   = data.get("order_in_day", 0),
