@@ -44,3 +44,5 @@ class UserProfile(Base):
     updated_at           = Column(DateTime, default=func.now(), onupdate=func.now())
     
     quiz_completed = Column(Boolean, default=False, nullable=False)
+ #  Relationship to User
+    user = relationship("User", back_populates="profile")

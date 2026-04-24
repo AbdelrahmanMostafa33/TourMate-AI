@@ -4,10 +4,9 @@ from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.core.security import get_current_user
-from app.schemas.profile import PersonaResponse
-from app.schemas.profile import QuizSubmitRequest
+from app.schemas.profile import QuizSubmitRequest,FullProfileResponse,PersonaResponse
 from app.services.profile_service import save_quiz, save_default_persona
-
+from app.models.user import User
 router = APIRouter()
 
 
@@ -109,38 +108,58 @@ def update_interests(
     db.commit()
     return {"message": "Profile updated successfully"}
 
-@router.get("/profile/full")
-def get_full_profile(
+@router.get("/profile/full", response_model=FullProfileResponse)
+def get_profile(
     current_user: dict = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     user_id = current_user["uid"]
+
+    # Get User
+    user = db.query(User).filter(User.user_id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    # Get Profile (might not exist if user hasn't taken or skipped quiz)
     profile = db.query(UserProfile).filter(
         UserProfile.user_id == user_id
     ).first()
-    if not profile:
-        raise HTTPException(status_code=404, detail="Profile not found")
-    return {
-        # Persona
-        "persona_name": profile.persona_name,
-        "persona_bio": profile.persona_bio,
-        "suggested_questions": profile.suggested_questions,
-        "quiz_completed": profile.quiz_completed,
-        # Basic Info
-        "age": profile.age,
-        "sex": profile.sex,
-        "travel_companion": profile.travel_companion,
-        "location": profile.location,
+
+    # ── Build response ──
+    return FullProfileResponse(
+        # User info (always available)
+        user_id=user.user_id,
+        full_name=user.full_name,
+        email=user.email,
+        phone=user.phone,
+        role=user.role,
+        is_active=user.is_active,
+
+        # Quiz status
+        quiz_completed=profile.quiz_completed if profile else False,
+
+        # Persona (only if profile exists)
+        persona_name=profile.persona_name if profile else None,
+        persona_bio=profile.persona_bio if profile else None,
+        suggested_questions=profile.suggested_questions if profile else None,
+
+        # Basic info
+        age=profile.age if profile else None,
+        sex=profile.sex if profile else None,
+        travel_companion=profile.travel_companion if profile else None,
+        location=profile.location if profile else None,
+
         # Sliders
-        "adventure_relaxing": profile.adventure_relaxing,
-        "nature_culture": profile.nature_culture,
-        "popular_local": profile.popular_local,
-        "budget_level": profile.budget_level,
-        "early_night": profile.early_night,
-        "independent_social": profile.independent_social,
+        adventure_relaxing=profile.adventure_relaxing if profile else None,
+        nature_culture=profile.nature_culture if profile else None,
+        popular_local=profile.popular_local if profile else None,
+        budget_level=profile.budget_level if profile else None,
+        early_night=profile.early_night if profile else None,
+        independent_social=profile.independent_social if profile else None,
+
         # Multi-select
-        "accommodation_styles": profile.accommodation_styles,
-        "dining_preferences": profile.dining_preferences,
-        "interests": profile.interests,
-        "traveler_types": profile.traveler_types,
-    }
+        accommodation_styles=profile.accommodation_styles if profile else None,
+        dining_preferences=profile.dining_preferences if profile else None,
+        interests=profile.interests if profile else None,
+        traveler_types=profile.traveler_types if profile else None,
+    )
