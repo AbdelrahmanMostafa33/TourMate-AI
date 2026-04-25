@@ -287,7 +287,7 @@ async def process_message(
     actions       = []
 
     try:
-        from ai.chat.chat_handler import handle_message_stream
+        from ai_engine.chat.chat_handler import handle_message_stream
         async for chunk in handle_message_stream({
             "message":      user_text,
             "user_profile": profile_data,
@@ -574,7 +574,7 @@ async def websocket_new_chat(
             actions       = []
 
             try:
-                from ai.chat.chat_handler import handle_message_stream
+                from ai_engine.chat.chat_handler import handle_message_stream
                 async for chunk in handle_message_stream({
                     "message":      user_text,
                     "user_profile": profile_data,

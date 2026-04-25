@@ -1,8 +1,21 @@
+# === Backend ===
 fastapi
 uvicorn
 sqlalchemy
 asyncpg
-psycopg2-binary
-python-dotenv
+alembic
+pydantic
 pydantic-settings
+python-jose
+passlib
+bcrypt
+redis
 firebase-admin
+python-multipart
+httpx
+
+# === AI Engine ===
+langgraph
+langchain-core
+langchain-groq
+Pillow

@@ -2,7 +2,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from app.models.profile import UserProfile
 from app.schemas.profile import QuizSubmitRequest
-from ai.profiling.cold_start import generate_persona
+from ai_engine.profiling.cold_start import generate_persona
 
 
 async def save_quiz(user_id: str, data: QuizSubmitRequest, db: AsyncSession) -> UserProfile:
