@@ -11,7 +11,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from ai_engine.profiling.cold_start import generate_persona, build_default_persona
 from ai_engine.tools.profile_tool import load_mock_profile
 from ai_engine.graph.state import BehavioralProfile
-from ai_engine.graph.graph_builder import build_graph
+from ai_engine.graph.graph_builder import build_trip_graph
 
 
 def test_generate_persona_with_gemini():
@@ -125,7 +125,7 @@ def test_graph_runs_with_mock_profile():
     - No errors are raised
     """
 
-    graph = build_graph()
+    graph = build_trip_graph()
 
     initial_state = {
         "user_id": "test_user_001",
