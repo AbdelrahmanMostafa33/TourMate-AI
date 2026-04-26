@@ -20,7 +20,7 @@ mixin _$ProfileState {
   TResult when<TResult extends Object?>({
     required TResult Function() initial,
     required TResult Function() loading,
-    required TResult Function(PersonaResponse data) success,
+    required TResult Function(FullProfileResponse data) success,
     required TResult Function(String message) error,
   }) =>
       throw _privateConstructorUsedError;
@@ -28,7 +28,7 @@ mixin _$ProfileState {
   TResult? whenOrNull<TResult extends Object?>({
     TResult? Function()? initial,
     TResult? Function()? loading,
-    TResult? Function(PersonaResponse data)? success,
+    TResult? Function(FullProfileResponse data)? success,
     TResult? Function(String message)? error,
   }) =>
       throw _privateConstructorUsedError;
@@ -36,7 +36,7 @@ mixin _$ProfileState {
   TResult maybeWhen<TResult extends Object?>({
     TResult Function()? initial,
     TResult Function()? loading,
-    TResult Function(PersonaResponse data)? success,
+    TResult Function(FullProfileResponse data)? success,
     TResult Function(String message)? error,
     required TResult orElse(),
   }) =>
@@ -126,7 +126,7 @@ class _$InitialImpl implements _Initial {
   TResult when<TResult extends Object?>({
     required TResult Function() initial,
     required TResult Function() loading,
-    required TResult Function(PersonaResponse data) success,
+    required TResult Function(FullProfileResponse data) success,
     required TResult Function(String message) error,
   }) {
     return initial();
@@ -137,7 +137,7 @@ class _$InitialImpl implements _Initial {
   TResult? whenOrNull<TResult extends Object?>({
     TResult? Function()? initial,
     TResult? Function()? loading,
-    TResult? Function(PersonaResponse data)? success,
+    TResult? Function(FullProfileResponse data)? success,
     TResult? Function(String message)? error,
   }) {
     return initial?.call();
@@ -148,7 +148,7 @@ class _$InitialImpl implements _Initial {
   TResult maybeWhen<TResult extends Object?>({
     TResult Function()? initial,
     TResult Function()? loading,
-    TResult Function(PersonaResponse data)? success,
+    TResult Function(FullProfileResponse data)? success,
     TResult Function(String message)? error,
     required TResult orElse(),
   }) {
@@ -240,7 +240,7 @@ class _$LoadingImpl implements _Loading {
   TResult when<TResult extends Object?>({
     required TResult Function() initial,
     required TResult Function() loading,
-    required TResult Function(PersonaResponse data) success,
+    required TResult Function(FullProfileResponse data) success,
     required TResult Function(String message) error,
   }) {
     return loading();
@@ -251,7 +251,7 @@ class _$LoadingImpl implements _Loading {
   TResult? whenOrNull<TResult extends Object?>({
     TResult? Function()? initial,
     TResult? Function()? loading,
-    TResult? Function(PersonaResponse data)? success,
+    TResult? Function(FullProfileResponse data)? success,
     TResult? Function(String message)? error,
   }) {
     return loading?.call();
@@ -262,7 +262,7 @@ class _$LoadingImpl implements _Loading {
   TResult maybeWhen<TResult extends Object?>({
     TResult Function()? initial,
     TResult Function()? loading,
-    TResult Function(PersonaResponse data)? success,
+    TResult Function(FullProfileResponse data)? success,
     TResult Function(String message)? error,
     required TResult orElse(),
   }) {
@@ -320,7 +320,7 @@ abstract class _$$SuccessImplCopyWith<$Res> {
           _$SuccessImpl value, $Res Function(_$SuccessImpl) then) =
       __$$SuccessImplCopyWithImpl<$Res>;
   @useResult
-  $Res call({PersonaResponse data});
+  $Res call({FullProfileResponse data});
 }
 
 /// @nodoc
@@ -340,7 +340,7 @@ class __$$SuccessImplCopyWithImpl<$Res>
       null == data
           ? _value.data
           : data // ignore: cast_nullable_to_non_nullable
-              as PersonaResponse,
+              as FullProfileResponse,
     ));
   }
 }
@@ -351,7 +351,7 @@ class _$SuccessImpl implements _Success {
   const _$SuccessImpl(this.data);
 
   @override
-  final PersonaResponse data;
+  final FullProfileResponse data;
 
   @override
   String toString() {
@@ -380,7 +380,7 @@ class _$SuccessImpl implements _Success {
   TResult when<TResult extends Object?>({
     required TResult Function() initial,
     required TResult Function() loading,
-    required TResult Function(PersonaResponse data) success,
+    required TResult Function(FullProfileResponse data) success,
     required TResult Function(String message) error,
   }) {
     return success(data);
@@ -391,7 +391,7 @@ class _$SuccessImpl implements _Success {
   TResult? whenOrNull<TResult extends Object?>({
     TResult? Function()? initial,
     TResult? Function()? loading,
-    TResult? Function(PersonaResponse data)? success,
+    TResult? Function(FullProfileResponse data)? success,
     TResult? Function(String message)? error,
   }) {
     return success?.call(data);
@@ -402,7 +402,7 @@ class _$SuccessImpl implements _Success {
   TResult maybeWhen<TResult extends Object?>({
     TResult Function()? initial,
     TResult Function()? loading,
-    TResult Function(PersonaResponse data)? success,
+    TResult Function(FullProfileResponse data)? success,
     TResult Function(String message)? error,
     required TResult orElse(),
   }) {
@@ -451,9 +451,9 @@ class _$SuccessImpl implements _Success {
 }
 
 abstract class _Success implements ProfileState {
-  const factory _Success(final PersonaResponse data) = _$SuccessImpl;
+  const factory _Success(final FullProfileResponse data) = _$SuccessImpl;
 
-  PersonaResponse get data;
+  FullProfileResponse get data;
   @JsonKey(ignore: true)
   _$$SuccessImplCopyWith<_$SuccessImpl> get copyWith =>
       throw _privateConstructorUsedError;
@@ -525,7 +525,7 @@ class _$ErrorImpl implements _Error {
   TResult when<TResult extends Object?>({
     required TResult Function() initial,
     required TResult Function() loading,
-    required TResult Function(PersonaResponse data) success,
+    required TResult Function(FullProfileResponse data) success,
     required TResult Function(String message) error,
   }) {
     return error(message);
@@ -536,7 +536,7 @@ class _$ErrorImpl implements _Error {
   TResult? whenOrNull<TResult extends Object?>({
     TResult? Function()? initial,
     TResult? Function()? loading,
-    TResult? Function(PersonaResponse data)? success,
+    TResult? Function(FullProfileResponse data)? success,
     TResult? Function(String message)? error,
   }) {
     return error?.call(message);
@@ -547,7 +547,7 @@ class _$ErrorImpl implements _Error {
   TResult maybeWhen<TResult extends Object?>({
     TResult Function()? initial,
     TResult Function()? loading,
-    TResult Function(PersonaResponse data)? success,
+    TResult Function(FullProfileResponse data)? success,
     TResult Function(String message)? error,
     required TResult orElse(),
   }) {

@@ -2,20 +2,17 @@ import 'package:flutter/material.dart';
 import '../../data/models/quiz_answers.dart';
 import '../widgets/nav_buttons.dart';
 import '../widgets/quiz_scaffold.dart';
-import '../widgets/save_exit_button.dart';
 import '../widgets/slider_toggle.dart';
 
 class Screen2Vacation extends StatefulWidget {
   final QuizAnswers answers;
   final VoidCallback onNext, onBack;
-  final Future<void> Function() onSaveExit;
 
   const Screen2Vacation({
     super.key,
     required this.answers,
     required this.onNext,
     required this.onBack,
-    required this.onSaveExit,
   });
 
   @override
@@ -63,7 +60,6 @@ class _Screen2VacationState extends State<Screen2Vacation> {
                     style: TextStyle(fontSize: 32, fontWeight: FontWeight.bold),
                   ),
                 ),
-                SaveExitButton(onTap: widget.onSaveExit),
               ],
             ),
           ),

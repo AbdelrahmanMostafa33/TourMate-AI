@@ -1,6 +1,5 @@
 import 'package:freezed_annotation/freezed_annotation.dart';
-
-import '../../quiz/data/models/persona_response.dart';
+import 'package:tourmate/features/auth/data/models/full_profile_response.dart';
 
 
 part 'profile_state.freezed.dart';
@@ -11,7 +10,7 @@ class ProfileState with _$ProfileState {
 
   const factory ProfileState.loading() = _Loading;
 
-  const factory ProfileState.success(PersonaResponse data) = _Success;
+  const factory ProfileState.success(FullProfileResponse data) = _Success;
 
   const factory ProfileState.error(String message) = _Error;
 }

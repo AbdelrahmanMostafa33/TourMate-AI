@@ -1,6 +1,7 @@
 import 'package:dio/dio.dart';
 import 'package:retrofit/retrofit.dart';
 
+import '../../features/auth/data/models/full_profile_response.dart';
 import '../../features/auth/data/models/register_request.dart';
 import '../../features/auth/data/models/user_response.dart';
 import '../../features/quiz/data/models/persona_response.dart';
@@ -23,8 +24,8 @@ abstract class ApiServices {
       );
 
   /// GET PROFILE
-  @GET("/v1/users/profile")
-  Future<PersonaResponse> getProfile();
+  @GET("/v1/users/profile/full")
+  Future<FullProfileResponse> getProfile();
 
   /// QUIZ SKIP
   @POST("/v1/users/quiz/skip")

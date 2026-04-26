@@ -1,13 +1,13 @@
 import '../../../../core/errors/api_result.dart';
 import '../../../../core/network/api_services.dart';
-import '../../../quiz/data/models/persona_response.dart';
+import '../models/full_profile_response.dart';
 
 class ProfileRepository {
   final ApiServices api;
 
   ProfileRepository(this.api);
 
-  Future<ApiResult<PersonaResponse>> getProfile() async {
+  Future<ApiResult<FullProfileResponse>> getProfile() async {
     try {
       final res = await api.getProfile();
       return ApiResult.success(res);
@@ -15,4 +15,5 @@ class ProfileRepository {
       return ApiResult.failure(e.toString());
     }
   }
+
 }

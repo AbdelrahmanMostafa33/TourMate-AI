@@ -3,19 +3,16 @@ import '../../data/models/quiz_answers.dart';
 import '../widgets/choice_chip2.dart';
 import '../widgets/nav_buttons.dart';
 import '../widgets/quiz_scaffold.dart';
-import '../widgets/save_exit_button.dart';
 
 class Screen5Dining extends StatefulWidget {
   final QuizAnswers answers;
   final VoidCallback onNext, onBack;
-  final Future<void> Function() onSaveExit;
 
   const Screen5Dining({
     super.key,
     required this.answers,
     required this.onNext,
     required this.onBack,
-    required this.onSaveExit,
   });
 
   @override
@@ -28,25 +25,21 @@ class _Screen5DiningState extends State<Screen5Dining> {
 
   final List<String> _options = [
     'Fine Dining & Gourmet',
-    'Beach',
+    'Casual Dining',
     'Local Street Food',
-    'Cafes/Bistros',
+    'Cafes & Bistros',
     'Family Restaurants',
-    'Vegetarian / Vegan Eateries',
+    'Vegetarian / Vegan',
     'Ethnic Cuisine',
     'Food Trucks',
-    'Nightlife',
-    'Wine Tasting',
-    'Cooking Classes',
-    'Fine Dining',
-    'Shopping',
-    'Water Sports',
-    'Cycling',
-    'Pub / Tavern',
-    'Bakeries',
+    'Buffet Dining',
+    'Fast Food',
+    'Seafood Restaurants',
+    'BBQ & Grills',
+    'Bakeries & Desserts',
     'Coffee Shops',
     'Farm-to-Table',
-    'Food Casual',
+    'Pub / Tavern Dining',
   ];
 
   @override
@@ -119,7 +112,6 @@ class _Screen5DiningState extends State<Screen5Dining> {
                     style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
                   ),
                 ),
-                SaveExitButton(onTap: widget.onSaveExit),
               ],
             ),
           ),

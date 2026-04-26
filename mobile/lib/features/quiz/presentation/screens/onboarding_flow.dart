@@ -36,32 +36,31 @@ class _OnboardingQuizFlowState extends State<OnboardingQuizFlow> {
     Screen1Basics(answers: _answers, onNext: _next),
     Screen2Vacation(
       answers: _answers, onNext: _next,
-      onBack: _back, onSaveExit: _saveAndExit,
+      onBack: _back,
     ),
     Screen3Accommodation(
       answers: _answers, onNext: _next,
-      onBack: _back, onSaveExit: _saveAndExit,
+      onBack: _back,
     ),
     Screen4Activities(
       answers: _answers, onNext: _next,
-      onBack: _back, onSaveExit: _saveAndExit,
+      onBack: _back,
     ),
     Screen5Dining(
       answers: _answers, onNext: _next,
-      onBack: _back, onSaveExit: _saveAndExit,
+      onBack: _back,
     ),
     Screen6Interests(
       answers: _answers, onNext: _next,
-      onBack: _back, onSaveExit: _saveAndExit,
+      onBack: _back,
     ),
     Screen7TravelerType(
       answers: _answers,
-      onNext: _submitAndGoToSummary, // 🔥 calls API then navigates
+      onNext: _submitAndGoToSummary, // calls API then navigates
       onBack: _back,
-      onSaveExit: _saveAndExit,
     ),
     Screen8Summary(
-      persona: _personaResponse, // 🔥 pass persona instead of answers
+      persona: _personaResponse, // pass persona instead of answers
       onStartChat: _finish,
       onBack: _back,
     ),
@@ -126,31 +125,6 @@ class _OnboardingQuizFlowState extends State<OnboardingQuizFlow> {
     );
   }
 
-  // ── Save & Exit → skipQuiz then show Screen 8 ───────────
-  Future<void> _saveAndExit() async {
-    setState(() => _isLoading = true);
-
-    final result = await _quizRepo.skipQuiz();
-
-    if (!mounted) return;
-
-    result.when(
-      success: (persona) {
-        _personaResponse = persona;
-        _isForward = true;
-        setState(() {
-          _isLoading = false;
-          _currentScreen = _screens().length - 1; // jump to Screen 8
-        });
-      },
-      failure: (msg) {
-        setState(() => _isLoading = false);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Something went wrong: $msg')),
-        );
-      },
-    );
-  }
 
   // ── finish → leave quiz ──────────────────────────────────
   void _finish() {

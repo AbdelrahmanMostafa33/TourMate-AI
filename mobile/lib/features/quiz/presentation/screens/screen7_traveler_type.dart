@@ -3,19 +3,16 @@ import '../../data/models/quiz_answers.dart';
 import '../widgets/choice_chip2.dart';
 import '../widgets/nav_buttons.dart';
 import '../widgets/quiz_scaffold.dart';
-import '../widgets/save_exit_button.dart';
 
 class Screen7TravelerType extends StatefulWidget {
   final QuizAnswers answers;
   final Future<void> Function() onNext;
   final VoidCallback onBack;
-  final Future<void> Function() onSaveExit;
   const Screen7TravelerType({
     super.key,
     required this.answers,
     required this.onNext,
     required this.onBack,
-    required this.onSaveExit,
   });
 
   @override
@@ -95,7 +92,6 @@ class _Screen7TravelerTypeState extends State<Screen7TravelerType> {
                     style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
                   ),
                 ),
-                SaveExitButton(onTap: widget.onSaveExit),
               ],
             ),
           ),

@@ -1,5 +1,4 @@
 import 'package:flutter_bloc/flutter_bloc.dart';
-import '../../quiz/data/models/persona_response.dart';
 import '../data/repository/profile_repository.dart';
 import 'profile_state.dart';
 
@@ -15,7 +14,7 @@ class ProfileCubit extends Cubit<ProfileState> {
     final result = await repo.getProfile();
 
     result.when(
-      success: (PersonaResponse data) {
+      success: (data) {
         emit(ProfileState.success(data));
       },
       failure: (String message) {
@@ -23,6 +22,7 @@ class ProfileCubit extends Cubit<ProfileState> {
       },
     );
   }
+
 
   /// Optional: Refresh (same as fetch but reusable)
   Future<void> refreshProfile() async {

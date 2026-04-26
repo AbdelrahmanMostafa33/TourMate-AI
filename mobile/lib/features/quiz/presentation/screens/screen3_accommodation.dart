@@ -2,19 +2,16 @@ import 'package:flutter/material.dart';
 import '../../data/models/quiz_answers.dart';
 import '../widgets/nav_buttons.dart';
 import '../widgets/quiz_scaffold.dart';
-import '../widgets/save_exit_button.dart';
 
 class Screen3Accommodation extends StatefulWidget {
   final QuizAnswers answers;
   final VoidCallback onNext, onBack;
-  final Future<void> Function() onSaveExit;
 
   const Screen3Accommodation({
     super.key,
     required this.answers,
     required this.onNext,
     required this.onBack,
-    required this.onSaveExit,
   });
 
   @override
@@ -128,7 +125,6 @@ class _Screen3AccommodationState extends State<Screen3Accommodation> {
                           ),
                         ),
                       ),
-                      SaveExitButton(onTap: widget.onSaveExit),
                     ],
                   ),
                 ),
