@@ -36,19 +36,19 @@ class QuizSubmitRequest {
   });
 
   Map<String, dynamic> toJson() => {
-        'age': age,
-        'sex': sex,
-        'travel_companion': travelCompanion,
-        'location': location,
-        'adventure_relaxing': adventureRelaxing,
-        'nature_culture': natureCulture,
-        'popular_local': popularLocal,
-        'budget_level': budgetLevel,
-        'early_night': earlyNight,
-        'independent_social': independentSocial,
-        'accommodation_styles': accommodationStyles,
-        'dining_preferences': diningPreferences,
-        'interests': interests,
-        'traveler_types': travelerTypes,
-      };
+    'age': age,
+    'sex': sex,
+    'travel_companion': travelCompanion,
+    'location': location,
+    'adventure_relaxing': adventureRelaxing,
+    'nature_culture': natureCulture,
+    'popular_local': popularLocal,
+    'budget_level': budgetLevel,
+    'early_night': earlyNight,
+    'independent_social': independentSocial,
+    'accommodation_styles': accommodationStyles,
+    'dining_preferences': diningPreferences,
+    'interests': interests,
+    'traveler_types': travelerTypes,
+  };
 }

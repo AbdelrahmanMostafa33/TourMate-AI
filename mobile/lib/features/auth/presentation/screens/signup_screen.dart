@@ -2,6 +2,7 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import '../../../../../core/auth/firebase_auth_service.dart';
 import '../../../../../core/network/service_locator.dart';
+import '../../../quiz/data/repository/quiz_repository.dart';
 import '../../data/models/register_request.dart';
 import '../../data/repository/auth_repository.dart';
 import '../widgets/custom_textfield.dart';
@@ -33,8 +34,12 @@ class _SignUpScreenState extends State<SignUpScreen> {
       final firebase =
       locator<FirebaseAuthService>();
 
-      final repo =
+      final authRepo =
       locator<AuthRepository>();
+
+      final quizRepo =
+      locator<QuizRepository>();
+
 
       /// 1️⃣ create firebase user
       await firebase.signUp(
@@ -43,7 +48,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
       );
 
       /// 2️⃣ register in backend
-      await repo.register(
+      await authRepo.register(
         RegisterRequest(
           fullName: nameController.text,
           phone: phoneController.text,
@@ -51,6 +56,8 @@ class _SignUpScreenState extends State<SignUpScreen> {
       );
 
       if (!mounted) return;
+
+      await quizRepo.skipQuiz();
 
       Navigator.pushReplacementNamed(
         context,

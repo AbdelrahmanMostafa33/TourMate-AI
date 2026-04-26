@@ -37,6 +37,13 @@
             {
               "client_id": "419367078732-v9n3vnh32rd4jsafc9ch2knbrug2dfqv.apps.googleusercontent.com",
               "client_type": 3
+            },
+            {
+              "client_id": "419367078732-0iqtkb7q5jm6vin1ci2pbi4q8voc0l2k.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.example.tourmate"
+              }
             }
           ]
         }

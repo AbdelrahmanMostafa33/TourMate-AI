@@ -7,7 +7,8 @@ import '../widgets/slider_toggle.dart';
 
 class Screen4Activities extends StatefulWidget {
   final QuizAnswers answers;
-  final VoidCallback onNext, onBack, onSaveExit;
+  final VoidCallback onNext, onBack;
+  final Future<void> Function() onSaveExit;
 
   const Screen4Activities({
     super.key,

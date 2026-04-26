@@ -10,7 +10,7 @@ class MyApp extends StatelessWidget {
       title: 'My App',
       debugShowCheckedModeBanner: false,
       onGenerateRoute: AppRouter.generateRoute,
-      initialRoute: '/quiz',
+      initialRoute: '/',
     );
   }
 }

@@ -7,7 +7,8 @@ import '../widgets/slider_toggle.dart';
 
 class Screen2Vacation extends StatefulWidget {
   final QuizAnswers answers;
-  final VoidCallback onNext, onBack, onSaveExit;
+  final VoidCallback onNext, onBack;
+  final Future<void> Function() onSaveExit;
 
   const Screen2Vacation({
     super.key,

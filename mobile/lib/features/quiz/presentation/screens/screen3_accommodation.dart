@@ -6,7 +6,8 @@ import '../widgets/save_exit_button.dart';
 
 class Screen3Accommodation extends StatefulWidget {
   final QuizAnswers answers;
-  final VoidCallback onNext, onBack, onSaveExit;
+  final VoidCallback onNext, onBack;
+  final Future<void> Function() onSaveExit;
 
   const Screen3Accommodation({
     super.key,
@@ -78,8 +79,8 @@ class _Screen3AccommodationState extends State<Screen3Accommodation> {
 
               final exists =
                   _selected.contains(value) ||
-                  _options.any((e) => e['label'] == value) ||
-                  _customOptions.contains(value);
+                      _options.any((e) => e['label'] == value) ||
+                      _customOptions.contains(value);
 
               if (value.isNotEmpty && !exists) {
                 setState(() {

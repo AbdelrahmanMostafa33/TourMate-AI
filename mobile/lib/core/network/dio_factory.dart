@@ -1,5 +1,5 @@
 import 'package:dio/dio.dart';
-import '../storage/token_storage.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 
 class DioFactory {
 
@@ -20,10 +20,11 @@ class DioFactory {
       InterceptorsWrapper(
         onRequest: (options, handler) async {
 
-          final token = await TokenStorage.getToken();
+          final user = FirebaseAuth.instance.currentUser;
 
-          if (token != null) {
-            options.headers['Authorization'] = "Bearer $token";
+          if (user != null) {
+            final token = await user.getIdToken();
+            options.headers['Authorization'] = 'Bearer $token';
           }
 
           return handler.next(options);

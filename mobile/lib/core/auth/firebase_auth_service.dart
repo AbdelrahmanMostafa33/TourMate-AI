@@ -1,6 +1,9 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 
+import '../../features/quiz/data/repository/quiz_repository.dart';
+import '../network/service_locator.dart';
+
 class FirebaseAuthService {
 
   final FirebaseAuth _auth = FirebaseAuth.instance;
@@ -33,6 +36,11 @@ class FirebaseAuthService {
 
     final GoogleSignInAuthentication googleAuth =
         await googleUser.authentication;
+
+    final quizRepo =
+    locator<QuizRepository>();
+
+    await quizRepo.skipQuiz();
 
     final credential = GoogleAuthProvider.credential(
       accessToken: googleAuth.accessToken,

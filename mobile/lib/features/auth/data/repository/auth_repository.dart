@@ -12,15 +12,11 @@ class AuthRepository {
 
   Future<UserResponse> login() async {
 
-    final token = await firebase.getToken();
-
-    return await api.login("Bearer $token");
+    return await api.login();
   }
 
   Future<UserResponse> register(RegisterRequest body) async {
 
-    final token = await firebase.getToken();
-
-    return await api.register("Bearer $token",body);
+    return await api.register(body);
   }
 }

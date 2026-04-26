@@ -7,8 +7,9 @@ import '../widgets/save_exit_button.dart';
 
 class Screen7TravelerType extends StatefulWidget {
   final QuizAnswers answers;
-  final VoidCallback onNext, onBack, onSaveExit;
-
+  final Future<void> Function() onNext;
+  final VoidCallback onBack;
+  final Future<void> Function() onSaveExit;
   const Screen7TravelerType({
     super.key,
     required this.answers,

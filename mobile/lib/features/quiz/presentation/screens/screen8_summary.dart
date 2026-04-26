@@ -1,16 +1,27 @@
 import 'package:flutter/material.dart';
-import '../../data/models/quiz_answers.dart';
+import '../../data/models/persona_response.dart';
 import '../widgets/choice_chip2.dart';
 import '../widgets/nav_buttons.dart';
 
 class Screen8Summary extends StatelessWidget {
-  final QuizAnswers answers;
+  final PersonaResponse? persona;
   final VoidCallback onStartChat, onBack;
-  const Screen8Summary(
-      {super.key, required this.answers, required this.onStartChat, required this.onBack});
+
+  const Screen8Summary({
+    super.key,
+    required this.persona,
+    required this.onStartChat,
+    required this.onBack,
+  });
 
   @override
   Widget build(BuildContext context) {
+    // Fallback if persona is somehow null (shouldn't happen)
+    final name = persona?.personaName ?? 'The Open Explorer';
+    final bio = persona?.personaBio ?? '';
+    final interests = persona?.interests ?? [];
+    final questions = persona?.suggestedQuestions ?? [];
+
     return Scaffold(
       backgroundColor: Colors.white,
       body: SafeArea(
@@ -19,7 +30,7 @@ class Screen8Summary extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Hero
+              // ── Hero banner ──
               Container(
                 height: 180,
                 decoration: BoxDecoration(
@@ -34,37 +45,82 @@ class Screen8Summary extends StatelessWidget {
                   child: Icon(Icons.nightlife, size: 72, color: Colors.white),
                 ),
               ),
+
               const SizedBox(height: 24),
+
+              // ── Persona name ──
               Text(
-                'Adventurous\nIndependent ${answers.earlyNight == 100 ? "Nightowl" : "${answers.diningPreferences.join(", ")}!"}',
-                style: const TextStyle(fontSize: 26, fontWeight: FontWeight.bold),
+                name,
+                style: const TextStyle(
+                  fontSize: 26,
+                  fontWeight: FontWeight.bold,
+                ),
               ),
+
               const SizedBox(height: 16),
+
+              // ── Persona bio ──
               Text(
-                'I thrive on exciting adventures and cultural discoveries, embracing spontaneous explorations and always seeking out local experiences — especially after dark.',
-                style: TextStyle(fontSize: 14, color: Colors.grey.shade700, height: 1.5),
+                bio,
+                style: TextStyle(
+                  fontSize: 14,
+                  color: Colors.grey.shade700,
+                  height: 1.5,
+                ),
               ),
-              const SizedBox(height: 8),
-              TextButton(
-                onPressed: () {},
-                style: TextButton.styleFrom(padding: EdgeInsets.zero),
-                child: const Text('Read more', style: TextStyle(color: Colors.black, fontWeight: FontWeight.w600)),
-              ),
-              if (answers.interests.isNotEmpty) ...[
-                const SizedBox(height: 16),
-                const Text('Interests', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+
+              // ── Interests ──
+              if (interests.isNotEmpty) ...[
+                const SizedBox(height: 24),
+                const Text(
+                  'Interests',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                ),
                 const SizedBox(height: 10),
                 Wrap(
                   spacing: 10,
                   runSpacing: 10,
-                  children: answers.interests
+                  children: interests
                       .take(5)
-                      .map((i) => ChoiceChip2(label: i, selected: true, onTap: () {}))
+                      .map((i) => ChoiceChip2(
+                    label: i,
+                    selected: true,
+                    onTap: () {},
+                  ))
                       .toList(),
                 ),
               ],
+
+              // ── Suggested questions ──
+              if (questions.isNotEmpty) ...[
+                const SizedBox(height: 24),
+                const Text(
+                  'Try asking…',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 10),
+                ...questions.map(
+                      (q) => Padding(
+                    padding: const EdgeInsets.only(bottom: 8),
+                    child: Text(
+                      '• $q',
+                      style: TextStyle(
+                        fontSize: 14,
+                        color: Colors.grey.shade700,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+
               const SizedBox(height: 32),
-              NavButtons(onBack: onBack, onNext: onStartChat, nextLabel: 'Start chatting'),
+
+              // ── Nav buttons ──
+              NavButtons(
+                onBack: onBack,
+                onNext: onStartChat,
+                nextLabel: 'Start chatting',
+              ),
             ],
           ),
         ),
