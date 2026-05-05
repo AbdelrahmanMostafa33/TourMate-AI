@@ -121,6 +121,7 @@ class TripState(TypedDict):
     duration_days:       Optional[int]
     travel_dates:        Optional[str]
     special_requests:    Optional[str]
+    group_size:          Optional[int]
     missing_fields:      list[str]     # fields the user hasn't provided yet
 
     # ── Agent Trace / Debugging ─────────────────────────────────────
