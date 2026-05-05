@@ -1,4 +1,4 @@
-import '../../../../core/auth/firebase_auth_service.dart';
+import '../datasource/firebase_auth_service.dart';
 import '../../../../core/network/api_services.dart';
 import '../models/register_request.dart';
 import '../models/user_response.dart';

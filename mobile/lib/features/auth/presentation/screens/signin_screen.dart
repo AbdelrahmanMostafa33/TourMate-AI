@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/gestures.dart';
-import '../../../../core/auth/firebase_auth_service.dart';
+import '../../data/datasource/firebase_auth_service.dart';
 import '../../../../core/network/service_locator.dart';
 import '../../../quiz/data/repository/quiz_repository.dart';
 import '../../data/repository/auth_repository.dart';
@@ -48,7 +48,7 @@ class _SignInScreenState extends State<SignInScreen> {
       profile.when(
         success: (profile) {
           if (profile.quizCompleted) {
-            Navigator.pushReplacementNamed(context, "/profile");
+            Navigator.pushReplacementNamed(context, "/chat");
           } else {
             Navigator.pushReplacementNamed(context, "/quiz-decision");
           }

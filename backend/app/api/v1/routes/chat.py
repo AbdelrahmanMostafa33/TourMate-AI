@@ -305,7 +305,7 @@ async def process_message(
 
     except Exception:
         # ══════════════════════════════════════════════════════════════
-        # MOCK placeholder 
+        # MOCK placeholder
         # ══════════════════════════════════════════════════════════════
         full_response = (
             "Here's your trip plan! 🎉\n\n"
@@ -416,89 +416,6 @@ async def process_message(
         await manager.send(ws_key, {"type": "itinerary_updated"})
 
 
-# ═════════════════════════════════════════════════════════════════════════════
-# WS /ws/chat/{trip_id}?token=xxx&auto_msg=xxx
-# سيناريو 1: الفورم → الشات
-# ═════════════════════════════════════════════════════════════════════════════
-
-@router.websocket("/ws/chat/{trip_id}")
-async def websocket_chat(
-    trip_id:   str,
-    websocket: WebSocket,
-    token:     str          = Query(...),
-    auto_msg:  str          = Query(default=None),     # ← Flutter يبعت auto_message هنا
-    db:        AsyncSession = Depends(get_db),
-):
-    # ── Auth ─────────────────────────────────────────────────────────────
-    user = verify_token(token)
-    if not user:
-        await websocket.close(code=4001)
-        return
-
-    user_id = user["uid"]
-
-    await manager.connect(trip_id, websocket)
-    lock = manager.get_lock(trip_id)
-
-    try:
-        # ── جيب الـ Trip ─────────────────────────────────────────────────
-        result = await db.execute(
-            select(Trip)
-            .options(
-                selectinload(Trip.days)
-                .selectinload(TripDay.activities)
-            )
-            .where(
-                Trip.trip_id == trip_id,
-                Trip.user_id == user_id,
-            )
-        )
-        trip = result.scalar_one_or_none()
-        if not trip:
-            await manager.send(trip_id, {"type": "error", "data": "Trip not found"})
-            await websocket.close(code=4004)
-            return
-
-        # ── جيب أو أنشئ Conversation ─────────────────────────────────────
-        conversation = await get_or_create_conversation(trip_id, user_id, db)
-        await db.commit()
-
-        # ── جيب الـ Profile ──────────────────────────────────────────────
-        profile_data = await get_profile_data(user_id, db)
-
-        # ══════════════════════════════════════════════════════════════════
-        # AUTO-GENERATE: لو Flutter بعت auto_msg → نبعته للـ AI فوراً
-        # ══════════════════════════════════════════════════════════════════
-        if auto_msg and auto_msg.strip():
-            async with lock:
-                await process_message(
-                    user_text    = auto_msg.strip(),
-                    trip         = trip,
-                    conversation = conversation,
-                    profile_data = profile_data,
-                    ws_key       = trip_id,
-                    db           = db,
-                )
-
-        # ── الـ Loop العادي ───────────────────────────────────────────────
-        while True:
-            data      = await websocket.receive_json()
-            user_text = data.get("message", "").strip()
-            if not user_text:
-                continue
-
-            async with lock:
-                await process_message(
-                    user_text    = user_text,
-                    trip         = trip,
-                    conversation = conversation,
-                    profile_data = profile_data,
-                    ws_key       = trip_id,
-                    db           = db,
-                )
-
-    except WebSocketDisconnect:
-        manager.disconnect(trip_id)
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -753,7 +670,7 @@ async def websocket_new_chat(
                     # ── حدّث ws_key ──────────────────────────────────────
                     manager.disconnect(ws_key)
                     ws_key = trip.trip_id
-                    await manager.connect_existing(ws_key, websocket)
+                    manager.connect_existing(ws_key, websocket)
 
                     break      # ← خرج من loop الـ actions
 
@@ -804,6 +721,89 @@ async def websocket_new_chat(
     except WebSocketDisconnect:
         manager.disconnect(ws_key)
 
+# ═════════════════════════════════════════════════════════════════════════════
+# WS /ws/chat/{trip_id}?token=xxx&auto_msg=xxx
+# سيناريو 1: الفورم → الشات
+# ═════════════════════════════════════════════════════════════════════════════
+
+@router.websocket("/ws/chat/{trip_id}")
+async def websocket_chat(
+    trip_id:   str,
+    websocket: WebSocket,
+    token:     str          = Query(...),
+    auto_msg:  str          = Query(default=None),     # ← Flutter يبعت auto_message هنا
+    db:        AsyncSession = Depends(get_db),
+):
+    # ── Auth ─────────────────────────────────────────────────────────────
+    user = verify_token(token)
+    if not user:
+        await websocket.close(code=4001)
+        return
+
+    user_id = user["uid"]
+
+    await manager.connect(trip_id, websocket)
+    lock = manager.get_lock(trip_id)
+
+    try:
+        # ── جيب الـ Trip ─────────────────────────────────────────────────
+        result = await db.execute(
+            select(Trip)
+            .options(
+                selectinload(Trip.days)
+                .selectinload(TripDay.activities)
+            )
+            .where(
+                Trip.trip_id == trip_id,
+                Trip.user_id == user_id,
+            )
+        )
+        trip = result.scalar_one_or_none()
+        if not trip:
+            await manager.send(trip_id, {"type": "error", "data": "Trip not found"})
+            await websocket.close(code=4004)
+            return
+
+        # ── جيب أو أنشئ Conversation ─────────────────────────────────────
+        conversation = await get_or_create_conversation(trip_id, user_id, db)
+        await db.commit()
+
+        # ── جيب الـ Profile ──────────────────────────────────────────────
+        profile_data = await get_profile_data(user_id, db)
+
+        # ══════════════════════════════════════════════════════════════════
+        # AUTO-GENERATE: لو Flutter بعت auto_msg → نبعته للـ AI فوراً
+        # ══════════════════════════════════════════════════════════════════
+        if auto_msg and auto_msg.strip():
+            async with lock:
+                await process_message(
+                    user_text    = auto_msg.strip(),
+                    trip         = trip,
+                    conversation = conversation,
+                    profile_data = profile_data,
+                    ws_key       = trip_id,
+                    db           = db,
+                )
+
+        # ── الـ Loop العادي ───────────────────────────────────────────────
+        while True:
+            data      = await websocket.receive_json()
+            user_text = data.get("message", "").strip()
+            if not user_text:
+                continue
+
+            async with lock:
+                await process_message(
+                    user_text    = user_text,
+                    trip         = trip,
+                    conversation = conversation,
+                    profile_data = profile_data,
+                    ws_key       = trip_id,
+                    db           = db,
+                )
+
+    except WebSocketDisconnect:
+        manager.disconnect(trip_id)
 
 # ═════════════════════════════════════════════════════════════════════════════
 # GET /chat/{trip_id}/history

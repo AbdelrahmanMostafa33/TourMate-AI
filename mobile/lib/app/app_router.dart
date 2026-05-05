@@ -3,6 +3,7 @@ import '../features/auth/presentation/screens/quiz_decision_screen.dart';
 import '../features/auth/presentation/screens/signin_screen.dart';
 import '../features/auth/presentation/screens/signup_screen.dart';
 import '../features/auth/presentation/screens/profile_screen.dart';
+import '../features/chat/presentation/screens/chat_screen.dart';
 import '../features/quiz/presentation/screens/onboarding_flow.dart';
 import '../features/splash/splash_screen.dart';
 
@@ -27,6 +28,9 @@ class AppRouter {
 
       case "/quiz-decision":
         return MaterialPageRoute(builder: (_) => const QuizDecisionScreen());
+
+      case "/chat":
+        return MaterialPageRoute(builder: (_) => const ChatScreen());
 
       default:
         return MaterialPageRoute(

@@ -1,6 +1,6 @@
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
-import '../../../../../core/auth/firebase_auth_service.dart';
+import '../../data/datasource/firebase_auth_service.dart';
 import '../../../../../core/network/service_locator.dart';
 import '../../../quiz/data/repository/quiz_repository.dart';
 import '../../data/models/register_request.dart';

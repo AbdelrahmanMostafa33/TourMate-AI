@@ -1,8 +1,8 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 
-import '../../features/quiz/data/repository/quiz_repository.dart';
-import '../network/service_locator.dart';
+import '../../../quiz/data/repository/quiz_repository.dart';
+import '../../../../core/network/service_locator.dart';
 
 class FirebaseAuthService {
 
