@@ -33,14 +33,36 @@ class _ChatViewState extends State<_ChatView> {
     final cubit = context.read<ChatCubit>();
 
     return Scaffold(
+      backgroundColor: Colors.white,
       body: SafeArea(
         child: Column(
           children: [
-            /// ─── HEADER ─────────────────────────
-            const SizedBox(height: 10),
-            const Text("✨ TourMate.", style: TextStyle(fontSize: 20)),
+            /// ================= HEADER =================
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                decoration: BoxDecoration(
+                  color: Colors.grey.shade100,
+                  borderRadius: BorderRadius.circular(30),
+                ),
+                child: Row(
+                  children: [
+                    const Spacer(),
+                    const Text(
+                      "✨ TourMate.",
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const Spacer(),
+                  ],
+                ),
+              ),
+            ),
 
-            /// ─── CHAT AREA ──────────────────────
+            /// ================= CHAT AREA =================
             Expanded(
               child: BlocBuilder<ChatCubit, ChatState>(
                 builder: (context, state) {
@@ -58,61 +80,121 @@ class _ChatViewState extends State<_ChatView> {
                         },
                       );
                     },
-                    orElse: () => const Center(child: CircularProgressIndicator()),
+                    orElse: () =>
+                    const Center(child: CircularProgressIndicator()),
                   );
                 },
               ),
             ),
 
-            /// ─── INPUT BAR ──────────────────────
+            /// ================= INPUT BAR =================
             _buildInputBar(cubit),
+
+            /// ================= BOTTOM NAV =================
           ],
         ),
       ),
     );
   }
 
+  /// ================= EMPTY STATE =================
   Widget _buildEmptyState() {
-    return Column(
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: const [
-        Icon(Icons.travel_explore, size: 80),
-        SizedBox(height: 10),
-        Text("Where to today?", style: TextStyle(fontSize: 22)),
-        SizedBox(height: 8),
-        Text("Ask me anything travel related"),
-      ],
-    );
-  }
-
-  Widget _buildInputBar(ChatCubit cubit) {
-    return Padding(
-      padding: const EdgeInsets.all(10),
-      child: Row(
+    return SingleChildScrollView(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          IconButton(
-            icon: const Icon(Icons.camera_alt),
-            onPressed: () {},
+          const SizedBox(height: 40),
+
+          /// IMAGE
+          CircleAvatar(
+            radius: 110,
+            backgroundImage: const AssetImage("assets/images/Screen1.png"),
+            backgroundColor: Colors.transparent,
           ),
-          Expanded(
-            child: TextField(
-              controller: controller,
-              decoration: const InputDecoration(
-                hintText: "Ask anything...",
-                border: OutlineInputBorder(),
+
+          const SizedBox(height: 30),
+
+          /// TITLE
+          const Text(
+            "Where to today?",
+            style: TextStyle(
+              fontSize: 26,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+
+          const SizedBox(height: 10),
+
+          /// SUBTEXT
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 30),
+            child: Text(
+              "Hey there, I'm here to assist you in planning your experience. Ask me anything travel related.",
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: Colors.grey.shade600,
+                fontSize: 14,
               ),
             ),
           ),
-          IconButton(
-            icon: const Icon(Icons.send),
-            onPressed: () {
-              print("SENDING...");
-              cubit.sendMessage(controller.text);
-              controller.clear();
-            },
+
+          const SizedBox(height: 20),
+
+          /// BUTTON
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+            decoration: BoxDecoration(
+              color: Colors.grey.shade200,
+              borderRadius: BorderRadius.circular(25),
+            ),
+            child: const Text(
+              "What can I ask Tour Mate?",
+              style: TextStyle(fontSize: 13),
+            ),
           ),
         ],
       ),
     );
   }
+
+  /// ================= INPUT BAR =================
+  Widget _buildInputBar(ChatCubit cubit) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10),
+        decoration: BoxDecoration(
+          color: Colors.grey.shade100,
+          borderRadius: BorderRadius.circular(30),
+          border: Border.all(color: Colors.grey.shade300),
+        ),
+        child: Row(
+          children: [
+            const Icon(Icons.camera_alt_outlined),
+
+            const SizedBox(width: 8),
+
+            Expanded(
+              child: TextField(
+                controller: controller,
+                decoration: const InputDecoration(
+                  hintText: "Ask anything",
+                  border: InputBorder.none,
+                ),
+              ),
+            ),
+
+            IconButton(
+              icon: const Icon(Icons.send),
+              onPressed: () {
+                cubit.sendMessage(controller.text);
+                controller.clear();
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
 }

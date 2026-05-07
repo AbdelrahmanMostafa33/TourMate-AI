@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../core/layout/main_shell.dart';
 import '../features/auth/presentation/screens/quiz_decision_screen.dart';
 import '../features/auth/presentation/screens/signin_screen.dart';
 import '../features/auth/presentation/screens/signup_screen.dart';
@@ -13,6 +14,9 @@ class AppRouter {
 
       case "/":
         return MaterialPageRoute(builder: (_) => const SplashScreen());
+
+      case "/home":
+        return MaterialPageRoute(builder: (_) => const MainShell());
 
       case "/signin":
         return MaterialPageRoute(builder: (_) => const SignInScreen());

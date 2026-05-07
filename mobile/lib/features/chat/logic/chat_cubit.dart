@@ -17,7 +17,16 @@ class ChatCubit extends Cubit<ChatState> {
 
     await _repo.connect();
 
-    _repo.messages?.listen(_handleEvent);
+    _repo.messages?.listen(
+      _handleEvent,
+      onError: (error) {
+      emit(ChatState.error("Connection error: $error"));
+    },
+      onDone: () {
+        // WebSocket closed by server
+        emit(ChatState.error("Connection closed. Please try again."));
+      },
+    );
 
     emit(ChatState.connected(messages: _messages, isTyping: false));
   }
@@ -25,16 +34,25 @@ class ChatCubit extends Cubit<ChatState> {
   void sendMessage(String message) {
     if (message.trim().isEmpty) return;
 
-    _messages.add(ChatMessage(
-      text: message,
-      isUser: true,
-    ));
-
+    _messages.add(ChatMessage(text: message, isUser: true));
     emit(ChatState.connected(messages: List.from(_messages), isTyping: true));
-
     _buffer = "";
-
     _repo.sendMessage(message);
+
+    // ✅ Safety net: force-stop loading after 30s if "done" never arrives
+    Future.delayed(const Duration(seconds: 30), () {
+      final isStillTyping = state.maybeWhen(
+        connected: (messages, isTyping) => isTyping,
+        orElse: () => false,
+      );
+
+      if (isStillTyping) {
+        emit(ChatState.connected(
+          messages: List.from(_messages),
+          isTyping: false,
+        ));
+      }
+    });
   }
 
   void _handleEvent(dynamic event) {

@@ -173,21 +173,6 @@ class _ProfileView extends StatelessWidget {
                       ),
 
                       const Spacer(),
-
-                      /// ================= BOTTOM NAV (UNCHANGED) =================
-                      Padding(
-                        padding: const EdgeInsets.only(bottom: 10),
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceAround,
-                          children: [
-                            _navItem(Icons.chat_bubble_outline, "Chat"),
-                            _navItem(Icons.card_travel, "Trips"),
-                            _navItem(Icons.search, "Explore"),
-                            _navItem(Icons.favorite_border, "Saved"),
-                            _navItem(Icons.person, "You", isActive: true),
-                          ],
-                        ),
-                      ),
                     ],
                   );
                 },
@@ -199,30 +184,4 @@ class _ProfileView extends StatelessWidget {
     );
   }
 
-  /// ================= NAV ITEM =================
-  Widget _navItem(IconData icon, String label, {bool isActive = false}) {
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        CircleAvatar(
-          radius: 16,
-          backgroundColor:
-          isActive ? Colors.black : Colors.transparent,
-          child: Icon(
-            icon,
-            size: 18,
-            color: isActive ? Colors.white : Colors.grey,
-          ),
-        ),
-        const SizedBox(height: 4),
-        Text(
-          label,
-          style: TextStyle(
-            fontSize: 12,
-            color: isActive ? Colors.black : Colors.grey,
-          ),
-        ),
-      ],
-    );
-  }
 }

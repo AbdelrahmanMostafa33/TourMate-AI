@@ -597,15 +597,16 @@ async def websocket_new_chat(
                 if action.get("type") == "CREATE_TRIP" and not trip:
                     action_data = action.get("data", {})
 
-                    start_date = action_data.get("start_date")
-                    end_date   = action_data.get("end_date")
-                    delta      = action_data.get("duration_days", 1)
+                    start_date_raw = action_data.get("start_date")
+                    end_date_raw = action_data.get("end_date")
+                    delta = action_data.get("duration_days", 1)
+
+                    # ✅ Convert strings → date objects RIGHT HERE, once
+                    start_date = date.fromisoformat(start_date_raw) if start_date_raw else None
+                    end_date = date.fromisoformat(end_date_raw) if end_date_raw else None
 
                     if start_date and end_date:
-                        delta = (
-                            date.fromisoformat(end_date) -
-                            date.fromisoformat(start_date)
-                        ).days + 1
+                        delta = (end_date - start_date).days + 1
 
                     # ── أنشئ Trip ─────────────────────────────────────────
                     trip = Trip(
@@ -627,9 +628,9 @@ async def websocket_new_chat(
                     if start_date:
                         for i in range(delta):
                             db.add(TripDay(
-                                trip_id    = trip.trip_id,
-                                day_number = i + 1,
-                                date       = date.fromisoformat(start_date) + timedelta(days=i),
+                                trip_id=trip.trip_id,
+                                day_number=i + 1,
+                                date=start_date + timedelta(days=i),  # ✅ clean
                             ))
                     else:
                         for i in range(delta):
@@ -670,7 +671,7 @@ async def websocket_new_chat(
                     # ── حدّث ws_key ──────────────────────────────────────
                     manager.disconnect(ws_key)
                     ws_key = trip.trip_id
-                    manager.connect_existing(ws_key, websocket)
+                    await manager.connect_existing(ws_key, websocket)
 
                     break      # ← خرج من loop الـ actions
 
