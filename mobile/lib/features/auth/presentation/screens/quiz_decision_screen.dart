@@ -64,7 +64,7 @@ class _QuizDecisionView extends StatelessWidget {
               /// NO → SKIP
               OutlinedButton(
                 onPressed: () {
-                  Navigator.pushReplacementNamed(context, "/chat");
+                  Navigator.pushReplacementNamed(context, "/home");
                   ScaffoldMessenger.of(context).showSnackBar(
                     const SnackBar(content: Text("You can take the quiz later from your profile until then we have assigned you a default persona.")),
                   );

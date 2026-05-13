@@ -100,7 +100,7 @@ class ChatCubit extends Cubit<ChatState> {
         break;
 
       case "trip_created":
-      // later: navigate to trip screen
+      // later: navigate to trips screen
         break;
 
       case "actions":

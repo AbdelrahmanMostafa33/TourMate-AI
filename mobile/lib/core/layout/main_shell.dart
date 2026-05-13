@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../features/auth/presentation/screens/profile_screen.dart';
 import '../../features/chat/presentation/screens/chat_screen.dart';
+import '../../features/trips/presentation/screens/trips_screen.dart';
 
 class MainShell extends StatefulWidget {
   const MainShell({super.key});
@@ -14,7 +15,7 @@ class _MainShellState extends State<MainShell> {
 
   final List<Widget> pages = [
     const ChatScreen(),
-    const Placeholder(), // Trips
+    const TripsScreen(), // Trips
     const Placeholder(), // Explore
     const Placeholder(), // Saved
     const ProfileScreen(),

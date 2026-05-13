@@ -5,6 +5,7 @@ import '../../features/auth/data/repository/profile_repository.dart';
 import '../../features/chat/data/datasource/chat_ws_service.dart';
 import '../../features/chat/data/repository/chat_repository.dart';
 import '../../features/quiz/data/repository/quiz_repository.dart';
+import '../../features/trips/data/repository/trips_repository.dart';
 import '../network/dio_factory.dart';
 import '../network/api_services.dart';
 
@@ -53,5 +54,9 @@ Future<void> setupLocator() async {
 
   locator.registerLazySingleton(
         () => ChatRepository(locator<ChatWebSocketService>()),
+  );
+
+  locator.registerLazySingleton(
+        () => TripsRepository(locator<ApiServices>()),
   );
 }

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../../../core/errors/api_result.dart';
 import '../../../../core/network/service_locator.dart';
 import '../../data/models/persona_response.dart';
 import '../../data/models/quiz_answers.dart';
@@ -128,7 +129,7 @@ class _OnboardingQuizFlowState extends State<OnboardingQuizFlow> {
 
   // ── finish → leave quiz ──────────────────────────────────
   void _finish() {
-    Navigator.pushReplacementNamed(context, "/profile");
+    Navigator.pushReplacementNamed(context, "/home");
   }
 
   // ── build ────────────────────────────────────────────────

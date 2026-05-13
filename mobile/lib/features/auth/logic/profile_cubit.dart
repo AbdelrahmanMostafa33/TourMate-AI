@@ -1,4 +1,5 @@
 import 'package:flutter_bloc/flutter_bloc.dart';
+import '../../../core/errors/api_result.dart';
 import '../data/repository/profile_repository.dart';
 import 'profile_state.dart';
 

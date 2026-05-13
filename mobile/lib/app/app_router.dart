@@ -7,6 +7,8 @@ import '../features/auth/presentation/screens/profile_screen.dart';
 import '../features/chat/presentation/screens/chat_screen.dart';
 import '../features/quiz/presentation/screens/onboarding_flow.dart';
 import '../features/splash/splash_screen.dart';
+import '../features/trips/presentation/screens/create_trip_screen.dart';
+import '../features/trips/presentation/screens/trips_screen.dart';
 
 class AppRouter {
   static Route generateRoute(RouteSettings settings) {
@@ -35,6 +37,12 @@ class AppRouter {
 
       case "/chat":
         return MaterialPageRoute(builder: (_) => const ChatScreen());
+
+      case "/trips":
+        return MaterialPageRoute(builder: (_) => const TripsScreen());
+
+      case "/create-trip":
+        return MaterialPageRoute(builder: (_) => const CreateTripScreen());
 
       default:
         return MaterialPageRoute(
