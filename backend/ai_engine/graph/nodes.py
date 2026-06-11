@@ -1,40 +1,11 @@
 from ai_engine.graph.state import TripState
-from ai_engine.tools.profile_tool import load_mock_profile
-from ai_engine.chat.intent_parser import parse_intent
+from ai_engine.tools.profile_tool import load_behavioral_profile, load_mock_profile
 
 
-def intent_parser_node(state: TripState) -> TripState:
-    """
-    ENTRY NODE — Classifies user intent using Llama 3.1 8B.
-
-    Populates TripState with structured fields extracted from the raw
-    user_message so downstream agents don't need to re-parse text.
-    Sets intent_type to route the graph correctly in the next edge.
-    """
-    user_message = state.get("user_message", "")
-    print(f"[IntentParser] Parsing: {user_message[:80]}")
-
-    intent = parse_intent(user_message)
-
-    # Write extracted fields into shared state
-    state["intent_type"]           = intent.get("intent_type", "general_chat")
-    state["destination_city"]      = intent.get("destination_city")
-    state["destination_country"]   = intent.get("destination_country")
-    state["duration_days"]         = intent.get("duration_days")
-    state["travel_dates"]          = intent.get("travel_dates")
-    state["special_requests"]      = intent.get("special_requests")
-    state["missing_fields"]        = intent.get("missing_fields", [])
-
-    print(f"[IntentParser] intent_type={state['intent_type']}, "
-          f"destination={state['destination_city']}, "
-          f"duration={state['duration_days']}d")
-    return state
-
-
-# (state: TripState) → parameter state with type hint TripState (our shared dictionary type).
-# -> TripState → return type hint, telling Python (and developers) that this function returns a TripState object.
+# (state: TripState) -> parameter state with type hint TripState (our shared dictionary type).
+# -> TripState -> return type hint, telling Python (and developers) that this function returns a TripState object.
 # This function takes the shared trip state, adds/updates the draft itinerary, and returns the updated state.
-def planning_node(state: TripState) -> TripState:
+async def planning_node(state: TripState) -> TripState:
     """
     THE PLANNER AGENT NODE
     
@@ -67,7 +38,7 @@ def planning_node(state: TripState) -> TripState:
     return state # return the updated state to be passed to the next agent in the graph
 
 
-def optimization_node(state: TripState) -> TripState:
+async def optimization_node(state: TripState) -> TripState:
     """
     THE OPTIMIZER AGENT NODE
     
@@ -92,7 +63,7 @@ def optimization_node(state: TripState) -> TripState:
     return state
 
 
-def validation_node(state: TripState) -> TripState:
+async def validation_node(state: TripState) -> TripState:
     """
     THE VALIDATION AGENT NODE
     
@@ -114,23 +85,40 @@ def validation_node(state: TripState) -> TripState:
     return state
 
 
-def load_profile_node(state: TripState) -> TripState:
+async def load_profile_node(state: TripState) -> TripState:
     """
     ENTRY NODE — Loads the user's behavioral profile into TripState.
 
-    Sprint 2: Uses load_mock_profile() as a stand-in until the backend
-    profile endpoints (Tasks 2.4/2.5) are ready. Switching to the real
-    HTTP call requires only replacing load_mock_profile() with
-    await load_behavioral_profile(user_id, token).
+    If the profile is already set in state (e.g. pre-loaded by chat_handler
+    with auth credentials), this node is a no-op. Otherwise, it loads the
+    real profile via HTTP when a token is available, falling back to the
+    mock profile for development/testing.
 
     Runs before the planner so every downstream agent has access to
     the profile via state["profile"].
     """
+    # Skip if profile was already loaded by the caller (e.g. chat_handler)
+    if state.get("profile"):
+        print(f"[LoadProfile] Profile already loaded: "
+              f"{state['profile'].get('persona_name', 'unknown persona')}")
+        return state
+
     user_id = state.get("user_id", "mock_user_001")
+    token = state.get("token")
     print(f"[LoadProfile] Loading profile for user: {user_id}")
 
-    profile = load_mock_profile(user_id=user_id)
-    state["profile"] = profile
+    if token:
+        try:
+            profile = await load_behavioral_profile(user_id=user_id, token=token)
+            print(f"[LoadProfile] Real profile loaded: "
+                  f"{profile.get('persona_name', 'unknown persona')}")
+        except Exception as e:
+            print(f"[LoadProfile] Failed to load real profile ({e}), "
+                  f"falling back to mock")
+            profile = load_mock_profile(user_id=user_id)
+    else:
+        print(f"[LoadProfile] No token provided, using mock profile")
+        profile = load_mock_profile(user_id=user_id)
 
-    print(f"[LoadProfile] Profile loaded: {profile.get('persona_name', 'unknown persona')}")
+    state["profile"] = profile
     return state

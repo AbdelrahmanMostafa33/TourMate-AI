@@ -1,6 +1,7 @@
 # ai/tests/test_profiling.py
 
 import sys
+import asyncio
 from pathlib import Path
 
 # ── Ensure project root is in Python path ───────────────────────────
@@ -9,7 +10,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from ai_engine.profiling.cold_start import generate_persona, build_default_persona
-from ai_engine.tools.profile_tool import load_mock_profile
+from ai_engine.tools.profile_tool import load_mock_profile, load_behavioral_profile
 from ai_engine.graph.state import BehavioralProfile
 from ai_engine.graph.graph_builder import build_trip_graph
 
@@ -137,9 +138,19 @@ def test_graph_runs_with_mock_profile():
         "next_agent": None,
         "error": None,
         "agent_messages": [],
+        "token":              None,
+        # Pre-populated intent fields (as chat_handler would set them)
+        "intent_type":         "plan_trip",
+        "destination_city":    "Cairo",
+        "destination_country": None,
+        "duration_days":       2,
+        "travel_dates":        None,
+        "special_requests":    None,
+        "group_size":          None,
+        "missing_fields":      [],
     }
 
-    result = graph.invoke(initial_state)
+    result = asyncio.run(graph.ainvoke(initial_state))
 
     assert result["profile"] is not None, "Profile should be loaded by load_profile_node"
     assert result["profile"]["persona_name"] == "The Curious Culture Seeker"

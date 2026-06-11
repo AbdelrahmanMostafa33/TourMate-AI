@@ -5,52 +5,37 @@ from langgraph.graph import StateGraph, END
 from ai_engine.graph.state import TripState
 from ai_engine.graph.nodes import (
     planning_node, optimization_node, validation_node,
-    load_profile_node, intent_parser_node
+    load_profile_node,
 )
 from ai_engine.graph.edges import should_optimize, should_validate, should_retry_or_end
-
-
-def route_after_intent(state: TripState) -> str:
-    """Routes after intent parsing based on intent_type."""
-    return state.get("intent_type", "general_chat")
 
 
 def build_trip_graph():
     """
     This function assembles the full agent graph.
     
-    Think of it like drawing the flowchart:
-      1. Create a blank canvas (StateGraph)
-      2. Add each agent as a box on the canvas (add_node)
-      3. Draw arrows between the boxes (add_edge / add_conditional_edges)
-      4. Mark the starting box (set_entry_point)
-      5. Compile it so LangGraph can execute it (compile)
+    The graph handles only the plan_trip pipeline:
+      load_profile → planner → optimizer → validator
+    
+    Intent parsing and routing (plan_trip vs general_chat vs
+    needs_clarification) is handled by chat_handler.py before
+    the graph is invoked, so the graph doesn't need its own
+    intent parser node.
     
     Returns a compiled graph object that FastAPI will call.
     """
     
     graph = StateGraph(TripState)
 
-    # Add the new entry node
-    graph.add_node("intent_parser", intent_parser_node)   # ← new
+    # Add nodes
     graph.add_node("load_profile",  load_profile_node)
     graph.add_node("planner",       planning_node)
     graph.add_node("optimizer",     optimization_node)
     graph.add_node("validator",     validation_node)
 
-    # New entry point
-    graph.set_entry_point("intent_parser")
-
-    # Route based on intent
-    graph.add_conditional_edges(
-        "intent_parser",
-        route_after_intent,
-        {
-            "plan_trip":           "load_profile",   # full pipeline
-            "needs_clarification": END,              # Task 3.7 will handle this
-            "general_chat":        END,              # direct reply, no pipeline
-        }
-    )
+    # Entry point — profile is loaded first so downstream agents
+    # can personalize the itinerary
+    graph.set_entry_point("load_profile")
 
     # Fixed edge: after profile loads, always go to planner
     graph.add_edge("load_profile", "planner")

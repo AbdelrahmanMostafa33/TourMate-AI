@@ -1,6 +1,6 @@
 # backend/app/services/itinerary_service.py
 
-from ai_engine import process_chat_message
+from ai_engine import handle_chat
 from app.repositories.itinerary_repo import ItineraryRepo
 from app.repositories.profile_repo import ProfileRepo
 
@@ -13,12 +13,11 @@ class ItineraryService:
 
     async def generate_trip(self, user_id: str, message: str, images: list = None):
         profile = await self.profile_repo.get_by_user_id(user_id)
-        result = await process_chat_message(
+        result = await handle_chat(
             user_id=user_id,
-            message=message,
-            images=images,
-            profile=profile.to_dict() if profile else {},
-            redis_client=self.redis,
+            user_message=message,
+            image_bytes=images,
+            token=None,
         )
         itinerary = await self.itinerary_repo.create(user_id=user_id, data=result)
         return itinerary

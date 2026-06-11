@@ -287,21 +287,19 @@ async def process_message(
     actions       = []
 
     try:
-        from ai_engine.chat.chat_handler import handle_message_stream
-        async for chunk in handle_message_stream({
-            "message":      user_text,
-            "user_profile": profile_data,
-            "history":      history_list,
-            "trip_data":    trip_snapshot,
-        }):
-            if chunk["type"] == "text":
-                full_response += chunk["content"]
-                await manager.send(ws_key, {
-                    "type": "token",
-                    "data": chunk["content"],
-                })
-            elif chunk["type"] == "actions":
-                actions = chunk["data"]
+        from ai_engine.chat.chat_handler import handle_chat
+        result = await handle_chat(
+            user_id=user_id,
+            user_message=user_text,
+            token=token,
+        )
+        full_response = result.get("message", "")
+        if result.get("itinerary"):
+            actions = [{"type": "CREATE_TRIP", "data": result["itinerary"]}]
+        await manager.send(ws_key, {
+            "type": "token",
+            "data": full_response,
+        })
 
     except Exception:
         # ══════════════════════════════════════════════════════════════
@@ -491,21 +489,19 @@ async def websocket_new_chat(
             actions       = []
 
             try:
-                from ai_engine.chat.chat_handler import handle_message_stream
-                async for chunk in handle_message_stream({
-                    "message":      user_text,
-                    "user_profile": profile_data,
-                    "history":      history_list,
-                    "trip_data":    None,
-                }):
-                    if chunk["type"] == "text":
-                        full_response += chunk["content"]
-                        await manager.send(ws_key, {
-                            "type": "token",
-                            "data": chunk["content"],
-                        })
-                    elif chunk["type"] == "actions":
-                        actions = chunk["data"]
+                from ai_engine.chat.chat_handler import handle_chat
+                result = await handle_chat(
+                    user_id=user_id,
+                    user_message=user_text,
+                    token=token,
+                )
+                full_response = result.get("message", "")
+                if result.get("itinerary"):
+                    actions = [{"type": "CREATE_TRIP", "data": result["itinerary"]}]
+                await manager.send(ws_key, {
+                    "type": "token",
+                    "data": full_response,
+                })
 
             except Exception:
                 # ══════════════════════════════════════════════════════════

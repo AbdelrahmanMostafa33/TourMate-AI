@@ -8,7 +8,7 @@ from ai_engine.chat.intent_parser import parse_intent
 from ai_engine.graph.graph_builder import trip_graph
 from ai_engine.vision.image_analyzer import analyze_travel_image
 from ai_engine.vision.multimodal_fusion import fuse_image_with_profile
-from ai_engine.tools.profile_tool import load_mock_profile
+from ai_engine.tools.profile_tool import load_behavioral_profile, load_mock_profile
 
 
 # ── Prompts ───────────────────────────────────────────────────────────────────
@@ -33,10 +33,11 @@ Do not offer to generate an itinerary unless the user asks for one.
 
 # ── Main entry point ──────────────────────────────────────────────────────────
 
-def handle_chat(
+async def handle_chat(
     user_id: str,
     user_message: str,
     image_bytes: Optional[bytes] = None,
+    token: Optional[str] = None,
 ) -> dict:
     """
     Main entry point for the TourMate AI chat system.
@@ -55,6 +56,8 @@ def handle_chat(
         user_message: Raw text input from the user (may be empty if image-only).
         image_bytes: Optional raw image bytes from Firebase Storage download
                      or direct multipart upload.
+        token:       Optional Firebase auth token for authenticated API calls
+                     (e.g. loading the real user profile from the backend).
 
     Returns:
         A dict with:
@@ -82,34 +85,136 @@ def handle_chat(
 
     # ── Step 3: Route based on intent ────────────────────────────────────────
     if intent_type == "plan_trip":
-        return _handle_plan_trip(user_id, effective_message, intent, image_features)
+        return await _handle_plan_trip(user_id, effective_message, intent, image_features, token)
 
     elif intent_type == "needs_clarification":
-        return _handle_clarification(intent, image_features)
+        return await _handle_clarification(intent, image_features)
 
     else:  # general_chat
-        return _handle_general_chat(effective_message, image_features)
+        return await _handle_general_chat(effective_message, image_features)
 
 
-# ── Route handlers ────────────────────────────────────────────────────────────
+# ── Streaming entry point ────────────────────────────────────────────────────
 
-def _handle_plan_trip(
+async def handle_chat_stream(
+    user_id: str,
+    user_message: str,
+    image_bytes: Optional[bytes] = None,
+    token: Optional[str] = None,
+):
+    """
+    Streaming variant of handle_chat — yields chunks for WebSocket delivery.
+
+    Each yielded dict has one of these shapes:
+        {"type": "text",   "content": str}   — a word/token to display
+        {"type": "actions", "data": list}     — structured actions (e.g. CREATE_TRIP)
+        {"type": "done",   "data": None}      — signals end of stream
+
+    Args:
+        user_id:      Firebase UID identifying the user.
+        user_message: Raw text input from the user.
+        image_bytes:  Optional raw image bytes.
+        token:        Optional Firebase auth token.
+    """
+    # ── Step 1: Parse intent ─────────────────────────────────────────────────
+    effective_message = user_message.strip() if user_message else ""
+    if not effective_message:
+        effective_message = "I uploaded an image for my trip."
+
+    intent = parse_intent(effective_message)
+    intent_type = intent.get("intent_type", "general_chat")
+
+    # ── Step 2: Process image if provided ───────────────────────────────────
+    image_features = None
+    if image_bytes:
+        image_features = analyze_travel_image(image_bytes)
+
+    # ── Step 3: Route and stream ─────────────────────────────────────────────
+    if intent_type == "plan_trip":
+        async for chunk in _stream_plan_trip(
+            user_id, effective_message, intent, image_features, token
+        ):
+            yield chunk
+
+    elif intent_type == "needs_clarification":
+        result = await _handle_clarification(intent, image_features)
+        async for chunk in _stream_text(result["message"]):
+            yield chunk
+
+    else:  # general_chat
+        result = await _handle_general_chat(effective_message, image_features)
+        async for chunk in _stream_text(result["message"]):
+            yield chunk
+
+    yield {"type": "done", "data": None}
+
+
+async def _stream_text(text: str):
+    """
+    Yields a response string word-by-word to simulate streaming.
+
+    Each yield produces a dict with type "text" and a single word
+    (plus trailing space) so the WebSocket client can render a
+    typewriter effect.
+    """
+    for word in text.split():
+        yield {"type": "text", "content": word + " "}
+
+
+async def _stream_plan_trip(
     user_id: str,
     user_message: str,
     intent: dict,
     image_features: Optional[dict],
+    token: Optional[str] = None,
+):
+    """
+    Streaming variant for plan_trip intent.
+
+    Currently yields the full itinerary response as a single text chunk
+    because the LangGraph pipeline (Sprint 4 placeholder) returns a
+    complete result. When real agent streaming is implemented in Sprint 4,
+    this will yield token-by-token from the LLM.
+    """
+    result = await _handle_plan_trip(user_id, user_message, intent, image_features, token)
+
+    # Stream the confirmation message word-by-word
+    async for chunk in _stream_text(result["message"]):
+        yield chunk
+
+    # Yield the itinerary as structured actions
+    if result.get("itinerary"):
+        yield {"type": "actions", "data": [{"type": "CREATE_TRIP", "data": result["itinerary"]}]}
+
+
+# ── Route handlers ────────────────────────────────────────────────────────────
+
+async def _handle_plan_trip(
+    user_id: str,
+    user_message: str,
+    intent: dict,
+    image_features: Optional[dict],
+    token: Optional[str] = None,
 ) -> dict:
     """
     Invokes the full LangGraph pipeline for itinerary generation.
 
-    Loads the user profile (mock in Sprint 3, real HTTP call in Sprint 4),
-    merges image features if available, then runs trip_graph.invoke().
+    Loads the user profile via real HTTP call when a token is provided,
+    falling back to mock profile for development. Merges image features
+    if available, then runs trip_graph.invoke().
 
     All TripState keys must be supplied — LangGraph raises KeyError for
     any missing key, even optional ones. Defaults are set explicitly here.
     """
-    # Load profile (mock for Sprint 3)
-    profile = load_mock_profile(user_id=user_id)
+    # Load profile — real if token available, mock otherwise
+    if token:
+        try:
+            profile = await load_behavioral_profile(user_id=user_id, token=token)
+        except Exception as e:
+            print(f"[ChatHandler] Failed to load real profile ({e}), falling back to mock")
+            profile = load_mock_profile(user_id=user_id)
+    else:
+        profile = load_mock_profile(user_id=user_id)
 
     # Merge image features into profile if an image was uploaded
     if image_features and image_features.get("confidence") != "low":
@@ -124,6 +229,7 @@ def _handle_plan_trip(
 
         # ── Profile (enriched with image features if any) ─────
         "profile":           profile,
+        "token":             token,
 
         # ── Pipeline outputs (None until agents run) ──────────
         "draft_itinerary":     None,
@@ -134,8 +240,8 @@ def _handle_plan_trip(
         "next_agent": None,
         "error":      None,
 
-        # ── Intent fields (pre-parsed — intent_parser_node will
-        #    re-run parse_intent on the same message; harmless) ─
+        # ── Intent fields (pre-parsed — passed through to graph state
+        #    so downstream agents have access without re-parsing) ─
         "intent_type":         intent.get("intent_type", "plan_trip"),
         "destination_city":    intent.get("destination_city"),
         "destination_country": intent.get("destination_country"),
@@ -149,7 +255,7 @@ def _handle_plan_trip(
         "agent_messages": [],
     }
 
-    result_state = trip_graph.invoke(initial_state)
+    result_state = await trip_graph.ainvoke(initial_state)
 
     return {
         "response_type": "itinerary",
@@ -159,7 +265,7 @@ def _handle_plan_trip(
     }
 
 
-def _handle_clarification(intent: dict, image_features: Optional[dict]) -> dict:
+async def _handle_clarification(intent: dict, image_features: Optional[dict]) -> dict:
     """
     Generates a natural clarifying question using Llama 3.1 8B.
 
@@ -195,7 +301,7 @@ def _handle_clarification(intent: dict, image_features: Optional[dict]) -> dict:
     }
 
 
-def _handle_general_chat(user_message: str, image_features: Optional[dict]) -> dict:
+async def _handle_general_chat(user_message: str, image_features: Optional[dict]) -> dict:
     """
     Answers travel questions conversationally using Llama 3.1 8B.
 

@@ -4,6 +4,7 @@ import httpx
 from ai_engine.graph.state import BehavioralProfile
 from app.core.config import settings
 
+
 async def load_behavioral_profile(user_id: str, token: str) -> BehavioralProfile:
     """
     Fetches the user's behavioral profile from the FastAPI backend.

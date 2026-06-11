@@ -90,6 +90,9 @@ class TripState(TypedDict):
     user_message: str
     # Raw input from the user (e.g., "Plan me a 5-day trip to Paris")
 
+    token: Optional[str]
+    # Firebase auth token for authenticated API calls (e.g. profile loading)
+
 
     # ── Loaded Profile ──────────────────────────────────────────────
     profile: Optional[BehavioralProfile]
