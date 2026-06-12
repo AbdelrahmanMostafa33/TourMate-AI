@@ -241,7 +241,7 @@ class _CreateTripViewState extends State<_CreateTripView> {
                         Expanded(
                           child: _field(
                             controller: _travelersController,
-                            hint: "Travelers",
+                            hint: "#Travelers",
                             keyboardType: TextInputType.number,
                             prefixIcon: Icons.people_outline,
                           ),

@@ -1,26 +1,28 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
-import '../../../../core/network/service_locator.dart';
 import '../../data/models/trip_summary_model.dart';
-import '../../data/repository/trips_repository.dart';
 import '../../logic/trips_cubit.dart';
 import '../../logic/trips_state.dart';
 
-class TripsScreen extends StatelessWidget {
+class TripsScreen extends StatefulWidget {
   const TripsScreen({super.key});
 
   @override
-  Widget build(BuildContext context) {
-    return BlocProvider(
-      create: (_) => TripsCubit(locator<TripsRepository>())..getTrips(),
-      child: const _TripsView(),
-    );
-  }
+  State<TripsScreen> createState() => _TripsScreenState();
 }
 
-class _TripsView extends StatelessWidget {
-  const _TripsView();
+class _TripsScreenState extends State<TripsScreen> {
+
+  @override
+  void initState() {
+    super.initState();
+
+    /// 👇 Initial load
+    Future.microtask(() {
+      context.read<TripsCubit>().getTrips();
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -31,8 +33,11 @@ class _TripsView extends StatelessWidget {
           Padding(
             padding: const EdgeInsets.only(right: 16, top: 8, bottom: 8),
             child: ElevatedButton(
-              onPressed: () {
-                Navigator.pushNamed(context, "/create-trip");
+              onPressed: () async {
+                await Navigator.pushNamed(context, "/create-trip");
+
+                /// 🔥 Refresh after creating trip
+                context.read<TripsCubit>().getTrips();
               },
               style: ElevatedButton.styleFrom(
                 backgroundColor: Colors.black,
@@ -50,6 +55,7 @@ class _TripsView extends StatelessWidget {
           ),
         ],
       ),
+
       body: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -63,37 +69,43 @@ class _TripsView extends StatelessWidget {
               ),
             ),
           ),
+
           Expanded(
             child: BlocBuilder<TripsCubit, TripsState>(
               builder: (context, state) {
                 return state.when(
                   initial: () => const SizedBox(),
                   loading: () => const Center(child: CircularProgressIndicator()),
-                  loaded: (trips) => _buildTripsList(trips),
                   creating: () => const Center(child: CircularProgressIndicator()),
                   created: () => const Center(child: Text("Trip Created!")),
                   error: (message) => Center(child: Text(message)),
+
+                  /// 👇 MAIN LIST WITH PULL-TO-REFRESH
+                  loaded: (trips) {
+                    if (trips.isEmpty) {
+                      return const Center(child: Text("No trips yet"));
+                    }
+
+                    return RefreshIndicator(
+                      onRefresh: () async {
+                        context.read<TripsCubit>().getTrips();
+                      },
+                      child: ListView.builder(
+                        padding: const EdgeInsets.all(16),
+                        itemCount: trips.length,
+                        itemBuilder: (context, index) {
+                          final trip = trips[index];
+                          return _tripCard(trip);
+                        },
+                      ),
+                    );
+                  },
                 );
               },
             ),
           ),
         ],
       ),
-    );
-  }
-
-  Widget _buildTripsList(List<TripSummaryModel> trips) {
-    if (trips.isEmpty) {
-      return const Center(child: Text("No trips yet"));
-    }
-
-    return ListView.builder(
-      padding: const EdgeInsets.all(16),
-      itemCount: trips.length,
-      itemBuilder: (context, index) {
-        final trip = trips[index];
-        return _tripCard(trip);
-      },
     );
   }
 
@@ -113,7 +125,6 @@ class _TripsView extends StatelessWidget {
       ),
       child: Row(
         children: [
-          /// Plane icon — black icon, white background
           Container(
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
