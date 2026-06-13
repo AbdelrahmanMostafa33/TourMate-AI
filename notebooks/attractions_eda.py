@@ -6,7 +6,7 @@
 #
 # **Date:** June 2026
 # **Analyst:** TourMate AI Data Science Team
-# **Dataset:** `data/cairo_places_filled (9).json` - 6,600+ places across Cairo, Egypt
+# **Dataset:** `data/cairo_places_filled (11).json` - 6,600+ places across Cairo, Egypt
 #
 # This notebook performs a **deep-dive EDA** focused exclusively on **Attractions** in Cairo.
 #
@@ -64,7 +64,7 @@ print('[OK] All libraries loaded successfully.')
 # ## 1. Data Loading & Initial Inspection
 
 # %%
-DATA_PATH = '../data/cairo_places_filled (9).json'
+DATA_PATH = '../data/cairo_places_filled (11).json'
 
 with open(DATA_PATH, 'r', encoding='utf-8') as f:
     raw_data = json.load(f)

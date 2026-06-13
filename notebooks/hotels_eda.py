@@ -6,7 +6,7 @@
 #
 # **Date:** June 2026
 # **Analyst:** TourMate AI Data Science Team
-# **Dataset:** `data/cairo_places_filled (9).json` - 6,600+ places across Cairo, Egypt
+# **Dataset:** `data/cairo_places_filled (11).json` - 6,600+ places across Cairo, Egypt
 #
 # This notebook performs a **deep-dive EDA** focused exclusively on **Hotels** in Cairo.
 #
@@ -64,7 +64,7 @@ print('[OK] All libraries loaded successfully.')
 # ## 1. Data Loading & Initial Inspection
 
 # %%
-DATA_PATH = '../data/cairo_places_filled (9).json'
+DATA_PATH = '../data/cairo_places_filled (11).json'
 
 with open(DATA_PATH, 'r', encoding='utf-8') as f:
     raw_data = json.load(f)
@@ -696,7 +696,14 @@ print(f'Hotels with nightly rate data: {len(rate_data):,} / {len(df_hotel):,} ({
 
 if len(rate_data) > 0:
     # Parse nightly rate (remove $ and convert to float)
-    rate_data['nightly_rate_numeric'] = rate_data['nightly_rate'].str.replace('$', '', regex=False).str.replace(',', '', regex=False).astype(float)
+    rate_data['nightly_rate_numeric'] = pd.to_numeric(
+        rate_data['nightly_rate'].str.replace('$', '', regex=False)
+                       .str.replace('EGP', '', regex=False)
+                       .str.replace(' ', '', regex=False)
+                       .str.replace(',', '', regex=False),
+        errors='coerce'
+    )
+    rate_data = rate_data.dropna(subset=['nightly_rate_numeric'])
 
     print(f'\nNightly Rate Stats (parsed):')
     print(f"  Mean: ${rate_data['nightly_rate_numeric'].mean():.2f}")
@@ -709,16 +716,16 @@ if len(rate_data) > 0:
 
     # Distribution
     axes[0].hist(rate_data['nightly_rate_numeric'].dropna(), bins=40, color='#E6A817', edgecolor='white', alpha=0.8)
-    axes[0].axvline(rate_data['nightly_rate_numeric'].mean(), color='red', linestyle='--', label=f"Mean: ${rate_data['nightly_rate_numeric'].mean():.2f}")
-    axes[0].axvline(rate_data['nightly_rate_numeric'].median(), color='green', linestyle='--', label=f"Median: ${rate_data['nightly_rate_numeric'].median():.2f}")
+    axes[0].axvline(rate_data['nightly_rate_numeric'].mean(), color='red', linestyle='--', label=f"Mean: \\${rate_data['nightly_rate_numeric'].mean():.2f}")
+    axes[0].axvline(rate_data['nightly_rate_numeric'].median(), color='green', linestyle='--', label=f"Median: \\${rate_data['nightly_rate_numeric'].median():.2f}")
     axes[0].set_title('Nightly Rate Distribution', fontweight='bold')
-    axes[0].set_xlabel('Nightly Rate ($)')
+    axes[0].set_xlabel('Nightly Rate (\$)')
     axes[0].set_ylabel('Count')
     axes[0].legend()
 
     # Rate vs Rating
     axes[1].scatter(rate_data['nightly_rate_numeric'], rate_data['rating'], alpha=0.4, s=15, c='#4C72B0')
-    axes[1].set_xlabel('Nightly Rate ($)')
+    axes[1].set_xlabel('Nightly Rate (\$)')
     axes[1].set_ylabel('Rating')
     axes[1].set_title('Nightly Rate vs Rating', fontweight='bold')
 
@@ -727,7 +734,7 @@ if len(rate_data) > 0:
     rate_by_neighborhood = rate_data[rate_data['neighborhood'].isin(top_neighborhoods)].groupby('neighborhood')['nightly_rate_numeric'].median().sort_values(ascending=True)
     rate_by_neighborhood.plot(kind='barh', ax=axes[2], color='#E6A817', alpha=0.8)
     axes[2].set_title('Median Nightly Rate by Neighborhood', fontweight='bold')
-    axes[2].set_xlabel('Median Rate ($)')
+    axes[2].set_xlabel('Median Rate (\$)')
 
     plt.suptitle('Nightly Rate Analysis - Hotels', fontsize=15, fontweight='bold', y=1.02)
     plt.tight_layout()

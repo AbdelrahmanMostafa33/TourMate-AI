@@ -6,7 +6,7 @@
 #
 # **Date:** June 2026
 # **Analyst:** TourMate AI Data Science Team
-# **Dataset:** `data/cairo_places_filled (9).json` - 6,600+ places across Cairo, Egypt
+# **Dataset:** `data/cairo_places_filled (11).json` - 6,600+ places across Cairo, Egypt
 #
 # This notebook performs a **deep-dive EDA** focused exclusively on **Restaurants** in Cairo.
 #
@@ -64,7 +64,7 @@ print('[OK] All libraries loaded successfully.')
 # ## 1. Data Loading & Initial Inspection
 
 # %%
-DATA_PATH = '../data/cairo_places_filled (9).json'
+DATA_PATH = '../data/cairo_places_filled (11).json'
 
 with open(DATA_PATH, 'r', encoding='utf-8') as f:
     raw_data = json.load(f)
@@ -734,7 +734,12 @@ print(f'Restaurants with cost data: {len(cost_data):,} / {len(df_rest):,} ({len(
 
 if len(cost_data) > 0:
     # Parse cost (remove $ and convert to float)
-    cost_data['cost_numeric'] = cost_data['avg_cost_per_person'].str.replace('$', '', regex=False).str.replace(',', '', regex=False).astype(float)
+    cost_data['cost_numeric'] = pd.to_numeric(
+        cost_data['avg_cost_per_person'].str.replace('$', '', regex=False)
+                       .str.replace(',', '', regex=False),
+        errors='coerce'
+    )
+    cost_data = cost_data.dropna(subset=['cost_numeric'])
 
     print(f'\nCost Per Person Stats (parsed):')
     print(f"  Mean: ${cost_data['cost_numeric'].mean():.2f}")
@@ -746,16 +751,16 @@ if len(cost_data) > 0:
 
     # Distribution
     axes[0].hist(cost_data['cost_numeric'].dropna(), bins=40, color='#E6A817', edgecolor='white', alpha=0.8)
-    axes[0].axvline(cost_data['cost_numeric'].mean(), color='red', linestyle='--', label=f"Mean: ${cost_data['cost_numeric'].mean():.2f}")
-    axes[0].axvline(cost_data['cost_numeric'].median(), color='green', linestyle='--', label=f"Median: ${cost_data['cost_numeric'].median():.2f}")
+    axes[0].axvline(cost_data['cost_numeric'].mean(), color='red', linestyle='--', label=f"Mean: \\${cost_data['cost_numeric'].mean():.2f}")
+    axes[0].axvline(cost_data['cost_numeric'].median(), color='green', linestyle='--', label=f"Median: \\${cost_data['cost_numeric'].median():.2f}")
     axes[0].set_title('Cost Per Person Distribution', fontweight='bold')
-    axes[0].set_xlabel('Cost ($)')
+    axes[0].set_xlabel('Cost (\$)')
     axes[0].set_ylabel('Count')
     axes[0].legend()
 
     # Cost vs Rating
     axes[1].scatter(cost_data['cost_numeric'], cost_data['rating'], alpha=0.3, s=10, c='#4C72B0')
-    axes[1].set_xlabel('Cost Per Person ($)')
+    axes[1].set_xlabel('Cost Per Person (\$)')
     axes[1].set_ylabel('Rating')
     axes[1].set_title('Cost vs Rating', fontweight='bold')
 
@@ -764,7 +769,7 @@ if len(cost_data) > 0:
     cost_by_cuisine = cost_data[cost_data['cuisine_type'].isin(top_cuisines)].groupby('cuisine_type')['cost_numeric'].median().sort_values(ascending=True)
     cost_by_cuisine.plot(kind='barh', ax=axes[2], color='#E6A817', alpha=0.8)
     axes[2].set_title('Median Cost by Cuisine Type', fontweight='bold')
-    axes[2].set_xlabel('Median Cost ($)')
+    axes[2].set_xlabel('Median Cost (\$)')
 
     plt.suptitle('Cost Per Person Analysis - Restaurants', fontsize=15, fontweight='bold', y=1.02)
     plt.tight_layout()
