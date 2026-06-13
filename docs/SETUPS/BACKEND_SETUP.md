@@ -81,11 +81,13 @@ You should now see `(venv)` at the start of your terminal prompt.
 
 ## 4. Install Dependencies
 
+From the project root:
+
 ```bash
-pip install -r requirements.txt
+pip install -e .
 ```
 
-This installs:
+This installs all dependencies defined in `pyproject.toml`, including:
 - **FastAPI + Uvicorn** — web framework and server
 - **SQLAlchemy + asyncpg** — async database ORM
 - **Alembic** — database migrations
@@ -94,6 +96,8 @@ This installs:
 - **Firebase Admin** — authentication
 - **LangGraph + LangChain + Groq** — AI engine
 - **Passlib + python-jose** — password hashing and JWT tokens
+
+> For development tools (pytest, ruff), run: `pip install -e '.[dev]'`
 
 ---
 
@@ -326,7 +330,7 @@ backend/
 ├── tests/                      # Unit and integration tests
 ├── .env                        # Your local environment variables (not in Git)
 ├── firebase-credentials.json   # Firebase service account (not in Git)
-├── requirements.txt            # Python dependencies
+├── pyproject.toml              # Python dependencies (single source of truth)
 └── README.md
 ```
 
@@ -404,7 +408,7 @@ Your `.env` file is missing a required key or has a typo. Double-check that all 
 Use this as a final checklist before asking for help:
 
 - [ ] Python 3.11 installed and active in venv
-- [ ] `pip install -r requirements.txt` completed without errors
+- [ ] `pip install -e .` completed without errors
 - [ ] PostgreSQL running and `tourmate` database created
 - [ ] `psql -U tourmate_user -d tourmate -h localhost` connects successfully
 - [ ] Redis running (`redis-cli ping` returns `PONG`)

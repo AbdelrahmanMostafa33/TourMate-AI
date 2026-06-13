@@ -163,7 +163,7 @@ venv\Scripts\activate
 source venv/bin/activate
 
 # 3. Install dependencies
-pip install -r requirements.txt
+pip install -e .
 
 # 4. Set up environment variables
 cp .env.example .env

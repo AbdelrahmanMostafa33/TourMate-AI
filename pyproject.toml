@@ -2,4 +2,38 @@
 name = "tourmate-ai"
 version = "0.1.0"
 requires-python = ">=3.11"
-dependencies = []
+dependencies = [
+    # === Backend ===
+    "fastapi",
+    "uvicorn",
+    "sqlalchemy",
+    "asyncpg",
+    "alembic",
+    "pydantic",
+    "pydantic-settings",
+    "python-jose",
+    "passlib",
+    "bcrypt",
+    "redis",
+    "firebase-admin",
+    "python-multipart",
+    "httpx",
+    "websockets",
+
+    # === AI Engine ===
+    "langgraph",
+    "langchain-core",
+    "langchain-groq",
+    "Pillow",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+    "pytest-asyncio",
+    "ruff",
+]
+
+[build-system]
+requires = ["setuptools>=68.0"]
+build-backend = "setuptools.build_meta"
