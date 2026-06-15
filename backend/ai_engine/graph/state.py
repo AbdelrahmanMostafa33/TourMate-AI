@@ -16,11 +16,10 @@ class BehavioralProfile(TypedDict):
 
     # ── Demographics ────────────────────────────────────────────────
     age: Optional[int]              # User age (may be missing if not provided)
-    sex: Optional[str]             # User gender (free text or predefined values)
-    travel_companion: Optional[str]
-    # Type of travel group (e.g., "solo", "partner", "family", "friends")
+    sex: Optional[str]              # User gender (free text or predefined values)
+    travel_companion: Optional[str] # Type of travel group (e.g., "solo", "partner", "family", "friends")
 
-    location: Optional[str]        # User's home location (used for personalization)
+    location: Optional[str]         # User's home location (used for personalization)
 
     # ── Preference Sliders (0–100 scale from quiz) ──────────────────
     # These represent behavioral tendencies derived from onboarding quiz
@@ -46,11 +45,9 @@ class BehavioralProfile(TypedDict):
     # ── Multi-select Preferences ────────────────────────────────────
     # Lists collected from user selections during onboarding
 
-    accommodation_styles: List[str]
-    # Example: ["hotel", "hostel", "airbnb"]
+    accommodation_styles: List[str] # Example: ["hotel", "hostel", "airbnb"]
 
-    dining_preferences: List[str]
-    # Example: ["street food", "fine dining"]
+    dining_preferences: List[str]   # Example: ["street food", "fine dining"]
 
     interests: List[str]
     # Core interests used to filter and rank places
@@ -108,6 +105,12 @@ class TripState(TypedDict):
 
     is_valid: Optional[bool]
     # Result of validation step (True if itinerary meets constraints)
+
+    validation: Optional[dict]
+    # Full validation verdict (score, issues, warnings, suggestions)
+
+    planning_attempts: Optional[int]
+    # How many times the planner has run (used to cap plan->validate retries)
 
 
     # ── Control Flow State ──────────────────────────────────────────
