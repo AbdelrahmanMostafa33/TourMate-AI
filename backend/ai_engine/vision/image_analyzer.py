@@ -2,7 +2,7 @@
 
 import json
 
-from app.external.groq_client import analyze_image
+from app.external.llm_client import analyze_image
 from ai_engine.prompts.vision_prompt import VISION_EXTRACTION_PROMPT
 from ai_engine.vision.feature_extractor import extract_and_validate
 
@@ -36,7 +36,7 @@ def analyze_travel_image(image_bytes: bytes) -> dict:
         On any failure, returns the safe fallback (all None/empty, confidence "low").
     """
     try:
-        # Call Llama 4 Scout via the already-built groq_client helper.
+        # Call Gemini via the llm_client helper.
         # analyze_image() handles base64 encoding internally.
         raw_response: str = analyze_image(image_bytes, VISION_EXTRACTION_PROMPT)
 

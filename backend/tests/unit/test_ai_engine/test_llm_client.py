@@ -2,11 +2,11 @@ import sys
 from pathlib import Path
 
 from langchain_core.messages import HumanMessage
-from app.external.groq_client import get_planning_llm, get_fast_llm, analyze_image
+from app.external.llm_client import get_planning_llm, get_fast_llm, analyze_image
 from ai_engine.chat.intent_parser import parse_intent
 
 
-def test_groq_text():
+def test_gemini_text():
     llm = get_planning_llm()
     messages = [HumanMessage(content="""
     You are a travel assistant for a tourism app.
@@ -22,13 +22,13 @@ def test_groq_text():
 
     Output:
     """)]
-    print("Testing planning LLM (70B)...")
+    print("Testing planning LLM (Gemini 2.5 Flash)...")
     response = llm.invoke(messages)
     print(f"[OK] Response: {response.content}")
     assert response.content and len(response.content) > 0
 
 
-def test_groq_fast():
+def test_gemini_fast():
     llm = get_fast_llm()
     messages = [HumanMessage(content="""
     You are a strict intent classifier for a travel planning app.
@@ -56,13 +56,13 @@ def test_groq_fast():
 
     Output:
     """)]
-    print("Testing fast LLM (8B)...")
+    print("Testing fast LLM (Gemini 2.5 Flash Lite)...")
     response = llm.invoke(messages)
     print(f"[OK] Response: {response.content}")
     assert response.content and len(response.content) > 0
 
 
-def test_groq_vision():
+def test_gemini_vision():
     """Test with a real image file — place any .jpg in the tests/ folder."""
     import os
     test_image = Path(__file__).parent / "sample.jpg"
@@ -119,9 +119,9 @@ def test_intent_general_chat():
     assert result["intent_type"] == "general_chat"
 
 if __name__ == "__main__":
-    test_groq_text()
-    test_groq_fast()
-    test_groq_vision()
+    test_gemini_text()
+    test_gemini_fast()
+    test_gemini_vision()
 
     test_intent_plan_trip()
     test_intent_needs_clarification()

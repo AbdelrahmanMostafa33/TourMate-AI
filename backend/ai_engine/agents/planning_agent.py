@@ -1,8 +1,10 @@
 import json
+from typing import Optional
 from langchain_core.messages import SystemMessage, HumanMessage
-from app.external.groq_client import get_planning_llm
+from app.external.llm_client import get_planning_llm
 from ai_engine.graph.state import TripState
 from ai_engine.tools.places_tool import get_places_for_city
+from ai_engine.tools.haversine import haversine
 from ai_engine.profiling.behavioral_profile import profile_to_text
 
 # System prompt that defines the Planning Agent's role, rules,
@@ -62,7 +64,12 @@ JSON schema:
 """
 
 
-def _score_place(place: dict, user_interests: list[str]) -> float:
+def _score_place(
+    place: dict,
+    user_interests: list[str],
+    center_lat: Optional[float] = None,
+    center_lon: Optional[float] = None,
+) -> float:
     """
     Compute a composite relevance score for a place before sending it
     to the LLM.
@@ -71,6 +78,7 @@ def _score_place(place: dict, user_interests: list[str]) -> float:
     - Interest overlap with user preferences
     - User rating
     - Popularity score
+    - Proximity bonus (closer to destination center = higher score)
 
     Higher score = more likely to be included in candidate set.
     """
@@ -84,8 +92,26 @@ def _score_place(place: dict, user_interests: list[str]) -> float:
     rating = place.get("rating", 3.0) or 3.0
     popularity = place.get("popularity_score", 0) or 0
 
-    # Weighted scoring formula.
-    return (tag_overlap * 3.0) + (rating * 1.5) + (popularity * 0.02)
+    # Base weighted scoring formula.
+    score = (tag_overlap * 3.0) + (rating * 1.5) + (popularity * 0.02)
+
+    # Proximity bonus: prefer places closer to the destination center.
+    # Hotels are excluded from proximity scoring since they can be
+    # anywhere in the city — users pick hotels based on preference,
+    # not centrality.
+    if center_lat is not None and center_lon is not None:
+        if place.get("category") != "hotel":
+            dist_km = haversine(center_lat, center_lon, place["lat"], place["lon"])
+            # Bonus: up to +5 points for places within 10 km of center.
+            # Penalizes: -0.3 points per km beyond 15 km.
+            if dist_km <= 10:
+                score += 5.0
+            elif dist_km <= 15:
+                score += 3.0
+            else:
+                score -= (dist_km - 15) * 0.3
+
+    return score
 
 
 def _select_candidates(
@@ -93,6 +119,8 @@ def _select_candidates(
     user_interests: list[str],
     duration_days: int,
     max_per_category: dict = None,
+    center_lat: Optional[float] = None,
+    center_lon: Optional[float] = None,
 ) -> list[dict]:
     """
     Select a balanced subset of places for the LLM.
@@ -101,6 +129,7 @@ def _select_candidates(
     - Reduce prompt size.
     - Keep only the most relevant places.
     - Maintain category diversity (attractions, restaurants, hotels).
+    - Prefer places closer to the destination center.
 
     The LLM receives only these candidates and chooses the final itinerary.
     """
@@ -108,7 +137,7 @@ def _select_candidates(
         # Buffer allows the LLM to have multiple choices
         # for each itinerary slot.
         # Keep total candidates under ~15 to stay within the
-        # LLM token limit (~12K TPM for Groq llama-3.3-70b).
+        # LLM token limit.
         max_per_category = {
             "attractions": duration_days * 4,
             "restaurant": duration_days * 2,
@@ -121,8 +150,8 @@ def _select_candidates(
             "_default": duration_days + 1,
         }
 
-    # Score every place based on relevance.
-    scored = [(p, _score_place(p, user_interests)) for p in places]
+    # Score every place based on relevance + proximity.
+    scored = [(p, _score_place(p, user_interests, center_lat, center_lon)) for p in places]
 
     # Highest-scoring places first.
     scored.sort(key=lambda x: x[1], reverse=True)
@@ -204,6 +233,21 @@ async def run_planning_agent(state: TripState) -> TripState:
     available_places = get_places_for_city(city, interests=interests)
 
     # -------------------------------------------------------------
+    # Compute destination center for proximity scoring.
+    # Use the centroid of all non-hotel places as the "center" of
+    # the destination. This ensures candidate places are geographically
+    # clustered, preventing the LLM from picking stops on opposite
+    # sides of the city.
+    # -------------------------------------------------------------
+    non_hotel = [p for p in available_places if p.get("category") != "hotel"]
+    if non_hotel:
+        center_lat = sum(p["lat"] for p in non_hotel) / len(non_hotel)
+        center_lon = sum(p["lon"] for p in non_hotel) / len(non_hotel)
+    else:
+        center_lat = None
+        center_lon = None
+
+    # -------------------------------------------------------------
     # Stage 1: Candidate Selection
     # -------------------------------------------------------------
     # Reduce the full dataset to a manageable set of relevant places.
@@ -211,6 +255,8 @@ async def run_planning_agent(state: TripState) -> TripState:
         available_places,
         interests,
         duration_days,
+        center_lat=center_lat,
+        center_lon=center_lon,
     )
 
     # Trim place objects to essential planning information.

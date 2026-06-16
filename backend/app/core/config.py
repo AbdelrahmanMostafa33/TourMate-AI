@@ -14,8 +14,8 @@ class Settings(BaseSettings):
     # === Security ===
     SECRET_KEY: str
 
-    # === AI ===
-    groq_api_key: str
+    # === AI (Gemini) ===
+    google_api_key: str
     backend_base_url: str = "http://localhost:8000"
 
     class Config:

@@ -2,7 +2,7 @@
 
 import json
 from langchain_core.messages import SystemMessage, HumanMessage
-from app.external.groq_client import get_fast_llm
+from app.external.llm_client import get_fast_llm
 from ai_engine.graph.state import TripState
 
 

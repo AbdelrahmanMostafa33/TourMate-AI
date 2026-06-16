@@ -26,6 +26,10 @@ async def main():
         print(f"Response Type: {result.get('response_type')}")
         print(f"Message: {result.get('message')}")
         
+        # Check for pipeline errors
+        if result.get("error"):
+            print(f"Pipeline Error: {result.get('error')}")
+        
         itinerary = result.get("itinerary")
         if itinerary:
             print("\nGenerated Itinerary:")
@@ -40,20 +44,20 @@ async def main():
         traceback.print_exc()
 
 if __name__ == "__main__":
-    # Check for GROQ_API_KEY in OS env first, then fall back to .env via pydantic-settings
-    api_key = os.environ.get("GROQ_API_KEY")
+    # Check for GOOGLE_API_KEY in OS env first, then fall back to .env via pydantic-settings
+    api_key = os.environ.get("GOOGLE_API_KEY")
     if not api_key:
         try:
             from app.core.config import settings
-            api_key = settings.groq_api_key
+            api_key = settings.google_api_key
         except Exception:
             # Settings() may fail if other required .env vars are missing
             api_key = None
 
     if not api_key:
-        print("Warning: GROQ_API_KEY not found in environment or .env file.")
-        print("Set GROQ_API_KEY in your .env file or as an environment variable.")
+        print("Warning: GOOGLE_API_KEY not found in environment or .env file.")
+        print("Set GOOGLE_API_KEY in your .env file or as an environment variable.")
     else:
-        print(f"GROQ_API_KEY loaded from {'env var' if os.environ.get('GROQ_API_KEY') else '.env file'}.")
+        print(f"GOOGLE_API_KEY loaded from {'env var' if os.environ.get('GOOGLE_API_KEY') else '.env file'}.")
     
     asyncio.run(main())

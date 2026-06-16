@@ -3,7 +3,7 @@
 from typing import Optional
 from langchain_core.messages import SystemMessage, HumanMessage
 
-from app.external.groq_client import get_fast_llm
+from app.external.llm_client import get_fast_llm
 from ai_engine.chat.intent_parser import parse_intent
 from ai_engine.graph.graph_builder import trip_graph
 from ai_engine.vision.image_analyzer import analyze_travel_image

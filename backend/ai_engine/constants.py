@@ -1,14 +1,13 @@
 # backend/ai_engine/constants.py
 
-# === Groq Model Names ===
-GROQ_PLANNING_MODEL     = "openai/gpt-oss-120b"
-GROQ_OPTIMIZATION_MODEL = "meta-llama/llama-4-scout-17b-16e-instruct"
-GROQ_FAST_MODEL         = "llama-3.1-8b-instant"
-GROQ_AGENT_MODEL        = "groq/compound-mini"
-
-# === Vision ===
-GROQ_VISION_MODEL       = "meta-llama/llama-4-scout-17b-16e-instruct"
+# === Gemini Model Names (Free Tier) ===
+# gemini-2.5-flash: best price-performance, handles reasoning + vision
+# gemini-2.5-flash-lite: fastest, cheapest, great for classification
+GEMINI_PLANNING_MODEL     = "gemini-2.5-flash"
+GEMINI_OPTIMIZATION_MODEL = "gemini-2.5-flash"
+GEMINI_FAST_MODEL         = "gemini-2.5-flash-lite"
+GEMINI_VISION_MODEL       = "gemini-2.5-flash"
 
 # === Shared Settings ===
-GROQ_TEMPERATURE  = 0.7
-GROQ_MAX_TOKENS   = 8192
+GEMINI_TEMPERATURE  = 0.7
+GEMINI_MAX_TOKENS   = 8192
