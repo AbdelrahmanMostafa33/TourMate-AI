@@ -13,6 +13,7 @@ You will be provided with:
 Your task:
 - Check if the itinerary covers the requested duration and destination.
 - Check if the number of stops per day is realistic (not too many, not too few).
+- Check if `accommodation_suggestions` exists and has 1-3 hotels.
 - Rate the itinerary on a scale of 0-100.
 - Respond ONLY with a valid JSON object.
 

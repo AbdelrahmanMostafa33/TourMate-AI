@@ -70,10 +70,16 @@ async def run_optimization_agent(state: TripState) -> TripState:
                 #     "name": "Egyptian Museum",
                 #     "travel_time_to_next_minutes": 15
                 # }
-                reordered_stops[i]["travel_time_to_next_minutes"] = travel_time
+                reordered_stops[i]["travel_time_to_next_minutes"] = round(travel_time, 1)
 
             # Replace the original stop sequence with the optimized sequence.
             day["stops"] = reordered_stops
+
+        # Sum travel times for all stops in this day.
+        total_travel = sum(
+            s.get("travel_time_to_next_minutes", 0) for s in day.get("stops", [])
+        )
+        day["total_travel_time_minutes"] = round(total_travel, 1)
 
     # Save the optimized itinerary into the shared state.
     # This allows downstream agents (budgeting, recommendation,
