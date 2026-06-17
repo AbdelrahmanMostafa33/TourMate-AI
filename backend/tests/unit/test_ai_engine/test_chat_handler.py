@@ -696,3 +696,45 @@ class TestHandleChatStream:
         assert state.history[0].role == "user"
         assert state.history[1].role == "assistant"
         assert state.turn_count == 1
+
+    @pytest.mark.asyncio
+    @patch("ai_engine.chat.chat_handler.get_session_manager")
+    @patch("ai_engine.chat.chat_handler.parse_intent")
+    @patch("ai_engine.chat.chat_handler.get_fast_llm")
+    async def test_stream_empty_message_uses_fallback(
+        self, mock_llm_fn, mock_parse, mock_get_manager, mock_manager
+    ):
+        """Empty/whitespace message uses 'I uploaded an image' fallback."""
+        mock_get_manager.return_value = mock_manager
+        mock_parse.return_value = _make_intent("general_chat")
+        mock_llm = MagicMock()
+        mock_response = MagicMock()
+        mock_response.content = "I see you uploaded an image!"
+        mock_llm.invoke.return_value = mock_response
+        mock_llm_fn.return_value = mock_llm
+
+        from ai_engine.chat.chat_handler import handle_chat_stream
+
+        # Empty string
+        chunks_empty = []
+        async for chunk in handle_chat_stream("user1", ""):
+            chunks_empty.append(chunk)
+
+        # Verify session and done chunks present
+        types = [c["type"] for c in chunks_empty]
+        assert types[0] == "session"
+        assert types[-1] == "done"
+        assert "text" in types
+
+        # parse_intent should have been called with the fallback message
+        call_args = mock_parse.call_args[0][0]
+        assert "image" in call_args.lower()
+
+        # Whitespace-only
+        mock_parse.reset_mock()
+        chunks_ws = []
+        async for chunk in handle_chat_stream("user1", "   "):
+            chunks_ws.append(chunk)
+
+        call_args = mock_parse.call_args[0][0]
+        assert "image" in call_args.lower()
