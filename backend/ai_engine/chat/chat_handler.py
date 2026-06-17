@@ -157,13 +157,14 @@ async def handle_chat(
 
     elif state.phase == ConversationPhase.COMPLETED:
         # Session completed — handle follow-up or new trip
-        if intent_type == "plan_trip":
+        if intent_type in ("plan_trip", "needs_clarification"):
             state.reset_for_new_trip()
             state.slots.merge(intent)
             if state.slots.is_complete():
                 state.transition_to(ConversationPhase.PLAN_GENERATION)
                 response = await _handle_plan_trip(user_id, effective_message, intent, image_features, token, state)
             else:
+                state.transition_to(ConversationPhase.SLOT_FILLING)
                 response = await _handle_clarification(intent, image_features, state)
         else:
             response = await _handle_general_chat(effective_message, image_features)
@@ -270,13 +271,14 @@ async def handle_chat_stream(
         result = await _handle_itinerary_review(user_id, effective_message, intent, image_features, token, state)
 
     elif state.phase == ConversationPhase.COMPLETED:
-        if intent_type == "plan_trip":
+        if intent_type in ("plan_trip", "needs_clarification"):
             state.reset_for_new_trip()
             state.slots.merge(intent)
             if state.slots.is_complete():
                 state.transition_to(ConversationPhase.PLAN_GENERATION)
                 result = await _handle_plan_trip(user_id, effective_message, intent, image_features, token, state)
             else:
+                state.transition_to(ConversationPhase.SLOT_FILLING)
                 result = await _handle_clarification(intent, image_features, state)
         else:
             result = await _handle_general_chat(effective_message, image_features)
@@ -478,7 +480,7 @@ async def _handle_itinerary_review(
         return {
             "response_type": "chat",
             "message": "Awesome! Your itinerary is confirmed. Have an amazing trip! 🎉",
-            "itinerary": state.itinerary if state else None,
+            "itinerary": None,  # Don't return itinerary — it's already approved
             "image_features": None,
         }
 

@@ -1,0 +1,482 @@
+# backend/tests/unit/test_ai_engine/test_chat_handler.py
+
+"""
+Integration tests for chat_handler.py phase-aware routing.
+
+Mocks external dependencies (LLM, Redis, parse_intent, trip_graph) to test
+the full conversational flow:
+
+    GREETING → SLOT_FILLING → PLAN_GENERATION → ITINERARY_REVIEW → COMPLETED
+
+Tests cover:
+    - Greeting with general chat (stays in GREETING)
+    - Greeting with plan_trip (transitions to SLOT_FILLING)
+    - Greeting with complete info (skips to PLAN_GENERATION)
+    - Slot filling with partial info (asks clarifying question)
+    - Slot filling with complete info (generates plan)
+    - Itinerary review: approve → COMPLETED
+    - Itinerary review: modify → re-runs pipeline
+    - Itinerary review: question → conversational answer
+    - COMPLETED → new trip request (resets and starts over)
+    - Session state persistence across multiple turns
+"""
+
+import pytest
+from unittest.mock import AsyncMock, MagicMock, patch
+
+from ai_engine.memory.conversation_state import ConversationPhase, ConversationState
+
+
+# ── Shared Mock Fixtures ──────────────────────────────────────────────────────
+
+@pytest.fixture
+def mock_manager():
+    """Mock SessionManager that stores state in-memory."""
+    storage = {}
+
+    manager = AsyncMock()
+
+    async def fake_resume_or_create(user_id, session_id=None):
+        if session_id and session_id in storage:
+            return storage[session_id]
+        if user_id in storage:
+            return storage[user_id]
+        state = ConversationState(user_id=user_id)
+        storage[user_id] = state
+        return state
+
+    async def fake_save(state):
+        storage[state.user_id] = state
+        return True
+
+    manager.resume_or_create = fake_resume_or_create
+    manager.save = fake_save
+    return manager
+
+
+@pytest.fixture
+def mock_llm():
+    """Mock LLM that returns a canned response."""
+    llm = MagicMock()
+    response = MagicMock()
+    response.content = "Where would you like to travel?"
+    llm.invoke.return_value = response
+    return llm
+
+
+@pytest.fixture
+def mock_trip_graph():
+    """Mock LangGraph trip_graph that returns a mock itinerary."""
+    graph = AsyncMock()
+    result = {
+        "optimized_itinerary": {
+            "days": [
+                {
+                    "day_number": 1,
+                    "stops": [
+                        {"name": "Pyramids of Giza", "start_time": "09:00"},
+                        {"name": "Egyptian Museum", "start_time": "14:00"},
+                    ],
+                }
+            ]
+        }
+    }
+    graph.ainvoke.return_value = result
+    return graph
+
+
+def _make_intent(intent_type, **kwargs):
+    """Build a mock intent dict."""
+    base = {
+        "intent_type": intent_type,
+        "destination_city": None,
+        "destination_country": None,
+        "duration_days": None,
+        "travel_dates": None,
+        "group_size": None,
+        "special_requests": None,
+        "missing_fields": [],
+    }
+    base.update(kwargs)
+    return base
+
+
+# ── GREETING Phase Tests ──────────────────────────────────────────────────────
+
+class TestGreetingPhase:
+
+    @pytest.mark.asyncio
+    @patch("ai_engine.chat.chat_handler.get_session_manager")
+    @patch("ai_engine.chat.chat_handler.parse_intent")
+    @patch("ai_engine.chat.chat_handler.get_fast_llm")
+    async def test_greeting_general_chat_stays_in_greeting(
+        self, mock_llm_fn, mock_parse, mock_get_manager, mock_manager
+    ):
+        """User says 'Hello' → general_chat → stays in GREETING."""
+        mock_get_manager.return_value = mock_manager
+        mock_parse.return_value = _make_intent("general_chat")
+
+        mock_llm = MagicMock()
+        mock_response = MagicMock()
+        mock_response.content = "Hi! I'm TourMate. Ready to plan a trip?"
+        mock_llm.invoke.return_value = mock_response
+        mock_llm_fn.return_value = mock_llm
+
+        from ai_engine.chat.chat_handler import handle_chat
+        result = await handle_chat("user1", "Hello!")
+
+        assert result["response_type"] == "chat"
+        assert "session_id" in result
+        assert result["phase"] == "greeting"
+
+    @pytest.mark.asyncio
+    @patch("ai_engine.chat.chat_handler.get_session_manager")
+    @patch("ai_engine.chat.chat_handler.parse_intent")
+    @patch("ai_engine.chat.chat_handler.get_fast_llm")
+    async def test_greeting_plan_trip_transitions_to_slot_filling(
+        self, mock_llm_fn, mock_parse, mock_get_manager, mock_manager
+    ):
+        """User says 'Plan me a trip' → needs_clarification → SLOT_FILLING."""
+        mock_get_manager.return_value = mock_manager
+        mock_parse.return_value = _make_intent(
+            "needs_clarification",
+            missing_fields=["destination", "duration"],
+        )
+
+        mock_llm = MagicMock()
+        mock_response = MagicMock()
+        mock_response.content = "Where would you like to go?"
+        mock_llm.invoke.return_value = mock_response
+        mock_llm_fn.return_value = mock_llm
+
+        from ai_engine.chat.chat_handler import handle_chat
+        result = await handle_chat("user1", "Plan me a trip")
+
+        assert result["response_type"] == "clarification"
+        assert result["phase"] == "slot_filling"
+
+    @pytest.mark.asyncio
+    @patch("ai_engine.chat.chat_handler.get_session_manager")
+    @patch("ai_engine.chat.chat_handler.parse_intent")
+    @patch("ai_engine.chat.chat_handler.trip_graph", new_callable=AsyncMock)
+    @patch("ai_engine.chat.chat_handler.load_mock_profile")
+    async def test_greeting_complete_info_skips_to_plan_generation(
+        self, mock_profile, mock_graph, mock_parse, mock_get_manager, mock_manager
+    ):
+        """User gives full info in first message → skips to PLAN_GENERATION."""
+        mock_get_manager.return_value = mock_manager
+        mock_parse.return_value = _make_intent(
+            "plan_trip",
+            destination_city="Paris",
+            destination_country="France",
+            duration_days=5,
+        )
+        mock_profile.return_value = {"user_id": "user1"}
+        mock_graph.ainvoke.return_value = {
+            "optimized_itinerary": {"days": [{"day_number": 1, "stops": []}]}
+        }
+
+        from ai_engine.chat.chat_handler import handle_chat
+        result = await handle_chat("user1", "Plan me a 5-day trip to Paris")
+
+        assert result["response_type"] == "itinerary"
+        assert result["itinerary"] is not None
+        # Phase should be ITINERARY_REVIEW (set by set_itinerary in Step 5)
+        assert result["phase"] == "itinerary_review"
+
+
+# ── SLOT_FILLING Phase Tests ─────────────────────────────────────────────────
+
+class TestSlotFillingPhase:
+
+    @pytest.mark.asyncio
+    @patch("ai_engine.chat.chat_handler.get_session_manager")
+    @patch("ai_engine.chat.chat_handler.parse_intent")
+    @patch("ai_engine.chat.chat_handler.get_fast_llm")
+    async def test_slot_filling_partial_info_asks_clarification(
+        self, mock_llm_fn, mock_parse, mock_get_manager, mock_manager
+    ):
+        """User gives destination only → still missing duration → asks clarification."""
+        mock_get_manager.return_value = mock_manager
+
+        # First turn: greeting → slot_filling
+        mock_parse.return_value = _make_intent(
+            "needs_clarification",
+            destination_city="Cairo",
+            missing_fields=["duration"],
+        )
+        mock_llm = MagicMock()
+        mock_response = MagicMock()
+        mock_response.content = "How many days?"
+        mock_llm.invoke.return_value = mock_response
+        mock_llm_fn.return_value = mock_llm
+
+        from ai_engine.chat.chat_handler import handle_chat
+        result1 = await handle_chat("user1", "I want to visit Cairo")
+        assert result1["phase"] == "slot_filling"
+
+        # Second turn: still in slot_filling, gives duration
+        mock_parse.return_value = _make_intent(
+            "plan_trip",
+            duration_days=3,
+        )
+
+        mock_graph = AsyncMock()
+        mock_graph.ainvoke.return_value = {
+            "optimized_itinerary": {"days": [{"day_number": 1, "stops": []}]}
+        }
+        with patch("ai_engine.chat.chat_handler.trip_graph", mock_graph), \
+             patch("ai_engine.chat.chat_handler.load_mock_profile", return_value={"user_id": "user1"}):
+            result2 = await handle_chat("user1", "3 days")
+
+        assert result2["response_type"] == "itinerary"
+        assert result2["phase"] == "itinerary_review"
+
+    @pytest.mark.asyncio
+    @patch("ai_engine.chat.chat_handler.get_session_manager")
+    @patch("ai_engine.chat.chat_handler.parse_intent")
+    @patch("ai_engine.chat.chat_handler.get_fast_llm")
+    async def test_slot_filling_general_chat_stays_in_slot_filling(
+        self, mock_llm_fn, mock_parse, mock_get_manager, mock_manager
+    ):
+        """User asks a travel question during slot filling → general chat, stays in slot_filling."""
+        mock_get_manager.return_value = mock_manager
+
+        # First turn: greeting → slot_filling
+        mock_parse.return_value = _make_intent(
+            "needs_clarification",
+            destination_city="Paris",
+            missing_fields=["duration"],
+        )
+        mock_llm = MagicMock()
+        mock_response = MagicMock()
+        mock_response.content = "How many days?"
+        mock_llm.invoke.return_value = mock_response
+        mock_llm_fn.return_value = mock_llm
+
+        from ai_engine.chat.chat_handler import handle_chat
+        await handle_chat("user1", "I want to visit Paris")
+
+        # Second turn: general question
+        mock_parse.return_value = _make_intent("general_chat")
+        mock_response.content = "Paris is beautiful in spring!"
+        result = await handle_chat("user1", "Is Paris safe?")
+
+        assert result["response_type"] == "chat"
+        assert result["phase"] == "slot_filling"  # shouldn't change
+
+
+# ── ITINERARY_REVIEW Phase Tests ──────────────────────────────────────────────
+
+class TestItineraryReviewPhase:
+
+    @pytest.mark.asyncio
+    @patch("ai_engine.chat.chat_handler.get_session_manager")
+    @patch("ai_engine.chat.chat_handler.parse_intent")
+    @patch("ai_engine.chat.chat_handler.trip_graph", new_callable=AsyncMock)
+    @patch("ai_engine.chat.chat_handler.load_mock_profile")
+    async def test_review_approve_transitions_to_completed(
+        self, mock_profile, mock_graph, mock_parse, mock_get_manager, mock_manager
+    ):
+        """User approves itinerary → transitions to COMPLETED."""
+        mock_get_manager.return_value = mock_manager
+        mock_profile.return_value = {"user_id": "user1"}
+        mock_graph.ainvoke.return_value = {
+            "optimized_itinerary": {"days": [{"day_number": 1, "stops": []}]}
+        }
+
+        from ai_engine.chat.chat_handler import handle_chat
+
+        # Generate itinerary first
+        mock_parse.return_value = _make_intent(
+            "plan_trip",
+            destination_city="Paris",
+            duration_days=3,
+        )
+        result1 = await handle_chat("user1", "Plan me a 3-day trip to Paris")
+        assert result1["phase"] == "itinerary_review"
+
+        # Approve
+        mock_parse.return_value = _make_intent("general_chat")
+        result2 = await handle_chat("user1", "Looks good, approve!")
+
+        assert result2["response_type"] == "chat"
+        assert result2["phase"] == "completed"
+        assert "amazing trip" in result2["message"].lower()
+
+    @pytest.mark.asyncio
+    @patch("ai_engine.chat.chat_handler.get_session_manager")
+    @patch("ai_engine.chat.chat_handler.parse_intent")
+    @patch("ai_engine.chat.chat_handler.trip_graph", new_callable=AsyncMock)
+    @patch("ai_engine.chat.chat_handler.load_mock_profile")
+    async def test_review_question_stays_in_review(
+        self, mock_profile, mock_graph, mock_parse, mock_get_manager, mock_manager
+    ):
+        """User asks a question about itinerary → stays in ITINERARY_REVIEW."""
+        mock_get_manager.return_value = mock_manager
+        mock_profile.return_value = {"user_id": "user1"}
+        mock_graph.ainvoke.return_value = {
+            "optimized_itinerary": {"days": [{"day_number": 1, "stops": []}]}
+        }
+
+        from ai_engine.chat.chat_handler import handle_chat
+
+        # Generate itinerary
+        mock_parse.return_value = _make_intent(
+            "plan_trip",
+            destination_city="Paris",
+            duration_days=3,
+        )
+        await handle_chat("user1", "Plan me a 3-day trip to Paris")
+
+        # Ask a question
+        mock_parse.return_value = _make_intent("general_chat")
+        mock_llm = MagicMock()
+        mock_response = MagicMock()
+        mock_response.content = "Day 1 includes the Pyramids of Giza."
+        mock_llm.invoke.return_value = mock_response
+        with patch("ai_engine.chat.chat_handler.get_fast_llm", return_value=mock_llm):
+            result = await handle_chat("user1", "What's on Day 1?")
+
+        assert result["response_type"] == "chat"
+        assert result["phase"] == "itinerary_review"  # stays in review
+
+    @pytest.mark.asyncio
+    @patch("ai_engine.chat.chat_handler.get_session_manager")
+    @patch("ai_engine.chat.chat_handler.parse_intent")
+    @patch("ai_engine.chat.chat_handler.trip_graph", new_callable=AsyncMock)
+    @patch("ai_engine.chat.chat_handler.load_mock_profile")
+    async def test_review_modify_re_runs_pipeline(
+        self, mock_profile, mock_graph, mock_parse, mock_get_manager, mock_manager
+    ):
+        """User requests modification → re-runs pipeline, stays in review."""
+        mock_get_manager.return_value = mock_manager
+        mock_profile.return_value = {"user_id": "user1"}
+        mock_graph.ainvoke.return_value = {
+            "optimized_itinerary": {"days": [{"day_number": 1, "stops": []}]}
+        }
+
+        from ai_engine.chat.chat_handler import handle_chat
+
+        # Generate itinerary
+        mock_parse.return_value = _make_intent(
+            "plan_trip",
+            destination_city="Paris",
+            duration_days=3,
+        )
+        await handle_chat("user1", "Plan me a 3-day trip to Paris")
+
+        # Request modification
+        mock_parse.return_value = _make_intent("general_chat")
+        result = await handle_chat("user1", "Change the hotel to something cheaper")
+
+        assert result["response_type"] == "itinerary"
+        assert result["phase"] == "itinerary_review"  # back to review
+
+
+# ── COMPLETED Phase Tests ─────────────────────────────────────────────────────
+
+class TestCompletedPhase:
+
+    @pytest.mark.asyncio
+    @patch("ai_engine.chat.chat_handler.get_session_manager")
+    @patch("ai_engine.chat.chat_handler.parse_intent")
+    @patch("ai_engine.chat.chat_handler.trip_graph", new_callable=AsyncMock)
+    @patch("ai_engine.chat.chat_handler.load_mock_profile")
+    async def test_completed_new_trip_resets_and_starts_over(
+        self, mock_profile, mock_graph, mock_parse, mock_get_manager, mock_manager
+    ):
+        """User approves then starts new trip → resets slots, begins new flow."""
+        mock_get_manager.return_value = mock_manager
+        mock_profile.return_value = {"user_id": "user1"}
+        mock_graph.ainvoke.return_value = {
+            "optimized_itinerary": {"days": [{"day_number": 1, "stops": []}]}
+        }
+
+        from ai_engine.chat.chat_handler import handle_chat
+
+        # Complete first trip
+        mock_parse.return_value = _make_intent(
+            "plan_trip",
+            destination_city="Paris",
+            duration_days=3,
+        )
+        await handle_chat("user1", "Plan me a 3-day trip to Paris")
+        mock_parse.return_value = _make_intent("general_chat")
+        await handle_chat("user1", "Looks good, approve!")
+
+        # Start new trip
+        mock_parse.return_value = _make_intent(
+            "needs_clarification",
+            destination_city="Tokyo",
+            missing_fields=["duration"],
+        )
+        mock_llm = MagicMock()
+        mock_response = MagicMock()
+        mock_response.content = "How many days for Tokyo?"
+        mock_llm.invoke.return_value = mock_response
+        with patch("ai_engine.chat.chat_handler.get_fast_llm", return_value=mock_llm):
+            result = await handle_chat("user1", "I want to go to Tokyo next")
+
+        assert result["phase"] == "slot_filling"
+        # Verify slots were reset (Tokyo is set, duration is missing)
+        manager = await mock_get_manager()
+        state = await manager.resume_or_create("user1")
+        assert state.slots.destination_city == "Tokyo"
+        assert state.slots.duration_days is None
+
+
+# ── Session Persistence Tests ─────────────────────────────────────────────────
+
+class TestSessionPersistence:
+
+    @pytest.mark.asyncio
+    @patch("ai_engine.chat.chat_handler.get_session_manager")
+    @patch("ai_engine.chat.chat_handler.parse_intent")
+    @patch("ai_engine.chat.chat_handler.get_fast_llm")
+    async def test_session_id_returned_in_response(
+        self, mock_llm_fn, mock_parse, mock_get_manager, mock_manager
+    ):
+        """Every response includes session_id for client tracking."""
+        mock_get_manager.return_value = mock_manager
+        mock_parse.return_value = _make_intent("general_chat")
+        mock_llm = MagicMock()
+        mock_response = MagicMock()
+        mock_response.content = "Hello!"
+        mock_llm.invoke.return_value = mock_response
+        mock_llm_fn.return_value = mock_llm
+
+        from ai_engine.chat.chat_handler import handle_chat
+        result = await handle_chat("user1", "Hi")
+
+        assert "session_id" in result
+        assert isinstance(result["session_id"], str)
+        assert len(result["session_id"]) > 0
+
+    @pytest.mark.asyncio
+    @patch("ai_engine.chat.chat_handler.get_session_manager")
+    @patch("ai_engine.chat.chat_handler.parse_intent")
+    @patch("ai_engine.chat.chat_handler.get_fast_llm")
+    async def test_history_grows_across_turns(
+        self, mock_llm_fn, mock_parse, mock_get_manager, mock_manager
+    ):
+        """Conversation history accumulates across multiple turns."""
+        mock_get_manager.return_value = mock_manager
+        mock_parse.return_value = _make_intent("general_chat")
+        mock_llm = MagicMock()
+        mock_response = MagicMock()
+        mock_response.content = "Nice weather!"
+        mock_llm.invoke.return_value = mock_response
+        mock_llm_fn.return_value = mock_llm
+
+        from ai_engine.chat.chat_handler import handle_chat
+
+        await handle_chat("user1", "Hi")
+        await handle_chat("user1", "How are you?")
+        await handle_chat("user1", "What's the weather?")
+
+        manager = await mock_get_manager()
+        state = await manager.resume_or_create("user1")
+        # 3 user messages + 3 assistant messages = 6 total
+        assert len(state.history) == 6
+        assert state.turn_count == 3
