@@ -11,13 +11,16 @@ Tests cover:
 """
 
 import pytest
+from unittest.mock import AsyncMock, patch
 from ai_engine.tools.haversine import haversine
 from ai_engine.tools.routing_tool import (
+    WALK_THRESHOLD_KM,
+    _WALK_SPEED_KMH,
+    compute_day_matrix,
     get_reorder_indices,
     improve_order_2opt,
     order_stops_by_matrix,
     order_stops_by_proximity,
-    WALK_THRESHOLD_KM,
 )
 
 
@@ -184,3 +187,155 @@ class TestWalkThreshold:
 
     def test_is_2km(self):
         assert WALK_THRESHOLD_KM == 2.0
+
+    def test_walk_speed(self):
+        assert _WALK_SPEED_KMH == 5.0
+
+
+# ── compute_day_matrix Tests ──────────────────────────────────────────────────
+
+class TestComputeDayMatrix:
+    """Tests for the mixed-mode walk/drive matrix computation."""
+
+    @pytest.mark.asyncio
+    async def test_empty_stops_returns_zero_matrix(self):
+        result = await compute_day_matrix([])
+        assert result == [[0.0]]
+
+    @pytest.mark.asyncio
+    async def test_single_stop_returns_zero_matrix(self):
+        stops = [{"name": "A", "lat": 30.0, "lon": 31.0}]
+        result = await compute_day_matrix(stops)
+        assert result == [[0.0]]
+
+    @pytest.mark.asyncio
+    async def test_all_walkable_uses_haversine_no_osrm(self):
+        """All stops within 2km → Haversine estimate, no OSRM call."""
+        # Two points ~0.5km apart (within WALK_THRESHOLD_KM)
+        stops = [
+            {"name": "A", "lat": 30.0, "lon": 31.0},
+            {"name": "B", "lat": 30.004, "lon": 31.004},
+        ]
+        with patch("ai_engine.tools.routing_tool.get_travel_time_matrix") as mock_osrm:
+            result = await compute_day_matrix(stops)
+            mock_osrm.assert_not_called()  # No OSRM call for walkable pairs
+
+        # Matrix should be symmetric
+        assert result[0][0] == 0.0
+        assert result[1][1] == 0.0
+        assert result[0][1] == result[1][0]
+
+        # Walk time should be positive
+        assert result[0][1] > 0
+
+    @pytest.mark.asyncio
+    async def test_all_driving_uses_osrm(self):
+        """All stops >2km apart → OSRM Table API call."""
+        # Cairo to Giza ≈ 3.7km (beyond threshold)
+        stops = [
+            {"name": "Cairo", "lat": 30.0444, "lon": 31.2357},
+            {"name": "Giza", "lat": 30.0131, "lon": 31.2089},
+        ]
+        mock_osrm = AsyncMock(return_value=[[0.0, 15.0], [15.0, 0.0]])
+        with patch("ai_engine.tools.routing_tool.get_travel_time_matrix", mock_osrm):
+            result = await compute_day_matrix(stops)
+            mock_osrm.assert_called_once()
+
+        assert result[0][1] == 15.0
+        assert result[1][0] == 15.0
+
+    @pytest.mark.asyncio
+    async def test_mixed_walk_and_drive(self):
+        """Some pairs walkable, some driving → split logic works."""
+        # Stop A and B are close (~0.5km), C is far from both (~5km)
+        stops = [
+            {"name": "A", "lat": 30.0, "lon": 31.0},
+            {"name": "B", "lat": 30.004, "lon": 31.004},  # ~0.5km from A
+            {"name": "C", "lat": 30.1, "lon": 31.1},      # ~12km from A and B
+        ]
+        mock_osrm = AsyncMock(return_value=[[0.0, 20.0, 20.0],
+                                              [20.0, 0.0, 20.0],
+                                              [20.0, 20.0, 0.0]])
+        with patch("ai_engine.tools.routing_tool.get_travel_time_matrix", mock_osrm):
+            result = await compute_day_matrix(stops)
+
+        # OSRM should be called (there are driving pairs)
+        mock_osrm.assert_called_once()
+
+        # A↔B is walkable (Haversine estimate)
+        assert result[0][1] == result[1][0]
+        assert result[0][1] > 0
+
+        # A↔C and B↔C are driving (from OSRM)
+        assert result[0][2] == 20.0
+        assert result[2][0] == 20.0
+        assert result[1][2] == 20.0
+        assert result[2][1] == 20.0
+
+        # Diagonal is always 0
+        assert result[0][0] == 0.0
+        assert result[1][1] == 0.0
+        assert result[2][2] == 0.0
+
+    @pytest.mark.asyncio
+    async def test_walk_time_calculation(self):
+        """Walk time = (haversine_distance / walk_speed) * 60 minutes."""
+        stops = [
+            {"name": "A", "lat": 30.0, "lon": 31.0},
+            {"name": "B", "lat": 30.004, "lon": 31.004},
+        ]
+        with patch("ai_engine.tools.routing_tool.get_travel_time_matrix"):
+            result = await compute_day_matrix(stops)
+
+        # Calculate expected walk time
+        dist_km = haversine(30.0, 31.0, 30.004, 31.004)
+        expected_min = round((dist_km / _WALK_SPEED_KMH) * 60, 1)
+        assert result[0][1] == expected_min
+
+    @pytest.mark.asyncio
+    async def test_osrm_receives_correct_sub_stops(self):
+        """OSRM receives only the stops that need driving, in sorted index order."""
+        # A-B close, C-D close, but A-C far
+        stops = [
+            {"name": "A", "lat": 30.0, "lon": 31.0},
+            {"name": "B", "lat": 30.004, "lon": 31.004},
+            {"name": "C", "lat": 30.1, "lon": 31.1},
+            {"name": "D", "lat": 30.104, "lon": 31.104},
+        ]
+        mock_osrm = AsyncMock(return_value=[[0.0] * 4 for _ in range(4)])
+        with patch("ai_engine.tools.routing_tool.get_travel_time_matrix", mock_osrm):
+            await compute_day_matrix(stops)
+
+        # OSRM should be called with the driving stops
+        call_args = mock_osrm.call_args
+        sub_stops = call_args[0][0]
+        # Sub-stops should include A, C, D (B is walkable with A)
+        # Actually all 4 are in sub_stops because A-C, A-D, B-C, B-D are driving
+        # All 4 stops are in sub_stops because A-C, A-D, B-C, B-D are all driving
+        assert len(sub_stops) == 4
+
+    @pytest.mark.asyncio
+    async def test_two_stops_symmetric(self):
+        """Two stops produce symmetric matrix."""
+        stops = [
+            {"name": "A", "lat": 30.0, "lon": 31.0},
+            {"name": "B", "lat": 30.004, "lon": 31.004},
+        ]
+        with patch("ai_engine.tools.routing_tool.get_travel_time_matrix"):
+            result = await compute_day_matrix(stops)
+
+        assert len(result) == 2
+        assert len(result[0]) == 2
+        assert result[0][1] == result[1][0]
+
+    @pytest.mark.asyncio
+    async def test_osrm_failure_propagates(self):
+        """OSRM API failure should propagate as an exception."""
+        stops = [
+            {"name": "A", "lat": 30.0, "lon": 31.0},
+            {"name": "B", "lat": 35.0, "lon": 36.0},  # far apart
+        ]
+        mock_osrm = AsyncMock(side_effect=Exception("OSRM unavailable"))
+        with patch("ai_engine.tools.routing_tool.get_travel_time_matrix", mock_osrm):
+            with pytest.raises(Exception, match="OSRM unavailable"):
+                await compute_day_matrix(stops)
