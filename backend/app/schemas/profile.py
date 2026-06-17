@@ -2,8 +2,11 @@
 
 from pydantic import BaseModel, Field
 from typing import List, Optional
+from datetime import datetime
+
 
 class QuizSubmitRequest(BaseModel):
+    """Request schema for quiz submission – aligns with TravelerProfile model fields."""
     age: int
     sex: str
     travel_companion: str
@@ -20,8 +23,11 @@ class QuizSubmitRequest(BaseModel):
     dining_preferences: List[str]
     interests: List[str]
     traveler_types: List[str]
+    dietary_restrictions: Optional[List[str]] = []
+
 
 class PersonaResponse(BaseModel):
+    """Response schema for persona data – aligns with TravelerProfile model fields."""
     persona_name: str
     persona_bio: str
     interests: List[str]
@@ -32,18 +38,20 @@ class PersonaResponse(BaseModel):
         from_attributes = True
 
 
-# ✅ NEW: Full user profile response
 class FullProfileResponse(BaseModel):
-    # ── User Info ──
+    """Full user profile response – aligns with User + TravelerProfile models.
+    Note: User model does NOT have 'phone' (it's phone_number), 'role', or 'is_active'.
+    """
+    # ── User Info (from User model) ──
     user_id: str
-    full_name: str
+    full_name: Optional[str] = None
     email: str
-    phone: Optional[str] = None
-    role: str
-    is_active: bool
+    phone_number: Optional[str] = None
+    home_city: Optional[str] = None
+    registration_date: Optional[datetime] = None
 
     # ── Quiz Status ──
-    quiz_completed: bool
+    quiz_completed: bool = False
 
     # ── Persona (only if quiz completed) ──
     persona_name: Optional[str] = None
@@ -69,6 +77,14 @@ class FullProfileResponse(BaseModel):
     dining_preferences: Optional[List[str]] = None
     interests: Optional[List[str]] = None
     traveler_types: Optional[List[str]] = None
+    dietary_restrictions: Optional[List[str]] = None
+
+    # ── Dimension Scores ──
+    dimension_scores: Optional[dict] = None
+
+    # ── Timestamps ──
+    created_at: Optional[datetime] = None
+    last_updated: Optional[datetime] = None
 
     class Config:
         from_attributes = True

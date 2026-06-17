@@ -1,73 +1,98 @@
 from pydantic import BaseModel
 from typing import Optional, List
 from datetime import date, datetime, time
-from enum import Enum
+
+from app.models.enums import TripStatus, ItineraryStatus, StopStatus, TravelMode
 
 
-class TripStatus(str, Enum):
-    planning  = "planning"
-    active    = "active"
-    completed = "completed"
+# ─── ItineraryStop (replaces old Activity) ───────────────────────────────────
+
+class StopCreate(BaseModel):
+    """Create schema for ItineraryStop – aligns with model fields."""
+    place_id:               Optional[str]  = None
+    place_snapshot:         Optional[dict] = None
+    scheduled_time:         Optional[time] = None
+    duration_minutes:       Optional[int]  = None
+    order_in_day:           Optional[int]  = 0
+    minutes_from_prev_stop: Optional[int]  = None
+    travel_mode:            Optional[TravelMode] = None
+    estimated_cost:         Optional[float] = None
+    ai_notes:               Optional[str]   = None
+    user_notes:             Optional[str]   = None
+    status:                 Optional[StopStatus] = StopStatus.planned
 
 
-class InputMode(str, Enum):
-    ai_chat = "ai_chat"
-    manual  = "manual"
-
-
-class ActivityType(str, Enum):
-    attraction = "attraction"
-    hotel      = "hotel"
-    restaurant = "restaurant"
-    transport  = "transport"
-
-
-# ─── Activity ────────────────────────────────────────────────────────────────
-
-class ActivityCreate(BaseModel):
-    name:           str
-    type:           ActivityType
-    location_name:  Optional[str]   = None
-    latitude:       Optional[float] = None
-    longitude:      Optional[float] = None
-    order_in_day:   Optional[int]   = None
-    time:           Optional[time]  = None
-    duration_hours: Optional[float] = None
-    notes:          Optional[str]   = None
-
-
-class ActivityResponse(BaseModel):
-    activity_id:    int
-    day_id:         int
-    name:           str
-    type:           ActivityType
-    time:           Optional[time]   = None
-    duration_hours: Optional[float]  = None
-    notes:          Optional[str]    = None
-    order_in_day:   Optional[int]    = None
-    location_name:  Optional[str]    = None
-    lat:            Optional[float]  = None
-    lng:            Optional[float]  = None
-    created_at:     datetime
+class StopResponse(BaseModel):
+    """Response schema for ItineraryStop – aligns with model fields."""
+    stop_id:                int
+    day_id:                 int
+    place_id:               Optional[str]  = None
+    place_snapshot:         Optional[dict] = None
+    scheduled_time:         Optional[time] = None
+    duration_minutes:       Optional[int]  = None
+    order_in_day:           Optional[int]  = None
+    minutes_from_prev_stop: Optional[int]  = None
+    travel_mode:            Optional[TravelMode] = None
+    estimated_cost:         Optional[float] = None
+    ai_notes:               Optional[str]   = None
+    user_notes:             Optional[str]   = None
+    status:                 StopStatus
+    created_at:             datetime
 
     class Config:
         from_attributes = True
 
 
-# ─── TripDay ─────────────────────────────────────────────────────────────────
+# ─── Day ─────────────────────────────────────────────────────────────────────
 
-class TripDayCreate(BaseModel):
-    day_number: int
-    date:       Optional[date] = None
-    activities: Optional[List[ActivityCreate]] = []
+class DayCreate(BaseModel):
+    """Create schema for Day – aligns with model fields."""
+    day_number:     int
+    date:           Optional[date] = None
+    theme:          Optional[str]  = None
+    description:    Optional[str]  = None
+    estimated_cost: Optional[float] = None
+    stops:          Optional[List[StopCreate]] = []
 
 
-class TripDayResponse(BaseModel):
-    day_id:     int
-    trip_id:    str
-    day_number: int
-    date:       date | None
-    activities: List[ActivityResponse] = []
+class DayResponse(BaseModel):
+    """Response schema for Day – aligns with model fields."""
+    day_id:         int
+    itinerary_id:   str
+    day_number:     int
+    date:           Optional[date]
+    theme:          Optional[str]   = None
+    description:    Optional[str]   = None
+    estimated_cost: Optional[float] = None
+    stops:          List[StopResponse] = []
+
+    class Config:
+        from_attributes = True
+
+
+# ─── Itinerary ───────────────────────────────────────────────────────────────
+
+class ItineraryCreate(BaseModel):
+    """Create schema for Itinerary – aligns with model fields."""
+    title:               Optional[str]  = None
+    description:         Optional[str]  = None
+    total_estimated_cost: Optional[float] = None
+    days:                Optional[List[DayCreate]] = []
+
+
+class ItineraryResponse(BaseModel):
+    """Response schema for Itinerary – aligns with model fields."""
+    itinerary_id:         str
+    trip_id:              str
+    version_number:       int
+    title:                Optional[str]   = None
+    description:          Optional[str]   = None
+    total_estimated_cost: Optional[float] = None
+    status:               ItineraryStatus
+    created_at:           datetime
+    last_modified:        datetime
+    approved_at:          Optional[datetime] = None
+    days:                 List[DayResponse] = []
 
     class Config:
         from_attributes = True
@@ -76,45 +101,46 @@ class TripDayResponse(BaseModel):
 # ─── Trip ────────────────────────────────────────────────────────────────────
 
 class TripCreate(BaseModel):
-    destination_city:    str
-    destination_country: str
-    start_date:          Optional[date]  = None
-    end_date:            Optional[date]  = None
-    budget_total:        Optional[float] = None
-    traveler_count:      Optional[int]   = 1
-    input_mode:          Optional[InputMode] = InputMode.ai_chat
-    preferences:         Optional[str]   = None
+    """Create schema for Trip – aligns with model fields."""
+    destination:           str
+    start_date:            Optional[date]  = None
+    end_date:              Optional[date]  = None
+    number_of_travelers:   Optional[int]   = 1
+    budget:                Optional[float] = None
+    special_requirements:  Optional[str]   = None
 
 
 class TripResponse(BaseModel):
-    trip_id:             str
-    user_id:             str
-    destination_city:    str
-    destination_country: str
-    start_date:          Optional[date]
-    end_date:            Optional[date]
-    duration_days:       int
-    status:              TripStatus
-    budget_total:        Optional[float] = None
-    traveler_count:      int
-    input_mode:          InputMode
-    created_at:          datetime
-    days:                List[TripDayResponse] = []
-    auto_message:        Optional[str] = None
-    conversation_id:     Optional[str] = None          # ← جديد
+    """Response schema for Trip – aligns with model fields.
+    Also includes optional fields injected by routes (auto_message, conversation_id).
+    """
+    trip_id:              str
+    user_id:              str
+    destination:          str
+    start_date:           Optional[date]
+    end_date:             Optional[date]
+    number_of_travelers:  int
+    budget:               Optional[float]  = None
+    special_requirements: Optional[str]    = None
+    status:               TripStatus
+    created_at:           datetime
+    itineraries:          List[ItineraryResponse] = []
+    # Injected by routes
+    auto_message:         Optional[str] = None
+    conversation_id:      Optional[str] = None
 
     class Config:
         from_attributes = True
 
 
 class TripSummary(BaseModel):
-    trip_id:             str
-    destination_city:    str
-    destination_country: str
-    start_date:          Optional[date]
-    end_date:            Optional[date]
-    duration_days:       int
-    status:              TripStatus
+    """Summary schema for Trip – aligns with model fields."""
+    trip_id:              str
+    destination:          str
+    start_date:           Optional[date]
+    end_date:             Optional[date]
+    number_of_travelers:  int
+    status:               TripStatus
 
     class Config:
         from_attributes = True
