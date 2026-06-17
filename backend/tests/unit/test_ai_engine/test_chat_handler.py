@@ -738,3 +738,68 @@ class TestHandleChatStream:
 
         call_args = mock_parse.call_args[0][0]
         assert "image" in call_args.lower()
+
+    @pytest.mark.asyncio
+    @patch("ai_engine.chat.chat_handler.get_session_manager")
+    @patch("ai_engine.chat.chat_handler.parse_intent")
+    @patch("ai_engine.chat.chat_handler.get_fast_llm")
+    async def test_stream_multi_turn_carries_session_state(
+        self, mock_llm_fn, mock_parse, mock_get_manager, mock_manager
+    ):
+        """Session state carries across multiple streaming calls."""
+        mock_get_manager.return_value = mock_manager
+        mock_parse.return_value = _make_intent("general_chat")
+        mock_llm = MagicMock()
+        mock_response = MagicMock()
+        mock_response.content = "Nice!"
+        mock_llm.invoke.return_value = mock_response
+        mock_llm_fn.return_value = mock_llm
+
+        from ai_engine.chat.chat_handler import handle_chat_stream
+
+        # Turn 1: greeting
+        chunks1 = []
+        async for chunk in handle_chat_stream("user1", "Hello!"):
+            chunks1.append(chunk)
+        session_id_1 = chunks1[0]["data"]["session_id"]
+        phase_1 = chunks1[0]["data"]["phase"]
+
+        # Turn 2: slot filling
+        mock_parse.return_value = _make_intent(
+            "needs_clarification",
+            destination_city="Paris",
+            missing_fields=["duration"],
+        )
+        chunks2 = []
+        async for chunk in handle_chat_stream("user1", "I want to visit Paris"):
+            chunks2.append(chunk)
+        session_id_2 = chunks2[0]["data"]["session_id"]
+        phase_2 = chunks2[0]["data"]["phase"]
+
+        # Turn 3: more info
+        mock_parse.return_value = _make_intent("general_chat")
+        chunks3 = []
+        async for chunk in handle_chat_stream("user1", "Is it safe?"):
+            chunks3.append(chunk)
+        session_id_3 = chunks3[0]["data"]["session_id"]
+        phase_3 = chunks3[0]["data"]["phase"]
+
+        # All turns share the same session_id
+        assert session_id_1 == session_id_2 == session_id_3
+
+        # Session chunk shows phase BEFORE routing, so:
+        # Turn 1: greeting (no transition for general_chat)
+        # Turn 2: greeting (transition to slot_filling happens DURING this turn)
+        # Turn 3: slot_filling (loaded after turn 2 saved it)
+        assert phase_1 == "greeting"
+        assert phase_2 == "greeting"  # session chunk yielded before routing
+        assert phase_3 == "slot_filling"
+
+        # History accumulated across all 3 turns
+        manager = await mock_get_manager()
+        state = await manager.resume_or_create("user1")
+        assert state.turn_count == 3
+        assert len(state.history) == 6  # 3 user + 3 assistant
+
+        # Destination was collected and persists
+        assert state.slots.destination_city == "Paris"
