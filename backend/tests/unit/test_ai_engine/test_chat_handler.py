@@ -480,3 +480,219 @@ class TestSessionPersistence:
         # 3 user messages + 3 assistant messages = 6 total
         assert len(state.history) == 6
         assert state.turn_count == 3
+
+
+# ── Streaming Handler Tests ───────────────────────────────────────────────────
+
+class TestHandleChatStream:
+    """Tests for the handle_chat_stream async generator."""
+
+    @pytest.mark.asyncio
+    @patch("ai_engine.chat.chat_handler.get_session_manager")
+    @patch("ai_engine.chat.chat_handler.parse_intent")
+    @patch("ai_engine.chat.chat_handler.get_fast_llm")
+    async def test_stream_general_chat_yields_session_text_done(
+        self, mock_llm_fn, mock_parse, mock_get_manager, mock_manager
+    ):
+        """General chat stream yields session → text chunks → done."""
+        mock_get_manager.return_value = mock_manager
+        mock_parse.return_value = _make_intent("general_chat")
+        mock_llm = MagicMock()
+        mock_response = MagicMock()
+        mock_response.content = "Hello there!"
+        mock_llm.invoke.return_value = mock_response
+        mock_llm_fn.return_value = mock_llm
+
+        from ai_engine.chat.chat_handler import handle_chat_stream
+
+        chunks = []
+        async for chunk in handle_chat_stream("user1", "Hi"):
+            chunks.append(chunk)
+
+        # Should have: session + 2 text chunks ("Hello" + "there!") + done
+        types = [c["type"] for c in chunks]
+        assert types[0] == "session"
+        assert types[-1] == "done"
+        assert "text" in types
+        assert "done" in types
+
+        # Session chunk should have session_id and phase
+        session_chunk = chunks[0]
+        assert "session_id" in session_chunk["data"]
+        assert "phase" in session_chunk["data"]
+
+    @pytest.mark.asyncio
+    @patch("ai_engine.chat.chat_handler.get_session_manager")
+    @patch("ai_engine.chat.chat_handler.parse_intent")
+    @patch("ai_engine.chat.chat_handler.get_fast_llm")
+    async def test_stream_text_chunks_are_word_by_word(
+        self, mock_llm_fn, mock_parse, mock_get_manager, mock_manager
+    ):
+        """Text chunks yield one word at a time with trailing space."""
+        mock_get_manager.return_value = mock_manager
+        mock_parse.return_value = _make_intent("general_chat")
+        mock_llm = MagicMock()
+        mock_response = MagicMock()
+        mock_response.content = "Paris is beautiful"
+        mock_llm.invoke.return_value = mock_response
+        mock_llm_fn.return_value = mock_llm
+
+        from ai_engine.chat.chat_handler import handle_chat_stream
+
+        text_chunks = []
+        async for chunk in handle_chat_stream("user1", "Tell me about Paris"):
+            if chunk["type"] == "text":
+                text_chunks.append(chunk)
+
+        assert len(text_chunks) == 3  # "Paris", "is", "beautiful"
+        assert text_chunks[0]["content"] == "Paris "
+        assert text_chunks[1]["content"] == "is "
+        assert text_chunks[2]["content"] == "beautiful "
+
+    @pytest.mark.asyncio
+    @patch("ai_engine.chat.chat_handler.get_session_manager")
+    @patch("ai_engine.chat.chat_handler.parse_intent")
+    @patch("ai_engine.chat.chat_handler.trip_graph", new_callable=AsyncMock)
+    @patch("ai_engine.chat.chat_handler.load_mock_profile")
+    async def test_stream_plan_trip_yields_actions_chunk(
+        self, mock_profile, mock_graph, mock_parse, mock_get_manager, mock_manager
+    ):
+        """Plan trip stream yields session → text → actions → done."""
+        mock_get_manager.return_value = mock_manager
+        mock_profile.return_value = {"user_id": "user1"}
+        mock_graph.ainvoke.return_value = {
+            "optimized_itinerary": {"days": [{"day_number": 1, "stops": []}]}
+        }
+        mock_parse.return_value = _make_intent(
+            "plan_trip",
+            destination_city="Paris",
+            duration_days=3,
+        )
+
+        from ai_engine.chat.chat_handler import handle_chat_stream
+
+        chunks = []
+        async for chunk in handle_chat_stream("user1", "Plan me a 3-day trip to Paris"):
+            chunks.append(chunk)
+
+        types = [c["type"] for c in chunks]
+        assert types[0] == "session"
+        assert "text" in types
+        assert "actions" in types
+        assert types[-1] == "done"
+
+        # Actions chunk should contain CREATE_TRIP
+        actions_chunk = next(c for c in chunks if c["type"] == "actions")
+        assert len(actions_chunk["data"]) == 1
+        assert actions_chunk["data"][0]["type"] == "CREATE_TRIP"
+        assert "days" in actions_chunk["data"][0]["data"]
+
+    @pytest.mark.asyncio
+    @patch("ai_engine.chat.chat_handler.get_session_manager")
+    @patch("ai_engine.chat.chat_handler.parse_intent")
+    @patch("ai_engine.chat.chat_handler.get_fast_llm")
+    async def test_stream_always_ends_with_done(
+        self, mock_llm_fn, mock_parse, mock_get_manager, mock_manager
+    ):
+        """Every stream must end with a done chunk."""
+        mock_get_manager.return_value = mock_manager
+        mock_parse.return_value = _make_intent("general_chat")
+        mock_llm = MagicMock()
+        mock_response = MagicMock()
+        mock_response.content = "OK"
+        mock_llm.invoke.return_value = mock_response
+        mock_llm_fn.return_value = mock_llm
+
+        from ai_engine.chat.chat_handler import handle_chat_stream
+
+        chunks = []
+        async for chunk in handle_chat_stream("user1", "Hi"):
+            chunks.append(chunk)
+
+        assert chunks[-1] == {"type": "done", "data": None}
+
+    @pytest.mark.asyncio
+    @patch("ai_engine.chat.chat_handler.get_session_manager")
+    @patch("ai_engine.chat.chat_handler.parse_intent")
+    @patch("ai_engine.chat.chat_handler.get_fast_llm")
+    async def test_stream_session_chunk_comes_first(
+        self, mock_llm_fn, mock_parse, mock_get_manager, mock_manager
+    ):
+        """Session metadata is always the first chunk yielded."""
+        mock_get_manager.return_value = mock_manager
+        mock_parse.return_value = _make_intent("general_chat")
+        mock_llm = MagicMock()
+        mock_response = MagicMock()
+        mock_response.content = "OK"
+        mock_llm.invoke.return_value = mock_response
+        mock_llm_fn.return_value = mock_llm
+
+        from ai_engine.chat.chat_handler import handle_chat_stream
+
+        chunks = []
+        async for chunk in handle_chat_stream("user1", "Hi"):
+            chunks.append(chunk)
+
+        assert chunks[0]["type"] == "session"
+        assert isinstance(chunks[0]["data"]["session_id"], str)
+        assert chunks[0]["data"]["phase"] == "greeting"
+
+    @pytest.mark.asyncio
+    @patch("ai_engine.chat.chat_handler.get_session_manager")
+    @patch("ai_engine.chat.chat_handler.parse_intent")
+    @patch("ai_engine.chat.chat_handler.get_fast_llm")
+    async def test_stream_clarification_yields_text_no_actions(
+        self, mock_llm_fn, mock_parse, mock_get_manager, mock_manager
+    ):
+        """Clarification stream yields text but no actions chunk."""
+        mock_get_manager.return_value = mock_manager
+        mock_parse.return_value = _make_intent(
+            "needs_clarification",
+            missing_fields=["destination", "duration"],
+        )
+        mock_llm = MagicMock()
+        mock_response = MagicMock()
+        mock_response.content = "Where would you like to go?"
+        mock_llm.invoke.return_value = mock_response
+        mock_llm_fn.return_value = mock_llm
+
+        from ai_engine.chat.chat_handler import handle_chat_stream
+
+        chunks = []
+        async for chunk in handle_chat_stream("user1", "Plan me a trip"):
+            chunks.append(chunk)
+
+        types = [c["type"] for c in chunks]
+        assert "session" in types
+        assert "text" in types
+        assert "actions" not in types  # no itinerary yet
+        assert types[-1] == "done"
+
+    @pytest.mark.asyncio
+    @patch("ai_engine.chat.chat_handler.get_session_manager")
+    @patch("ai_engine.chat.chat_handler.parse_intent")
+    @patch("ai_engine.chat.chat_handler.get_fast_llm")
+    async def test_stream_saves_session_state(
+        self, mock_llm_fn, mock_parse, mock_get_manager, mock_manager
+    ):
+        """Stream persists assistant response to session history."""
+        mock_get_manager.return_value = mock_manager
+        mock_parse.return_value = _make_intent("general_chat")
+        mock_llm = MagicMock()
+        mock_response = MagicMock()
+        mock_response.content = "Hello there!"
+        mock_llm.invoke.return_value = mock_response
+        mock_llm_fn.return_value = mock_llm
+
+        from ai_engine.chat.chat_handler import handle_chat_stream
+
+        async for _ in handle_chat_stream("user1", "Hi"):
+            pass  # consume entire stream
+
+        manager = await mock_get_manager()
+        state = await manager.resume_or_create("user1")
+        # 1 user message + 1 assistant message
+        assert len(state.history) == 2
+        assert state.history[0].role == "user"
+        assert state.history[1].role == "assistant"
+        assert state.turn_count == 1
