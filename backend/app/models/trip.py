@@ -1,95 +1,38 @@
-import enum
+"""Trip model - matches the class diagram."""
+
 from sqlalchemy import (
-    Column, String, Integer, Float, Numeric,
-    Date, DateTime, Time, Text, Enum, ForeignKey, JSON
+    Column, String, Integer, Float, Text, Date, DateTime,
+    ForeignKey, Enum as SAEnum
 )
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
-from enum import Enum as PyEnum
 
 from app.core.database import Base
+from app.models.enums import TripStatus
 
 
-# ─── Enums ────────────────────────────────────────────────────────────────────
-
-class TripStatus(str, PyEnum):
-    planning   = "planning"
-    active     = "active"
-    completed  = "completed"
-
-class ActivityType(str, PyEnum):
-    attraction = "attraction"
-    hotel      = "hotel"
-    restaurant = "restaurant"
-    transport  = "transport"
-
-class InputMode(str, PyEnum):
-    ai_chat = "ai_chat"
-    manual  = "manual"
-
-
-# ─── Trip ─────────────────────────────────────────────────────────────────────
+# --- Trip ---
 
 class Trip(Base):
     __tablename__ = "trips"
 
-    trip_id             = Column(String, primary_key=True)
-    user_id             = Column(String, ForeignKey("users.user_id"), nullable=False, index=True)
-    destination_city    = Column(String, nullable=False)
-    destination_country = Column(String, nullable=False)
-    start_date          = Column(Date, nullable=True)
-    end_date            = Column(Date, nullable=True)
-    duration_days       = Column(Integer, default=1)
-    status              = Column(
-        Enum(TripStatus, name="trip_status"),
+    trip_id              = Column(String, primary_key=True)
+    user_id              = Column(String, ForeignKey("users.user_id"), nullable=False, index=True)
+    destination          = Column(String, nullable=False)        # single destination string
+    start_date           = Column(Date, nullable=True)
+    end_date             = Column(Date, nullable=True)
+    number_of_travelers  = Column(Integer, default=1)
+    budget               = Column(Float, nullable=True)
+    special_requirements = Column(Text, nullable=True)
+    status               = Column(
+        SAEnum(TripStatus, name="trip_status"),
         default=TripStatus.planning,
         nullable=False,
     )
-    budget_total        = Column(Numeric(10, 2), nullable=True)
-    traveler_count      = Column(Integer, default=1)
-    input_mode          = Column(
-        Enum(InputMode, name="input_mode"),
-        default=InputMode.ai_chat,
-    )
-    created_at          = Column(DateTime, default=func.now())
+    created_at           = Column(DateTime, default=func.now())
 
     # Relationships
-    days          = relationship("TripDay",      back_populates="trip", cascade="all, delete-orphan")
-    conversations = relationship("Conversation", back_populates="trip", cascade="all, delete-orphan")
-
-
-# ─── TripDay ──────────────────────────────────────────────────────────────────
-
-class TripDay(Base):
-    __tablename__ = "trip_days"
-
-    day_id     = Column(Integer, primary_key=True, autoincrement=True)
-    trip_id    = Column(String, ForeignKey("trips.trip_id", ondelete="CASCADE"), nullable=False, index=True)
-    day_number = Column(Integer, nullable=False)
-    date       = Column(Date, nullable=True)
-
-    # Relationships
-    trip       = relationship("Trip",         back_populates="days")
-    activities = relationship("TripActivity", back_populates="day", cascade="all, delete-orphan")
-
-
-# ─── TripActivity ─────────────────────────────────────────────────────────────
-
-class TripActivity(Base):
-    __tablename__ = "trip_activities"
-
-    activity_id    = Column(Integer, primary_key=True, autoincrement=True)
-    day_id         = Column(Integer, ForeignKey("trip_days.day_id", ondelete="CASCADE"), nullable=False, index=True)
-    name           = Column(String, nullable=False)
-    type           = Column(Enum(ActivityType), nullable=False)
-    time           = Column(Time,  nullable=True)
-    duration_hours = Column(Float, nullable=True)
-    notes          = Column(Text,  nullable=True)
-    order_in_day   = Column(Integer, default=0)
-    location_name  = Column(String,  nullable=True)
-    lat            = Column(Float,   nullable=True)
-    lng            = Column(Float,   nullable=True)
-    created_at     = Column(DateTime, default=func.now())
-
-    # Relationships
-    day = relationship("TripDay", back_populates="activities")
+    user          = relationship("User",            back_populates="trips")
+    itineraries   = relationship("Itinerary",       back_populates="trip", cascade="all, delete-orphan")
+    conversations = relationship("Conversation",    back_populates="trip", cascade="all, delete-orphan")
+    images        = relationship("UploadedImage",   back_populates="trip", cascade="all, delete-orphan")
