@@ -1,4 +1,4 @@
-from app.models.profile import UserProfile
+from app.models.profile import TravelerProfile
 from app.models.user import User
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -26,7 +26,7 @@ async def submit_quiz(
         persona_bio=profile.persona_bio,
         interests=profile.interests or [],
         suggested_questions=profile.suggested_questions or [],
-        quiz_completed=profile.quiz_completed,
+        quiz_completed=True,
     )
 
 
@@ -43,7 +43,7 @@ async def skip_quiz(
         persona_bio=profile.persona_bio,
         interests=profile.interests or [],
         suggested_questions=profile.suggested_questions or [],
-        quiz_completed=profile.quiz_completed,
+        quiz_completed=False,
     )
 
 
@@ -60,7 +60,7 @@ async def test_submit_quiz(
         persona_bio=profile.persona_bio,
         interests=profile.interests or [],
         suggested_questions=profile.suggested_questions or [],
-        quiz_completed=profile.quiz_completed,
+        quiz_completed=True,
     )
 
 
@@ -72,7 +72,7 @@ async def get_profile(
     user_id = current_user["uid"]
 
     result = await db.execute(
-        select(UserProfile).where(UserProfile.user_id == user_id)
+        select(TravelerProfile).where(TravelerProfile.user_id == user_id)
     )
     profile = result.scalar_one_or_none()
 
@@ -84,7 +84,7 @@ async def get_profile(
         persona_bio=profile.persona_bio or "",
         interests=profile.interests or [],
         suggested_questions=profile.suggested_questions or [],
-        quiz_completed=profile.quiz_completed or False,
+        quiz_completed=bool(profile.persona_name),
     )
 
 
@@ -99,7 +99,7 @@ async def update_interests(
     new_persona_bio = body.get("persona_bio")
 
     result = await db.execute(
-        select(UserProfile).where(UserProfile.user_id == user_id)
+        select(TravelerProfile).where(TravelerProfile.user_id == user_id)
     )
     profile = result.scalar_one_or_none()
 
@@ -135,7 +135,7 @@ async def get_full_profile(
 
     # Get Profile
     result = await db.execute(
-        select(UserProfile).where(UserProfile.user_id == user_id)
+        select(TravelerProfile).where(TravelerProfile.user_id == user_id)
     )
     profile = result.scalar_one_or_none()
 
@@ -143,10 +143,10 @@ async def get_full_profile(
         user_id=user.user_id,
         full_name=user.full_name,
         email=user.email,
-        phone=user.phone,
-        role=user.role,
-        is_active=user.is_active,
-        quiz_completed=profile.quiz_completed if profile else False,
+        phone_number=user.phone_number,
+        home_city=user.home_city,
+        registration_date=user.registration_date,
+        quiz_completed=bool(profile.persona_name) if profile else False,
         persona_name=profile.persona_name if profile else None,
         persona_bio=profile.persona_bio if profile else None,
         suggested_questions=profile.suggested_questions if profile else None,

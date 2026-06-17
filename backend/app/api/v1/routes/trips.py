@@ -7,8 +7,9 @@ import uuid
 
 from app.core.database import get_db
 from app.core.security import get_current_user
-from app.models.trip import Trip, TripDay, TripActivity
-from app.models.chat import Conversation, Message, MessageRole
+from app.models.trip import Trip
+from app.models.itinerary import Itinerary, Day, ItineraryStop
+from app.models.chat import Conversation, Message
 from app.schemas.trip import TripCreate, TripResponse, TripSummary, TripStatusUpdate
 
 router = APIRouter()
@@ -18,17 +19,17 @@ router = APIRouter()
 
 def build_auto_message(data: TripCreate, delta: int) -> str:
     msg = (
-        f"Plan my trip to {data.destination_city}, {data.destination_country} "
+        f"Plan my trip to {data.destination} "
         f"for {delta} days"
     )
     if data.start_date and data.end_date:
         msg += f" from {data.start_date} to {data.end_date}"
-    if data.traveler_count and data.traveler_count > 1:
-        msg += f", for {data.traveler_count} travelers"
-    if data.budget_total:
-        msg += f", with a total budget of ${data.budget_total}"
-    if data.preferences:
-        msg += f", my preferences are: {data.preferences}"
+    if data.number_of_travelers and data.number_of_travelers > 1:
+        msg += f", for {data.number_of_travelers} travelers"
+    if data.budget:
+        msg += f", with a total budget of ${data.budget}"
+    if data.special_requirements:
+        msg += f", my preferences are: {data.special_requirements}"
     return msg
 
 
@@ -52,33 +53,40 @@ async def create_trip(
 
     # ── إنشاء Trip ───────────────────────────────────────────────────────
     trip = Trip(
-        trip_id             = str(uuid.uuid4()),
-        user_id             = user_id,
-        destination_city    = data.destination_city,
-        destination_country = data.destination_country,
-        start_date          = data.start_date,
-        end_date            = data.end_date,
-        duration_days       = delta,
-        traveler_count      = data.traveler_count,
-        budget_total        = data.budget_total,
-        input_mode          = data.input_mode,
+        trip_id              = str(uuid.uuid4()),
+        user_id              = user_id,
+        destination          = data.destination,
+        start_date           = data.start_date,
+        end_date             = data.end_date,
+        number_of_travelers  = data.number_of_travelers,
+        budget               = data.budget,
+        special_requirements = data.special_requirements,
     )
     db.add(trip)
+    await db.flush()
+
+    # ── إنشاء Itinerary ──────────────────────────────────────────────────
+    itinerary = Itinerary(
+        itinerary_id = str(uuid.uuid4()),
+        trip_id      = trip.trip_id,
+        title        = f"Trip to {data.destination}",
+    )
+    db.add(itinerary)
     await db.flush()
 
     # ── إنشاء الأيام ────────────────────────────────────────────────────
     if data.start_date:
         for i in range(delta):
-            db.add(TripDay(
-                trip_id    = trip.trip_id,
-                day_number = i + 1,
-                date       = data.start_date + timedelta(days=i),
+            db.add(Day(
+                itinerary_id = itinerary.itinerary_id,
+                day_number   = i + 1,
+                date         = data.start_date + timedelta(days=i),
             ))
     else:
         for i in range(delta):
-            db.add(TripDay(
-                trip_id    = trip.trip_id,
-                day_number = i + 1,
+            db.add(Day(
+                itinerary_id = itinerary.itinerary_id,
+                day_number   = i + 1,
             ))
 
     # ── إنشاء Conversation ───────────────────────────────────────────────
@@ -96,7 +104,7 @@ async def create_trip(
     first_msg = Message(
         message_id      = str(uuid.uuid4()),
         conversation_id = conversation.conversation_id,
-        role            = MessageRole.user,
+        sender          = "user",
         content         = auto_message,
     )
     db.add(first_msg)
@@ -107,8 +115,9 @@ async def create_trip(
     result = await db.execute(
         select(Trip)
         .options(
-            selectinload(Trip.days)
-            .selectinload(TripDay.activities)
+            selectinload(Trip.itineraries)
+            .selectinload(Itinerary.days)
+            .selectinload(Day.stops)
         )
         .where(Trip.trip_id == trip.trip_id)
     )
@@ -151,8 +160,9 @@ async def get_trip(
     result = await db.execute(
         select(Trip)
         .options(
-            selectinload(Trip.days)
-            .selectinload(TripDay.activities)
+            selectinload(Trip.itineraries)
+            .selectinload(Itinerary.days)
+            .selectinload(Day.stops)
         )
         .where(
             Trip.trip_id == trip_id,
@@ -178,8 +188,9 @@ async def get_itinerary(
     result = await db.execute(
         select(Trip)
         .options(
-            selectinload(Trip.days)
-            .selectinload(TripDay.activities)
+            selectinload(Trip.itineraries)
+            .selectinload(Itinerary.days)
+            .selectinload(Day.stops)
         )
         .where(
             Trip.trip_id == trip_id,

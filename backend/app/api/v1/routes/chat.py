@@ -8,9 +8,10 @@ import uuid
 from app.core.database import get_db
 from app.core.firebase import verify_token
 from app.core.security import get_current_user
-from app.models.trip import Trip, TripDay, TripActivity
-from app.models.chat import Conversation, Message, MessageRole
-from app.models.profile import UserProfile
+from app.models.trip import Trip
+from app.models.itinerary import Itinerary, Day, ItineraryStop
+from app.models.chat import Conversation, Message
+from app.models.profile import TravelerProfile
 from app.ws.manager import manager
 from datetime import time as dt_time
 
@@ -22,34 +23,33 @@ router = APIRouter()
 # ═════════════════════════════════════════════════════════════════════════════
 
 def build_trip_snapshot(trip: Trip) -> dict:
-    return {
-        "trip_id":             trip.trip_id,
-        "destination_city":    trip.destination_city,
-        "destination_country": trip.destination_country,
-        "duration_days":       trip.duration_days,
-        "days": [
-            {
+    days_data = []
+    for itinerary in trip.itineraries:
+        for day in itinerary.days:
+            days_data.append({
                 "day_id":     day.day_id,
                 "day_number": day.day_number,
                 "date":       str(day.date) if day.date else None,
-                "activities": [
+                "stops": [
                     {
-                        "activity_id":    act.activity_id,
-                        "name":           act.name,
-                        "type":           act.type,
-                        "time":           str(act.time) if act.time else None,
-                        "duration_hours": act.duration_hours,
-                        "notes":          act.notes,
-                        "order_in_day":   act.order_in_day,
-                        "location_name":  act.location_name,
-                        "lat":            act.lat,
-                        "lng":            act.lng,
+                        "stop_id":          stop.stop_id,
+                        "place_id":         stop.place_id,
+                        "scheduled_time":   str(stop.scheduled_time) if stop.scheduled_time else None,
+                        "duration_minutes": stop.duration_minutes,
+                        "order_in_day":     stop.order_in_day,
+                        "travel_mode":      stop.travel_mode.value if stop.travel_mode else None,
+                        "estimated_cost":   stop.estimated_cost,
+                        "ai_notes":         stop.ai_notes,
+                        "user_notes":       stop.user_notes,
+                        "status":           stop.status.value if stop.status else None,
                     }
-                    for act in day.activities
+                    for stop in day.stops
                 ],
-            }
-            for day in trip.days
-        ],
+            })
+    return {
+        "trip_id":     trip.trip_id,
+        "destination": trip.destination,
+        "days":        days_data,
     }
 
 #--------------------------------------------------------
@@ -75,6 +75,18 @@ def parse_time(raw_time) -> dt_time | None:
 async def execute_actions(actions: list, trip: Trip, db: AsyncSession) -> list:
     updated_actions = []
 
+    # Get the first itinerary for this trip (or create one)
+    if not trip.itineraries:
+        itinerary = Itinerary(
+            itinerary_id = str(uuid.uuid4()),
+            trip_id      = trip.trip_id,
+            title        = f"Trip to {trip.destination}",
+        )
+        db.add(itinerary)
+        await db.flush()
+    else:
+        itinerary = trip.itineraries[0]
+
     for action in actions:
         action_type = action.get("type")
         data        = action.get("data", {})
@@ -82,14 +94,13 @@ async def execute_actions(actions: list, trip: Trip, db: AsyncSession) -> list:
         # ── ADD_DAY ──────────────────────────────────────────────────────
         if action_type == "ADD_DAY":
             day_number = data.get("day_number", 1)
-            existing   = next(
-                (d for d in trip.days if d.day_number == day_number), None
-            )
+            all_days = [d for it in trip.itineraries for d in it.days]
+            existing = next((d for d in all_days if d.day_number == day_number), None)
             if not existing:
-                new_day = TripDay(
-                    trip_id    = trip.trip_id,
-                    day_number = day_number,
-                    date       = data.get("date"),
+                new_day = Day(
+                    itinerary_id = itinerary.itinerary_id,
+                    day_number   = day_number,
+                    date         = data.get("date"),
                 )
                 db.add(new_day)
                 await db.flush()
@@ -98,72 +109,62 @@ async def execute_actions(actions: list, trip: Trip, db: AsyncSession) -> list:
         # ── ADD_ACTIVITY ─────────────────────────────────────────────────
         elif action_type == "ADD_ACTIVITY":
             day_number = data.get("day_number", 1)
-            day        = next(
-                (d for d in trip.days if d.day_number == day_number), None
-            )
+            all_days = [d for it in trip.itineraries for d in it.days]
+            day = next((d for d in all_days if d.day_number == day_number), None)
             if not day:
-                day = TripDay(trip_id=trip.trip_id, day_number=day_number)
+                day = Day(itinerary_id=itinerary.itinerary_id, day_number=day_number)
                 db.add(day)
                 await db.flush()
 
-            new_activity = TripActivity(
-                day_id         = day.day_id,
-                name           = data.get("name", ""),
-                type           = data.get("type", "attraction"),
-                time = parse_time(data.get("time")),
-                duration_hours = data.get("duration_hours"),
-                notes          = data.get("notes"),
-                order_in_day   = data.get("order_in_day", 0),
-                location_name  = data.get("location_name"),
-                lat            = data.get("lat"),
-                lng            = data.get("lng"),
+            scheduled_time = parse_time(data.get("time"))
+            new_stop = ItineraryStop(
+                day_id           = day.day_id,
+                place_snapshot   = {"name": data.get("name", ""), "type": data.get("type", "attraction"), "location_name": data.get("location_name"), "lat": data.get("lat"), "lng": data.get("lng")},
+                scheduled_time   = scheduled_time,
+                duration_minutes = int(data["duration_hours"] * 60) if data.get("duration_hours") else None,
+                order_in_day     = data.get("order_in_day", 0),
+                ai_notes         = data.get("notes"),
             )
-            db.add(new_activity)
+            db.add(new_stop)
             await db.flush()
-            action["generated_id"] = new_activity.activity_id
+            action["generated_id"] = new_stop.stop_id
 
         # ── UPDATE_ACTIVITY ──────────────────────────────────────────────
         elif action_type == "UPDATE_ACTIVITY":
-            activity_id = data.get("activity_id")
-            if activity_id:
+            stop_id = data.get("activity_id") or data.get("stop_id")
+            if stop_id:
                 result = await db.execute(
-                    select(TripActivity).where(
-                        TripActivity.activity_id == activity_id
-                    )
+                    select(ItineraryStop).where(ItineraryStop.stop_id == stop_id)
                 )
-                act = result.scalar_one_or_none()
-                if act:
-                    if data.get("name"):           act.name           = data["name"]
-                    if data.get("time"):           act.time           = data["time"]
-                    if data.get("notes"):          act.notes          = data["notes"]
-                    if data.get("duration_hours"): act.duration_hours = data["duration_hours"]
-                    if data.get("location_name"):  act.location_name  = data["location_name"]
-                    if data.get("lat"):            act.lat            = data["lat"]
-                    if data.get("lng"):            act.lng            = data["lng"]
+                stop = result.scalar_one_or_none()
+                if stop:
+                    if data.get("name") or data.get("notes"):
+                        snapshot = stop.place_snapshot or {}
+                        if data.get("name"):  snapshot["name"] = data["name"]
+                        if data.get("notes"): stop.ai_notes = data["notes"]
+                        stop.place_snapshot = snapshot
+                    if data.get("time"):
+                        stop.scheduled_time = parse_time(data["time"])
+                    if data.get("duration_hours"):
+                        stop.duration_minutes = int(data["duration_hours"] * 60)
                     if data.get("order_in_day") is not None:
-                        act.order_in_day = data["order_in_day"]
+                        stop.order_in_day = data["order_in_day"]
                     await db.flush()
 
         # ── DELETE_ACTIVITY ──────────────────────────────────────────────
         elif action_type == "DELETE_ACTIVITY":
-            activity_id = data.get("activity_id")
-            if activity_id:
+            stop_id = data.get("activity_id") or data.get("stop_id")
+            if stop_id:
                 await db.execute(
-                    delete(TripActivity).where(
-                        TripActivity.activity_id == activity_id
-                    )
+                    delete(ItineraryStop).where(ItineraryStop.stop_id == stop_id)
                 )
 
         # ── UPDATE_TRIP ──────────────────────────────────────────────────
         elif action_type == "UPDATE_TRIP":
-            if data.get("destination_city"):
-                trip.destination_city    = data["destination_city"]
-            if data.get("destination_country"):
-                trip.destination_country = data["destination_country"]
-            if data.get("duration_days"):
-                trip.duration_days       = data["duration_days"]
-            if data.get("budget_total"):
-                trip.budget_total        = data["budget_total"]
+            if data.get("destination"):
+                trip.destination = data["destination"]
+            if data.get("budget"):
+                trip.budget = data["budget"]
             await db.flush()
 
         updated_actions.append(action)
@@ -198,12 +199,12 @@ async def get_or_create_conversation(
 
 
 # ═════════════════════════════════════════════════════════════════════════════
-# Helper: جيب الـ UserProfile
+# Helper: جيب الـ TravelerProfile
 # ═════════════════════════════════════════════════════════════════════════════
 
 async def get_profile_data(user_id: str, db: AsyncSession) -> dict:
     profile_result = await db.execute(
-        select(UserProfile).where(UserProfile.user_id == user_id)
+        select(TravelerProfile).where(TravelerProfile.user_id == user_id)
     )
     profile = profile_result.scalar_one_or_none()
 
@@ -255,7 +256,7 @@ async def process_message(
     user_msg = Message(
         message_id      = str(uuid.uuid4()),
         conversation_id = conversation.conversation_id,
-        role            = MessageRole.user,
+        sender          = "user",
         content         = user_text,
     )
     db.add(user_msg)
@@ -265,18 +266,15 @@ async def process_message(
     history_result = await db.execute(
         select(Message)
         .where(Message.conversation_id == conversation.conversation_id)
-        .order_by(Message.created_at.desc())
+        .order_by(Message.timestamp.desc())
         .limit(10)
     )
     history_list = [
-        {"role": m.role.value, "content": m.content}
+        {"sender": m.sender, "content": m.content}
         for m in reversed(history_result.scalars().all())
     ]
 
     # ── جيب Trip snapshot محدّث ──────────────────────────────────────────
-    await db.refresh(trip, ["days"])
-    for day in trip.days:
-        await db.refresh(day, ["activities"])
     trip_snapshot = build_trip_snapshot(trip)
 
     # ── typing ───────────────────────────────────────────────────────────
@@ -390,17 +388,14 @@ async def process_message(
     updated_actions = []
     if actions:
         await db.refresh(trip, ["days"])
-        for day in trip.days:
-            await db.refresh(day, ["activities"])
         updated_actions = await execute_actions(actions, trip, db)
 
     # ── احفظ رد الـ AI ───────────────────────────────────────────────────
     ai_msg = Message(
         message_id      = str(uuid.uuid4()),
         conversation_id = conversation.conversation_id,
-        role            = MessageRole.assistant,
+        sender          = "agent",
         content         = full_response,
-        actions         = updated_actions if updated_actions else None,
     )
     db.add(ai_msg)
     await db.commit()
@@ -528,12 +523,10 @@ async def websocket_new_chat(
                     {
                         "type": "CREATE_TRIP",
                         "data": {
-                            "destination_city":    "Cairo",
-                            "destination_country": "Egypt",
+                            "destination":         "Cairo, Egypt",
                             "start_date":          str(mock_start),
                             "end_date":            str(mock_start + timedelta(days=mock_days - 1)),
-                            "duration_days":       mock_days,
-                            "traveler_count":      1,
+                            "number_of_travelers": 1,
                         },
                     },
                     {
@@ -595,7 +588,7 @@ async def websocket_new_chat(
 
                     start_date_raw = action_data.get("start_date")
                     end_date_raw = action_data.get("end_date")
-                    delta = action_data.get("duration_days", 1)
+                    delta = action_data.get("duration_days", 1)  # fallback for backward compat
 
                     # ✅ Convert strings → date objects RIGHT HERE, once
                     start_date = date.fromisoformat(start_date_raw) if start_date_raw else None
@@ -608,31 +601,36 @@ async def websocket_new_chat(
                     trip = Trip(
                         trip_id             = str(uuid.uuid4()),
                         user_id             = user_id,
-                        destination_city    = action_data.get("destination_city", ""),
-                        destination_country = action_data.get("destination_country", ""),
+                        destination         = action_data.get("destination", action_data.get("destination_city", "") + ", " + action_data.get("destination_country", "")),
                         start_date          = start_date,
                         end_date            = end_date,
-                        duration_days       = delta,
-                        budget_total        = action_data.get("budget_total"),
-                        traveler_count      = action_data.get("traveler_count", 1),
-                        input_mode          = "ai_chat",
+                        number_of_travelers  = action_data.get("traveler_count", action_data.get("number_of_travelers", 1)),
+                        budget              = action_data.get("budget", action_data.get("budget_total")),
                     )
                     db.add(trip)
                     await db.flush()
 
-                    # ── أنشئ TripDays ─────────────────────────────────────
+                    # ── أنشئ Itinerary + Days ─────────────────────────────
+                    itinerary = Itinerary(
+                        itinerary_id = str(uuid.uuid4()),
+                        trip_id      = trip.trip_id,
+                        title        = f"Trip to {trip.destination}",
+                    )
+                    db.add(itinerary)
+                    await db.flush()
+
                     if start_date:
                         for i in range(delta):
-                            db.add(TripDay(
-                                trip_id=trip.trip_id,
-                                day_number=i + 1,
-                                date=start_date + timedelta(days=i),  # ✅ clean
+                            db.add(Day(
+                                itinerary_id = itinerary.itinerary_id,
+                                day_number   = i + 1,
+                                date         = start_date + timedelta(days=i),
                             ))
                     else:
                         for i in range(delta):
-                            db.add(TripDay(
-                                trip_id    = trip.trip_id,
-                                day_number = i + 1,
+                            db.add(Day(
+                                itinerary_id = itinerary.itinerary_id,
+                                day_number   = i + 1,
                             ))
 
                     await db.flush()
@@ -651,7 +649,7 @@ async def websocket_new_chat(
                         db.add(Message(
                             message_id      = str(uuid.uuid4()),
                             conversation_id = conversation.conversation_id,
-                            role            = MessageRole.user if msg["role"] == "user" else MessageRole.assistant,
+                            sender          = "user" if msg["role"] == "user" else "agent",
                             content         = msg["content"],
                         ))
                     pending_messages = []
@@ -678,9 +676,6 @@ async def websocket_new_chat(
             updated_actions    = []
 
             if trip and non_create_actions:
-                await db.refresh(trip, ["days"])
-                for day in trip.days:
-                    await db.refresh(day, ["activities"])
                 updated_actions = await execute_actions(non_create_actions, trip, db)
                 await db.commit()
 
@@ -694,9 +689,8 @@ async def websocket_new_chat(
                 ai_msg = Message(
                     message_id      = str(uuid.uuid4()),
                     conversation_id = conversation.conversation_id,
-                    role            = MessageRole.assistant,
+                    sender          = "agent",
                     content         = full_response,
-                    actions         = actions if actions else None,
                 )
                 db.add(ai_msg)
                 await db.commit()
@@ -747,8 +741,9 @@ async def websocket_chat(
         result = await db.execute(
             select(Trip)
             .options(
-                selectinload(Trip.days)
-                .selectinload(TripDay.activities)
+                selectinload(Trip.itineraries)
+                .selectinload(Itinerary.days)
+                .selectinload(Day.stops)
             )
             .where(
                 Trip.trip_id == trip_id,
@@ -824,14 +819,14 @@ async def get_history(
     if not conversation:
         raise HTTPException(status_code=404, detail="Conversation not found")
 
-    messages = sorted(conversation.messages, key=lambda m: m.created_at)
+    messages = sorted(conversation.messages, key=lambda m: m.timestamp)
     return [
         {
-            "message_id": m.message_id,
-            "role":       m.role.value,
-            "content":    m.content,
-            "actions":    m.actions,
-            "created_at": m.created_at,
+            "message_id":      m.message_id,
+            "conversation_id": m.conversation_id,
+            "sender":          m.sender,
+            "content":         m.content,
+            "timestamp":       m.timestamp,
         }
         for m in messages
     ]

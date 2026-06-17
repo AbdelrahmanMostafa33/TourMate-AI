@@ -1,19 +1,19 @@
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
-from app.models.profile import UserProfile
+from app.models.profile import TravelerProfile
 from app.schemas.profile import QuizSubmitRequest
 from ai_engine.profiling.cold_start import generate_persona
 
 
-async def save_quiz(user_id: str, data: QuizSubmitRequest, db: AsyncSession) -> UserProfile:
+async def save_quiz(user_id: str, data: QuizSubmitRequest, db: AsyncSession) -> TravelerProfile:
 
     result = await db.execute(
-        select(UserProfile).where(UserProfile.user_id == user_id)
+        select(TravelerProfile).where(TravelerProfile.user_id == user_id)
     )
     profile = result.scalar_one_or_none()
 
     if not profile:
-        profile = UserProfile(user_id=user_id)
+        profile = TravelerProfile(user_id=user_id)
         db.add(profile)
 
     profile.age = data.age
@@ -30,9 +30,6 @@ async def save_quiz(user_id: str, data: QuizSubmitRequest, db: AsyncSession) -> 
     profile.dining_preferences = data.dining_preferences
     profile.interests = data.interests
     profile.traveler_types = data.traveler_types
-    profile.quiz_completed = True
-
-
     persona = generate_persona(data.model_dump())
     profile.persona_name = persona["persona_name"]
     profile.persona_bio = persona["persona_bio"]
@@ -43,15 +40,15 @@ async def save_quiz(user_id: str, data: QuizSubmitRequest, db: AsyncSession) -> 
     return profile
 
 
-async def save_default_persona(user_id: str, db: AsyncSession) -> UserProfile:
+async def save_default_persona(user_id: str, db: AsyncSession) -> TravelerProfile:
 
     result = await db.execute(
-        select(UserProfile).where(UserProfile.user_id == user_id)
+        select(TravelerProfile).where(TravelerProfile.user_id == user_id)
     )
     profile = result.scalar_one_or_none()
 
     if not profile:
-        profile = UserProfile(user_id=user_id)
+        profile = TravelerProfile(user_id=user_id)
         db.add(profile)
 
     profile.persona_name = "The Open Explorer"
@@ -64,8 +61,6 @@ async def save_default_persona(user_id: str, db: AsyncSession) -> UserProfile:
         "Surprise me with a travel idea!",
         "What are the most popular destinations right now?"
     ]
-    profile.quiz_completed = False
-
     profile.accommodation_styles = []
     profile.dining_preferences = []
     profile.interests = []

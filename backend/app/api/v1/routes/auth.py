@@ -28,10 +28,10 @@ async def register(
         raise HTTPException(status_code=400, detail="User already exists")
 
     new_user = User(
-        user_id   = firebase_uid,
-        email     = email,
-        full_name = body.full_name,
-        phone     = body.phone,
+        user_id      = firebase_uid,
+        email        = email,
+        full_name    = body.full_name,
+        phone_number = body.phone_number,
     )
     db.add(new_user)
     await db.commit()
@@ -54,10 +54,8 @@ async def login(
 
     if not db_user:
         db_user = User(
-            user_id   = firebase_uid,
-            email     = email,
-            role      = "user",
-            is_active = True,
+            user_id = firebase_uid,
+            email   = email,
         )
         db.add(db_user)
         await db.commit()
@@ -74,10 +72,9 @@ async def test_register(
     db:   AsyncSession = Depends(get_db),
 ):
     new_user = User(
-        user_id   = str(uuid.uuid4()),
-        full_name = body.full_name,
-        phone     = body.phone,
-        email     = body.email,
+        user_id      = str(uuid.uuid4()),
+        full_name    = body.full_name,
+        phone_number = body.phone_number,
     )
     db.add(new_user)
     await db.commit()
