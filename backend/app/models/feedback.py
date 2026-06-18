@@ -16,14 +16,12 @@ class Feedback(Base):
 
     feedback_id   = Column(String, primary_key=True)
     user_id       = Column(String, ForeignKey("users.user_id"), nullable=False, index=True)
-    profile_id    = Column(String, ForeignKey("traveler_profiles.profile_id"), nullable=True)
-    item_type     = Column(String, nullable=False)            # e.g. "place", "itinerary", "stop"
-    item_id       = Column(String, nullable=False)            # id of the rated item
+    trip_id       = Column(String, ForeignKey("trips.trip_id", ondelete="CASCADE"), nullable=True, index=True)
     feedback_type = Column(SAEnum(FeedbackType, name="feedback_type"), nullable=False)
     rating        = Column(Integer, nullable=True)            # 1-5 when feedback_type == rating
     comment       = Column(Text, nullable=True)
     submitted_at  = Column(DateTime, default=func.now())
 
     # Relationships
-    user    = relationship("User", back_populates="feedbacks")
-    profile = relationship("TravelerProfile", back_populates="feedbacks")
+    user = relationship("User")
+    trip = relationship("Trip", back_populates="feedbacks")

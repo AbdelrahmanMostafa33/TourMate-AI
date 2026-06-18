@@ -1,55 +1,46 @@
 # app/models/profile.py
 
 from sqlalchemy import (
-    Column, String, Integer, Float, Text, DateTime, ForeignKey, JSON
+    Column, String, Integer, Float, Text, DateTime, ForeignKey, JSON, Boolean, Enum as SAEnum
 )
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 
 from app.core.database import Base
+from app.models.enums import (
+    PaceStyle, SpendingStyle, ExperienceLean,
+    DayRhythm, AttractionPreference, SocialStyle,
+)
 
 
-class TravelerProfile(Base):
-    __tablename__ = "traveler_profiles"
+class BehavioralProfile(Base):
+    __tablename__ = "behavioral_profiles"
 
-    profile_id          = Column(Integer, primary_key=True, autoincrement=True)
-    user_id             = Column(String, ForeignKey("users.user_id"), nullable=False, unique=True, index=True)
+    profile_id            = Column(Integer, primary_key=True, autoincrement=True)
+    user_id               = Column(String, ForeignKey("users.user_id"), nullable=False, unique=True, index=True)
 
-    # --- Dimension Scores (keyed by TravelDimension enum) ---
-    # Stored as JSON: {"ADVENTURE": 0.8, "CULTURE": 0.6, ...}
-    dimension_scores    = Column(JSON, nullable=True)
+    # --- Enum-based dimension styles ---
+    pace_style            = Column(String, nullable=True)            # PaceStyle
+    spending_style        = Column(String, nullable=True)            # SpendingStyle
+    experience_lean       = Column(String, nullable=True)            # ExperienceLean
+    day_rhythm            = Column(String, nullable=True)            # DayRhythm
+    attraction_preference = Column(String, nullable=True)            # AttractionPreference
+    social_style          = Column(String, nullable=True)            # SocialStyle
 
-    # --- Interests & Dietary ---
-    interests           = Column(JSON, nullable=True)           # List[str]
-    dietary_restrictions = Column(JSON, nullable=True)          # List[str]
-
-    # --- Legacy quiz fields (kept for backwards-compat) ---
-    age                 = Column(Integer, nullable=True)
-    sex                 = Column(String, nullable=True)
-    travel_companion    = Column(String, nullable=True)
-    location            = Column(String, nullable=True)
-
-    # --- Sliders (0-100) - kept for existing quiz UI ---
-    adventure_relaxing  = Column(Integer, nullable=True)
-    nature_culture      = Column(Integer, nullable=True)
-    popular_local       = Column(Integer, nullable=True)
-    budget_level        = Column(Integer, nullable=True)
-    early_night         = Column(Integer, nullable=True)
-    independent_social  = Column(Integer, nullable=True)
-
-    # --- Multi-select ---
-    accommodation_styles = Column(JSON, nullable=True)
-    dining_preferences   = Column(JSON, nullable=True)
-    traveler_types       = Column(JSON, nullable=True)
+    # --- Lists ---
+    interests                 = Column(JSON, nullable=True)           # List[InterestTag]
+    dining_preferences        = Column(JSON, nullable=True)           # List[DiningType]
+    accommodation_preferences = Column(JSON, nullable=True)           # List[AccommodationType]
+    custom_interests          = Column(JSON, nullable=True)           # List[str] from "Add your own"
 
     # --- AI-Generated Persona ---
-    persona_name         = Column(String, nullable=True)
-    persona_bio          = Column(Text, nullable=True)
-    suggested_questions  = Column(JSON, nullable=True)
+    persona_title    = Column(String, nullable=True)                 # e.g. "Adventurous Independent Nightowl"
+    persona_summary  = Column(Text, nullable=True)                   # AI-generated blurb
 
-    created_at           = Column(DateTime, default=func.now())
-    last_updated         = Column(DateTime, default=func.now(), onupdate=func.now())
+    # --- Quiz status ---
+    quiz_completed   = Column(Boolean, default=False)
+    completed_at     = Column(DateTime, nullable=True)
+    updated_at       = Column(DateTime, default=func.now(), onupdate=func.now())
 
     # Relationships
     user      = relationship("User",       back_populates="profile")
-    feedbacks = relationship("Feedback",   back_populates="profile")

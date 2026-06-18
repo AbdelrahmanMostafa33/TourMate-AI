@@ -2,34 +2,25 @@
 
 from pydantic import BaseModel
 from typing import Optional
-from datetime import date, datetime
-
-from app.models.enums import ReviewSource
+from datetime import datetime
 
 
 class ReviewCreate(BaseModel):
     """Create schema for Review – aligns with model fields."""
-    place_id:    str
-    rating:      int
-    source:      ReviewSource = ReviewSource.user
-    title:       Optional[str] = None
-    comment:     Optional[str] = None
-    visit_date:  Optional[date] = None
+    place_id:  str
+    rating:    int
+    comment:   Optional[str] = None
 
 
 class ReviewResponse(BaseModel):
     """Response schema for Review – aligns with model fields."""
-    review_id:     str
-    place_id:      str
-    user_id:       str
-    rating:        int
-    source:        ReviewSource
-    title:         Optional[str]   = None
-    comment:       Optional[str]   = None
-    visit_date:    Optional[date]  = None
-    review_date:   datetime
-    helpful_count: int
-    is_verified:   bool
+    review_id:    str
+    user_id:      str
+    place_id:     str
+    rating:       int
+    comment:      Optional[str]  = None
+    review_date:  datetime
+    likes_count:  int
 
     class Config:
         from_attributes = True
@@ -40,8 +31,6 @@ class ReviewSummary(BaseModel):
     review_id:   str
     user_id:     str
     rating:      int
-    source:      ReviewSource
-    title:       Optional[str]  = None
     comment:     Optional[str]  = None
     review_date: datetime
 

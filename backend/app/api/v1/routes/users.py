@@ -1,4 +1,4 @@
-from app.models.profile import TravelerProfile
+from app.models.profile import BehavioralProfile
 from app.models.user import User
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -22,10 +22,9 @@ async def submit_quiz(
     profile = await save_quiz(user_id, body, db)
 
     return PersonaResponse(
-        persona_name=profile.persona_name,
-        persona_bio=profile.persona_bio,
+        persona_title=profile.persona_title or "",
+        persona_summary=profile.persona_summary or "",
         interests=profile.interests or [],
-        suggested_questions=profile.suggested_questions or [],
         quiz_completed=True,
     )
 
@@ -39,10 +38,9 @@ async def skip_quiz(
     profile = await save_default_persona(user_id, db)
 
     return PersonaResponse(
-        persona_name=profile.persona_name,
-        persona_bio=profile.persona_bio,
+        persona_title=profile.persona_title or "",
+        persona_summary=profile.persona_summary or "",
         interests=profile.interests or [],
-        suggested_questions=profile.suggested_questions or [],
         quiz_completed=False,
     )
 
@@ -56,10 +54,9 @@ async def test_submit_quiz(
     profile = await save_quiz(fake_user_id, body, db)
 
     return PersonaResponse(
-        persona_name=profile.persona_name,
-        persona_bio=profile.persona_bio,
+        persona_title=profile.persona_title or "",
+        persona_summary=profile.persona_summary or "",
         interests=profile.interests or [],
-        suggested_questions=profile.suggested_questions or [],
         quiz_completed=True,
     )
 
@@ -72,7 +69,7 @@ async def get_profile(
     user_id = current_user["uid"]
 
     result = await db.execute(
-        select(TravelerProfile).where(TravelerProfile.user_id == user_id)
+        select(BehavioralProfile).where(BehavioralProfile.user_id == user_id)
     )
     profile = result.scalar_one_or_none()
 
@@ -80,11 +77,10 @@ async def get_profile(
         raise HTTPException(status_code=404, detail="Profile not found")
 
     return PersonaResponse(
-        persona_name=profile.persona_name or "The Open Explorer",
-        persona_bio=profile.persona_bio or "",
+        persona_title=profile.persona_title or "The Open Explorer",
+        persona_summary=profile.persona_summary or "",
         interests=profile.interests or [],
-        suggested_questions=profile.suggested_questions or [],
-        quiz_completed=bool(profile.persona_name),
+        quiz_completed=bool(profile.persona_title),
     )
 
 
@@ -95,11 +91,11 @@ async def update_interests(
 ):
     user_id = body.get("user_id")
     new_interests = body.get("interests")
-    new_persona_name = body.get("persona_name")
-    new_persona_bio = body.get("persona_bio")
+    new_persona_title = body.get("persona_title")
+    new_persona_summary = body.get("persona_summary")
 
     result = await db.execute(
-        select(TravelerProfile).where(TravelerProfile.user_id == user_id)
+        select(BehavioralProfile).where(BehavioralProfile.user_id == user_id)
     )
     profile = result.scalar_one_or_none()
 
@@ -108,10 +104,10 @@ async def update_interests(
 
     profile.interests = new_interests
 
-    if new_persona_name:
-        profile.persona_name = new_persona_name
-    if new_persona_bio:
-        profile.persona_bio = new_persona_bio
+    if new_persona_title:
+        profile.persona_title = new_persona_title
+    if new_persona_summary:
+        profile.persona_summary = new_persona_summary
 
     await db.commit()
     return {"message": "Profile updated successfully"}
@@ -135,7 +131,7 @@ async def get_full_profile(
 
     # Get Profile
     result = await db.execute(
-        select(TravelerProfile).where(TravelerProfile.user_id == user_id)
+        select(BehavioralProfile).where(BehavioralProfile.user_id == user_id)
     )
     profile = result.scalar_one_or_none()
 
@@ -146,22 +142,19 @@ async def get_full_profile(
         phone_number=user.phone_number,
         home_city=user.home_city,
         registration_date=user.registration_date,
-        quiz_completed=bool(profile.persona_name) if profile else False,
-        persona_name=profile.persona_name if profile else None,
-        persona_bio=profile.persona_bio if profile else None,
-        suggested_questions=profile.suggested_questions if profile else None,
-        age=profile.age if profile else None,
-        sex=profile.sex if profile else None,
-        travel_companion=profile.travel_companion if profile else None,
-        location=profile.location if profile else None,
-        adventure_relaxing=profile.adventure_relaxing if profile else None,
-        nature_culture=profile.nature_culture if profile else None,
-        popular_local=profile.popular_local if profile else None,
-        budget_level=profile.budget_level if profile else None,
-        early_night=profile.early_night if profile else None,
-        independent_social=profile.independent_social if profile else None,
-        accommodation_styles=profile.accommodation_styles if profile else None,
-        dining_preferences=profile.dining_preferences if profile else None,
+        quiz_completed=profile.quiz_completed if profile else False,
+        persona_title=profile.persona_title if profile else None,
+        persona_summary=profile.persona_summary if profile else None,
+        pace_style=profile.pace_style if profile else None,
+        spending_style=profile.spending_style if profile else None,
+        experience_lean=profile.experience_lean if profile else None,
+        day_rhythm=profile.day_rhythm if profile else None,
+        attraction_preference=profile.attraction_preference if profile else None,
+        social_style=profile.social_style if profile else None,
         interests=profile.interests if profile else None,
-        traveler_types=profile.traveler_types if profile else None,
+        dining_preferences=profile.dining_preferences if profile else None,
+        accommodation_preferences=profile.accommodation_preferences if profile else None,
+        custom_interests=profile.custom_interests if profile else None,
+        completed_at=profile.completed_at if profile else None,
+        updated_at=profile.updated_at if profile else None,
     )

@@ -1,11 +1,11 @@
-"""Booking, Reservation, Payment, Receipt schemas."""
+"""Booking, Payment, Receipt schemas."""
 
 from pydantic import BaseModel
-from typing import Optional, List
-from datetime import date, time, datetime
+from typing import Optional
+from datetime import datetime
 
 from app.models.enums import (
-    BookingType, BookingStatus, ReservationStatus,
+    BookingType, BookingStatus,
     PaymentMethod, PaymentStatus,
 )
 
@@ -38,53 +38,22 @@ class ReceiptResponse(BaseModel):
 
 class PaymentCreate(BaseModel):
     """Create schema for Payment – aligns with model fields."""
-    amount:         float
-    payment_method: PaymentMethod
-    transaction_id: Optional[str] = None
-    card_last_four: Optional[str] = None
-    card_type:      Optional[str] = None
+    amount:                float
+    payment_method:        PaymentMethod
+    transaction_reference: Optional[str] = None
 
 
 class PaymentResponse(BaseModel):
     """Response schema for Payment – aligns with model fields."""
-    payment_id:     str
-    booking_id:     str
-    amount:         float
-    payment_method: PaymentMethod
-    transaction_id: Optional[str]
-    status:         PaymentStatus
-    payment_date:   datetime
-    card_last_four: Optional[str]
-    card_type:      Optional[str]
-    receipt:        Optional[ReceiptResponse] = None
-
-    class Config:
-        from_attributes = True
-
-
-# ─── Reservation ─────────────────────────────────────────────────────────────
-
-class ReservationCreate(BaseModel):
-    """Create schema for Reservation – aligns with model fields."""
-    place_id:          Optional[str] = None
-    reservation_date:  Optional[date] = None
-    reservation_time:  Optional[time] = None
-    number_of_people:  int = 1
-    confirmation_code: Optional[str] = None
-    special_requests:  Optional[str] = None
-
-
-class ReservationResponse(BaseModel):
-    """Response schema for Reservation – aligns with model fields."""
-    reservation_id:    str
-    place_id:          Optional[str]
-    booking_id:        str
-    reservation_date:  Optional[date]
-    reservation_time:  Optional[time]
-    number_of_people:  int
-    status:            ReservationStatus
-    confirmation_code: Optional[str]
-    special_requests:  Optional[str]
+    payment_id:            str
+    booking_id:            str
+    amount:                float
+    payment_method:        PaymentMethod
+    status:                PaymentStatus
+    transaction_reference: Optional[str]
+    paid_at:               datetime
+    created_at:            datetime
+    receipt:               Optional[ReceiptResponse] = None
 
     class Config:
         from_attributes = True
@@ -94,25 +63,28 @@ class ReservationResponse(BaseModel):
 
 class BookingCreate(BaseModel):
     """Create schema for Booking – aligns with model fields."""
-    booking_type:          BookingType
-    confirmation_number:   Optional[str] = None
-    total:                 Optional[float] = None
-    cancellation_deadline: Optional[datetime] = None
-    reservations:          Optional[List[ReservationCreate]] = []
+    booking_type:        BookingType
+    place_id:            Optional[str]     = None
+    confirmation_number: Optional[str]     = None
+    start_datetime:      Optional[datetime] = None
+    end_datetime:        Optional[datetime] = None
+    total_cost:          Optional[float]   = None
 
 
 class BookingResponse(BaseModel):
     """Response schema for Booking – aligns with model fields."""
-    booking_id:            str
-    user_id:               str
-    booking_type:          BookingType
-    status:                BookingStatus
-    confirmation_number:   Optional[str]
-    total:                 Optional[float]
-    booking_date:          datetime
-    cancellation_deadline: Optional[datetime]
-    reservations:          List[ReservationResponse] = []
-    payment:               Optional[PaymentResponse] = None
+    booking_id:          str
+    trip_id:             str
+    place_id:            Optional[str]
+    booking_type:        BookingType
+    confirmation_number: Optional[str]
+    booking_date:        datetime
+    start_datetime:      Optional[datetime]
+    end_datetime:        Optional[datetime]
+    total_cost:          Optional[float]
+    status:              BookingStatus
+    created_at:          datetime
+    payment:             Optional[PaymentResponse] = None
 
     class Config:
         from_attributes = True

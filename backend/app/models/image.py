@@ -1,4 +1,4 @@
-"""UploadedImage and ImageFeature models."""
+"""Image and ImageFeature models."""
 
 from sqlalchemy import (
     Column, String, Integer, Float, Text, DateTime, JSON,
@@ -11,20 +11,18 @@ from app.core.database import Base
 from app.models.enums import ProcessingStatus
 
 
-# ─── UploadedImage ───────────────────────────────────────────────────────────
+# ─── Image ───────────────────────────────────────────────────────────────────
 
-class UploadedImage(Base):
-    __tablename__ = "uploaded_images"
+class Image(Base):
+    __tablename__ = "images"
 
-    image_id           = Column(String, primary_key=True)
-    trip_id            = Column(String, ForeignKey("trips.trip_id", ondelete="CASCADE"), nullable=False, index=True)
-    user_id            = Column(String, ForeignKey("users.user_id"), nullable=False, index=True)
-    file_name          = Column(String, nullable=False)
-    file_path          = Column(String, nullable=False)
-    file_size          = Column(Integer, nullable=True)       # bytes
-    mime_type          = Column(String, nullable=True)
-    upload_date        = Column(DateTime, default=func.now())
-    processing_status  = Column(
+    image_id          = Column(String, primary_key=True)
+    trip_id           = Column(String, ForeignKey("trips.trip_id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id           = Column(String, ForeignKey("users.user_id"), nullable=False, index=True)
+    file_name         = Column(String, nullable=False)
+    file_url          = Column(String, nullable=True)
+    uploaded_at       = Column(DateTime, default=func.now())
+    analysis_status   = Column(
         SAEnum(ProcessingStatus, name="processing_status"),
         default=ProcessingStatus.pending,
         nullable=False,
@@ -42,7 +40,7 @@ class ImageFeature(Base):
     __tablename__ = "image_features"
 
     feature_id   = Column(String, primary_key=True)
-    image_id     = Column(String, ForeignKey("uploaded_images.image_id", ondelete="CASCADE"), nullable=False, index=True)
+    image_id     = Column(String, ForeignKey("images.image_id", ondelete="CASCADE"), nullable=False, index=True)
     feature_type = Column(String, nullable=False)              # e.g. "landmark", "food", "style"
     feature_name = Column(String, nullable=True)
     confidence   = Column(Float, nullable=True)                # 0.0 – 1.0
@@ -50,4 +48,4 @@ class ImageFeature(Base):
     metadata     = Column(JSON, nullable=True)                 # extra info
 
     # Relationships
-    image = relationship("UploadedImage", back_populates="features")
+    image = relationship("Image", back_populates="features")

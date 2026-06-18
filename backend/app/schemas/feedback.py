@@ -9,8 +9,7 @@ from app.models.enums import FeedbackType
 
 class FeedbackCreate(BaseModel):
     """Create schema for Feedback – aligns with model fields."""
-    item_type:     str
-    item_id:       str
+    trip_id:       Optional[str] = None
     feedback_type: FeedbackType
     rating:        Optional[int]  = None
     comment:       Optional[str]  = None
@@ -20,9 +19,7 @@ class FeedbackResponse(BaseModel):
     """Response schema for Feedback – aligns with model fields."""
     feedback_id:   str
     user_id:       str
-    profile_id:    Optional[str]
-    item_type:     str
-    item_id:       str
+    trip_id:       Optional[str]
     feedback_type: FeedbackType
     rating:        Optional[int]
     comment:       Optional[str]

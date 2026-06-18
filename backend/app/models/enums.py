@@ -13,32 +13,30 @@ class TripStatus(str, PyEnum):
 
 class ItineraryStatus(str, PyEnum):
     draft    = "draft"
-    approved = "approved"
-    rejected = "rejected"
     active   = "active"
+    archived = "archived"
 
 
 class StopStatus(str, PyEnum):
-    planned  = "planned"
-    visited  = "visited"
-    skipped  = "skipped"
+    planned   = "planned"
+    visited   = "visited"
+    skipped   = "skipped"
     cancelled = "cancelled"
 
 
 class TravelMode(str, PyEnum):
-    walking  = "walking"
-    driving  = "driving"
-    transit  = "transit"
-    cycling  = "cycling"
+    walking = "walking"
+    driving = "driving"
+    transit = "transit"
+    cycling = "cycling"
 
 
 # ─── Place ───────────────────────────────────────────────────────────────────
 
-class ReviewSource(str, PyEnum):
-    google     = "google"
-    tripadvisor = "tripadvisor"
-    yelp       = "yelp"
-    user       = "user"
+class PlaceCategory(str, PyEnum):
+    hotel      = "hotel"
+    restaurant = "restaurant"
+    attraction = "attraction"
 
 
 # ─── Booking & Payment ───────────────────────────────────────────────────────
@@ -57,13 +55,6 @@ class BookingStatus(str, PyEnum):
     completed = "completed"
 
 
-class ReservationStatus(str, PyEnum):
-    pending   = "pending"
-    confirmed = "confirmed"
-    cancelled = "cancelled"
-    no_show   = "no_show"
-
-
 class PaymentMethod(str, PyEnum):
     credit_card = "credit_card"
     debit_card  = "debit_card"
@@ -78,16 +69,55 @@ class PaymentStatus(str, PyEnum):
     refunded  = "refunded"
 
 
+# ─── Recommendation ─────────────────────────────────────────────────────────
+
+class RecommendationType(str, PyEnum):
+    place    = "place"
+    activity = "activity"
+    restaurant = "restaurant"
+    hotel    = "hotel"
+
+
+class RecommendationStatus(str, PyEnum):
+    pending  = "pending"
+    accepted = "accepted"
+    rejected = "rejected"
+    expired  = "expired"
+
+
+# ─── Profile / Behavioral ───────────────────────────────────────────────────
+
+class PaceStyle(str, PyEnum):
+    ADVENTUROUS = "ADVENTUROUS"
+    RELAXING    = "RELAXING"
+
+
+class SpendingStyle(str, PyEnum):
+    BUDGET_CONSCIOUS = "BUDGET_CONSCIOUS"
+    LUXURIOUS       = "LUXURIOUS"
+
+
+class ExperienceLean(str, PyEnum):
+    NATURE_OUTDOORS = "NATURE_OUTDOORS"
+    CULTURE         = "CULTURE"
+
+
+class DayRhythm(str, PyEnum):
+    EARLY_BIRD = "EARLY_BIRD"
+    NIGHT_OWL  = "NIGHT_OWL"
+
+
+class AttractionPreference(str, PyEnum):
+    POPULAR = "POPULAR"
+    LOCAL   = "LOCAL"
+
+
+class SocialStyle(str, PyEnum):
+    INDEPENDENT = "INDEPENDENT"
+    SOCIAL      = "SOCIAL"
+
+
 # ─── Profile & Feedback ──────────────────────────────────────────────────────
-
-class TravelDimension(str, PyEnum):
-    ADVENTURE = "ADVENTURE"
-    CULTURE   = "CULTURE"
-    LOCAL     = "LOCAL"
-    LUXURY    = "LUXURY"
-    NIGHTLIFE = "NIGHTLIFE"
-    SOCIAL    = "SOCIAL"
-
 
 class FeedbackType(str, PyEnum):
     thumbs_up   = "thumbs_up"

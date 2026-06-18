@@ -10,9 +10,7 @@ class RegisterRequest(BaseModel):
 
 
 class UserResponse(BaseModel):
-    """Response schema for User – aligns with model fields.
-    Note: User model does NOT have 'is_active' or 'role' fields.
-    """
+    """Response schema for User – aligns with model fields."""
     user_id:           str
     full_name:         Optional[str] = None
     email:             str
@@ -20,6 +18,7 @@ class UserResponse(BaseModel):
     registration_date: Optional[datetime] = None
     home_city:         Optional[str] = None
     quiz_completed:    bool = False
+    profile_id:        Optional[str] = None
 
     class Config:
         from_attributes = True

@@ -5,7 +5,7 @@ from datetime import date, datetime, time
 from app.models.enums import TripStatus, ItineraryStatus, StopStatus, TravelMode
 
 
-# ─── ItineraryStop (replaces old Activity) ───────────────────────────────────
+# ─── ItineraryStop ───────────────────────────────────────────────────────────
 
 class StopCreate(BaseModel):
     """Create schema for ItineraryStop – aligns with model fields."""
@@ -90,8 +90,7 @@ class ItineraryResponse(BaseModel):
     total_estimated_cost: Optional[float] = None
     status:               ItineraryStatus
     created_at:           datetime
-    last_modified:        datetime
-    approved_at:          Optional[datetime] = None
+    updated_at:           datetime
     days:                 List[DayResponse] = []
 
     class Config:
@@ -103,11 +102,12 @@ class ItineraryResponse(BaseModel):
 class TripCreate(BaseModel):
     """Create schema for Trip – aligns with model fields."""
     destination:           str
+    trip_name:             Optional[str]   = None
     start_date:            Optional[date]  = None
     end_date:              Optional[date]  = None
     number_of_travelers:   Optional[int]   = 1
     budget:                Optional[float] = None
-    special_requirements:  Optional[str]   = None
+    preferences:           Optional[List[str]] = None
 
 
 class TripResponse(BaseModel):
@@ -116,12 +116,13 @@ class TripResponse(BaseModel):
     """
     trip_id:              str
     user_id:              str
+    trip_name:            Optional[str]   = None
     destination:          str
     start_date:           Optional[date]
     end_date:             Optional[date]
     number_of_travelers:  int
     budget:               Optional[float]  = None
-    special_requirements: Optional[str]    = None
+    preferences:          Optional[List[str]] = None
     status:               TripStatus
     created_at:           datetime
     itineraries:          List[ItineraryResponse] = []
@@ -136,6 +137,7 @@ class TripResponse(BaseModel):
 class TripSummary(BaseModel):
     """Summary schema for Trip – aligns with model fields."""
     trip_id:              str
+    trip_name:            Optional[str]   = None
     destination:          str
     start_date:           Optional[date]
     end_date:             Optional[date]

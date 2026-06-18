@@ -11,7 +11,7 @@ from app.core.security import get_current_user
 from app.models.trip import Trip
 from app.models.itinerary import Itinerary, Day, ItineraryStop
 from app.models.chat import Conversation, Message
-from app.models.profile import TravelerProfile
+from app.models.profile import BehavioralProfile
 from app.ws.manager import manager
 from datetime import time as dt_time
 
@@ -199,12 +199,12 @@ async def get_or_create_conversation(
 
 
 # ═════════════════════════════════════════════════════════════════════════════
-# Helper: جيب الـ TravelerProfile
+# Helper: get BehavioralProfile
 # ═════════════════════════════════════════════════════════════════════════════
 
 async def get_profile_data(user_id: str, db: AsyncSession) -> dict:
     profile_result = await db.execute(
-        select(TravelerProfile).where(TravelerProfile.user_id == user_id)
+        select(BehavioralProfile).where(BehavioralProfile.user_id == user_id)
     )
     profile = profile_result.scalar_one_or_none()
 
@@ -212,30 +212,23 @@ async def get_profile_data(user_id: str, db: AsyncSession) -> dict:
         return {}
 
     return {
-        # ── Basic Info ───────────────────────────────────────────────
-        "age":                  profile.age,
-        "sex":                  profile.sex,
-        "travel_companion":     profile.travel_companion,
-        "location":             profile.location,
+        # ── Behavioral Styles ────────────────────────────────────────
+        "pace_style":              profile.pace_style,
+        "spending_style":          profile.spending_style,
+        "experience_lean":         profile.experience_lean,
+        "day_rhythm":              profile.day_rhythm,
+        "attraction_preference":   profile.attraction_preference,
+        "social_style":            profile.social_style,
 
-        # ── Sliders ──────────────────────────────────────────────────
-        "adventure_relaxing":   profile.adventure_relaxing,
-        "nature_culture":       profile.nature_culture,
-        "popular_local":        profile.popular_local,
-        "budget_level":         profile.budget_level,
-        "early_night":          profile.early_night,
-        "independent_social":   profile.independent_social,
-
-        # ── Multi-select ─────────────────────────────────────────────
-        "accommodation_styles": profile.accommodation_styles or [],
-        "dining_preferences":   profile.dining_preferences or [],
-        "interests":            profile.interests or [],
-        "traveler_types":       profile.traveler_types or [],
+        # ── Lists ───────────────────────────────────────────────────
+        "interests":               profile.interests or [],
+        "dining_preferences":      profile.dining_preferences or [],
+        "accommodation_preferences": profile.accommodation_preferences or [],
+        "custom_interests":        profile.custom_interests or [],
 
         # ── AI Persona ───────────────────────────────────────────────
-        "persona_name":         profile.persona_name,
-        "persona_bio":          profile.persona_bio,
-        "suggested_questions":  profile.suggested_questions or [],
+        "persona_title":           profile.persona_title,
+        "persona_summary":         profile.persona_summary,
     }
 
 

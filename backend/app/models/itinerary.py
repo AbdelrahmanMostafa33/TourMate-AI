@@ -28,8 +28,7 @@ class Itinerary(Base):
         nullable=False,
     )
     created_at          = Column(DateTime, default=func.now())
-    last_modified       = Column(DateTime, default=func.now(), onupdate=func.now())
-    approved_at         = Column(DateTime, nullable=True)
+    updated_at          = Column(DateTime, default=func.now(), onupdate=func.now())
 
     # Relationships
     trip = relationship("Trip", back_populates="itineraries")

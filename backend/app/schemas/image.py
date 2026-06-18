@@ -1,4 +1,4 @@
-"""UploadedImage and ImageFeature schemas."""
+"""Image and ImageFeature schemas."""
 
 from pydantic import BaseModel
 from typing import Optional, List, Dict
@@ -32,29 +32,25 @@ class ImageFeatureResponse(BaseModel):
         from_attributes = True
 
 
-# ─── UploadedImage ───────────────────────────────────────────────────────────
+# ─── Image ───────────────────────────────────────────────────────────────────
 
-class UploadedImageCreate(BaseModel):
-    """Create schema for UploadedImage – aligns with model fields."""
-    file_name:          str
-    file_path:          str
-    file_size:          Optional[int]  = None
-    mime_type:          Optional[str]  = None
-    features:           Optional[List[ImageFeatureCreate]] = []
+class ImageCreate(BaseModel):
+    """Create schema for Image – aligns with model fields."""
+    file_name:    str
+    file_url:     Optional[str]   = None
+    features:     Optional[List[ImageFeatureCreate]] = []
 
 
-class UploadedImageResponse(BaseModel):
-    """Response schema for UploadedImage – aligns with model fields."""
-    image_id:           str
-    trip_id:            str
-    user_id:            str
-    file_name:          str
-    file_path:          str
-    file_size:          Optional[int]
-    mime_type:          Optional[str]
-    upload_date:        datetime
-    processing_status:  ProcessingStatus
-    features:           List[ImageFeatureResponse] = []
+class ImageResponse(BaseModel):
+    """Response schema for Image – aligns with model fields."""
+    image_id:         str
+    trip_id:          str
+    user_id:          str
+    file_name:        str
+    file_url:         Optional[str]
+    uploaded_at:      datetime
+    analysis_status:  ProcessingStatus
+    features:         List[ImageFeatureResponse] = []
 
     class Config:
         from_attributes = True
