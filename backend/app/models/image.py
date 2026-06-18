@@ -45,7 +45,7 @@ class ImageFeature(Base):
     feature_name = Column(String, nullable=True)
     confidence   = Column(Float, nullable=True)                # 0.0 – 1.0
     value        = Column(String, nullable=True)               # extracted value
-    metadata     = Column(JSON, nullable=True)                 # extra info
+    extra_info   = Column("metadata", JSON, nullable=True)     # extra info
 
     # Relationships
     image = relationship("Image", back_populates="features")
