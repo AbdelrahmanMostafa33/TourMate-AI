@@ -28,9 +28,23 @@ async def save_quiz(user_id: str, data: QuizSubmitRequest, db: AsyncSession) -> 
     profile.accommodation_preferences = data.accommodation_preferences
     profile.custom_interests = data.custom_interests
 
-    persona = generate_persona(data.model_dump())
-    profile.persona_title = persona.get("persona_title", persona.get("persona_name", ""))
-    profile.persona_summary = persona.get("persona_summary", persona.get("persona_bio", ""))
+    # Map new enum fields to the old slider-based format that generate_persona expects
+    style_map = {"ADVENTUROUS": 80, "RELAXING": 20}
+    spending_map = {"LUXURIOUS": 80, "BUDGET_CONSCIOUS": 20}
+    nature_map = {"NATURE_OUTDOORS": 20, "CULTURE": 80}
+
+    legacy_quiz_data = {
+        "adventure_relaxing": style_map.get(data.pace_style.value, 50),
+        "nature_culture": nature_map.get(data.experience_lean.value, 50),
+        "budget_level": spending_map.get(data.spending_style.value, 50),
+        "interests": data.interests,
+        "dining_preferences": data.dining_preferences,
+        "traveler_types": data.accommodation_preferences,
+        "travel_companion": "solo" if data.social_style.value == "INDEPENDENT" else "group",
+    }
+    persona = generate_persona(legacy_quiz_data)
+    profile.persona_title = persona.get("persona_name", "")
+    profile.persona_summary = persona.get("persona_bio", "")
     profile.quiz_completed = True
     profile.completed_at = datetime.utcnow()
 

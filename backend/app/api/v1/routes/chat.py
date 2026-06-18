@@ -243,6 +243,8 @@ async def process_message(
     profile_data: dict,
     ws_key:       str,
     db:           AsyncSession,
+    user_id:      str,
+    token:        str,
 ):
 
     # ── حفظ رسالة اليوزر ─────────────────────────────────────────────────
@@ -380,7 +382,7 @@ async def process_message(
     # ── نفذ الـ actions ──────────────────────────────────────────────────
     updated_actions = []
     if actions:
-        await db.refresh(trip, ["days"])
+        await db.refresh(trip, ["itineraries"])
         updated_actions = await execute_actions(actions, trip, db)
 
     # ── احفظ رد الـ AI ───────────────────────────────────────────────────
@@ -455,6 +457,8 @@ async def websocket_new_chat(
                         profile_data = profile_data,
                         ws_key       = ws_key,
                         db           = db,
+                        user_id      = user_id,
+                        token        = token,
                     )
 
                 # ── حدّث history ─────────────────────────────────────────
@@ -768,6 +772,8 @@ async def websocket_chat(
                     profile_data = profile_data,
                     ws_key       = trip_id,
                     db           = db,
+                    user_id      = user_id,
+                    token        = token,
                 )
 
         # ── الـ Loop العادي ───────────────────────────────────────────────
@@ -785,6 +791,8 @@ async def websocket_chat(
                     profile_data = profile_data,
                     ws_key       = trip_id,
                     db           = db,
+                    user_id      = user_id,
+                    token        = token,
                 )
 
     except WebSocketDisconnect:
