@@ -1,5 +1,6 @@
 """Itinerary, Day, ItineraryStop models."""
 
+import uuid
 from sqlalchemy import (
     Column, String, Integer, Float, Text, Date, Time, DateTime,
     ForeignKey, JSON, Enum as SAEnum
@@ -40,7 +41,7 @@ class Itinerary(Base):
 class Day(Base):
     __tablename__ = "days"
 
-    day_id          = Column(Integer, primary_key=True, autoincrement=True)
+    day_id          = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
     itinerary_id    = Column(String, ForeignKey("itineraries.itinerary_id", ondelete="CASCADE"), nullable=False, index=True)
     day_number      = Column(Integer, nullable=False)
     date            = Column(Date, nullable=True)
@@ -58,8 +59,8 @@ class Day(Base):
 class ItineraryStop(Base):
     __tablename__ = "itinerary_stops"
 
-    stop_id               = Column(Integer, primary_key=True, autoincrement=True)
-    day_id                = Column(Integer, ForeignKey("days.day_id", ondelete="CASCADE"), nullable=False, index=True)
+    stop_id               = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    day_id                = Column(String, ForeignKey("days.day_id", ondelete="CASCADE"), nullable=False, index=True)
     place_id              = Column(String, ForeignKey("places.place_id"), nullable=True)
     place_snapshot        = Column(JSON, nullable=True)       # snapshot of Place data at creation time
     scheduled_time        = Column(Time, nullable=True)

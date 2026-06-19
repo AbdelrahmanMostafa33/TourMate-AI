@@ -27,8 +27,8 @@ class StopCreate(BaseModel):
 
 class StopResponse(BaseModel):
     """Response schema for ItineraryStop – aligns with model fields."""
-    stop_id:                int
-    day_id:                 int
+    stop_id:                str
+    day_id:                 str
     place_id:               Optional[str]  = None
     place_snapshot:         Optional[dict] = None
     scheduled_time:         Optional[time] = None
@@ -63,7 +63,7 @@ class DayCreate(BaseModel):
 
 class DayResponse(BaseModel):
     """Response schema for Day – aligns with model fields."""
-    day_id:         int
+    day_id:         str
     itinerary_id:   str
     day_number:     int
     date:           Optional[date]

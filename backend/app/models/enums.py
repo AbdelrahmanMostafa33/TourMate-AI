@@ -157,25 +157,25 @@ class SocialStyle(str, PyEnum):
 # ─── Trip Profiles (per-trip AI-generated profiles) ─────────────────────────
 
 class BudgetLevel(str, PyEnum):
-    BUDGET = "BUDGET"
-    MODERATE = "MODERATE"
-    LUXURY = "LUXURY"
+    BUDGET = "budget"
+    MODERATE = "moderate"
+    LUXURY = "luxury"
 
 
 class TravelStyle(str, PyEnum):
-    ROMANTIC = "ROMANTIC"
-    ADVENTURE = "ADVENTURE"
-    FAMILY = "FAMILY"
-    BUSINESS = "BUSINESS"
-    SOLO = "SOLO"
-    CULTURAL = "CULTURAL"
-    RELAXATION = "RELAXATION"
+    ROMANTIC = "romantic"
+    ADVENTURE = "adventure"
+    FAMILY = "family"
+    BUSINESS = "business"
+    SOLO = "solo"
+    CULTURAL = "cultural"
+    RELAXATION = "relaxation"
 
 
 class TripPace(str, PyEnum):
-    PACKED = "PACKED"
-    BALANCED = "BALANCED"
-    RELAXED = "RELAXED"
+    PACKED = "packed"
+    BALANCED = "balanced"
+    RELAXED = "relaxed"
 
 
 # ─── Profile & Feedback ──────────────────────────────────────────────────────

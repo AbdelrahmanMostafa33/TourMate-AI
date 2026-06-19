@@ -1,12 +1,14 @@
 # app/models/profile.py
 
 from sqlalchemy import (
-    Column, String, Float, DateTime, ForeignKey, JSON
+    Column, String, Float, DateTime, ForeignKey, JSON,
+    Enum as SAEnum
 )
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 
 from app.core.database import Base
+from app.models.enums import BudgetLevel, TravelStyle, TripPace
 
 
 class TripProfile(Base):
@@ -17,9 +19,18 @@ class TripProfile(Base):
     trip_id              = Column(String, ForeignKey("trips.trip_id", ondelete="CASCADE"), nullable=False, index=True)
 
     # --- Preference ENUMs ---
-    budget_level         = Column(String, nullable=True)   # BudgetLevel
-    travel_style         = Column(String, nullable=True)   # TravelStyle
-    pace                 = Column(String, nullable=True)   # TripPace
+    budget_level         = Column(
+        SAEnum(BudgetLevel, name="budget_level"),
+        nullable=True,
+    )
+    travel_style         = Column(
+        SAEnum(TravelStyle, name="travel_style"),
+        nullable=True,
+    )
+    pace                 = Column(
+        SAEnum(TripPace, name="trip_pace"),
+        nullable=True,
+    )
 
     # --- Preference Lists ---
     interests            = Column(JSON, nullable=True)     # List[str]

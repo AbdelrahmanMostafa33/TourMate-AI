@@ -10,7 +10,10 @@ from app.core.security import get_current_user
 from app.models.trip import Trip
 from app.models.itinerary import Itinerary, Day, ItineraryStop
 from app.models.chat import Conversation, Message
+from app.models.profile import TripProfile
 from app.schemas.trip import TripCreate, TripResponse, TripSummary, TripStatusUpdate
+from app.schemas.profile import TripProfileCreate, TripProfileResponse
+from app.services.profile_service import get_trip_profile, upsert_trip_profile
 
 router = APIRouter()
 
@@ -228,3 +231,61 @@ async def update_trip_status(
     trip.status = body.status
     await db.commit()
     return {"trip_id": trip_id, "status": trip.status}
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# GET /trips/{trip_id}/profile
+# ═════════════════════════════════════════════════════════════════════════════
+
+@router.get("/{trip_id}/profile", response_model=TripProfileResponse)
+async def get_trip_profile_endpoint(
+    trip_id:      str,
+    current_user: dict         = Depends(get_current_user),
+    db:           AsyncSession = Depends(get_db),
+):
+    """Get the AI-generated trip profile for a specific trip."""
+    # ── Verify trip belongs to user ──────────────────────────────────
+    result = await db.execute(
+        select(Trip).where(
+            Trip.trip_id == trip_id,
+            Trip.user_id == current_user["uid"],
+        )
+    )
+    trip = result.scalar_one_or_none()
+    if not trip:
+        raise HTTPException(status_code=404, detail="Trip not found")
+
+    # ── Get or return 404 ────────────────────────────────────────────
+    profile = await get_trip_profile(trip_id, db)
+    if not profile:
+        raise HTTPException(status_code=404, detail="Trip profile not found")
+
+    return profile
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# PUT /trips/{trip_id}/profile
+# ═════════════════════════════════════════════════════════════════════════════
+
+@router.put("/{trip_id}/profile", response_model=TripProfileResponse)
+async def upsert_trip_profile_endpoint(
+    trip_id:      str,
+    data:         TripProfileCreate,
+    current_user: dict         = Depends(get_current_user),
+    db:           AsyncSession = Depends(get_db),
+):
+    """Create or update the trip profile (called by AI engine or user)."""
+    # ── Verify trip belongs to user ──────────────────────────────────
+    result = await db.execute(
+        select(Trip).where(
+            Trip.trip_id == trip_id,
+            Trip.user_id == current_user["uid"],
+        )
+    )
+    trip = result.scalar_one_or_none()
+    if not trip:
+        raise HTTPException(status_code=404, detail="Trip not found")
+
+    # ── Upsert profile ───────────────────────────────────────────────
+    profile = await upsert_trip_profile(trip_id, data, db)
+    return profile

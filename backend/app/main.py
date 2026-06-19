@@ -15,6 +15,7 @@ from app.api.v1.routes import reviews as reviews_router
 from app.api.v1.routes import saved_places as saved_places_router
 from app.api.v1.routes import recommendations as recommendations_router
 from app.api.v1.routes import images as images_router
+from app.api.v1.routes import places as places_router
 
 
 @asynccontextmanager
@@ -46,6 +47,7 @@ app.include_router(reviews_router.router, prefix="/api/v1/reviews", tags=["Revie
 app.include_router(saved_places_router.router, prefix="/api/v1/saved-places", tags=["Saved Places"])
 app.include_router(recommendations_router.router, prefix="/api/v1/recommendations", tags=["Recommendations"])
 app.include_router(images_router.router, prefix="/api/v1/images", tags=["Images"])
+app.include_router(places_router.router, prefix="/api/v1/places", tags=["Places"])
 
 
 @app.get("/")
