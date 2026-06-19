@@ -363,10 +363,18 @@ async def _handle_plan_trip(
         "profile":           profile,
         "token":             token,
 
+        # ── Preference extraction (set by Preference Agent) ───
+        "extracted_preferences": None,
+
+        # ── Retrieval pipeline (set by Retrieval/Ranking Agents)
+        "filtered_places":   None,
+        "candidate_places":  None,
+
         # ── Pipeline outputs (None until agents run) ──────────
         "draft_itinerary":     None,
         "optimized_itinerary": None,
         "is_valid":            None,
+        "validation":          None,
 
         # ── Control flow ──────────────────────────────────────
         "next_agent": None,

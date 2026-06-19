@@ -1,46 +1,17 @@
 from ai_engine.graph.state import TripState
 from ai_engine.tools.profile_tool import load_behavioral_profile, load_mock_profile
+from ai_engine.agents.preference_agent import run_preference_agent
+from ai_engine.agents.retrieval_agent import run_retrieval_agent
+from ai_engine.agents.ranking_agent import run_ranking_agent
 from ai_engine.agents.planning_agent import run_planning_agent
 from ai_engine.agents.optimization_agent import run_optimization_agent
 from ai_engine.agents.validation_agent import run_validation_agent
-
-async def planning_node(state: TripState) -> TripState:
-    """
-    THE PLANNER AGENT NODE
-    """
-    print(f"[Planner] Running for message: {state['user_message']}")
-    return await run_planning_agent(state)
-
-
-async def optimization_node(state: TripState) -> TripState:
-    """
-    THE OPTIMIZER AGENT NODE
-    """
-    print(f"[Optimizer] Running optimization...")
-    return await run_optimization_agent(state)
-
-
-async def validation_node(state: TripState) -> TripState:
-    """
-    THE VALIDATION AGENT NODE
-    """
-    print(f"[Validator] Running validation...")
-    return await run_validation_agent(state)
 
 
 async def load_profile_node(state: TripState) -> TripState:
     """
     ENTRY NODE — Loads the user's behavioral profile into TripState.
-
-    If the profile is already set in state (e.g. pre-loaded by chat_handler
-    with auth credentials), this node is a no-op. Otherwise, it loads the
-    real profile via HTTP when a token is available, falling back to the
-    mock profile for development/testing.
-
-    Runs before the planner so every downstream agent has access to
-    the profile via state["profile"].
     """
-    # Skip if profile was already loaded by the caller (e.g. chat_handler)
     if state.get("profile"):
         print(f"[LoadProfile] Profile already loaded: "
               f"{state['profile'].get('persona_name', 'unknown persona')}")
@@ -60,8 +31,62 @@ async def load_profile_node(state: TripState) -> TripState:
                   f"falling back to mock")
             profile = load_mock_profile(user_id=user_id)
     else:
-        print(f"[LoadProfile] No token provided, using mock profile")
+        print("[LoadProfile] No token provided, using mock profile")
         profile = load_mock_profile(user_id=user_id)
 
     state["profile"] = profile
     return state
+
+
+async def preference_node(state: TripState) -> TripState:
+    """
+    PREFERENCE AGENT NODE — Extracts structured preferences from
+    the user's message and behavioral profile.
+    """
+    print(f"[PreferenceAgent] Extracting preferences for: {state['user_message'][:50]}...")
+    return await run_preference_agent(state)
+
+
+async def retrieval_node(state: TripState) -> TripState:
+    """
+    RETRIEVAL AGENT NODE — Filters places from the database using
+    structured preference criteria.
+    """
+    print(f"[RetrievalAgent] Filtering places for: {state.get('destination_city', '?')}")
+    return await run_retrieval_agent(state)
+
+
+async def ranking_node(state: TripState) -> TripState:
+    """
+    RANKING AGENT NODE — Scores candidates with multi-signal ranking
+    and diversity optimization.
+    """
+    filtered = state.get("filtered_places") or []
+    print(f"[RankingAgent] Ranking {len(filtered)} filtered places")
+    return await run_ranking_agent(state)
+
+
+async def planning_node(state: TripState) -> TripState:
+    """
+    PLANNING AGENT NODE — Generates the itinerary using the LLM,
+    consuming pre-ranked candidates from upstream agents.
+    """
+    candidates = state.get("candidate_places") or []
+    print(f"[Planner] Planning with {len(candidates)} candidates")
+    return await run_planning_agent(state)
+
+
+async def optimization_node(state: TripState) -> TripState:
+    """
+    OPTIMIZER AGENT NODE — Reorders stops by travel time.
+    """
+    print("[Optimizer] Running optimization...")
+    return await run_optimization_agent(state)
+
+
+async def validation_node(state: TripState) -> TripState:
+    """
+    VALIDATION AGENT NODE — Programmatic + LLM validation.
+    """
+    print("[Validator] Running validation...")
+    return await run_validation_agent(state)
