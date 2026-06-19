@@ -1,75 +1,43 @@
-# ai/graph/state.py
+# ai_engine/graph/state.py
 
 from typing import TypedDict, Optional, List, Annotated
 import operator
 
 
-class BehavioralProfile(TypedDict):
+class TripProfile(TypedDict):
     """
-    Represents the user's long-term profile data.
+    Per-trip travel profile.
 
-    This structure mirrors the UserProfile table in the backend database
-    and is loaded once per request. It is used by the AI system to personalize
-    itinerary generation and decision-making.
+    Replaces the old user-level BehavioralProfile. Each trip has its own
+    profile built from conversation context — a user can be budget-conscious
+    for Istanbul but luxury-oriented for Thailand.
+
+    Stored in the trip_profiles table (1:1 with trips).
     """
-    user_id: str  # Unique identifier linking this profile to a user
+    profile_id: Optional[str]
+    trip_id: Optional[str]
 
-    # ── Demographics ────────────────────────────────────────────────
-    age: Optional[int]              # User age (may be missing if not provided)
-    sex: Optional[str]              # User gender (free text or predefined values)
-    travel_companion: Optional[str] # Type of travel group (e.g., "solo", "partner", "family", "friends")
+    # ── Core Preferences ──────────────────────────────────────────
+    budget_level: Optional[str]        # "budget" | "moderate" | "luxury"
+    travel_style: Optional[str]        # "romantic" | "adventure" | "family" | "solo" | "cultural" | "relaxation"
+    pace: Optional[str]                # "relaxed" | "moderate" | "packed"
 
-    location: Optional[str]         # User's home location (used for personalization)
+    # ── Interest & Preference Lists ───────────────────────────────
+    interests: List[str]               # e.g. ["history", "food", "art"]
+    food_preferences: List[str]        # e.g. ["local cuisine", "street food"]
+    accommodation_preferences: List[str]  # e.g. ["boutique hotel", "airbnb"]
 
-    # ── Preference Sliders (0–100 scale from quiz) ──────────────────
-    # These represent behavioral tendencies derived from onboarding quiz
+    # ── Dimension Scores (0.0 – 1.0) ─────────────────────────────
+    luxury_score: Optional[float]
+    culture_score: Optional[float]
+    adventure_score: Optional[float]
+    shopping_score: Optional[float]
+    family_score: Optional[float]
 
-    adventure_relaxing: Optional[int]
-    # 0 = prefers relaxing activities, 100 = prefers adventurous activities
-
-    nature_culture: Optional[int]
-    # 0 = prefers nature, 100 = prefers cultural experiences
-
-    popular_local: Optional[int]
-    # 0 = prefers popular/tourist places, 100 = prefers local/hidden spots
-
-    budget_level: Optional[int]
-    # 0 = budget-conscious, 100 = luxury-oriented
-
-    early_night: Optional[int]
-    # 0 = early sleeper, 100 = prefers nightlife
-
-    independent_social: Optional[int]
-    # 0 = prefers independent activities, 100 = prefers social/group activities
-
-    # ── Multi-select Preferences ────────────────────────────────────
-    # Lists collected from user selections during onboarding
-
-    accommodation_styles: List[str] # Example: ["hotel", "hostel", "airbnb"]
-
-    dining_preferences: List[str]   # Example: ["street food", "fine dining"]
-
-    interests: List[str]
-    # Core interests used to filter and rank places
-
-    traveler_types: List[str]
-    # Higher-level labels (e.g., "adventurer", "culture seeker")
-
-    # ── AI-generated Persona ────────────────────────────────────────
-    # These fields are derived from the profile to guide tone and recommendations
-
-    persona_name: Optional[str]
-    # Short label representing the user (e.g., "The Budget Explorer")
-
-    persona_bio: Optional[str]
-    # Description of the user's travel style and preferences
-
-    suggested_questions: Optional[List[str]]
-    # Follow-up questions the system may ask to refine trip planning
-
-    # ── Completion Flag ─────────────────────────────────────────────
-    quiz_completed: bool
-    # Indicates whether the onboarding quiz was fully completed
+    # ── Metadata ─────────────────────────────────────────────────
+    confidence: Optional[float]        # 0.0-1.0 how confident we are in the profile
+    generated_at: Optional[str]        # ISO-8601 timestamp of profile creation
+    updated_at: Optional[str]          # ISO-8601 timestamp of last update
 
 
 class TripState(TypedDict):
@@ -90,10 +58,12 @@ class TripState(TypedDict):
     token: Optional[str]
     # Firebase auth token for authenticated API calls (e.g. profile loading)
 
+    trip_id: Optional[str]
+    # Trip identifier for loading per-trip profile
 
-    # ── Loaded Profile ──────────────────────────────────────────────
-    profile: Optional[BehavioralProfile]
-    # User profile loaded from backend; may be None if not available
+
+    # ── Loaded Profile (per-trip) ───────────────────────────────────
+    profile: Optional[TripProfile]
 
 
     # ── Preference Extraction ─────────────────────────────────────

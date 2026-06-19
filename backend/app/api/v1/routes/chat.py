@@ -282,7 +282,7 @@ async def process_message(
     actions       = []
 
     try:
-        from ai_engine.chat.chat_handler import handle_chat
+        from ai_engine.chat.conversation_agent import handle_chat
         result = await handle_chat(
             user_id=user_id,
             user_message=user_text,
@@ -481,7 +481,7 @@ async def websocket_new_chat(
             actions       = []
 
             try:
-                from ai_engine.chat.chat_handler import handle_chat
+                from ai_engine.chat.conversation_agent import handle_chat
                 result = await handle_chat(
                     user_id=user_id,
                     user_message=user_text,

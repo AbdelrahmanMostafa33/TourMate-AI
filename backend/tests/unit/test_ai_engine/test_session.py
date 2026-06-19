@@ -45,31 +45,78 @@ class TestTripSlots:
         assert slots.duration_days is None
         assert slots.group_size is None
         assert slots.special_requests is None
+        assert slots.budget_level is None
+        assert slots.travel_style is None
+        assert slots.pace is None
+        assert slots.interests is None
+        assert slots.food_preferences is None
+        assert slots.accommodation_preferences is None
 
-    def test_missing_required_both_missing(self):
+    def test_missing_required_all_missing(self):
         slots = TripSlots()
         missing = slots.missing_required()
         assert "destination" in missing
         assert "duration" in missing
+        assert "budget_level" in missing
+        assert "travel_style" in missing
+        assert "pace" in missing
+        assert "interests" in missing
+        assert "food_preferences" in missing
+        assert "accommodation_preferences" in missing
 
-    def test_missing_required_only_duration(self):
-        slots = TripSlots(destination_city="Paris")
-        missing = slots.missing_required()
-        assert "destination" not in missing
-        assert "duration" in missing
-
-    def test_missing_required_only_destination(self):
-        slots = TripSlots(duration_days=5)
+    def test_missing_required_only_trip_info(self):
+        slots = TripSlots(
+            budget_level="moderate",
+            travel_style="cultural",
+            pace="moderate",
+            interests=["history"],
+            food_preferences=["local cuisine"],
+            accommodation_preferences=["hotel"],
+        )
         missing = slots.missing_required()
         assert "destination" in missing
-        assert "duration" not in missing
+        assert "duration" in missing
+        assert "budget_level" not in missing
+        assert "travel_style" not in missing
 
-    def test_is_complete_when_both_filled(self):
+    def test_missing_required_only_profile(self):
         slots = TripSlots(destination_city="Paris", duration_days=5)
+        missing = slots.missing_required()
+        assert "destination" not in missing
+        assert "duration" not in missing
+        assert "budget_level" in missing
+        assert "travel_style" in missing
+        assert "pace" in missing
+        assert "interests" in missing
+        assert "food_preferences" in missing
+        assert "accommodation_preferences" in missing
+
+    def test_is_complete_when_all_required_filled(self):
+        slots = TripSlots(
+            destination_city="Paris",
+            duration_days=5,
+            budget_level="luxury",
+            travel_style="romantic",
+            pace="relaxed",
+            interests=["art"],
+            food_preferences=["fine dining"],
+            accommodation_preferences=["resort"],
+        )
         assert slots.is_complete() is True
 
-    def test_is_complete_when_partial(self):
-        slots = TripSlots(destination_city="Paris")
+    def test_is_complete_when_missing_profile(self):
+        slots = TripSlots(destination_city="Paris", duration_days=5)
+        assert slots.is_complete() is False
+
+    def test_is_complete_when_missing_trip_info(self):
+        slots = TripSlots(
+            budget_level="moderate",
+            travel_style="cultural",
+            pace="moderate",
+            interests=["history"],
+            food_preferences=["local cuisine"],
+            accommodation_preferences=["hotel"],
+        )
         assert slots.is_complete() is False
 
     def test_to_dict_round_trip(self):
@@ -80,6 +127,12 @@ class TestTripSlots:
             travel_dates="2026-07-01 to 2026-07-03",
             group_size=2,
             special_requests="museums and food",
+            budget_level="luxury",
+            travel_style="romantic",
+            pace="relaxed",
+            interests=["art", "history"],
+            food_preferences=["fine dining"],
+            accommodation_preferences=["resort"],
         )
         d = slots.to_dict()
         restored = TripSlots.from_dict(d)
@@ -88,6 +141,12 @@ class TestTripSlots:
         assert restored.duration_days == 3
         assert restored.group_size == 2
         assert restored.special_requests == "museums and food"
+        assert restored.budget_level == "luxury"
+        assert restored.travel_style == "romantic"
+        assert restored.pace == "relaxed"
+        assert restored.interests == ["art", "history"]
+        assert restored.food_preferences == ["fine dining"]
+        assert restored.accommodation_preferences == ["resort"]
 
     def test_merge_overwrites_none_fields(self):
         slots = TripSlots()
@@ -122,6 +181,23 @@ class TestTripSlots:
         # Second merge should not overwrite interests (already set)
         slots.merge({"special_requests": "food"})
         assert slots.interests == ["museums"]  # unchanged
+
+    def test_merge_profile_fields(self):
+        slots = TripSlots()
+        slots.merge({
+            "budget_level": "luxury",
+            "travel_style": "romantic",
+            "pace": "relaxed",
+            "interests": ["art"],
+            "food_preferences": ["sushi"],
+            "accommodation_preferences": ["resort"],
+        })
+        assert slots.budget_level == "luxury"
+        assert slots.travel_style == "romantic"
+        assert slots.pace == "relaxed"
+        assert slots.interests == ["art"]
+        assert slots.food_preferences == ["sushi"]
+        assert slots.accommodation_preferences == ["resort"]
 
 
 # ── ChatMessage Tests ─────────────────────────────────────────────────────────
@@ -266,10 +342,14 @@ class TestConversationState:
         assert state.phase == ConversationPhase.GREETING
         state.transition_to(ConversationPhase.SLOT_FILLING)
 
-        # Slot filling
+        # Slot filling — all 9 required fields
         state.slots.merge({"destination_city": "Cairo"})
         assert not state.slots.is_complete()
         state.slots.merge({"duration_days": 3})
+        assert not state.slots.is_complete()
+        state.slots.merge({"budget_level": "moderate", "travel_style": "cultural", "pace": "moderate"})
+        assert not state.slots.is_complete()
+        state.slots.merge({"interests": ["history"], "food_preferences": ["local cuisine"], "accommodation_preferences": ["hotel"]})
         assert state.slots.is_complete()
 
         # Plan generation

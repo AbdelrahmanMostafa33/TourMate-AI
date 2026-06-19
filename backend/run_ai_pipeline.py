@@ -9,7 +9,7 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), ".")))
 # Mocking app.external.groq_client and other dependencies if necessary
 # But we already created groq_client.py in the correct place.
 
-from ai_engine.chat.chat_handler import handle_chat
+from ai_engine.chat.conversation_agent import handle_chat
 
 async def main():
     print("Starting AI Pipeline Test...")

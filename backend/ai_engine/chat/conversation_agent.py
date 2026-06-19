@@ -1,6 +1,6 @@
-# backend/ai_engine/chat/chat_handler.py
+# backend/ai_engine/chat/conversation_agent.py
 
-"""Stateful chat handler with Redis-backed session management.
+"""Stateful conversation agent with Redis-backed session management.
 
 This module orchestrates the full conversational flow:
   1. Load or create a ConversationState from Redis
@@ -27,7 +27,7 @@ from ai_engine.memory.redis_memory import get_session_manager
 from ai_engine.graph.graph_builder import trip_graph
 from ai_engine.vision.image_analyzer import analyze_travel_image
 from ai_engine.vision.multimodal_fusion import fuse_image_with_profile
-from ai_engine.tools.profile_tool import load_behavioral_profile, load_mock_profile
+from ai_engine.tools.profile_tool import load_trip_profile, load_mock_profile
 
 
 # ── Prompts ───────────────────────────────────────────────────────────────────
@@ -320,6 +320,35 @@ async def _stream_text(text: str):
 
 # ── Route handlers ────────────────────────────────────────────────────────────
 
+def _build_profile_from_slots(slots: TripSlots, trip_id: str) -> dict:
+    """
+    Build a TripProfile dict from the collected TripSlots.
+
+    Called when all required slots are filled and the pipeline is ready to run.
+    The profile starts with whatever the user told the Conversation Agent.
+    The Preference Agent will later refine it and derive dimension scores.
+    """
+    from ai_engine.graph.state import TripProfile
+    return TripProfile(
+        profile_id=None,
+        trip_id=trip_id,
+        budget_level=slots.budget_level,
+        travel_style=slots.travel_style,
+        pace=slots.pace,
+        interests=slots.interests or [],
+        food_preferences=slots.food_preferences or [],
+        accommodation_preferences=slots.accommodation_preferences or [],
+        luxury_score=None,
+        culture_score=None,
+        adventure_score=None,
+        shopping_score=None,
+        family_score=None,
+        confidence=None,
+        generated_at=None,
+        updated_at=None,
+    )
+
+
 async def _handle_plan_trip(
     user_id: str,
     user_message: str,
@@ -331,29 +360,36 @@ async def _handle_plan_trip(
     """
     Invokes the full LangGraph pipeline for itinerary generation.
 
-    Loads the user profile via real HTTP call when a token is provided,
-    falling back to mock profile for development. Merges image features
-    if available, then runs trip_graph.invoke().
+    Builds the TripProfile from conversation slots (complete profile collected
+    during slot-filling). Merges image features if available, then runs
+    trip_graph.invoke().
 
     All TripState keys must be supplied — LangGraph raises KeyError for
     any missing key, even optional ones. Defaults are set explicitly here.
     """
-    # Load profile — real if token available, mock otherwise
-    if token:
+    from ai_engine.graph.state import TripProfile
+
+    trip_id = getattr(state, 'trip_id', None) or user_id
+
+    # Build profile from the slots collected during conversation
+    if state and state.slots.is_complete():
+        profile = _build_profile_from_slots(state.slots, trip_id)
+        print(f"[ChatHandler] Built profile from slots: budget={profile.get('budget_level')}, style={profile.get('travel_style')}, pace={profile.get('pace')}")
+    elif token:
+        # Fallback: load existing profile from DB if available
         try:
-            profile = await load_behavioral_profile(user_id=user_id, token=token)
+            profile = await load_trip_profile(trip_id=trip_id, token=token)
         except Exception as e:
             print(f"[ChatHandler] Failed to load real profile ({e}), falling back to mock")
-            profile = load_mock_profile(user_id=user_id)
+            profile = load_mock_profile(trip_id=trip_id)
     else:
-        profile = load_mock_profile(user_id=user_id)
+        profile = load_mock_profile(trip_id=trip_id)
 
     # Merge image features into profile if an image was uploaded
     if image_features and image_features.get("confidence") != "low":
         profile = fuse_image_with_profile(profile, image_features)
 
     # Build the complete initial TripState.
-    # Every key in TripState TypedDict must be present.
     initial_state = {
         # ── Core request ──────────────────────────────────────
         "user_id":           user_id,
@@ -362,6 +398,7 @@ async def _handle_plan_trip(
         # ── Profile (enriched with image features if any) ─────
         "profile":           profile,
         "token":             token,
+        "trip_id":           trip_id,
 
         # ── Preference extraction (set by Preference Agent) ───
         "extracted_preferences": None,
@@ -375,13 +412,13 @@ async def _handle_plan_trip(
         "optimized_itinerary": None,
         "is_valid":            None,
         "validation":          None,
+        "planning_attempts":   0,
 
         # ── Control flow ──────────────────────────────────────
         "next_agent": None,
         "error":      None,
 
-        # ── Intent fields (pre-parsed — passed through to graph state
-        #    so downstream agents have access without re-parsing) ─
+        # ── Intent fields ─────────────────────────────────────
         "intent_type":         intent.get("intent_type", "plan_trip"),
         "destination_city":    intent.get("destination_city"),
         "destination_country": intent.get("destination_country"),

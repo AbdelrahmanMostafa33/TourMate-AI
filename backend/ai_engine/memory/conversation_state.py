@@ -63,22 +63,29 @@ class TripSlots:
     Trip information collected from the user during slot-filling.
 
     Required fields (must be non-None before PLAN_GENERATION):
-        - destination_city
-        - duration_days
+        - destination_city, duration_days
+        - budget_level, travel_style, pace
+        - interests, food_preferences, accommodation_preferences
 
     Optional fields (enrich the plan but are not blocking):
-        - destination_country, travel_dates, group_size, special_requests,
-          budget_level, interests
+        - destination_country, travel_dates, group_size, special_requests
     """
 
+    # ── Trip Info ──────────────────────────────────────────────────
     destination_city:    Optional[str] = None
     destination_country: Optional[str] = None
     duration_days:       Optional[int] = None
     travel_dates:        Optional[str] = None
     group_size:          Optional[int] = None
     special_requests:    Optional[str] = None
-    budget_level:        Optional[str] = None
-    interests:           Optional[List[str]] = None
+
+    # ── Profile Preferences (required) ─────────────────────────────
+    budget_level:                   Optional[str] = None   # "budget" | "moderate" | "luxury"
+    travel_style:                   Optional[str] = None   # "romantic" | "adventure" | "family" | "solo" | "cultural" | "relaxation"
+    pace:                           Optional[str] = None   # "relaxed" | "moderate" | "packed"
+    interests:                      Optional[List[str]] = None
+    food_preferences:               Optional[List[str]] = None
+    accommodation_preferences:      Optional[List[str]] = None
 
     def missing_required(self) -> List[str]:
         """Return the list of required fields that are still None."""
@@ -87,6 +94,18 @@ class TripSlots:
             missing.append("destination")
         if self.duration_days is None:
             missing.append("duration")
+        if not self.budget_level:
+            missing.append("budget_level")
+        if not self.travel_style:
+            missing.append("travel_style")
+        if not self.pace:
+            missing.append("pace")
+        if not self.interests:
+            missing.append("interests")
+        if not self.food_preferences:
+            missing.append("food_preferences")
+        if not self.accommodation_preferences:
+            missing.append("accommodation_preferences")
         return missing
 
     def is_complete(self) -> bool:
@@ -103,14 +122,18 @@ class TripSlots:
     def from_dict(cls, data: Dict[str, Any]) -> "TripSlots":
         """Deserialize from a dict (e.g. loaded from Redis)."""
         return cls(
-            destination_city    = data.get("destination_city"),
-            destination_country = data.get("destination_country"),
-            duration_days       = data.get("duration_days"),
-            travel_dates        = data.get("travel_dates"),
-            group_size          = data.get("group_size"),
-            special_requests    = data.get("special_requests"),
-            budget_level        = data.get("budget_level"),
-            interests           = data.get("interests"),
+            destination_city       = data.get("destination_city"),
+            destination_country    = data.get("destination_country"),
+            duration_days          = data.get("duration_days"),
+            travel_dates           = data.get("travel_dates"),
+            group_size             = data.get("group_size"),
+            special_requests       = data.get("special_requests"),
+            budget_level           = data.get("budget_level"),
+            travel_style           = data.get("travel_style"),
+            pace                   = data.get("pace"),
+            interests              = data.get("interests"),
+            food_preferences       = data.get("food_preferences"),
+            accommodation_preferences = data.get("accommodation_preferences"),
         )
 
     def merge(self, intent: Dict[str, Any]) -> None:
@@ -121,19 +144,33 @@ class TripSlots:
         This lets us accumulate information across multiple turns.
         """
         field_map = {
-            "destination_city":    "destination_city",
-            "destination_country": "destination_country",
-            "duration_days":       "duration_days",
-            "travel_dates":        "travel_dates",
-            "group_size":          "group_size",
-            "special_requests":    "special_requests",
+            "destination_city":       "destination_city",
+            "destination_country":    "destination_country",
+            "duration_days":          "duration_days",
+            "travel_dates":           "travel_dates",
+            "group_size":             "group_size",
+            "special_requests":       "special_requests",
+            "budget_level":           "budget_level",
+            "travel_style":           "travel_style",
+            "pace":                   "pace",
         }
         for intent_key, slot_key in field_map.items():
             value = intent.get(intent_key)
             if value is not None:
                 setattr(self, slot_key, value)
 
-        # Accumulate interests from special_requests if not already set
+        # Accumulate list fields (append, don't overwrite)
+        for list_field in ("interests", "food_preferences", "accommodation_preferences"):
+            new_values = intent.get(list_field)
+            if new_values and isinstance(new_values, list):
+                existing = getattr(self, list_field) or []
+                combined = list(existing)
+                for v in new_values:
+                    if v not in combined:
+                        combined.append(v)
+                setattr(self, list_field, combined)
+
+        # Backward compat: accumulate interests from special_requests
         if not self.interests and intent.get("special_requests"):
             self.interests = [intent["special_requests"]]
 
@@ -307,7 +344,7 @@ class ConversationState:
             f"Turn: {self.turn_count}",
         ]
 
-        # Include collected slots
+        # Include collected trip slots
         if self.slots.destination_city:
             lines.append(f"Destination: {self.slots.destination_city}")
         if self.slots.destination_country:
@@ -320,6 +357,20 @@ class ConversationState:
             lines.append(f"Group size: {self.slots.group_size}")
         if self.slots.special_requests:
             lines.append(f"Special requests: {self.slots.special_requests}")
+
+        # Include collected profile preferences
+        if self.slots.budget_level:
+            lines.append(f"Budget: {self.slots.budget_level}")
+        if self.slots.travel_style:
+            lines.append(f"Style: {self.slots.travel_style}")
+        if self.slots.pace:
+            lines.append(f"Pace: {self.slots.pace}")
+        if self.slots.interests:
+            lines.append(f"Interests: {', '.join(self.slots.interests)}")
+        if self.slots.food_preferences:
+            lines.append(f"Food: {', '.join(self.slots.food_preferences)}")
+        if self.slots.accommodation_preferences:
+            lines.append(f"Accommodation: {', '.join(self.slots.accommodation_preferences)}")
 
         # Include recent history (last 5 messages for context)
         recent = self.history[-5:]

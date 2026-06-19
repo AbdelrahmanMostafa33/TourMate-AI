@@ -1,185 +1,259 @@
 """
 Preference Agent — Stage 1 of the multi-agent pipeline.
 
-Extracts structured travel preferences from:
-1. The user's natural language message
-2. The loaded behavioral profile (from onboarding quiz)
+With the new per-trip profile architecture, the Conversation Agent collects
+all profile fields from the user through natural conversation before the
+pipeline runs. The Preference Agent's job is now to:
 
-Outputs a structured dict that downstream agents (Retrieval, Ranking)
-use as filter criteria and scoring signals.
+1. Refine the profile using the user's original message context
+2. Derive dimension scores (luxury, culture, adventure, shopping, family)
+3. Calculate confidence based on profile completeness
+4. Write back the enriched profile
 """
 
 import json
 from langchain_core.messages import SystemMessage, HumanMessage
 from app.external.llm_client import get_fast_llm
-from ai_engine.graph.state import TripState, BehavioralProfile
-from ai_engine.profiling.behavioral_profile import get_budget_label
+from ai_engine.graph.state import TripState, TripProfile
 
 
-PREFERENCE_EXTRACTION_PROMPT = """
-You are the Preference Agent for TourMate AI. Your job is to extract
-structured travel preferences from the user's message and profile.
+REFINEMENT_PROMPT = """
+You are the Preference Agent for TourMate AI. You receive a complete
+travel profile collected from the user. Your job is to:
 
-You will receive:
-1. User message — what the user said
-2. User profile — behavioral data from onboarding quiz (may be partial)
+1. Verify the profile makes sense given the user's message
+2. Suggest any refinements based on nuance in the message
 
-Extract and return a JSON object with these fields:
-
+Return a JSON object with ONLY fields you want to override:
 {
   "budget_level": "budget" | "moderate" | "luxury" | null,
-  "travel_style": "romantic" | "adventure" | "family" | "business" | "solo" | "cultural" | "relaxation" | null,
-  "walking_tolerance": "low" | "medium" | "high" | null,
-  "food_preferences": ["local cuisine", "fine dining", ...],
-  "accommodation_style": "hotel" | "boutique" | "hostel" | "airbnb" | "resort" | null,
-  "nightlife": "low" | "medium" | "high" | null,
-  "interests_from_conversation": ["history", "art", ...],
-  "pace": "packed" | "balanced" | "relaxed" | null,
+  "travel_style": "romantic" | "adventure" | "family" | "solo" | "cultural" | "relaxation" | null,
+  "pace": "relaxed" | "moderate" | "packed" | null,
+  "interests_add": ["new_interest"],
+  "interests_remove": ["old_interest"],
+  "food_preferences_add": ["new_food"],
+  "food_preferences_remove": ["old_food"],
+  "accommodation_preferences_add": ["new_accommodation"],
+  "accommodation_preferences_remove": ["old_accommodation"],
   "special_focus": string | null
 }
 
 Rules:
-- Infer from the user message FIRST. Only fall back to profile if message is unclear.
-- If the user says "romantic" → travel_style = "romantic"
-- If the user says "budget-friendly" or "cheap" → budget_level = "budget"
-- If the user says "luxury" or "5-star" → budget_level = "luxury"
-- If the user says "I love walking" → walking_tolerance = "high"
-- If no signal exists for a field, set it to null (don't guess)
-- special_focus is any unusual request (e.g., "kid-friendly", "accessible", "photo spots")
+- Only include fields you want to CHANGE from the existing profile
+- Set a field to null or omit it to keep the existing value
+- If the profile looks perfect, return an empty object {}
 - Respond ONLY with valid JSON, no preamble
 """
 
 
-def _build_profile_context(profile: BehavioralProfile) -> str:
-    """Convert behavioral profile into context text for the LLM."""
-    lines = []
-
-    if profile.get("persona_name"):
-        lines.append(f"Persona: {profile['persona_name']}")
-
-    budget_label = get_budget_label(profile.get("budget_level"))
-    lines.append(f"Budget tendency: {budget_label}")
-
-    if profile.get("interests"):
-        lines.append(f"Stated interests: {', '.join(profile['interests'])}")
-
-    if profile.get("dining_preferences"):
-        lines.append(f"Dining preferences: {', '.join(profile['dining_preferences'])}")
-
-    if profile.get("accommodation_styles"):
-        lines.append(f"Accommodation preferences: {', '.join(profile['accommodation_styles'])}")
-
-    if profile.get("travel_companion"):
-        lines.append(f"Travel companion: {profile['travel_companion']}")
-
-    if profile.get("adventure_relaxing") is not None:
-        val = profile["adventure_relaxing"]
-        style = "adventurous" if val >= 60 else ("relaxed" if val <= 40 else "balanced")
-        lines.append(f"Activity style: {style}")
-
-    if profile.get("early_night") is not None:
-        val = profile["early_night"]
-        rhythm = "nightlife-oriented" if val >= 60 else ("early bird" if val <= 40 else "moderate")
-        lines.append(f"Day rhythm: {rhythm}")
-
-    return "\n".join(lines) if lines else "No profile data available."
-
-
-def _merge_preferences(
-    llm_extracted: dict,
-    profile: BehavioralProfile,
-) -> dict:
+def _derive_scores(profile: TripProfile) -> dict:
     """
-    Merge LLM-extracted preferences with profile data.
+    Derive dimension scores from the collected profile fields.
 
-    LLM extraction takes priority (it has the real-time conversation context).
-    Profile fills in gaps where the user didn't mention anything.
+    Each score is 0.0 – 1.0, calculated from the categorical profile data.
+    These scores are used by downstream agents (ranking, planning) for
+    filtering and scoring places.
+
+    Returns a dict with: luxury_score, culture_score, adventure_score,
+    shopping_score, family_score.
     """
-    merged = {
-        "budget_level": llm_extracted.get("budget_level"),
-        "travel_style": llm_extracted.get("travel_style"),
-        "walking_tolerance": llm_extracted.get("walking_tolerance"),
-        "food_preferences": llm_extracted.get("food_preferences") or [],
-        "accommodation_style": llm_extracted.get("accommodation_style"),
-        "nightlife": llm_extracted.get("nightlife"),
-        "interests_from_conversation": llm_extracted.get("interests_from_conversation") or [],
-        "pace": llm_extracted.get("pace"),
-        "special_focus": llm_extracted.get("special_focus"),
+    scores = {
+        "luxury_score": 0.5,
+        "culture_score": 0.5,
+        "adventure_score": 0.5,
+        "shopping_score": 0.3,
+        "family_score": 0.3,
     }
 
-    # Fill from profile if LLM didn't extract these
-    if not merged["budget_level"] and profile.get("budget_level") is not None:
-        merged["budget_level"] = get_budget_label(profile["budget_level"])
+    # ── Luxury Score ──────────────────────────────────────────────
+    budget_map = {"budget": 0.15, "moderate": 0.5, "luxury": 0.9}
+    scores["luxury_score"] = budget_map.get(profile.get("budget_level"), 0.5)
 
-    if not merged["food_preferences"] and profile.get("dining_preferences"):
-        merged["food_preferences"] = profile["dining_preferences"]
+    # Boost if high-end accommodation
+    acc = [a.lower() for a in (profile.get("accommodation_preferences") or [])]
+    if any(a in ("resort", "boutique hotel", "luxury hotel") for a in acc):
+        scores["luxury_score"] = min(1.0, scores["luxury_score"] + 0.15)
+    if any(a in ("hostel", "camping") for a in acc):
+        scores["luxury_score"] = max(0.0, scores["luxury_score"] - 0.2)
 
-    if not merged["accommodation_style"] and profile.get("accommodation_styles"):
-        # Take the first preference as the primary style
-        merged["accommodation_style"] = profile["accommodation_styles"][0]
+    # ── Culture Score ─────────────────────────────────────────────
+    interests_lower = {i.lower() for i in (profile.get("interests") or [])}
+    culture_keywords = {"history", "art", "museums", "architecture", "heritage", "culture", "traditions"}
+    culture_hits = len(interests_lower & culture_keywords)
+    scores["culture_score"] = min(1.0, 0.3 + (culture_hits * 0.15))
 
-    if not merged["interests_from_conversation"] and profile.get("interests"):
-        merged["interests_from_conversation"] = profile["interests"]
+    style = (profile.get("travel_style") or "").lower()
+    if style == "cultural":
+        scores["culture_score"] = min(1.0, scores["culture_score"] + 0.25)
 
-    # Derive walking tolerance from adventure_relaxing slider if not set
-    if not merged["walking_tolerance"] and profile.get("adventure_relaxing") is not None:
-        val = profile["adventure_relaxing"]
-        merged["walking_tolerance"] = "high" if val >= 60 else ("low" if val <= 30 else "medium")
+    # ── Adventure Score ───────────────────────────────────────────
+    adventure_keywords = {"hiking", "trekking", "adventure", "outdoors", "nature", "diving", "climbing", "safari"}
+    adventure_hits = len(interests_lower & adventure_keywords)
+    scores["adventure_score"] = min(1.0, 0.2 + (adventure_hits * 0.15))
 
-    # Derive pace from adventure_relaxing
-    if not merged["pace"] and profile.get("adventure_relaxing") is not None:
-        val = profile["adventure_relaxing"]
-        merged["pace"] = "packed" if val >= 65 else ("relaxed" if val <= 35 else "balanced")
+    if style == "adventure":
+        scores["adventure_score"] = min(1.0, scores["adventure_score"] + 0.3)
 
-    # Derive nightlife from early_night slider
-    if not merged["nightlife"] and profile.get("early_night") is not None:
-        val = profile["early_night"]
-        merged["nightlife"] = "high" if val >= 65 else ("low" if val <= 35 else "medium")
+    pace = (profile.get("pace") or "").lower()
+    if pace == "packed":
+        scores["adventure_score"] = min(1.0, scores["adventure_score"] + 0.1)
+    elif pace == "relaxed":
+        scores["adventure_score"] = max(0.0, scores["adventure_score"] - 0.15)
 
-    return merged
+    # ── Shopping Score ────────────────────────────────────────────
+    shopping_keywords = {"shopping", "markets", "fashion", "souvenirs", "bazaar"}
+    shopping_hits = len(interests_lower & shopping_keywords)
+    scores["shopping_score"] = min(1.0, 0.15 + (shopping_hits * 0.2))
+
+    # ── Family Score ──────────────────────────────────────────────
+    if style == "family":
+        scores["family_score"] = 0.85
+    else:
+        family_keywords = {"kids", "family", "playground", "zoo", "aquarium"}
+        family_hits = len(interests_lower & family_keywords)
+        scores["family_score"] = min(1.0, 0.2 + (family_hits * 0.25))
+
+    return scores
+
+
+def _calculate_confidence(profile: TripProfile) -> float:
+    """
+    Calculate profile confidence (0.0 – 1.0) based on how many
+    fields have been filled by the Conversation Agent.
+    """
+    fields_checked = [
+        profile.get("budget_level"),
+        profile.get("travel_style"),
+        profile.get("pace"),
+        bool(profile.get("interests")),
+        bool(profile.get("food_preferences")),
+        bool(profile.get("accommodation_preferences")),
+    ]
+    filled = sum(1 for f in fields_checked if f)
+    return round(filled / len(fields_checked), 2)
+
+
+def _build_profile_context(profile: TripProfile) -> str:
+    """Convert trip profile into context text for the LLM."""
+    lines = []
+
+    if profile.get("budget_level"):
+        lines.append(f"Budget: {profile['budget_level']}")
+    if profile.get("travel_style"):
+        lines.append(f"Travel style: {profile['travel_style']}")
+    if profile.get("pace"):
+        lines.append(f"Pace: {profile['pace']}")
+    if profile.get("interests"):
+        lines.append(f"Interests: {', '.join(profile['interests'])}")
+    if profile.get("food_preferences"):
+        lines.append(f"Food preferences: {', '.join(profile['food_preferences'])}")
+    if profile.get("accommodation_preferences"):
+        lines.append(f"Accommodation: {', '.join(profile['accommodation_preferences'])}")
+
+    return "\n".join(lines) if lines else "No profile data available."
 
 
 async def run_preference_agent(state: TripState) -> TripState:
     """
     Main Preference Agent workflow.
 
-    1. Extracts preferences from user message via LLM.
-    2. Merges with behavioral profile data.
-    3. Stores structured preferences in state for downstream agents.
+    With a complete profile already collected by the Conversation Agent:
+    1. Optionally refine from user message context (LLM)
+    2. Derive dimension scores from profile fields
+    3. Calculate confidence
+    4. Store enriched profile in state for downstream agents
     """
     user_message = state.get("user_message", "")
     profile = state.get("profile") or {}
     destination = state.get("destination_city", "")
 
-    # Build profile context for the LLM
+    # Step 1: Ask LLM to suggest refinements based on user message
     profile_context = _build_profile_context(profile)
-
     llm = get_fast_llm()
 
     prompt = f"""User Message: "{user_message}"
 Destination: {destination or 'not specified'}
 
-User Profile Context:
+Current Profile:
 {profile_context}
 
-Extract structured preferences now."""
+Review this profile and suggest any refinements based on the user message.
+If the profile looks correct, return an empty object {{}}."""
 
     messages = [
-        SystemMessage(content=PREFERENCE_EXTRACTION_PROMPT),
+        SystemMessage(content=REFINEMENT_PROMPT),
         HumanMessage(content=prompt),
     ]
 
     try:
         response = llm.invoke(messages)
         raw = response.content.strip().strip("```json").strip("```").strip()
-        llm_preferences = json.loads(raw)
+        refinements = json.loads(raw)
     except (json.JSONDecodeError, AttributeError, Exception) as e:
-        # Fallback: empty extraction, will rely purely on profile
-        llm_preferences = {}
-        print(f"[PreferenceAgent] LLM extraction failed ({e}), using profile only")
+        refinements = {}
+        print(f"[PreferenceAgent] Refinement LLM failed ({e}), using profile as-is")
 
-    # Merge LLM extraction with profile data
-    merged = _merge_preferences(llm_preferences, profile)
+    # Step 2: Apply refinements to profile
+    enriched = dict(profile)
 
-    state["extracted_preferences"] = merged
+    # Override categorical fields if LLM provided new values
+    for field in ("budget_level", "travel_style", "pace"):
+        if refinements.get(field):
+            enriched[field] = refinements[field]
+
+    # Handle interest list adjustments
+    interests = list(enriched.get("interests") or [])
+    for add in (refinements.get("interests_add") or []):
+        if add not in interests:
+            interests.append(add)
+    for remove in (refinements.get("interests_remove") or []):
+        if remove in interests:
+            interests.remove(remove)
+    enriched["interests"] = interests
+
+    # Handle food preference adjustments
+    foods = list(enriched.get("food_preferences") or [])
+    for add in (refinements.get("food_preferences_add") or []):
+        if add not in foods:
+            foods.append(add)
+    for remove in (refinements.get("food_preferences_remove") or []):
+        if remove in foods:
+            foods.remove(remove)
+    enriched["food_preferences"] = foods
+
+    # Handle accommodation preference adjustments
+    accs = list(enriched.get("accommodation_preferences") or [])
+    for add in (refinements.get("accommodation_preferences_add") or []):
+        if add not in accs:
+            accs.append(add)
+    for remove in (refinements.get("accommodation_preferences_remove") or []):
+        if remove in accs:
+            accs.remove(remove)
+    enriched["accommodation_preferences"] = accs
+
+    # Step 3: Derive dimension scores
+    scores = _derive_scores(enriched)
+    enriched["luxury_score"] = scores["luxury_score"]
+    enriched["culture_score"] = scores["culture_score"]
+    enriched["adventure_score"] = scores["adventure_score"]
+    enriched["shopping_score"] = scores["shopping_score"]
+    enriched["family_score"] = scores["family_score"]
+
+    # Step 4: Calculate confidence
+    enriched["confidence"] = _calculate_confidence(enriched)
+
+    # Step 5: Store in state
+    state["profile"] = enriched
+
+    # Also produce extracted_preferences for downstream agents
+    state["extracted_preferences"] = {
+        "budget_level": enriched.get("budget_level"),
+        "travel_style": enriched.get("travel_style"),
+        "pace": enriched.get("pace"),
+        "food_preferences": enriched.get("food_preferences") or [],
+        "accommodation_style": (enriched.get("accommodation_preferences") or [None])[0] if enriched.get("accommodation_preferences") else None,
+        "interests_from_conversation": enriched.get("interests") or [],
+        "special_focus": refinements.get("special_focus"),
+    }
+
     return state

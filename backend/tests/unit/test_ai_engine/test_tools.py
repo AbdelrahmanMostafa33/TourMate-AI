@@ -35,10 +35,18 @@ class TestGetPlacesForCity:
 
     def test_matching_interest_filters_results(self):
         places = get_places_for_city("Cairo", interests=["museum"])
-        assert all(
-            "museum" in p["category"] or "museum" in p["name"].lower()
-            for p in places
-        )
+        # Hotels are always preserved by design.
+        # Non-hotel places should match the interest via category, name, or tags.
+        for p in places:
+            if p["category"] == "hotel":
+                continue
+            tags = p.get("interest_tags", [])
+            assert (
+                "museum" in p["category"]
+                or "museum" in p["name"].lower()
+                or "museum" in tags
+                or any("museum" in t for t in tags)
+            ), f"Place '{p['name']}' does not match interest 'museum'"
 
     def test_non_matching_interest_falls_back_to_all(self):
         # Interest that matches nothing → should fall back to full list, not empty

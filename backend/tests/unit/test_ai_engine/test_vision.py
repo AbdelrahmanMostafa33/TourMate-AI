@@ -123,7 +123,7 @@ class TestExtractAndValidate:
 class TestFuseImageWithProfile:
 
     def _base_profile(self):
-        return load_mock_profile(user_id="test_user")
+        return load_mock_profile(trip_id="test_trip")
 
     def test_new_interests_are_merged(self):
         profile = self._base_profile()
@@ -164,18 +164,18 @@ class TestFuseImageWithProfile:
         # Original should be unchanged
         assert profile["interests"] == original_interests
 
-    def test_low_confidence_does_not_update_slider(self):
+    def test_low_confidence_does_not_enrich_dimension_scores(self):
         profile = self._base_profile()
-        # Remove slider value to simulate unset profile
+        # Remove dimension_scores to simulate unset profile
         profile = dict(profile)
-        profile["adventure_relaxing"] = None
-        from ai_engine.graph.state import BehavioralProfile
-        profile = BehavioralProfile(**profile)
+        profile["dimension_scores"] = {}
+        from ai_engine.graph.state import TripProfile
+        profile = TripProfile(**profile)
 
         image_features = {
             "environment_type": None, "activity_style": "adventurous",
             "vibe": None, "inferred_interests": [], "confidence": "low",
         }
         updated = fuse_image_with_profile(profile, image_features)
-        # Low confidence → slider should stay None
-        assert updated["adventure_relaxing"] is None
+        # Low confidence → dimension_scores should stay empty
+        assert "adventure_relaxing" not in (updated.get("dimension_scores") or {})

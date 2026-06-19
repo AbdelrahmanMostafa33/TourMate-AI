@@ -1,0 +1,672 @@
+# tests/integration/test_pipeline.py
+
+"""
+Integration tests for the full multi-agent pipeline.
+
+Tests verify that agents wire together correctly through the graph:
+  load_profile → preference → retrieval → ranking → planner → optimizer → validator
+
+All LLM calls and external services (OSRM, HTTP) are mocked,
+but agent logic (scoring, filtering, routing, derivation) runs for real.
+
+Tests cover:
+  - Happy path: full pipeline produces a valid itinerary
+  - Preference refinement flows into retrieval/ranking
+  - Empty places causes early termination
+  - LLM failure in planning causes error propagation
+  - Validation failure triggers planner retry
+  - Profile confidence is preserved through the pipeline
+"""
+
+import json
+import pytest
+from unittest.mock import AsyncMock, MagicMock, patch
+
+from ai_engine.graph.nodes import (
+    load_profile_node,
+    preference_node,
+    retrieval_node,
+    ranking_node,
+    planning_node,
+    optimization_node,
+    validation_node,
+)
+from ai_engine.graph.edges import (
+    should_retrieve,
+    should_rank,
+    should_plan,
+    should_optimize,
+    should_validate,
+    should_retry_or_end,
+)
+from tests.integration.conftest import (
+    MOCK_PLACES,
+    build_pipeline_state,
+    build_preference_llm_response,
+    build_planning_llm_response,
+    build_validation_llm_response,
+    make_mock_matrix,
+)
+from tests.unit.test_ai_engine.conftest import _make_profile, _make_place
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# 1. Happy-Path: Full Pipeline
+# ═══════════════════════════════════════════════════════════════════════════
+
+class TestFullPipelineHappyPath:
+    """Each agent runs in sequence and produces valid outputs."""
+
+    @pytest.mark.asyncio
+    async def test_load_profile_passes_profile_through(self):
+        """load_profile_node passes an already-loaded profile unchanged."""
+        state = build_pipeline_state()
+        result = await load_profile_node(state)
+        assert result["profile"] is not None
+        assert result["profile"]["budget_level"] == "moderate"
+
+    @pytest.mark.asyncio
+    @patch("ai_engine.agents.preference_agent.get_fast_llm")
+    async def test_preference_agent_enriches_profile(self, mock_llm):
+        """Preference Agent derives scores and produces extracted_preferences."""
+        mock_llm.return_value = build_preference_llm_response()
+        state = build_pipeline_state()
+
+        result = await preference_node(state)
+
+        profile = result["profile"]
+        assert profile["luxury_score"] is not None
+        assert profile["culture_score"] is not None
+        assert profile["adventure_score"] is not None
+        assert profile["shopping_score"] is not None
+        assert profile["family_score"] is not None
+        assert profile["confidence"] is not None
+        assert result["extracted_preferences"] is not None
+        assert "interests_from_conversation" in result["extracted_preferences"]
+
+    @pytest.mark.asyncio
+    @patch("ai_engine.agents.preference_agent.get_fast_llm")
+    async def test_retrieval_agent_filters_and_diversifies(self, mock_pref_llm):
+        """Retrieval Agent loads places, filters, and ensures diversity."""
+        mock_pref_llm.return_value = build_preference_llm_response()
+
+        state = build_pipeline_state()
+        state = await preference_node(state)
+
+        with patch("ai_engine.agents.retrieval_agent.get_places_for_city", return_value=MOCK_PLACES):
+            result = await retrieval_node(state)
+
+        filtered = result["filtered_places"]
+        assert len(filtered) > 0
+        # All returned places should have required keys
+        for place in filtered:
+            assert "id" in place
+            assert "lat" in place
+            assert "lon" in place
+
+    @pytest.mark.asyncio
+    @patch("ai_engine.agents.preference_agent.get_fast_llm")
+    async def test_ranking_agent_scores_and_selects(self, mock_pref_llm):
+        """Ranking Agent scores candidates and caps the result set."""
+        mock_pref_llm.return_value = build_preference_llm_response()
+
+        state = build_pipeline_state()
+        state = await preference_node(state)
+
+        with patch("ai_engine.agents.retrieval_agent.get_places_for_city", return_value=MOCK_PLACES):
+            state = await retrieval_node(state)
+
+        result = await ranking_node(state)
+        candidates = result["candidate_places"]
+        assert len(candidates) > 0
+        assert len(candidates) <= 30  # MAX_TOTAL_CANDIDATES
+
+    @pytest.mark.asyncio
+    @patch("ai_engine.agents.preference_agent.get_fast_llm")
+    @patch("ai_engine.agents.planning_agent.get_planning_llm")
+    async def test_planner_produces_draft_itinerary(self, mock_plan_llm, mock_pref_llm):
+        """Planning Agent produces a draft itinerary from candidates."""
+        mock_pref_llm.return_value = build_preference_llm_response()
+        mock_plan_llm.return_value = build_planning_llm_response(num_days=2, num_stops_per_day=3)
+
+        state = build_pipeline_state()
+        state = await preference_node(state)
+
+        with patch("ai_engine.agents.retrieval_agent.get_places_for_city", return_value=MOCK_PLACES):
+            state = await retrieval_node(state)
+        state = await ranking_node(state)
+
+        result = await planning_node(state)
+        draft = result["draft_itinerary"]
+        assert draft is not None
+        assert draft["destination"] == "Cairo"
+        assert draft["duration_days"] == 2
+        assert len(draft["days"]) == 2
+        assert len(draft["accommodation_suggestions"]) >= 1
+
+    @pytest.mark.asyncio
+    @patch("ai_engine.agents.preference_agent.get_fast_llm")
+    @patch("ai_engine.agents.planning_agent.get_planning_llm")
+    @patch("ai_engine.agents.optimization_agent.compute_day_matrix", new_callable=AsyncMock)
+    async def test_optimizer_reorders_stops(
+        self, mock_matrix, mock_plan_llm, mock_pref_llm
+    ):
+        """Optimizer reorders stops and annotates travel times."""
+        mock_pref_llm.return_value = build_preference_llm_response()
+        mock_plan_llm.return_value = build_planning_llm_response(num_days=1, num_stops_per_day=3)
+        mock_matrix.return_value = make_mock_matrix(3, travel_time=8.0)
+
+        state = build_pipeline_state(duration_days=1)
+        state = await preference_node(state)
+
+        with patch("ai_engine.agents.retrieval_agent.get_places_for_city", return_value=MOCK_PLACES):
+            state = await retrieval_node(state)
+        state = await ranking_node(state)
+        state = await planning_node(state)
+
+        result = await optimization_node(state)
+        optimized = result["optimized_itinerary"]
+        assert optimized is not None
+        assert len(optimized["days"]) == 1
+
+        stops = optimized["days"][0]["stops"]
+        assert len(stops) >= 2
+        # Travel time annotations exist
+        for stop in stops[:-1]:
+            assert "travel_time_to_next_minutes" in stop
+            assert "transport_mode" in stop
+
+    @pytest.mark.asyncio
+    @patch("ai_engine.agents.preference_agent.get_fast_llm")
+    @patch("ai_engine.agents.planning_agent.get_planning_llm")
+    @patch("ai_engine.agents.optimization_agent.compute_day_matrix", new_callable=AsyncMock)
+    @patch("ai_engine.agents.validation_agent.get_fast_llm")
+    async def test_full_pipeline_produces_valid_itinerary(
+        self, mock_val_llm, mock_matrix, mock_plan_llm, mock_pref_llm
+    ):
+        """Full pipeline: preference → retrieval → ranking → planner → optimizer → validator."""
+        mock_pref_llm.return_value = build_preference_llm_response()
+        mock_plan_llm.return_value = build_planning_llm_response(num_days=2, num_stops_per_day=3)
+        mock_matrix.return_value = make_mock_matrix(3, travel_time=8.0)
+        mock_val_llm.return_value = build_validation_llm_response(is_valid=True, score=85)
+
+        state = build_pipeline_state()
+
+        # Step 1: Preference Agent
+        state = await preference_node(state)
+        assert state["extracted_preferences"] is not None
+
+        # Step 2: Retrieval Agent
+        with patch("ai_engine.agents.retrieval_agent.get_places_for_city", return_value=MOCK_PLACES):
+            state = await retrieval_node(state)
+        assert len(state["filtered_places"]) > 0
+
+        # Step 3: Ranking Agent
+        state = await ranking_node(state)
+        assert len(state["candidate_places"]) > 0
+
+        # Step 4: Planning Agent
+        state = await planning_node(state)
+        assert state["draft_itinerary"] is not None
+
+        # Step 5: Optimization Agent
+        state = await optimization_node(state)
+        assert state["optimized_itinerary"] is not None
+
+        # Step 6: Validation Agent
+        state = await validation_node(state)
+        assert state["is_valid"] is True
+        assert state["validation"]["score"] >= 70
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# 2. Preference Refinement Flows Downstream
+# ═══════════════════════════════════════════════════════════════════════════
+
+class TestPreferenceRefinementFlowsDownstream:
+    """When the LLM refines interests, downstream agents see the updates."""
+
+    @pytest.mark.asyncio
+    @patch("ai_engine.agents.preference_agent.get_fast_llm")
+    async def test_adding_interests_affects_retrieval(self, mock_llm):
+        """LLM adds 'shopping' interest → retrieval includes market places."""
+        mock_llm.return_value = build_preference_llm_response({
+            "interests_add": ["shopping"],
+        })
+
+        state = build_pipeline_state(
+            profile=_make_profile(interests=["history", "art"]),
+        )
+        state = await preference_node(state)
+
+        # Verify shopping was added
+        interests = state["profile"]["interests"]
+        assert "shopping" in interests
+
+        # Retrieval should now include shopping-tagged places
+        with patch("ai_engine.agents.retrieval_agent.get_places_for_city", return_value=MOCK_PLACES):
+            state = await retrieval_node(state)
+
+        filtered_names = [p["name"] for p in state["filtered_places"]]
+        # Khan El Khalili has "shopping" in its interest_tags
+        assert "Khan El Khalili" in filtered_names
+
+    @pytest.mark.asyncio
+    @patch("ai_engine.agents.preference_agent.get_fast_llm")
+    async def test_removing_interests_affects_retrieval(self, mock_llm):
+        """LLM removes 'history' → retrieval may exclude history-only places."""
+        mock_llm.return_value = build_preference_llm_response({
+            "interests_remove": ["history"],
+        })
+
+        state = build_pipeline_state(
+            profile=_make_profile(interests=["history"]),
+        )
+        state = await preference_node(state)
+
+        interests = state["profile"]["interests"]
+        assert "history" not in interests
+
+    @pytest.mark.asyncio
+    @patch("ai_engine.agents.preference_agent.get_fast_llm")
+    async def test_style_change_affects_scores(self, mock_llm):
+        """LLM overrides travel_style → culture_score changes."""
+        mock_llm.return_value = build_preference_llm_response({
+            "travel_style": "adventure",
+        })
+
+        state = build_pipeline_state(
+            profile=_make_profile(travel_style="cultural", interests=["history", "art"]),
+        )
+
+        original_culture = state["profile"]["culture_score"]
+
+        state = await preference_node(state)
+
+        # Adventure style should lower culture_score vs cultural style
+        new_culture = state["profile"]["culture_score"]
+        assert new_culture <= original_culture
+
+    @pytest.mark.asyncio
+    @patch("ai_engine.agents.preference_agent.get_fast_llm")
+    async def test_empty_refinement_preserves_profile(self, mock_llm):
+        """Empty LLM response {} → profile fields stay the same."""
+        mock_llm.return_value = build_preference_llm_response({})
+
+        state = build_pipeline_state()
+        original_budget = state["profile"]["budget_level"]
+        original_style = state["profile"]["travel_style"]
+
+        state = await preference_node(state)
+
+        assert state["profile"]["budget_level"] == original_budget
+        assert state["profile"]["travel_style"] == original_style
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# 3. Error Propagation and Early Termination
+# ═══════════════════════════════════════════════════════════════════════════
+
+class TestErrorPropagation:
+    """Errors at any stage terminate the pipeline gracefully."""
+
+    @pytest.mark.asyncio
+    async def test_no_places_terminates_after_retrieval(self):
+        """No places found → retrieval sets error → pipeline stops."""
+        state = build_pipeline_state()
+
+        with patch("ai_engine.agents.retrieval_agent.get_places_for_city", return_value=[]):
+            state = await retrieval_node(state)
+
+        assert state["error"] is not None
+        assert state["filtered_places"] == []
+
+        # Edge routing should go to end
+        assert should_rank(state) == "end"
+
+    @pytest.mark.asyncio
+    @patch("ai_engine.agents.preference_agent.get_fast_llm")
+    async def test_empty_filtered_places_terminates_after_retrieval(self, mock_llm):
+        """All places filtered out → empty filtered_places → end."""
+        mock_llm.return_value = build_preference_llm_response()
+
+        state = build_pipeline_state()
+        state = await preference_node(state)
+
+        # Return places that will be filtered out (low rating)
+        bad_places = [_make_place(id="bad_001", name="Bad Place", rating=1.0, lat=30.0, lon=31.0)]
+        with patch("ai_engine.agents.retrieval_agent.get_places_for_city", return_value=bad_places):
+            state = await retrieval_node(state)
+
+        # filtered_places might be empty after filtering
+        # The edge should route to end
+        edge_result = should_rank(state)
+        assert edge_result == "end"
+
+    @pytest.mark.asyncio
+    @patch("ai_engine.agents.preference_agent.get_fast_llm")
+    async def test_no_candidates_terminates_after_ranking(self, mock_llm):
+        """No candidates after ranking → edge routes to end."""
+        mock_llm.return_value = build_preference_llm_response()
+
+        state = build_pipeline_state()
+        state = await preference_node(state)
+
+        with patch("ai_engine.agents.retrieval_agent.get_places_for_city", return_value=[]):
+            state = await retrieval_node(state)
+
+        # Empty filtered_places → ranking gets nothing
+        state["filtered_places"] = []
+        state = await ranking_node(state)
+
+        assert state["error"] is not None
+        assert should_plan(state) == "end"
+
+    @pytest.mark.asyncio
+    @patch("ai_engine.agents.preference_agent.get_fast_llm")
+    @patch("ai_engine.agents.planning_agent.get_planning_llm")
+    async def test_llm_failure_in_planner_sets_error(self, mock_plan_llm, mock_pref_llm):
+        """Planning Agent LLM throws → error state set."""
+        mock_pref_llm.return_value = build_preference_llm_response()
+        # Mock get_planning_llm to return a mock whose invoke() raises
+        mock_llm_instance = MagicMock()
+        mock_llm_instance.invoke.side_effect = Exception("API timeout")
+        mock_plan_llm.return_value = mock_llm_instance
+
+        state = build_pipeline_state()
+        state = await preference_node(state)
+
+        with patch("ai_engine.agents.retrieval_agent.get_places_for_city", return_value=MOCK_PLACES):
+            state = await retrieval_node(state)
+        state = await ranking_node(state)
+
+        result = await planning_node(state)
+        assert result["error"] is not None
+        assert "Planning Agent failed" in result["error"]
+
+    @pytest.mark.asyncio
+    @patch("ai_engine.agents.preference_agent.get_fast_llm")
+    @patch("ai_engine.agents.planning_agent.get_planning_llm")
+    async def test_invalid_json_from_planner_sets_error(self, mock_plan_llm, mock_pref_llm):
+        """Planning Agent returns invalid JSON → error state set."""
+        mock_pref_llm.return_value = build_preference_llm_response()
+        mock_plan_llm.return_value = MagicMock()
+        mock_plan_llm.return_value.invoke.return_value.content = "not valid json at all"
+
+        state = build_pipeline_state()
+        state = await preference_node(state)
+
+        with patch("ai_engine.agents.retrieval_agent.get_places_for_city", return_value=MOCK_PLACES):
+            state = await retrieval_node(state)
+        state = await ranking_node(state)
+
+        result = await planning_node(state)
+        assert result["error"] is not None
+        assert "Planning Agent failed" in result["error"]
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# 4. Conditional Edge Routing
+# ═══════════════════════════════════════════════════════════════════════════
+
+class TestConditionalEdgeRouting:
+    """Each edge function routes correctly based on state."""
+
+    def test_should_retrieve_without_error(self):
+        """No error → route to retrieval."""
+        state = {"error": None}
+        assert should_retrieve(state) == "retrieval"
+
+    def test_should_retrieve_with_error(self):
+        """Error present → route to end."""
+        state = {"error": "Something went wrong"}
+        assert should_retrieve(state) == "end"
+
+    def test_should_rank_with_filtered_places(self):
+        """Filtered places exist → route to ranking."""
+        state = {"error": None, "filtered_places": [{"id": "p1"}]}
+        assert should_rank(state) == "ranking"
+
+    def test_should_rank_without_filtered_places(self):
+        """No filtered places → route to end."""
+        state = {"error": None, "filtered_places": []}
+        assert should_rank(state) == "end"
+
+    def test_should_rank_with_none_filtered_places(self):
+        """filtered_places is None → route to end."""
+        state = {"error": None, "filtered_places": None}
+        assert should_rank(state) == "end"
+
+    def test_should_plan_with_candidates(self):
+        """Candidates exist → route to planner."""
+        state = {"error": None, "candidate_places": [{"id": "p1"}]}
+        assert should_plan(state) == "planner"
+
+    def test_should_plan_without_candidates(self):
+        """No candidates → route to end."""
+        state = {"error": None, "candidate_places": []}
+        assert should_plan(state) == "end"
+
+    def test_should_optimize_without_error(self):
+        """No error → route to optimizer."""
+        state = {"error": None}
+        assert should_optimize(state) == "optimizer"
+
+    def test_should_optimize_with_error(self):
+        """Error present → route to end."""
+        state = {"error": "fail"}
+        assert should_optimize(state) == "end"
+
+    def test_should_validate_without_error(self):
+        """No error → route to validator."""
+        state = {"error": None}
+        assert should_validate(state) == "validator"
+
+    def test_should_retry_or_end_valid(self):
+        """Valid itinerary → end."""
+        state = {"is_valid": True, "error": None}
+        assert should_retry_or_end(state) == "end"
+
+    def test_should_retry_or_end_invalid_with_error(self):
+        """Invalid but error present → end."""
+        state = {"is_valid": False, "error": "Something wrong"}
+        assert should_retry_or_end(state) == "end"
+
+    def test_should_retry_or_end_invalid_no_error(self):
+        """Invalid but no error → retry from planner."""
+        state = {"is_valid": False, "error": None}
+        assert should_retry_or_end(state) == "planner"
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# 5. Validation Retry Flow
+# ═══════════════════════════════════════════════════════════════════════════
+
+class TestValidationRetryFlow:
+    """When validation fails, the pipeline can retry from the planner."""
+
+    @pytest.mark.asyncio
+    @patch("ai_engine.agents.preference_agent.get_fast_llm")
+    @patch("ai_engine.agents.planning_agent.get_planning_llm")
+    @patch("ai_engine.agents.optimization_agent.compute_day_matrix", new_callable=AsyncMock)
+    @patch("ai_engine.agents.validation_agent.get_fast_llm")
+    async def test_validation_failure_increments_planning_attempts(
+        self, mock_val_llm, mock_matrix, mock_plan_llm, mock_pref_llm
+    ):
+        """When validation fails, planning_attempts should be trackable."""
+        mock_pref_llm.return_value = build_preference_llm_response()
+        mock_plan_llm.return_value = build_planning_llm_response(num_days=1, num_stops_per_day=3)
+        mock_matrix.return_value = make_mock_matrix(3, travel_time=5.0)
+        mock_val_llm.return_value = build_validation_llm_response(is_valid=False, score=30)
+
+        state = build_pipeline_state(duration_days=1)
+
+        # Run through the pipeline
+        state = await preference_node(state)
+
+        with patch("ai_engine.agents.retrieval_agent.get_places_for_city", return_value=MOCK_PLACES):
+            state = await retrieval_node(state)
+        state = await ranking_node(state)
+        state = await planning_node(state)
+
+        # First planning attempt
+        assert state["planning_attempts"] == 1
+
+        state = await optimization_node(state)
+        state = await validation_node(state)
+
+        # Validation failed → retry
+        assert state["is_valid"] is False
+        edge = should_retry_or_end(state)
+        assert edge == "planner"
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# 6. Score Derivation Correctness
+# ═══════════════════════════════════════════════════════════════════════════
+
+class TestScoreDerivation:
+    """Preference Agent score derivation logic runs correctly."""
+
+    @pytest.mark.asyncio
+    @patch("ai_engine.agents.preference_agent.get_fast_llm")
+    async def test_luxury_profile_gets_high_luxury_score(self, mock_llm):
+        """Luxury budget + resort → high luxury_score."""
+        mock_llm.return_value = build_preference_llm_response()
+
+        from ai_engine.agents.preference_agent import _derive_scores
+
+        profile = _make_profile(
+            budget_level="luxury",
+            accommodation_preferences=["resort"],
+        )
+        scores = _derive_scores(profile)
+        assert scores["luxury_score"] >= 0.8
+
+    @pytest.mark.asyncio
+    @patch("ai_engine.agents.preference_agent.get_fast_llm")
+    async def test_budget_profile_gets_low_luxury_score(self, mock_llm):
+        """Budget level → low luxury_score."""
+        from ai_engine.agents.preference_agent import _derive_scores
+
+        profile = _make_profile(
+            budget_level="budget",
+            accommodation_preferences=["hostel"],
+        )
+        scores = _derive_scores(profile)
+        assert scores["luxury_score"] <= 0.2
+
+    @pytest.mark.asyncio
+    @patch("ai_engine.agents.preference_agent.get_fast_llm")
+    async def test_cultural_style_boosts_culture_score(self, mock_llm):
+        """Cultural travel_style + history/art interests → high culture_score."""
+        from ai_engine.agents.preference_agent import _derive_scores
+
+        profile = _make_profile(
+            travel_style="cultural",
+            interests=["history", "art", "museums"],
+        )
+        scores = _derive_scores(profile)
+        assert scores["culture_score"] >= 0.8
+
+    @pytest.mark.asyncio
+    @patch("ai_engine.agents.preference_agent.get_fast_llm")
+    async def test_adventure_style_boosts_adventure_score(self, mock_llm):
+        """Adventure travel_style + hiking interests → high adventure_score."""
+        from ai_engine.agents.preference_agent import _derive_scores
+
+        profile = _make_profile(
+            travel_style="adventure",
+            pace="packed",
+            interests=["hiking", "trekking", "nature"],
+        )
+        scores = _derive_scores(profile)
+        assert scores["adventure_score"] >= 0.8
+
+    @pytest.mark.asyncio
+    @patch("ai_engine.agents.preference_agent.get_fast_llm")
+    async def test_family_style_boosts_family_score(self, mock_llm):
+        """Family travel_style → high family_score."""
+        from ai_engine.agents.preference_agent import _derive_scores
+
+        profile = _make_profile(travel_style="family")
+        scores = _derive_scores(profile)
+        assert scores["family_score"] >= 0.8
+
+    @pytest.mark.asyncio
+    @patch("ai_engine.agents.preference_agent.get_fast_llm")
+    async def test_shopping_interests_boost_shopping_score(self, mock_llm):
+        """Shopping interests → high shopping_score."""
+        from ai_engine.agents.preference_agent import _derive_scores
+
+        profile = _make_profile(interests=["shopping", "markets", "bazaar"])
+        scores = _derive_scores(profile)
+        assert scores["shopping_score"] >= 0.5
+
+    @pytest.mark.asyncio
+    @patch("ai_engine.agents.preference_agent.get_fast_llm")
+    async def test_confidence_scales_with_filled_fields(self, mock_llm):
+        """More filled fields → higher confidence."""
+        from ai_engine.agents.preference_agent import _calculate_confidence
+
+        full = _make_profile(
+            budget_level="moderate",
+            travel_style="cultural",
+            pace="moderate",
+            interests=["history"],
+            food_preferences=["local cuisine"],
+            accommodation_preferences=["boutique hotel"],
+        )
+        assert _calculate_confidence(full) == 1.0
+
+        partial = _make_profile(
+            budget_level="moderate",
+            travel_style=None,
+            pace=None,
+            interests=[],
+            food_preferences=[],
+            accommodation_preferences=[],
+        )
+        confidence = _calculate_confidence(partial)
+        assert confidence < 0.5
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# 7. Profile Completeness Check
+# ═══════════════════════════════════════════════════════════════════════════
+
+class TestProfileCompleteness:
+    """is_profile_complete works with the new TripProfile schema."""
+
+    def test_complete_profile_passes(self):
+        from ai_engine.profiling.behavioral_profile import is_profile_complete
+        profile = _make_profile(
+            budget_level="moderate",
+            travel_style="cultural",
+            pace="moderate",
+            interests=["history"],
+            food_preferences=["local cuisine"],
+            accommodation_preferences=["boutique hotel"],
+        )
+        assert is_profile_complete(profile) is True
+
+    def test_incomplete_profile_fails(self):
+        from ai_engine.profiling.behavioral_profile import is_profile_complete
+        profile = _make_profile(
+            budget_level=None,
+            travel_style=None,
+            interests=[],
+        )
+        assert is_profile_complete(profile) is False
+
+    def test_profile_to_text_contains_fields(self):
+        from ai_engine.profiling.behavioral_profile import profile_to_text
+        profile = _make_profile(
+            budget_level="luxury",
+            travel_style="adventure",
+            interests=["hiking", "diving"],
+        )
+        text = profile_to_text(profile)
+        assert "luxury" in text
+        assert "adventure" in text
+        assert "hiking" in text
