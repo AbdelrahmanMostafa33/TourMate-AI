@@ -17,6 +17,7 @@ class PlaceCreate(BaseModel):
     popularity_score:  Optional[float] = None
     phone:             Optional[str]   = None
     website:           Optional[str]   = None
+    price_level:       Optional[int]   = None
     maps_link:         Optional[str]   = None
     address:           Optional[str]   = None
     city:              Optional[str]   = None
@@ -24,6 +25,7 @@ class PlaceCreate(BaseModel):
     lat:               Optional[float] = None
     lng:               Optional[float] = None
     timezone:          Optional[str]   = None
+    opening_hours:     Optional[Dict[str, str]] = None
     photo_urls:        Optional[List[str]] = None
 
 
@@ -38,6 +40,7 @@ class PlaceResponse(BaseModel):
     popularity_score:  Optional[float] = None
     phone:             Optional[str]   = None
     website:           Optional[str]   = None
+    price_level:       Optional[int]   = None
     maps_link:         Optional[str]   = None
     address:           Optional[str]   = None
     city:              Optional[str]   = None
@@ -45,6 +48,7 @@ class PlaceResponse(BaseModel):
     lat:               Optional[float] = None
     lng:               Optional[float] = None
     timezone:          Optional[str]   = None
+    opening_hours:     Optional[Dict[str, str]] = None
     photo_urls:        Optional[List[str]] = None
 
     class Config:

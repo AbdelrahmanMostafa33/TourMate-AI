@@ -3,12 +3,20 @@
 from enum import Enum as PyEnum
 
 
-# ─── Trip & Itinerary ────────────────────────────────────────────────────────
+# ─── Trip ──────────────────────────────────────────────────────────────────
 
 class TripStatus(str, PyEnum):
     planning  = "planning"
     active    = "active"
     completed = "completed"
+
+
+class TravelerGroupType(str, PyEnum):
+    SOLO        = "solo"
+    COUPLE      = "couple"
+    FAMILY      = "family"
+    FRIENDS     = "friends"
+    BUSINESS    = "business"
 
 
 class ItineraryStatus(str, PyEnum):
@@ -31,6 +39,19 @@ class TravelMode(str, PyEnum):
     cycling = "cycling"
 
 
+class StopClassification(str, PyEnum):
+    MUST_SEE   = "must_see"
+    NICE_TO_HAVE = "nice_to_have"
+    OPTIONAL   = "optional"
+
+
+class TimeOfDay(str, PyEnum):
+    MORNING    = "morning"
+    AFTERNOON  = "afternoon"
+    EVENING    = "evening"
+    NIGHT      = "night"
+
+
 # ─── Place ───────────────────────────────────────────────────────────────────
 
 class PlaceCategory(str, PyEnum):
@@ -46,6 +67,14 @@ class BookingType(str, PyEnum):
     restaurant = "restaurant"
     activity   = "activity"
     transport  = "transport"
+
+
+class BookingProvider(str, PyEnum):
+    direct     = "direct"
+    booking_com = "booking_com"
+    expedia    = "expedia"
+    airbnb     = "airbnb"
+    other      = "other"
 
 
 class BookingStatus(str, PyEnum):
@@ -67,6 +96,14 @@ class PaymentStatus(str, PyEnum):
     completed = "completed"
     failed    = "failed"
     refunded  = "refunded"
+
+
+class PaymentProvider(str, PyEnum):
+    stripe     = "stripe"
+    paypal     = "paypal"
+    apple_pay  = "apple_pay"
+    google_pay = "google_pay"
+    other      = "other"
 
 
 # ─── Recommendation ─────────────────────────────────────────────────────────
@@ -115,6 +152,30 @@ class AttractionPreference(str, PyEnum):
 class SocialStyle(str, PyEnum):
     INDEPENDENT = "INDEPENDENT"
     SOCIAL      = "SOCIAL"
+
+
+# ─── Trip Profiles (per-trip AI-generated profiles) ─────────────────────────
+
+class BudgetLevel(str, PyEnum):
+    BUDGET = "BUDGET"
+    MODERATE = "MODERATE"
+    LUXURY = "LUXURY"
+
+
+class TravelStyle(str, PyEnum):
+    ROMANTIC = "ROMANTIC"
+    ADVENTURE = "ADVENTURE"
+    FAMILY = "FAMILY"
+    BUSINESS = "BUSINESS"
+    SOLO = "SOLO"
+    CULTURAL = "CULTURAL"
+    RELAXATION = "RELAXATION"
+
+
+class TripPace(str, PyEnum):
+    PACKED = "PACKED"
+    BALANCED = "BALANCED"
+    RELAXED = "RELAXED"
 
 
 # ─── Profile & Feedback ──────────────────────────────────────────────────────

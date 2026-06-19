@@ -2,7 +2,7 @@ from pydantic import BaseModel
 from typing import Optional, List
 from datetime import date, datetime, time
 
-from app.models.enums import TripStatus, ItineraryStatus, StopStatus, TravelMode
+from app.models.enums import TripStatus, ItineraryStatus, StopStatus, TravelMode, TravelerGroupType, StopClassification, TimeOfDay
 
 
 # ─── ItineraryStop ───────────────────────────────────────────────────────────
@@ -14,6 +14,9 @@ class StopCreate(BaseModel):
     scheduled_time:         Optional[time] = None
     duration_minutes:       Optional[int]  = None
     order_in_day:           Optional[int]  = 0
+    classification:         Optional[StopClassification] = None
+    importance_score:       Optional[int]  = None
+    time_of_day:            Optional[TimeOfDay] = None
     minutes_from_prev_stop: Optional[int]  = None
     travel_mode:            Optional[TravelMode] = None
     estimated_cost:         Optional[float] = None
@@ -31,6 +34,9 @@ class StopResponse(BaseModel):
     scheduled_time:         Optional[time] = None
     duration_minutes:       Optional[int]  = None
     order_in_day:           Optional[int]  = None
+    classification:         Optional[StopClassification] = None
+    importance_score:       Optional[int]  = None
+    time_of_day:            Optional[TimeOfDay] = None
     minutes_from_prev_stop: Optional[int]  = None
     travel_mode:            Optional[TravelMode] = None
     estimated_cost:         Optional[float] = None
@@ -106,14 +112,13 @@ class TripCreate(BaseModel):
     start_date:            Optional[date]  = None
     end_date:              Optional[date]  = None
     number_of_travelers:   Optional[int]   = 1
+    traveler_group_type:   Optional[TravelerGroupType] = None
     budget:                Optional[float] = None
     preferences:           Optional[List[str]] = None
 
 
 class TripResponse(BaseModel):
-    """Response schema for Trip – aligns with model fields.
-    Also includes optional fields injected by routes (auto_message, conversation_id).
-    """
+    """Response schema for Trip – aligns with model fields."""
     trip_id:              str
     user_id:              str
     trip_name:            Optional[str]   = None
@@ -121,14 +126,17 @@ class TripResponse(BaseModel):
     start_date:           Optional[date]
     end_date:             Optional[date]
     number_of_travelers:  int
+    traveler_group_type:  Optional[TravelerGroupType] = None
+    conversation_id:      Optional[str]   = None
     budget:               Optional[float]  = None
     preferences:          Optional[List[str]] = None
     status:               TripStatus
     created_at:           datetime
+    updated_at:           Optional[datetime] = None
+    approved_at:          Optional[datetime] = None
     itineraries:          List[ItineraryResponse] = []
     # Injected by routes
     auto_message:         Optional[str] = None
-    conversation_id:      Optional[str] = None
 
     class Config:
         from_attributes = True

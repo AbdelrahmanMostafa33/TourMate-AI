@@ -18,6 +18,7 @@ class SavedPlaceResponse(BaseModel):
     place_id:       str
     saved_at:       datetime
     note:           Optional[str] = None
+    updated_at:     Optional[datetime] = None
 
     class Config:
         from_attributes = True

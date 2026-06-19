@@ -8,7 +8,7 @@ from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 
 from app.core.database import Base
-from app.models.enums import ItineraryStatus, StopStatus, TravelMode
+from app.models.enums import ItineraryStatus, StopStatus, TravelMode, StopClassification, TimeOfDay
 
 
 # ─── Itinerary ───────────────────────────────────────────────────────────────
@@ -65,6 +65,9 @@ class ItineraryStop(Base):
     scheduled_time        = Column(Time, nullable=True)
     duration_minutes      = Column(Integer, nullable=True)
     order_in_day          = Column(Integer, default=0)
+    classification        = Column(SAEnum(StopClassification, name="stop_classification"), nullable=True)
+    importance_score      = Column(Integer, nullable=True)
+    time_of_day           = Column(SAEnum(TimeOfDay, name="time_of_day"), nullable=True)
     minutes_from_prev_stop = Column(Integer, nullable=True)
     travel_mode           = Column(SAEnum(TravelMode, name="travel_mode"), nullable=True)
     estimated_cost        = Column(Float, nullable=True)

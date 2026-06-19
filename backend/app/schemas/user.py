@@ -10,15 +10,15 @@ class RegisterRequest(BaseModel):
 
 
 class UserResponse(BaseModel):
-    """Response schema for User – aligns with model fields."""
+    """Response schema for User – aligns with ERD model fields."""
     user_id:           str
     full_name:         Optional[str] = None
     email:             str
     phone_number:      Optional[str] = None
     registration_date: Optional[datetime] = None
     home_city:         Optional[str] = None
-    quiz_completed:    bool = False
-    profile_id:        Optional[str] = None
+    traveler_persona:  Optional[str] = None
+    updated_at:        Optional[datetime] = None
 
     class Config:
         from_attributes = True

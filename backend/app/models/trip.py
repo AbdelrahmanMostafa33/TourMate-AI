@@ -8,7 +8,7 @@ from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 
 from app.core.database import Base
-from app.models.enums import TripStatus
+from app.models.enums import TripStatus, TravelerGroupType
 
 
 # --- Trip ---
@@ -23,6 +23,8 @@ class Trip(Base):
     start_date           = Column(Date, nullable=True)
     end_date             = Column(Date, nullable=True)
     number_of_travelers  = Column(Integer, default=1)
+    traveler_group_type  = Column(SAEnum(TravelerGroupType, name="traveler_group_type"), nullable=True)
+    conversation_id      = Column(String, ForeignKey("conversations.conversation_id"), nullable=True, index=True)
     budget               = Column(Float, nullable=True)
     preferences          = Column(JSON, nullable=True)  # List[str]
     status               = Column(
@@ -31,11 +33,14 @@ class Trip(Base):
         nullable=False,
     )
     created_at           = Column(DateTime, default=func.now())
+    updated_at           = Column(DateTime, default=func.now(), onupdate=func.now())
+    approved_at          = Column(DateTime, nullable=True)
 
     # Relationships
     user            = relationship("User",            back_populates="trips")
     itineraries     = relationship("Itinerary",       back_populates="trip", cascade="all, delete-orphan")
-    conversations   = relationship("Conversation",    back_populates="trip", cascade="all, delete-orphan")
+    conversation    = relationship("Conversation",    back_populates="trips", uselist=False)
+    trip_profiles   = relationship("TripProfile",     back_populates="trip", cascade="all, delete-orphan")
     images          = relationship("Image",           back_populates="trip", cascade="all, delete-orphan")
     bookings        = relationship("Booking",         back_populates="trip", cascade="all, delete-orphan")
     recommendations = relationship("Recommendation",  back_populates="trip", cascade="all, delete-orphan")

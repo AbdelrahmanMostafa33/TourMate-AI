@@ -4,72 +4,55 @@ from pydantic import BaseModel, Field
 from typing import List, Optional
 from datetime import datetime
 
-from app.models.enums import (
-    PaceStyle, SpendingStyle, ExperienceLean,
-    DayRhythm, AttractionPreference, SocialStyle,
-)
+from app.models.enums import BudgetLevel, TravelStyle, TripPace
 
 
-class QuizSubmitRequest(BaseModel):
-    """Request schema for quiz submission – aligns with BehavioralProfile model fields."""
-    pace_style:            PaceStyle
-    spending_style:        SpendingStyle
-    experience_lean:       ExperienceLean
-    day_rhythm:            DayRhythm
-    attraction_preference: AttractionPreference
-    social_style:          SocialStyle
-
-    interests:                 List[str] = []
-    dining_preferences:        List[str] = []
+class TripProfileCreate(BaseModel):
+    """Request schema for creating/updating a trip profile – aligns with ERD trip_profiles."""
+    budget_level: Optional[BudgetLevel] = None
+    travel_style: Optional[TravelStyle] = None
+    pace: Optional[TripPace] = None
+    interests: List[str] = []
+    food_preferences: List[str] = []
     accommodation_preferences: List[str] = []
-    custom_interests:          List[str] = []
 
 
-class PersonaResponse(BaseModel):
-    """Response schema for persona data – aligns with BehavioralProfile model fields."""
-    persona_title:   str
-    persona_summary: str
-    interests:       List[str]
-    quiz_completed:  bool
+class TripProfileResponse(BaseModel):
+    """Response schema for trip profile – aligns with TripProfile model fields."""
+    profile_id: str
+    trip_id: str
+    budget_level: Optional[BudgetLevel] = None
+    travel_style: Optional[TravelStyle] = None
+    pace: Optional[TripPace] = None
+    interests: Optional[List[str]] = None
+    food_preferences: Optional[List[str]] = None
+    accommodation_preferences: Optional[List[str]] = None
+    luxury_score: Optional[float] = None
+    culture_score: Optional[float] = None
+    adventure_score: Optional[float] = None
+    shopping_score: Optional[float] = None
+    family_score: Optional[float] = None
+    confidence: Optional[float] = None
+    generated_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
 
     class Config:
         from_attributes = True
 
 
-class FullProfileResponse(BaseModel):
-    """Full user profile response – aligns with User + BehavioralProfile models."""
-    # ── User Info (from User model) ──
+class UserProfileResponse(BaseModel):
+    """Response schema for user profile data (user + trip profile combined)."""
+    # ── User Info ──
     user_id: str
     full_name: Optional[str] = None
     email: str
     phone_number: Optional[str] = None
     home_city: Optional[str] = None
     registration_date: Optional[datetime] = None
+    traveler_persona: Optional[str] = None
 
-    # ── Quiz Status ──
-    quiz_completed: bool = False
-
-    # ── Persona (only if quiz completed) ──
-    persona_title: Optional[str] = None
-    persona_summary: Optional[str] = None
-
-    # ── Behavioral Styles ──
-    pace_style: Optional[PaceStyle] = None
-    spending_style: Optional[SpendingStyle] = None
-    experience_lean: Optional[ExperienceLean] = None
-    day_rhythm: Optional[DayRhythm] = None
-    attraction_preference: Optional[AttractionPreference] = None
-    social_style: Optional[SocialStyle] = None
-
-    # ── Lists ──
-    interests: Optional[List[str]] = None
-    dining_preferences: Optional[List[str]] = None
-    accommodation_preferences: Optional[List[str]] = None
-    custom_interests: Optional[List[str]] = None
-
-    # ── Timestamps ──
-    completed_at: Optional[datetime] = None
-    updated_at: Optional[datetime] = None
+    # ── Trip Profile (if exists for current trip) ──
+    trip_profile: Optional[TripProfileResponse] = None
 
     class Config:
         from_attributes = True

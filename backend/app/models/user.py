@@ -1,6 +1,6 @@
 # app/models/user.py
 
-from sqlalchemy import Column, String, Boolean, DateTime
+from sqlalchemy import Column, String, DateTime
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from app.core.database import Base
@@ -15,11 +15,10 @@ class User(Base):
     phone_number      = Column(String, nullable=True)
     registration_date = Column(DateTime, default=func.now())
     home_city         = Column(String, nullable=True)
-    quiz_completed    = Column(Boolean, default=False)
-    profile_id        = Column(String, nullable=True)  # FK to behavioral_profiles
+    traveler_persona  = Column(String, nullable=True)
+    updated_at        = Column(DateTime, default=func.now(), onupdate=func.now())
 
     # Relationships
-    profile          = relationship("BehavioralProfile", back_populates="user", uselist=False)
     trips            = relationship("Trip",            back_populates="user", cascade="all, delete-orphan")
     conversations    = relationship("Conversation",    back_populates="user", cascade="all, delete-orphan")
     reviews          = relationship("Review",          back_populates="user")

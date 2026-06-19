@@ -15,6 +15,7 @@ class SavedPlace(Base):
     place_id       = Column(String, ForeignKey("places.place_id"), nullable=False, index=True)
     saved_at       = Column(DateTime, default=func.now())
     note           = Column(Text, nullable=True)
+    updated_at     = Column(DateTime, default=func.now(), onupdate=func.now())
 
     # Relationships
     user  = relationship("User", back_populates="saved_places")

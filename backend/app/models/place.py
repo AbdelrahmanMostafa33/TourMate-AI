@@ -28,6 +28,7 @@ class Place(Base):
     popularity_score  = Column(Float, nullable=True)
     phone             = Column(String, nullable=True)
     website           = Column(String, nullable=True)
+    price_level       = Column(Integer, nullable=True)
     maps_link         = Column(String, nullable=True)
     address           = Column(String, nullable=True)
     city              = Column(String, nullable=True)
@@ -35,6 +36,7 @@ class Place(Base):
     lat               = Column(Float, nullable=True)
     lng               = Column(Float, nullable=True)
     timezone          = Column(String, nullable=True)
+    opening_hours     = Column(JSON, nullable=True)          # Map<DayOfWeek, String>
     photo_urls        = Column(JSON, nullable=True)          # List[str]
     embedding         = Column(JSON, nullable=True)          # vector stored as JSON list
 

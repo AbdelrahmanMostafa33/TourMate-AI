@@ -11,7 +11,7 @@ from app.core.security import get_current_user
 from app.models.trip import Trip
 from app.models.itinerary import Itinerary, Day, ItineraryStop
 from app.models.chat import Conversation, Message
-from app.models.profile import BehavioralProfile
+from app.models.profile import TripProfile
 from app.ws.manager import manager
 from datetime import time as dt_time
 
@@ -177,23 +177,24 @@ async def execute_actions(actions: list, trip: Trip, db: AsyncSession) -> list:
 # ═════════════════════════════════════════════════════════════════════════════
 
 async def get_or_create_conversation(
-    trip_id: str,
+    trip:    Trip,
     user_id: str,
     db:      AsyncSession,
 ) -> Conversation:
-    result = await db.execute(
-        select(Conversation).where(Conversation.trip_id == trip_id)
-    )
-    conversation = result.scalar_one_or_none()
+    """Get or create a conversation for a trip via the Trip.conversation FK."""
+    if trip.conversation:
+        return trip.conversation
 
-    if not conversation:
-        conversation = Conversation(
-            conversation_id = str(uuid.uuid4()),
-            trip_id         = trip_id,
-            user_id         = user_id,
-        )
-        db.add(conversation)
-        await db.flush()
+    conversation = Conversation(
+        conversation_id = str(uuid.uuid4()),
+        user_id         = user_id,
+    )
+    db.add(conversation)
+    await db.flush()
+
+    # Link conversation to trip via FK
+    trip.conversation_id = conversation.conversation_id
+    await db.flush()
 
     return conversation
 
@@ -202,33 +203,34 @@ async def get_or_create_conversation(
 # Helper: get BehavioralProfile
 # ═════════════════════════════════════════════════════════════════════════════
 
-async def get_profile_data(user_id: str, db: AsyncSession) -> dict:
-    profile_result = await db.execute(
-        select(BehavioralProfile).where(BehavioralProfile.user_id == user_id)
+async def get_profile_data(user_id: str, trip_id: str, db: AsyncSession) -> dict:
+    """Get trip profile data for the AI pipeline."""
+    result = await db.execute(
+        select(TripProfile).where(TripProfile.trip_id == trip_id)
     )
-    profile = profile_result.scalar_one_or_none()
+    profile = result.scalar_one_or_none()
 
     if not profile:
         return {}
 
     return {
-        # ── Behavioral Styles ────────────────────────────────────────
-        "pace_style":              profile.pace_style,
-        "spending_style":          profile.spending_style,
-        "experience_lean":         profile.experience_lean,
-        "day_rhythm":              profile.day_rhythm,
-        "attraction_preference":   profile.attraction_preference,
-        "social_style":            profile.social_style,
+        # ── Preference ENUMs ─────────────────────────────────────────
+        "budget_level":            profile.budget_level,
+        "travel_style":            profile.travel_style,
+        "pace":                    profile.pace,
 
         # ── Lists ───────────────────────────────────────────────────
         "interests":               profile.interests or [],
-        "dining_preferences":      profile.dining_preferences or [],
+        "food_preferences":        profile.food_preferences or [],
         "accommodation_preferences": profile.accommodation_preferences or [],
-        "custom_interests":        profile.custom_interests or [],
 
-        # ── AI Persona ───────────────────────────────────────────────
-        "persona_title":           profile.persona_title,
-        "persona_summary":         profile.persona_summary,
+        # ── AI Scoring ───────────────────────────────────────────────
+        "luxury_score":            profile.luxury_score,
+        "culture_score":           profile.culture_score,
+        "adventure_score":         profile.adventure_score,
+        "shopping_score":          profile.shopping_score,
+        "family_score":            profile.family_score,
+        "confidence":              profile.confidence,
     }
 
 
@@ -429,12 +431,10 @@ async def websocket_new_chat(
     await manager.connect(ws_key, websocket)
 
     try:
-        # ── جيب الـ Profile ──────────────────────────────────────────────
-        profile_data = await get_profile_data(user_id, db)
-
         # ── State ────────────────────────────────────────────────────────
         trip:             Trip         = None
         conversation:     Conversation = None
+        profile_data:     dict         = {}
         history_list:     list         = []
         pending_messages: list         = []
 
@@ -635,11 +635,11 @@ async def websocket_new_chat(
                     # ── أنشئ Conversation ─────────────────────────────────
                     conversation = Conversation(
                         conversation_id = str(uuid.uuid4()),
-                        trip_id         = trip.trip_id,
                         user_id         = user_id,
                     )
                     db.add(conversation)
                     await db.flush()
+                    trip.conversation_id = conversation.conversation_id
 
                     # ── احفظ كل الرسايل المعلقة ───────────────────────────
                     for msg in pending_messages:
@@ -740,7 +740,8 @@ async def websocket_chat(
             .options(
                 selectinload(Trip.itineraries)
                 .selectinload(Itinerary.days)
-                .selectinload(Day.stops)
+                .selectinload(Day.stops),
+                selectinload(Trip.conversation),
             )
             .where(
                 Trip.trip_id == trip_id,
@@ -754,11 +755,11 @@ async def websocket_chat(
             return
 
         # ── جيب أو أنشئ Conversation ─────────────────────────────────────
-        conversation = await get_or_create_conversation(trip_id, user_id, db)
+        conversation = await get_or_create_conversation(trip, user_id, db)
         await db.commit()
 
         # ── جيب الـ Profile ──────────────────────────────────────────────
-        profile_data = await get_profile_data(user_id, db)
+        profile_data = await get_profile_data(user_id, trip.trip_id, db)
 
         # ══════════════════════════════════════════════════════════════════
         # AUTO-GENERATE: لو Flutter بعت auto_msg → نبعته للـ AI فوراً
@@ -808,17 +809,19 @@ async def get_history(
     current_user: dict         = Depends(get_current_user),
     db:           AsyncSession = Depends(get_db),
 ):
-    result = await db.execute(
-        select(Conversation)
-        .options(selectinload(Conversation.messages))
-        .where(
-            Conversation.trip_id == trip_id,
-            Conversation.user_id == current_user["uid"],
+    # Find trip and its linked conversation
+    trip_result = await db.execute(
+        select(Trip).options(selectinload(Trip.conversation)).where(
+            Trip.trip_id == trip_id,
+            Trip.user_id == current_user["uid"],
         )
     )
-    conversation = result.scalar_one_or_none()
-    if not conversation:
+    trip = trip_result.scalar_one_or_none()
+    if not trip or not trip.conversation:
         raise HTTPException(status_code=404, detail="Conversation not found")
+
+    conversation = trip.conversation
+    await db.refresh(conversation, ["messages"])
 
     messages = sorted(conversation.messages, key=lambda m: m.timestamp)
     return [
@@ -843,15 +846,18 @@ async def clear_chat(
     current_user: dict         = Depends(get_current_user),
     db:           AsyncSession = Depends(get_db),
 ):
-    result = await db.execute(
-        select(Conversation).where(
-            Conversation.trip_id == trip_id,
-            Conversation.user_id == current_user["uid"],
+    # Find trip and its linked conversation
+    trip_result = await db.execute(
+        select(Trip).options(selectinload(Trip.conversation)).where(
+            Trip.trip_id == trip_id,
+            Trip.user_id == current_user["uid"],
         )
     )
-    conversation = result.scalar_one_or_none()
-    if not conversation:
+    trip = trip_result.scalar_one_or_none()
+    if not trip or not trip.conversation:
         raise HTTPException(status_code=404, detail="Conversation not found")
+
+    conversation = trip.conversation
 
     await db.execute(
         delete(Message).where(

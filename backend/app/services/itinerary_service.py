@@ -11,13 +11,13 @@ class ItineraryService:
         self.profile_repo = ProfileRepo(db_session)
         self.redis = redis_client
 
-    async def generate_trip(self, user_id: str, message: str, images: list = None):
-        profile = await self.profile_repo.get_by_user_id(user_id)
+    async def generate_trip(self, trip_id: str, message: str, images: list = None):
+        profile = await self.profile_repo.get_by_trip_id(trip_id)
         result = await handle_chat(
-            user_id=user_id,
+            trip_id=trip_id,
             user_message=message,
             image_bytes=images,
             token=None,
         )
-        itinerary = await self.itinerary_repo.create(user_id=user_id, data=result)
+        itinerary = await self.itinerary_repo.create(trip_id=trip_id, data=result)
         return itinerary

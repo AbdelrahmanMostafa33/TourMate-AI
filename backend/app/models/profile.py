@@ -1,46 +1,42 @@
 # app/models/profile.py
 
 from sqlalchemy import (
-    Column, String, Integer, Float, Text, DateTime, ForeignKey, JSON, Boolean, Enum as SAEnum
+    Column, String, Float, DateTime, ForeignKey, JSON
 )
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 
 from app.core.database import Base
-from app.models.enums import (
-    PaceStyle, SpendingStyle, ExperienceLean,
-    DayRhythm, AttractionPreference, SocialStyle,
-)
 
 
-class BehavioralProfile(Base):
-    __tablename__ = "behavioral_profiles"
+class TripProfile(Base):
+    """AI-generated profile per trip, as specified in the ERD."""
+    __tablename__ = "trip_profiles"
 
-    profile_id            = Column(Integer, primary_key=True, autoincrement=True)
-    user_id               = Column(String, ForeignKey("users.user_id"), nullable=False, unique=True, index=True)
+    profile_id           = Column(String, primary_key=True)
+    trip_id              = Column(String, ForeignKey("trips.trip_id", ondelete="CASCADE"), nullable=False, index=True)
 
-    # --- Enum-based dimension styles ---
-    pace_style            = Column(String, nullable=True)            # PaceStyle
-    spending_style        = Column(String, nullable=True)            # SpendingStyle
-    experience_lean       = Column(String, nullable=True)            # ExperienceLean
-    day_rhythm            = Column(String, nullable=True)            # DayRhythm
-    attraction_preference = Column(String, nullable=True)            # AttractionPreference
-    social_style          = Column(String, nullable=True)            # SocialStyle
+    # --- Preference ENUMs ---
+    budget_level         = Column(String, nullable=True)   # BudgetLevel
+    travel_style         = Column(String, nullable=True)   # TravelStyle
+    pace                 = Column(String, nullable=True)   # TripPace
 
-    # --- Lists ---
-    interests                 = Column(JSON, nullable=True)           # List[InterestTag]
-    dining_preferences        = Column(JSON, nullable=True)           # List[DiningType]
-    accommodation_preferences = Column(JSON, nullable=True)           # List[AccommodationType]
-    custom_interests          = Column(JSON, nullable=True)           # List[str] from "Add your own"
+    # --- Preference Lists ---
+    interests            = Column(JSON, nullable=True)     # List[str]
+    food_preferences     = Column(JSON, nullable=True)     # List[str]
+    accommodation_preferences = Column(JSON, nullable=True)  # List[str]
 
-    # --- AI-Generated Persona ---
-    persona_title    = Column(String, nullable=True)                 # e.g. "Adventurous Independent Nightowl"
-    persona_summary  = Column(Text, nullable=True)                   # AI-generated blurb
+    # --- AI-generated Scoring Fields (0.0 - 1.0) ---
+    luxury_score         = Column(Float, nullable=True)
+    culture_score        = Column(Float, nullable=True)
+    adventure_score      = Column(Float, nullable=True)
+    shopping_score       = Column(Float, nullable=True)
+    family_score         = Column(Float, nullable=True)
+    confidence           = Column(Float, nullable=True)
 
-    # --- Quiz status ---
-    quiz_completed   = Column(Boolean, default=False)
-    completed_at     = Column(DateTime, nullable=True)
-    updated_at       = Column(DateTime, default=func.now(), onupdate=func.now())
+    # --- Timestamps ---
+    generated_at         = Column(DateTime, default=func.now())
+    updated_at           = Column(DateTime, default=func.now(), onupdate=func.now())
 
     # Relationships
-    user      = relationship("User",       back_populates="profile")
+    trip = relationship("Trip", back_populates="trip_profiles")

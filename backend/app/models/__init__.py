@@ -3,12 +3,14 @@
 # --- Enums (re-exported for convenience) ---
 from app.models.enums import (
     TripStatus, ItineraryStatus, StopStatus, TravelMode,
+    StopClassification, TimeOfDay, TravelerGroupType,
     PlaceCategory,
-    BookingType, BookingStatus,
-    PaymentMethod, PaymentStatus,
+    BookingType, BookingStatus, BookingProvider,
+    PaymentMethod, PaymentStatus, PaymentProvider,
     RecommendationType, RecommendationStatus,
     PaceStyle, SpendingStyle, ExperienceLean,
     DayRhythm, AttractionPreference, SocialStyle,
+    BudgetLevel, TravelStyle, TripPace,
     FeedbackType,
     ConversationStatus, ProcessingStatus,
 )
@@ -16,8 +18,7 @@ from app.models.enums import (
 # --- Core models ---
 from app.models.user import User
 from app.models.trip import Trip
-from app.models.profile import BehavioralProfile
-from app.models.quiz import Quiz
+from app.models.profile import TripProfile
 from app.models.chat import Conversation, Message
 
 # --- Place hierarchy ---
@@ -39,3 +40,6 @@ from app.models.recommendation import Recommendation
 
 # --- Image upload & features ---
 from app.models.image import Image, ImageFeature
+
+# --- Event log ---
+from app.models.system_log import EventLog
