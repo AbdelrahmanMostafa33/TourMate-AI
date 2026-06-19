@@ -1,122 +1,78 @@
-# ai/tools/profile_tool.py
+# ai_engine/tools/profile_tool.py
 
 import httpx
-from ai_engine.graph.state import BehavioralProfile
+from ai_engine.graph.state import TripProfile
 from app.core.config import settings
 
 
-async def load_behavioral_profile(user_id: str, token: str) -> BehavioralProfile:
+async def load_trip_profile(trip_id: str, token: str) -> TripProfile:
     """
-    Fetches the user's behavioral profile from the FastAPI backend.
+    Fetches the trip's profile from the FastAPI backend.
 
-    This function acts as a bridge between:
-    - The AI layer (LangGraph agents)
-    - The backend (PostgreSQL via FastAPI)
-
-    It retrieves user profile data and maps it into the BehavioralProfile
-    structure used inside the TripState.
+    Each trip has its own profile built from conversation context.
+    Replaces the old user-level load_behavioral_profile().
 
     Args:
-        user_id: Firebase UID identifying the user
-        token: Firebase auth token for secure API access
+        trip_id: Trip identifier
+        token: Firebase auth token
 
     Returns:
-        BehavioralProfile TypedDict ready to be injected into TripState
+        TripProfile TypedDict
     """
-
-    # ── Make authenticated request to backend ───────────────────────
-    # Uses async HTTP client for non-blocking execution in the agent pipeline
     async with httpx.AsyncClient() as client:
         response = await client.get(
-            f"{settings.backend_base_url}/api/v1/users/profile",
+            f"{settings.backend_base_url}/api/v1/trips/{trip_id}/profile",
             headers={"Authorization": f"Bearer {token}"},
-            timeout=5.0  # Prevents hanging requests
+            timeout=5.0,
         )
-
-        # Raises exception if status code is not 2xx
         response.raise_for_status()
 
-    # Parse JSON response from backend
     data = response.json()
 
-    # ── Map backend response → BehavioralProfile ────────────────────
-    # NOTE:
-    # The current endpoint appears to return only partial profile data
-    # (persona + interests). Other fields are defaulted.
-
-    return BehavioralProfile(
-        user_id=user_id,
-
-        # ── Demographics (not returned by this endpoint) ────────────
-        age=None,
-        sex=None,
-        travel_companion=None,
-        location=None,
-
-        # ── Slider preferences (missing → default to None) ──────────
-        # These should ideally come from a "full profile" endpoint
-        adventure_relaxing=None,
-        nature_culture=None,
-        popular_local=None,
-        budget_level=None,
-        early_night=None,
-        independent_social=None,
-
-        # ── Multi-select fields ─────────────────────────────────────
-        # Only interests are currently returned; others default empty
-        accommodation_styles=[],
-        dining_preferences=[],
+    return TripProfile(
+        profile_id=data.get("profile_id"),
+        trip_id=trip_id,
+        budget_level=data.get("budget_level"),
+        travel_style=data.get("travel_style"),
+        pace=data.get("pace"),
         interests=data.get("interests", []),
-        traveler_types=[],
-
-        # ── Persona (AI-generated, stored in backend) ───────────────
-        persona_name=data.get("persona_name"),
-        persona_bio=data.get("persona_bio"),
-        suggested_questions=data.get("suggested_questions", []),
-
-        # ── Quiz status ─────────────────────────────────────────────
-        quiz_completed=data.get("quiz_completed", False),
+        food_preferences=data.get("food_preferences", []),
+        accommodation_preferences=data.get("accommodation_preferences", []),
+        luxury_score=data.get("luxury_score", 0.5),
+        culture_score=data.get("culture_score", 0.5),
+        adventure_score=data.get("adventure_score", 0.5),
+        shopping_score=data.get("shopping_score", 0.3),
+        family_score=data.get("family_score", 0.3),
+        confidence=data.get("confidence", 0.0),
+        generated_at=data.get("generated_at"),
+        updated_at=data.get("updated_at"),
     )
 
-def load_mock_profile(user_id: str = "mock_user_001") -> BehavioralProfile:
+def load_mock_profile(trip_id: str = "mock_trip_001") -> TripProfile:
     """
-    Returns a hardcoded BehavioralProfile for development and testing.
-
-    Used in Sprint 2 while backend Tasks 2.4/2.5 are not yet complete.
-    Swapping to the real profile requires only changing the call in nodes.py
-    from load_mock_profile() to await load_behavioral_profile().
+    Returns a hardcoded TripProfile for development and testing.
 
     Args:
-        user_id: Optional override for the mock user ID.
+        trip_id: Optional override for the mock trip ID.
 
     Returns:
-        A fully populated BehavioralProfile.
+        A fully populated TripProfile.
     """
-    return BehavioralProfile(
-        user_id=user_id,
-        age=27,
-        sex="female",
-        travel_companion="partner",
-        location="Cairo",
-        adventure_relaxing=70,
-        nature_culture=60,
-        popular_local=40,
-        budget_level=45,
-        early_night=55,
-        independent_social=50,
-        accommodation_styles=["boutique hotel", "airbnb"],
-        dining_preferences=["local cuisine", "street food"],
+    return TripProfile(
+        profile_id="mock_profile_001",
+        trip_id=trip_id,
+        budget_level="moderate",
+        travel_style="cultural",
+        pace="moderate",
         interests=["history", "art", "food"],
-        traveler_types=["culture seeker", "foodie"],
-        persona_name="The Curious Culture Seeker",
-        persona_bio=(
-            "You love diving into the history and art of a destination, "
-            "exploring local food scenes, and finding hidden gems off the tourist trail."
-        ),
-        suggested_questions=[
-            "What are the best historical sites to visit?",
-            "Where can I find authentic local food?",
-            "What cultural experiences shouldn't I miss?"
-        ],
-        quiz_completed=True,
+        food_preferences=["local cuisine", "street food"],
+        accommodation_preferences=["boutique hotel", "airbnb"],
+        luxury_score=0.5,
+        culture_score=0.75,
+        adventure_score=0.35,
+        shopping_score=0.15,
+        family_score=0.2,
+        confidence=0.83,
+        generated_at=None,
+        updated_at=None,
     )

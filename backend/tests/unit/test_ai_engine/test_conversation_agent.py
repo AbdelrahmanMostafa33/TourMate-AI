@@ -1,7 +1,7 @@
-# backend/tests/unit/test_ai_engine/test_chat_handler.py
+# backend/tests/unit/test_ai_engine/test_conversation_agent.py
 
 """
-Integration tests for chat_handler.py phase-aware routing.
+Integration tests for conversation_agent.py phase-aware routing.
 
 Mocks external dependencies (LLM, Redis, parse_intent, trip_graph) to test
 the full conversational flow:
@@ -106,9 +106,9 @@ def _make_intent(intent_type, **kwargs):
 class TestGreetingPhase:
 
     @pytest.mark.asyncio
-    @patch("ai_engine.chat.chat_handler.get_session_manager")
-    @patch("ai_engine.chat.chat_handler.parse_intent")
-    @patch("ai_engine.chat.chat_handler.get_fast_llm")
+    @patch("ai_engine.chat.conversation_agent.get_session_manager")
+    @patch("ai_engine.chat.conversation_agent.parse_intent")
+    @patch("ai_engine.chat.conversation_agent.get_fast_llm")
     async def test_greeting_general_chat_stays_in_greeting(
         self, mock_llm_fn, mock_parse, mock_get_manager, mock_manager
     ):
@@ -122,7 +122,7 @@ class TestGreetingPhase:
         mock_llm.invoke.return_value = mock_response
         mock_llm_fn.return_value = mock_llm
 
-        from ai_engine.chat.chat_handler import handle_chat
+        from ai_engine.chat.conversation_agent import handle_chat
         result = await handle_chat("user1", "Hello!")
 
         assert result["response_type"] == "chat"
@@ -130,9 +130,9 @@ class TestGreetingPhase:
         assert result["phase"] == "greeting"
 
     @pytest.mark.asyncio
-    @patch("ai_engine.chat.chat_handler.get_session_manager")
-    @patch("ai_engine.chat.chat_handler.parse_intent")
-    @patch("ai_engine.chat.chat_handler.get_fast_llm")
+    @patch("ai_engine.chat.conversation_agent.get_session_manager")
+    @patch("ai_engine.chat.conversation_agent.parse_intent")
+    @patch("ai_engine.chat.conversation_agent.get_fast_llm")
     async def test_greeting_plan_trip_transitions_to_slot_filling(
         self, mock_llm_fn, mock_parse, mock_get_manager, mock_manager
     ):
@@ -149,17 +149,17 @@ class TestGreetingPhase:
         mock_llm.invoke.return_value = mock_response
         mock_llm_fn.return_value = mock_llm
 
-        from ai_engine.chat.chat_handler import handle_chat
+        from ai_engine.chat.conversation_agent import handle_chat
         result = await handle_chat("user1", "Plan me a trip")
 
         assert result["response_type"] == "clarification"
         assert result["phase"] == "slot_filling"
 
     @pytest.mark.asyncio
-    @patch("ai_engine.chat.chat_handler.get_session_manager")
-    @patch("ai_engine.chat.chat_handler.parse_intent")
-    @patch("ai_engine.chat.chat_handler.trip_graph", new_callable=AsyncMock)
-    @patch("ai_engine.chat.chat_handler.load_mock_profile")
+    @patch("ai_engine.chat.conversation_agent.get_session_manager")
+    @patch("ai_engine.chat.conversation_agent.parse_intent")
+    @patch("ai_engine.chat.conversation_agent.trip_graph", new_callable=AsyncMock)
+    @patch("ai_engine.chat.conversation_agent.load_mock_profile")
     async def test_greeting_complete_info_skips_to_plan_generation(
         self, mock_profile, mock_graph, mock_parse, mock_get_manager, mock_manager
     ):
@@ -176,7 +176,7 @@ class TestGreetingPhase:
             "optimized_itinerary": {"days": [{"day_number": 1, "stops": []}]}
         }
 
-        from ai_engine.chat.chat_handler import handle_chat
+        from ai_engine.chat.conversation_agent import handle_chat
         result = await handle_chat("user1", "Plan me a 5-day trip to Paris")
 
         assert result["response_type"] == "itinerary"
@@ -190,9 +190,9 @@ class TestGreetingPhase:
 class TestSlotFillingPhase:
 
     @pytest.mark.asyncio
-    @patch("ai_engine.chat.chat_handler.get_session_manager")
-    @patch("ai_engine.chat.chat_handler.parse_intent")
-    @patch("ai_engine.chat.chat_handler.get_fast_llm")
+    @patch("ai_engine.chat.conversation_agent.get_session_manager")
+    @patch("ai_engine.chat.conversation_agent.parse_intent")
+    @patch("ai_engine.chat.conversation_agent.get_fast_llm")
     async def test_slot_filling_partial_info_asks_clarification(
         self, mock_llm_fn, mock_parse, mock_get_manager, mock_manager
     ):
@@ -211,7 +211,7 @@ class TestSlotFillingPhase:
         mock_llm.invoke.return_value = mock_response
         mock_llm_fn.return_value = mock_llm
 
-        from ai_engine.chat.chat_handler import handle_chat
+        from ai_engine.chat.conversation_agent import handle_chat
         result1 = await handle_chat("user1", "I want to visit Cairo")
         assert result1["phase"] == "slot_filling"
 
@@ -225,17 +225,17 @@ class TestSlotFillingPhase:
         mock_graph.ainvoke.return_value = {
             "optimized_itinerary": {"days": [{"day_number": 1, "stops": []}]}
         }
-        with patch("ai_engine.chat.chat_handler.trip_graph", mock_graph), \
-             patch("ai_engine.chat.chat_handler.load_mock_profile", return_value={"user_id": "user1"}):
+        with patch("ai_engine.chat.conversation_agent.trip_graph", mock_graph), \
+             patch("ai_engine.chat.conversation_agent.load_mock_profile", return_value={"user_id": "user1"}):
             result2 = await handle_chat("user1", "3 days")
 
         assert result2["response_type"] == "itinerary"
         assert result2["phase"] == "itinerary_review"
 
     @pytest.mark.asyncio
-    @patch("ai_engine.chat.chat_handler.get_session_manager")
-    @patch("ai_engine.chat.chat_handler.parse_intent")
-    @patch("ai_engine.chat.chat_handler.get_fast_llm")
+    @patch("ai_engine.chat.conversation_agent.get_session_manager")
+    @patch("ai_engine.chat.conversation_agent.parse_intent")
+    @patch("ai_engine.chat.conversation_agent.get_fast_llm")
     async def test_slot_filling_general_chat_stays_in_slot_filling(
         self, mock_llm_fn, mock_parse, mock_get_manager, mock_manager
     ):
@@ -254,7 +254,7 @@ class TestSlotFillingPhase:
         mock_llm.invoke.return_value = mock_response
         mock_llm_fn.return_value = mock_llm
 
-        from ai_engine.chat.chat_handler import handle_chat
+        from ai_engine.chat.conversation_agent import handle_chat
         await handle_chat("user1", "I want to visit Paris")
 
         # Second turn: general question
@@ -271,10 +271,10 @@ class TestSlotFillingPhase:
 class TestItineraryReviewPhase:
 
     @pytest.mark.asyncio
-    @patch("ai_engine.chat.chat_handler.get_session_manager")
-    @patch("ai_engine.chat.chat_handler.parse_intent")
-    @patch("ai_engine.chat.chat_handler.trip_graph", new_callable=AsyncMock)
-    @patch("ai_engine.chat.chat_handler.load_mock_profile")
+    @patch("ai_engine.chat.conversation_agent.get_session_manager")
+    @patch("ai_engine.chat.conversation_agent.parse_intent")
+    @patch("ai_engine.chat.conversation_agent.trip_graph", new_callable=AsyncMock)
+    @patch("ai_engine.chat.conversation_agent.load_mock_profile")
     async def test_review_approve_transitions_to_completed(
         self, mock_profile, mock_graph, mock_parse, mock_get_manager, mock_manager
     ):
@@ -285,7 +285,7 @@ class TestItineraryReviewPhase:
             "optimized_itinerary": {"days": [{"day_number": 1, "stops": []}]}
         }
 
-        from ai_engine.chat.chat_handler import handle_chat
+        from ai_engine.chat.conversation_agent import handle_chat
 
         # Generate itinerary first
         mock_parse.return_value = _make_intent(
@@ -305,10 +305,10 @@ class TestItineraryReviewPhase:
         assert "amazing trip" in result2["message"].lower()
 
     @pytest.mark.asyncio
-    @patch("ai_engine.chat.chat_handler.get_session_manager")
-    @patch("ai_engine.chat.chat_handler.parse_intent")
-    @patch("ai_engine.chat.chat_handler.trip_graph", new_callable=AsyncMock)
-    @patch("ai_engine.chat.chat_handler.load_mock_profile")
+    @patch("ai_engine.chat.conversation_agent.get_session_manager")
+    @patch("ai_engine.chat.conversation_agent.parse_intent")
+    @patch("ai_engine.chat.conversation_agent.trip_graph", new_callable=AsyncMock)
+    @patch("ai_engine.chat.conversation_agent.load_mock_profile")
     async def test_review_question_stays_in_review(
         self, mock_profile, mock_graph, mock_parse, mock_get_manager, mock_manager
     ):
@@ -319,7 +319,7 @@ class TestItineraryReviewPhase:
             "optimized_itinerary": {"days": [{"day_number": 1, "stops": []}]}
         }
 
-        from ai_engine.chat.chat_handler import handle_chat
+        from ai_engine.chat.conversation_agent import handle_chat
 
         # Generate itinerary
         mock_parse.return_value = _make_intent(
@@ -335,17 +335,17 @@ class TestItineraryReviewPhase:
         mock_response = MagicMock()
         mock_response.content = "Day 1 includes the Pyramids of Giza."
         mock_llm.invoke.return_value = mock_response
-        with patch("ai_engine.chat.chat_handler.get_fast_llm", return_value=mock_llm):
+        with patch("ai_engine.chat.conversation_agent.get_fast_llm", return_value=mock_llm):
             result = await handle_chat("user1", "What's on Day 1?")
 
         assert result["response_type"] == "chat"
         assert result["phase"] == "itinerary_review"  # stays in review
 
     @pytest.mark.asyncio
-    @patch("ai_engine.chat.chat_handler.get_session_manager")
-    @patch("ai_engine.chat.chat_handler.parse_intent")
-    @patch("ai_engine.chat.chat_handler.trip_graph", new_callable=AsyncMock)
-    @patch("ai_engine.chat.chat_handler.load_mock_profile")
+    @patch("ai_engine.chat.conversation_agent.get_session_manager")
+    @patch("ai_engine.chat.conversation_agent.parse_intent")
+    @patch("ai_engine.chat.conversation_agent.trip_graph", new_callable=AsyncMock)
+    @patch("ai_engine.chat.conversation_agent.load_mock_profile")
     async def test_review_modify_re_runs_pipeline(
         self, mock_profile, mock_graph, mock_parse, mock_get_manager, mock_manager
     ):
@@ -356,7 +356,7 @@ class TestItineraryReviewPhase:
             "optimized_itinerary": {"days": [{"day_number": 1, "stops": []}]}
         }
 
-        from ai_engine.chat.chat_handler import handle_chat
+        from ai_engine.chat.conversation_agent import handle_chat
 
         # Generate itinerary
         mock_parse.return_value = _make_intent(
@@ -379,10 +379,10 @@ class TestItineraryReviewPhase:
 class TestCompletedPhase:
 
     @pytest.mark.asyncio
-    @patch("ai_engine.chat.chat_handler.get_session_manager")
-    @patch("ai_engine.chat.chat_handler.parse_intent")
-    @patch("ai_engine.chat.chat_handler.trip_graph", new_callable=AsyncMock)
-    @patch("ai_engine.chat.chat_handler.load_mock_profile")
+    @patch("ai_engine.chat.conversation_agent.get_session_manager")
+    @patch("ai_engine.chat.conversation_agent.parse_intent")
+    @patch("ai_engine.chat.conversation_agent.trip_graph", new_callable=AsyncMock)
+    @patch("ai_engine.chat.conversation_agent.load_mock_profile")
     async def test_completed_new_trip_resets_and_starts_over(
         self, mock_profile, mock_graph, mock_parse, mock_get_manager, mock_manager
     ):
@@ -393,7 +393,7 @@ class TestCompletedPhase:
             "optimized_itinerary": {"days": [{"day_number": 1, "stops": []}]}
         }
 
-        from ai_engine.chat.chat_handler import handle_chat
+        from ai_engine.chat.conversation_agent import handle_chat
 
         # Complete first trip
         mock_parse.return_value = _make_intent(
@@ -415,7 +415,7 @@ class TestCompletedPhase:
         mock_response = MagicMock()
         mock_response.content = "How many days for Tokyo?"
         mock_llm.invoke.return_value = mock_response
-        with patch("ai_engine.chat.chat_handler.get_fast_llm", return_value=mock_llm):
+        with patch("ai_engine.chat.conversation_agent.get_fast_llm", return_value=mock_llm):
             result = await handle_chat("user1", "I want to go to Tokyo next")
 
         assert result["phase"] == "slot_filling"
@@ -431,9 +431,9 @@ class TestCompletedPhase:
 class TestSessionPersistence:
 
     @pytest.mark.asyncio
-    @patch("ai_engine.chat.chat_handler.get_session_manager")
-    @patch("ai_engine.chat.chat_handler.parse_intent")
-    @patch("ai_engine.chat.chat_handler.get_fast_llm")
+    @patch("ai_engine.chat.conversation_agent.get_session_manager")
+    @patch("ai_engine.chat.conversation_agent.parse_intent")
+    @patch("ai_engine.chat.conversation_agent.get_fast_llm")
     async def test_session_id_returned_in_response(
         self, mock_llm_fn, mock_parse, mock_get_manager, mock_manager
     ):
@@ -446,7 +446,7 @@ class TestSessionPersistence:
         mock_llm.invoke.return_value = mock_response
         mock_llm_fn.return_value = mock_llm
 
-        from ai_engine.chat.chat_handler import handle_chat
+        from ai_engine.chat.conversation_agent import handle_chat
         result = await handle_chat("user1", "Hi")
 
         assert "session_id" in result
@@ -454,9 +454,9 @@ class TestSessionPersistence:
         assert len(result["session_id"]) > 0
 
     @pytest.mark.asyncio
-    @patch("ai_engine.chat.chat_handler.get_session_manager")
-    @patch("ai_engine.chat.chat_handler.parse_intent")
-    @patch("ai_engine.chat.chat_handler.get_fast_llm")
+    @patch("ai_engine.chat.conversation_agent.get_session_manager")
+    @patch("ai_engine.chat.conversation_agent.parse_intent")
+    @patch("ai_engine.chat.conversation_agent.get_fast_llm")
     async def test_history_grows_across_turns(
         self, mock_llm_fn, mock_parse, mock_get_manager, mock_manager
     ):
@@ -469,7 +469,7 @@ class TestSessionPersistence:
         mock_llm.invoke.return_value = mock_response
         mock_llm_fn.return_value = mock_llm
 
-        from ai_engine.chat.chat_handler import handle_chat
+        from ai_engine.chat.conversation_agent import handle_chat
 
         await handle_chat("user1", "Hi")
         await handle_chat("user1", "How are you?")
@@ -488,9 +488,9 @@ class TestHandleChatStream:
     """Tests for the handle_chat_stream async generator."""
 
     @pytest.mark.asyncio
-    @patch("ai_engine.chat.chat_handler.get_session_manager")
-    @patch("ai_engine.chat.chat_handler.parse_intent")
-    @patch("ai_engine.chat.chat_handler.get_fast_llm")
+    @patch("ai_engine.chat.conversation_agent.get_session_manager")
+    @patch("ai_engine.chat.conversation_agent.parse_intent")
+    @patch("ai_engine.chat.conversation_agent.get_fast_llm")
     async def test_stream_general_chat_yields_session_text_done(
         self, mock_llm_fn, mock_parse, mock_get_manager, mock_manager
     ):
@@ -503,7 +503,7 @@ class TestHandleChatStream:
         mock_llm.invoke.return_value = mock_response
         mock_llm_fn.return_value = mock_llm
 
-        from ai_engine.chat.chat_handler import handle_chat_stream
+        from ai_engine.chat.conversation_agent import handle_chat_stream
 
         chunks = []
         async for chunk in handle_chat_stream("user1", "Hi"):
@@ -522,9 +522,9 @@ class TestHandleChatStream:
         assert "phase" in session_chunk["data"]
 
     @pytest.mark.asyncio
-    @patch("ai_engine.chat.chat_handler.get_session_manager")
-    @patch("ai_engine.chat.chat_handler.parse_intent")
-    @patch("ai_engine.chat.chat_handler.get_fast_llm")
+    @patch("ai_engine.chat.conversation_agent.get_session_manager")
+    @patch("ai_engine.chat.conversation_agent.parse_intent")
+    @patch("ai_engine.chat.conversation_agent.get_fast_llm")
     async def test_stream_text_chunks_are_word_by_word(
         self, mock_llm_fn, mock_parse, mock_get_manager, mock_manager
     ):
@@ -537,7 +537,7 @@ class TestHandleChatStream:
         mock_llm.invoke.return_value = mock_response
         mock_llm_fn.return_value = mock_llm
 
-        from ai_engine.chat.chat_handler import handle_chat_stream
+        from ai_engine.chat.conversation_agent import handle_chat_stream
 
         text_chunks = []
         async for chunk in handle_chat_stream("user1", "Tell me about Paris"):
@@ -550,10 +550,10 @@ class TestHandleChatStream:
         assert text_chunks[2]["content"] == "beautiful "
 
     @pytest.mark.asyncio
-    @patch("ai_engine.chat.chat_handler.get_session_manager")
-    @patch("ai_engine.chat.chat_handler.parse_intent")
-    @patch("ai_engine.chat.chat_handler.trip_graph", new_callable=AsyncMock)
-    @patch("ai_engine.chat.chat_handler.load_mock_profile")
+    @patch("ai_engine.chat.conversation_agent.get_session_manager")
+    @patch("ai_engine.chat.conversation_agent.parse_intent")
+    @patch("ai_engine.chat.conversation_agent.trip_graph", new_callable=AsyncMock)
+    @patch("ai_engine.chat.conversation_agent.load_mock_profile")
     async def test_stream_plan_trip_yields_actions_chunk(
         self, mock_profile, mock_graph, mock_parse, mock_get_manager, mock_manager
     ):
@@ -569,7 +569,7 @@ class TestHandleChatStream:
             duration_days=3,
         )
 
-        from ai_engine.chat.chat_handler import handle_chat_stream
+        from ai_engine.chat.conversation_agent import handle_chat_stream
 
         chunks = []
         async for chunk in handle_chat_stream("user1", "Plan me a 3-day trip to Paris"):
@@ -588,9 +588,9 @@ class TestHandleChatStream:
         assert "days" in actions_chunk["data"][0]["data"]
 
     @pytest.mark.asyncio
-    @patch("ai_engine.chat.chat_handler.get_session_manager")
-    @patch("ai_engine.chat.chat_handler.parse_intent")
-    @patch("ai_engine.chat.chat_handler.get_fast_llm")
+    @patch("ai_engine.chat.conversation_agent.get_session_manager")
+    @patch("ai_engine.chat.conversation_agent.parse_intent")
+    @patch("ai_engine.chat.conversation_agent.get_fast_llm")
     async def test_stream_always_ends_with_done(
         self, mock_llm_fn, mock_parse, mock_get_manager, mock_manager
     ):
@@ -603,7 +603,7 @@ class TestHandleChatStream:
         mock_llm.invoke.return_value = mock_response
         mock_llm_fn.return_value = mock_llm
 
-        from ai_engine.chat.chat_handler import handle_chat_stream
+        from ai_engine.chat.conversation_agent import handle_chat_stream
 
         chunks = []
         async for chunk in handle_chat_stream("user1", "Hi"):
@@ -612,9 +612,9 @@ class TestHandleChatStream:
         assert chunks[-1] == {"type": "done", "data": None}
 
     @pytest.mark.asyncio
-    @patch("ai_engine.chat.chat_handler.get_session_manager")
-    @patch("ai_engine.chat.chat_handler.parse_intent")
-    @patch("ai_engine.chat.chat_handler.get_fast_llm")
+    @patch("ai_engine.chat.conversation_agent.get_session_manager")
+    @patch("ai_engine.chat.conversation_agent.parse_intent")
+    @patch("ai_engine.chat.conversation_agent.get_fast_llm")
     async def test_stream_session_chunk_comes_first(
         self, mock_llm_fn, mock_parse, mock_get_manager, mock_manager
     ):
@@ -627,7 +627,7 @@ class TestHandleChatStream:
         mock_llm.invoke.return_value = mock_response
         mock_llm_fn.return_value = mock_llm
 
-        from ai_engine.chat.chat_handler import handle_chat_stream
+        from ai_engine.chat.conversation_agent import handle_chat_stream
 
         chunks = []
         async for chunk in handle_chat_stream("user1", "Hi"):
@@ -638,9 +638,9 @@ class TestHandleChatStream:
         assert chunks[0]["data"]["phase"] == "greeting"
 
     @pytest.mark.asyncio
-    @patch("ai_engine.chat.chat_handler.get_session_manager")
-    @patch("ai_engine.chat.chat_handler.parse_intent")
-    @patch("ai_engine.chat.chat_handler.get_fast_llm")
+    @patch("ai_engine.chat.conversation_agent.get_session_manager")
+    @patch("ai_engine.chat.conversation_agent.parse_intent")
+    @patch("ai_engine.chat.conversation_agent.get_fast_llm")
     async def test_stream_clarification_yields_text_no_actions(
         self, mock_llm_fn, mock_parse, mock_get_manager, mock_manager
     ):
@@ -656,7 +656,7 @@ class TestHandleChatStream:
         mock_llm.invoke.return_value = mock_response
         mock_llm_fn.return_value = mock_llm
 
-        from ai_engine.chat.chat_handler import handle_chat_stream
+        from ai_engine.chat.conversation_agent import handle_chat_stream
 
         chunks = []
         async for chunk in handle_chat_stream("user1", "Plan me a trip"):
@@ -669,9 +669,9 @@ class TestHandleChatStream:
         assert types[-1] == "done"
 
     @pytest.mark.asyncio
-    @patch("ai_engine.chat.chat_handler.get_session_manager")
-    @patch("ai_engine.chat.chat_handler.parse_intent")
-    @patch("ai_engine.chat.chat_handler.get_fast_llm")
+    @patch("ai_engine.chat.conversation_agent.get_session_manager")
+    @patch("ai_engine.chat.conversation_agent.parse_intent")
+    @patch("ai_engine.chat.conversation_agent.get_fast_llm")
     async def test_stream_saves_session_state(
         self, mock_llm_fn, mock_parse, mock_get_manager, mock_manager
     ):
@@ -684,7 +684,7 @@ class TestHandleChatStream:
         mock_llm.invoke.return_value = mock_response
         mock_llm_fn.return_value = mock_llm
 
-        from ai_engine.chat.chat_handler import handle_chat_stream
+        from ai_engine.chat.conversation_agent import handle_chat_stream
 
         async for _ in handle_chat_stream("user1", "Hi"):
             pass  # consume entire stream
@@ -698,9 +698,9 @@ class TestHandleChatStream:
         assert state.turn_count == 1
 
     @pytest.mark.asyncio
-    @patch("ai_engine.chat.chat_handler.get_session_manager")
-    @patch("ai_engine.chat.chat_handler.parse_intent")
-    @patch("ai_engine.chat.chat_handler.get_fast_llm")
+    @patch("ai_engine.chat.conversation_agent.get_session_manager")
+    @patch("ai_engine.chat.conversation_agent.parse_intent")
+    @patch("ai_engine.chat.conversation_agent.get_fast_llm")
     async def test_stream_empty_message_uses_fallback(
         self, mock_llm_fn, mock_parse, mock_get_manager, mock_manager
     ):
@@ -713,7 +713,7 @@ class TestHandleChatStream:
         mock_llm.invoke.return_value = mock_response
         mock_llm_fn.return_value = mock_llm
 
-        from ai_engine.chat.chat_handler import handle_chat_stream
+        from ai_engine.chat.conversation_agent import handle_chat_stream
 
         # Empty string
         chunks_empty = []
@@ -740,9 +740,9 @@ class TestHandleChatStream:
         assert "image" in call_args.lower()
 
     @pytest.mark.asyncio
-    @patch("ai_engine.chat.chat_handler.get_session_manager")
-    @patch("ai_engine.chat.chat_handler.parse_intent")
-    @patch("ai_engine.chat.chat_handler.get_fast_llm")
+    @patch("ai_engine.chat.conversation_agent.get_session_manager")
+    @patch("ai_engine.chat.conversation_agent.parse_intent")
+    @patch("ai_engine.chat.conversation_agent.get_fast_llm")
     async def test_stream_multi_turn_carries_session_state(
         self, mock_llm_fn, mock_parse, mock_get_manager, mock_manager
     ):
@@ -755,7 +755,7 @@ class TestHandleChatStream:
         mock_llm.invoke.return_value = mock_response
         mock_llm_fn.return_value = mock_llm
 
-        from ai_engine.chat.chat_handler import handle_chat_stream
+        from ai_engine.chat.conversation_agent import handle_chat_stream
 
         # Turn 1: greeting
         chunks1 = []

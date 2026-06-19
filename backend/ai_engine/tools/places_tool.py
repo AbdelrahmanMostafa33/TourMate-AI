@@ -14,7 +14,7 @@ from typing import List, Optional
 
 
 # Path to the real data file (relative to this file's location)
-_DATA_FILE = Path(__file__).resolve().parent.parent.parent.parent / "data" / "cairo_places.json"
+_DATA_FILE = Path(__file__).resolve().parent.parent.parent.parent / "data" / "cairo" / "cairo_places_class_diagram.json"
 
 # How many top places to keep per category type (sorted by popularity_score)
 _MAX_ATTRACTIONS = 40
@@ -24,41 +24,66 @@ _MAX_HOTELS = 10
 
 
 
-def _derive_category(place: dict) -> str:
-    """Derive a simple category string from sub_category or interest_tags."""
-    # Hotels are always categorized as "hotel" regardless of amenities like food/nightlife.
-    sub = (place.get("sub_category") or place.get("subtype") or "").lower()
-    if "hotel" in sub:
-        return "hotel"
+def _normalize_place(raw: dict) -> dict:
+    """
+    Normalize a raw JSON place record from the database export format
+    to the internal dict shape expected by downstream agents.
 
-    # Tags are already simple (e.g. "history", "food", "art").
-    # Use the first tag as the category.
-    tags = place.get("interest_tags", [])
-    if tags:
-        return tags[0]
+    The database export uses:
+      - UPPERCASE categories: ATTRACTION, RESTAURANT, HOTEL
+      - camelCase field names: placeId, popularityScore, reviewCount, etc.
+      - 'lng' instead of 'lon'
+      - Sub-details in nested objects: attractionDetails, restaurantDetails
+    """
+    # ── Category normalization ────────────────────────────────────
+    raw_cat = (raw.get("category") or "").lower()
+    # Map singular DB categories to plural internal categories
+    category_map = {
+        "attraction": "attractions",
+        "restaurant": "restaurant",
+        "hotel": "hotel",
+    }
+    category = category_map.get(raw_cat, raw_cat)
 
-    # Fallback: use sub_category lowercased.
-    return sub if sub else "attraction"
+    # ── Sub-category from nested detail objects ───────────────────
+    sub_category = ""
+    interest_tags = []
+    cuisine_type = ""
 
+    if raw.get("attractionDetails"):
+        ad = raw["attractionDetails"]
+        sub_category = ad.get("subcategory") or ""
+        interest_tags = ad.get("tags") or []
+    elif raw.get("restaurantDetails"):
+        rd = raw["restaurantDetails"]
+        cuisine_type = rd.get("cuisineType") or ""
+        # Derive sub_category from cuisine
+        sub_category = cuisine_type
+    elif raw.get("hotelDetails"):
+        sub_category = "hotel"
 
-def _place_to_dict(place: dict) -> dict:
-    """Convert a raw JSON place record to the dict shape expected by the planner."""
+    # If no tags from detail, derive from sub_category
+    if not interest_tags and sub_category:
+        interest_tags = [sub_category.lower()]
+
+    # ── Field name normalization ──────────────────────────────────
     return {
-        "id": place["id"],
-        "name": place["name"],
-        "category": _derive_category(place),
-        "sub_category": place.get("sub_category") or place.get("subtype") or "",
-        "lat": place["lat"],
-        "lon": place["lon"],
-        "description": place.get("description", ""),
-        "rating": place.get("rating", 0),
-        "review_count": place.get("review_count", 0),
-        "popularity_score": place.get("popularity_score", 0),
-        "interest_tags": place.get("interest_tags", []),
-        "address": place.get("address", ""),
-        "hours": place.get("hours") or {},
-        "photos": (place.get("photos") or [])[:1],
-        "maps_link": place.get("maps_link"),
+        "id": raw.get("placeId") or raw.get("id") or "",
+        "name": raw.get("name") or "",
+        "category": category,
+        "sub_category": sub_category,
+        "lat": raw.get("lat", 0),
+        "lon": raw.get("lng") or raw.get("lon", 0),
+        "description": raw.get("description", ""),
+        "rating": raw.get("rating", 0),
+        "review_count": raw.get("reviewCount") or raw.get("review_count", 0),
+        "popularity_score": raw.get("popularityScore") or raw.get("popularity_score", 0),
+        "interest_tags": interest_tags,
+        "cuisine_type": cuisine_type,
+        "address": raw.get("address", ""),
+        "hours": raw.get("openingHours") or {},
+        "photos": (raw.get("photoUrls") or raw.get("photos") or [])[:1],
+        "maps_link": raw.get("mapsLink") or raw.get("maps_link"),
     }
 
 
@@ -71,28 +96,34 @@ def _load_real_places() -> dict[str, List[dict]]:
         print(f"[PlacesTool] Warning: Could not load {_DATA_FILE}: {e}")
         return {}
 
+    # Normalize all raw records to internal format
+    normalized = [_normalize_place(p) for p in all_places]
+
     # Select top attractions by popularity
     attractions = sorted(
-        [p for p in all_places if p.get("category") == "attractions"],
+        [p for p in normalized if p["category"] == "attractions"],
         key=lambda x: x.get("popularity_score", 0),
         reverse=True,
     )[:_MAX_ATTRACTIONS]
 
     # Select top restaurants by popularity
     restaurants = sorted(
-        [p for p in all_places if p.get("category") == "restaurant"],
+        [p for p in normalized if p["category"] == "restaurant"],
         key=lambda x: x.get("popularity_score", 0),
         reverse=True,
     )[:_MAX_RESTAURANTS]
 
     # Select top hotels by popularity
     hotels = sorted(
-        [p for p in all_places if p.get("category") == "hotel"],
+        [p for p in normalized if p["category"] == "hotel"],
         key=lambda x: x.get("popularity_score", 0),
         reverse=True,
     )[:_MAX_HOTELS]
 
-    cairo_places = [_place_to_dict(p) for p in attractions + restaurants + hotels]
+    cairo_places = attractions + restaurants + hotels
+
+    print(f"[PlacesTool] Loaded {len(cairo_places)} places for Cairo "
+          f"({len(attractions)} attractions, {len(restaurants)} restaurants, {len(hotels)} hotels)")
 
     return {"cairo": cairo_places}
 

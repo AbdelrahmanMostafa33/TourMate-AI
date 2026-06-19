@@ -39,7 +39,7 @@ def build_trip_graph():
       - validator:    Programmatic feasibility + LLM quality checks
 
     Intent parsing and routing (plan_trip vs general_chat vs
-    needs_clarification) is handled by chat_handler.py before
+    needs_clarification)    is handled by conversation_agent.py before
     the graph is invoked.
 
     Returns a compiled graph object that FastAPI will call.

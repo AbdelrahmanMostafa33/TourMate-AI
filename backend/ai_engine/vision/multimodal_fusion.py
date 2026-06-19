@@ -1,40 +1,36 @@
 # backend/ai_engine/vision/multimodal_fusion.py
 
 from typing import Optional
-from ai_engine.graph.state import BehavioralProfile
+from ai_engine.graph.state import TripProfile
 
 
 def fuse_image_with_profile(
-    profile: BehavioralProfile,
+    profile: TripProfile,
     image_features: dict,
-) -> BehavioralProfile:
+) -> TripProfile:
     """
-    Merges image-extracted travel features into the user's behavioral profile.
+    Merges image-extracted travel features into the trip profile.
 
-    Called in chat_handler.py when the user uploads an image alongside
-    (or instead of) a text message. The enriched profile is then stored
-    in TripState so the planning agent sees a fuller picture of user intent.
+    Called when the user uploads an image alongside a text message.
+    The enriched profile is stored in TripState so downstream agents
+    see a fuller picture of user intent.
 
-    Sprint 3 behaviour:
+    Behavior:
     - Appends inferred_interests to profile["interests"] (no duplicates).
-    - Overwrites activity-style slider hint if image confidence is "high"
-      and the profile slider is still at the default midpoint.
-    - All other profile fields are left unchanged.
-
-    Sprint 4+ can extend this to weight confidence scores, persist the
-    enriched profile back to PostgreSQL, and handle multi-image sessions.
+    - If image confidence is "high", enriches adventure_score with
+      activity_style signal.
+    - Bumps confidence to reflect additional signal.
 
     Args:
-        profile:        The BehavioralProfile loaded from TripState.
+        profile:        The TripProfile loaded from TripState.
         image_features: The validated dict from image_analyzer.analyze_travel_image().
 
     Returns:
-        An updated copy of the BehavioralProfile with image signals merged in.
+        An updated copy of the TripProfile with image signals merged in.
     """
-    # Work on a shallow copy so the original state is not mutated unexpectedly
     updated = dict(profile)
 
-    confidence = image_features.get("confidence", "low")
+    img_confidence = image_features.get("confidence", "low")
     new_interests = image_features.get("inferred_interests", [])
 
     # --- Merge interests (union, no duplicates) ---
@@ -46,20 +42,24 @@ def fuse_image_with_profile(
             existing_lower.add(interest.lower())
     updated["interests"] = existing_interests
 
-    # --- Optionally refine adventure_relaxing slider ---
-    # Only overwrite if confidence is high and the current slider is unset
-    # (None means quiz was skipped — image gives us a signal to start with)
-    if confidence == "high":
+    # --- Enrich adventure_score from image activity_style ---
+    if img_confidence == "high":
         activity_style = image_features.get("activity_style")
-        if activity_style and updated.get("adventure_relaxing") is None:
-            # Map VLM activity style labels to approximate slider values
-            style_to_slider = {
-                "adventurous": 75,
-                "relaxing":    25,
-                "cultural":    55,
-                "culinary":    50,
-                "mixed":       50,
+        if activity_style:
+            style_to_score = {
+                "adventurous": 0.85,
+                "relaxing":    0.25,
+                "cultural":    0.55,
+                "culinary":    0.50,
+                "mixed":       0.50,
             }
-            updated["adventure_relaxing"] = style_to_slider.get(activity_style)
+            new_score = style_to_score.get(activity_style, 0.50)
+            current = updated.get("adventure_score") or 0.50
+            updated["adventure_score"] = round((current + new_score) / 2, 2)
 
-    return BehavioralProfile(**updated)
+    # --- Bump confidence ---
+    current_conf = updated.get("confidence", 0.0) or 0.0
+    if img_confidence == "high":
+        updated["confidence"] = min(1.0, round(current_conf + 0.15, 2))
+
+    return TripProfile(**updated)

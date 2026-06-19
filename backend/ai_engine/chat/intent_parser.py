@@ -19,6 +19,12 @@ JSON schema:
   "travel_dates": string | null,
   "group_size": integer | null,
   "special_requests": string | null,
+  "budget_level": "budget" | "moderate" | "luxury" | null,
+  "travel_style": "romantic" | "adventure" | "family" | "solo" | "cultural" | "relaxation" | null,
+  "pace": "relaxed" | "moderate" | "packed" | null,
+  "interests": list[string] | null,
+  "food_preferences": list[string] | null,
+  "accommodation_preferences": list[string] | null,
   "missing_fields": list[string]
 }
 
@@ -43,7 +49,14 @@ Rules — read carefully:
 4. missing_fields must list every absent required field from: "destination", "duration".
    Only include a field if the intent_type is "needs_clarification".
 
-5. All extracted fields are null if not mentioned by the user.
+5. Profile fields: Extract these from the user message if mentioned:
+   - budget_level: "cheap/budget-friendly" → "budget", "moderate/average" → "moderate", "luxury/5-star/premium" → "luxury"
+   - travel_style: "romantic/love" → "romantic", "adventure/hiking" → "adventure", "kids/family" → "family", "solo/alone" → "solo", "museums/history" → "cultural", "relax/chill" → "relaxation"
+   - pace: "see everything/packed" → "packed", "balanced" → "moderate", "relax/unhurried" → "relaxed"
+   - interests: Extract interest tags like ["history", "food", "art", "nature", "shopping", "nightlife", "photography"]
+   - food_preferences: Extract like ["local cuisine", "fine dining", "street food", "vegetarian", "vegan"]
+   - accommodation_preferences: Extract like ["hotel", "boutique hotel", "hostel", "airbnb", "resort"]
+   - All profile fields are null if not mentioned by the user.
 """
 
 

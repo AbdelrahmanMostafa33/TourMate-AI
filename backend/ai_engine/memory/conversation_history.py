@@ -9,7 +9,7 @@ This module provides utilities to:
     - Generate slot-filling prompts for missing trip information
     - Create itinerary review prompts with the current plan
 
-These helpers are used by chat_handler.py to inject conversation state
+These helpers are used by conversation_agent.py to inject conversation state
 into LLM calls without duplicating logic.
 """
 

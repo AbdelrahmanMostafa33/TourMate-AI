@@ -94,7 +94,7 @@ async def test_process_message_accepts_user_id_and_token(mock_snapshot, mock_man
 
     # This should NOT raise NameError for undefined user_id/token
     # We patch handle_chat to avoid actual AI calls
-    with patch("ai_engine.chat.chat_handler.handle_chat", new_callable=AsyncMock) as mock_chat:
+    with patch("ai_engine.chat.conversation_agent.handle_chat", new_callable=AsyncMock) as mock_chat:
         mock_chat.return_value = {
             "message": "Here's your plan!",
             "itinerary": None,
@@ -133,7 +133,7 @@ async def test_process_message_saves_user_message(mock_snapshot, mock_manager):
     conv = make_mock_conversation()
     db = make_mock_db_session()
 
-    with patch("ai_engine.chat.chat_handler.handle_chat", new_callable=AsyncMock) as mock_chat:
+    with patch("ai_engine.chat.conversation_agent.handle_chat", new_callable=AsyncMock) as mock_chat:
         mock_chat.return_value = {"message": "Reply", "itinerary": None}
         await process_message(
             user_text="Hello AI",
@@ -167,7 +167,7 @@ async def test_process_message_saves_ai_response(mock_snapshot, mock_manager):
     conv = make_mock_conversation()
     db = make_mock_db_session()
 
-    with patch("ai_engine.chat.chat_handler.handle_chat", new_callable=AsyncMock) as mock_chat:
+    with patch("ai_engine.chat.conversation_agent.handle_chat", new_callable=AsyncMock) as mock_chat:
         mock_chat.return_value = {"message": "AI response here", "itinerary": None}
         await process_message(
             user_text="Plan trip",
@@ -201,7 +201,7 @@ async def test_process_message_refreshes_itineraries_not_days(mock_snapshot, moc
     conv = make_mock_conversation()
     db = make_mock_db_session()
 
-    with patch("ai_engine.chat.chat_handler.handle_chat", new_callable=AsyncMock) as mock_chat:
+    with patch("ai_engine.chat.conversation_agent.handle_chat", new_callable=AsyncMock) as mock_chat:
         mock_chat.return_value = {
             "message": "Plan",
             "itinerary": {"destination": "Cairo"},  # triggers actions

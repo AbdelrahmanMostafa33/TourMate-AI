@@ -1,5 +1,5 @@
 from ai_engine.graph.state import TripState
-from ai_engine.tools.profile_tool import load_behavioral_profile, load_mock_profile
+from ai_engine.tools.profile_tool import load_trip_profile, load_mock_profile
 from ai_engine.agents.preference_agent import run_preference_agent
 from ai_engine.agents.retrieval_agent import run_retrieval_agent
 from ai_engine.agents.ranking_agent import run_ranking_agent
@@ -10,29 +10,27 @@ from ai_engine.agents.validation_agent import run_validation_agent
 
 async def load_profile_node(state: TripState) -> TripState:
     """
-    ENTRY NODE — Loads the user's behavioral profile into TripState.
+    ENTRY NODE — Loads the per-trip profile into TripState.
     """
     if state.get("profile"):
-        print(f"[LoadProfile] Profile already loaded: "
-              f"{state['profile'].get('persona_name', 'unknown persona')}")
+        print(f"[LoadProfile] Profile already loaded (confidence={state['profile'].get('confidence', '?')})")
         return state
 
     user_id = state.get("user_id", "mock_user_001")
     token = state.get("token")
-    print(f"[LoadProfile] Loading profile for user: {user_id}")
+    trip_id = state.get("trip_id") or user_id
+    print(f"[LoadProfile] Loading profile for trip: {trip_id}")
 
     if token:
         try:
-            profile = await load_behavioral_profile(user_id=user_id, token=token)
-            print(f"[LoadProfile] Real profile loaded: "
-                  f"{profile.get('persona_name', 'unknown persona')}")
+            profile = await load_trip_profile(trip_id=trip_id, token=token)
+            print(f"[LoadProfile] Real profile loaded (confidence={profile.get('confidence', '?')})")
         except Exception as e:
-            print(f"[LoadProfile] Failed to load real profile ({e}), "
-                  f"falling back to mock")
-            profile = load_mock_profile(user_id=user_id)
+            print(f"[LoadProfile] Failed to load real profile ({e}), falling back to mock")
+            profile = load_mock_profile(trip_id=trip_id)
     else:
         print("[LoadProfile] No token provided, using mock profile")
-        profile = load_mock_profile(user_id=user_id)
+        profile = load_mock_profile(trip_id=trip_id)
 
     state["profile"] = profile
     return state
