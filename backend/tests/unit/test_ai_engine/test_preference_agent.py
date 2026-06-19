@@ -267,10 +267,10 @@ class TestRunPreferenceAgent:
             "interests_remove": [],
         }
 
-        mock_llm = MagicMock()
-        mock_llm.invoke.return_value.content = json.dumps(refinement_response)
+        mock_response = MagicMock()
+        mock_response.content = json.dumps(refinement_response)
 
-        with patch("ai_engine.agents.preference_agent.get_fast_llm", return_value=mock_llm):
+        with patch("ai_engine.agents.preference_agent.invoke_with_fallback", return_value=mock_response):
             state = _make_state()
             result = await run_preference_agent(state)
 
@@ -293,10 +293,10 @@ class TestRunPreferenceAgent:
     @pytest.mark.asyncio
     async def test_empty_refinement_keeps_profile(self):
         """LLM returns empty object → profile unchanged except scores."""
-        mock_llm = MagicMock()
-        mock_llm.invoke.return_value.content = "{}"
+        mock_response = MagicMock()
+        mock_response.content = "{}"
 
-        with patch("ai_engine.agents.preference_agent.get_fast_llm", return_value=mock_llm):
+        with patch("ai_engine.agents.preference_agent.invoke_with_fallback", return_value=mock_response):
             state = _make_state()
             result = await run_preference_agent(state)
 
@@ -310,10 +310,10 @@ class TestRunPreferenceAgent:
     @pytest.mark.asyncio
     async def test_llm_returns_invalid_json_falls_back(self):
         """LLM returns garbage → graceful fallback, profile as-is."""
-        mock_llm = MagicMock()
-        mock_llm.invoke.return_value.content = "not json at all"
+        mock_response = MagicMock()
+        mock_response.content = "not json at all"
 
-        with patch("ai_engine.agents.preference_agent.get_fast_llm", return_value=mock_llm):
+        with patch("ai_engine.agents.preference_agent.invoke_with_fallback", return_value=mock_response):
             state = _make_state()
             result = await run_preference_agent(state)
 
@@ -327,10 +327,7 @@ class TestRunPreferenceAgent:
     @pytest.mark.asyncio
     async def test_llm_exception_falls_back(self):
         """LLM raises exception → graceful fallback."""
-        mock_llm = MagicMock()
-        mock_llm.invoke.side_effect = Exception("API timeout")
-
-        with patch("ai_engine.agents.preference_agent.get_fast_llm", return_value=mock_llm):
+        with patch("ai_engine.agents.preference_agent.invoke_with_fallback", side_effect=Exception("API timeout")):
             state = _make_state()
             result = await run_preference_agent(state)
 
@@ -341,10 +338,10 @@ class TestRunPreferenceAgent:
     @pytest.mark.asyncio
     async def test_extracted_preferences_populated(self):
         """After refinement, extracted_preferences is populated for downstream."""
-        mock_llm = MagicMock()
-        mock_llm.invoke.return_value.content = "{}"
+        mock_response = MagicMock()
+        mock_response.content = "{}"
 
-        with patch("ai_engine.agents.preference_agent.get_fast_llm", return_value=mock_llm):
+        with patch("ai_engine.agents.preference_agent.invoke_with_fallback", return_value=mock_response):
             state = _make_state()
             result = await run_preference_agent(state)
 
@@ -361,16 +358,16 @@ class TestRunPreferenceAgent:
     @pytest.mark.asyncio
     async def test_destination_passed_in_prompt(self):
         """Destination from state should be included in the LLM prompt."""
-        mock_llm = MagicMock()
-        mock_llm.invoke.return_value.content = "{}"
+        mock_response = MagicMock()
+        mock_response.content = "{}"
 
-        with patch("ai_engine.agents.preference_agent.get_fast_llm", return_value=mock_llm):
+        with patch("ai_engine.agents.preference_agent.invoke_with_fallback", return_value=mock_response) as mock_fn:
             state = _make_state(destination_city="Dubai")
             await run_preference_agent(state)
 
         # Verify the prompt sent to LLM contains the destination
-        call_args = mock_llm.invoke.call_args
-        messages = call_args[0][0]
+        call_args = mock_fn.call_args
+        messages = call_args[0][1]
         human_msg = messages[1].content
         assert "Dubai" in human_msg
 
@@ -382,10 +379,10 @@ class TestRunPreferenceAgent:
             "interests_remove": ["art"],
         }
 
-        mock_llm = MagicMock()
-        mock_llm.invoke.return_value.content = json.dumps(refinement_response)
+        mock_response = MagicMock()
+        mock_response.content = json.dumps(refinement_response)
 
-        with patch("ai_engine.agents.preference_agent.get_fast_llm", return_value=mock_llm):
+        with patch("ai_engine.agents.preference_agent.invoke_with_fallback", return_value=mock_response):
             state = _make_state()
             result = await run_preference_agent(state)
 
@@ -404,10 +401,10 @@ class TestRunPreferenceAgent:
             "food_preferences_remove": ["street food"],
         }
 
-        mock_llm = MagicMock()
-        mock_llm.invoke.return_value.content = json.dumps(refinement_response)
+        mock_response = MagicMock()
+        mock_response.content = json.dumps(refinement_response)
 
-        with patch("ai_engine.agents.preference_agent.get_fast_llm", return_value=mock_llm):
+        with patch("ai_engine.agents.preference_agent.invoke_with_fallback", return_value=mock_response):
             state = _make_state()
             result = await run_preference_agent(state)
 
@@ -424,10 +421,10 @@ class TestRunPreferenceAgent:
             "accommodation_preferences_remove": ["airbnb"],
         }
 
-        mock_llm = MagicMock()
-        mock_llm.invoke.return_value.content = json.dumps(refinement_response)
+        mock_response = MagicMock()
+        mock_response.content = json.dumps(refinement_response)
 
-        with patch("ai_engine.agents.preference_agent.get_fast_llm", return_value=mock_llm):
+        with patch("ai_engine.agents.preference_agent.invoke_with_fallback", return_value=mock_response):
             state = _make_state()
             result = await run_preference_agent(state)
 

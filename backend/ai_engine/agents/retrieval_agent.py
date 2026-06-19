@@ -140,7 +140,7 @@ async def run_retrieval_agent(state: TripState) -> TripState:
     4. Store filtered candidates in state for the Ranking Agent.
     """
     city = state.get("destination_city", "")
-    duration_days = state.get("duration_days", 3)
+    duration_days = state.get("duration_days") or 3
     preferences = state.get("extracted_preferences") or {}
     profile = state.get("profile") or {}
     interests = profile.get("interests", [])

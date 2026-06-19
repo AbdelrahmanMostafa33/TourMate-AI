@@ -81,6 +81,7 @@ class SessionManager:
                 self._redis_url,
                 decode_responses=True,
                 max_connections=10,
+                protocol=2,
             )
             # Verify connection
             await self._redis.ping()

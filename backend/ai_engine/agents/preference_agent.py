@@ -13,7 +13,7 @@ pipeline runs. The Preference Agent's job is now to:
 
 import json
 from langchain_core.messages import SystemMessage, HumanMessage
-from app.external.llm_client import get_fast_llm
+from ai_engine.llm_config import invoke_with_fallback
 from ai_engine.graph.state import TripState, TripProfile
 
 
@@ -169,8 +169,6 @@ async def run_preference_agent(state: TripState) -> TripState:
 
     # Step 1: Ask LLM to suggest refinements based on user message
     profile_context = _build_profile_context(profile)
-    llm = get_fast_llm()
-
     prompt = f"""User Message: "{user_message}"
 Destination: {destination or 'not specified'}
 
@@ -186,7 +184,7 @@ If the profile looks correct, return an empty object {{}}."""
     ]
 
     try:
-        response = llm.invoke(messages)
+        response = await invoke_with_fallback("preference", messages)
         raw = response.content.strip().strip("```json").strip("```").strip()
         refinements = json.loads(raw)
     except (json.JSONDecodeError, AttributeError, Exception) as e:

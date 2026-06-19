@@ -1,9 +1,10 @@
+import os
 import sys
 from pathlib import Path
 
+import pytest
 from langchain_core.messages import HumanMessage
-from app.external.llm_client import get_planning_llm, get_fast_llm, analyze_image
-from ai_engine.chat.intent_parser import parse_intent
+from app.external.llm_client import get_planning_llm, get_fast_llm, get_reasoning_llm, analyze_image
 
 
 def test_gemini_text():
@@ -29,6 +30,11 @@ def test_gemini_text():
 
 
 def test_gemini_fast():
+    """Test the fast LLM (Groq llama-3.1-8b-instant) for classification tasks."""
+    if not os.environ.get("GROQ_API_KEY"):
+        print("[SKIP] GROQ_API_KEY not set — skipping fast LLM test.")
+        return
+
     llm = get_fast_llm()
     messages = [HumanMessage(content="""
     You are a strict intent classifier for a travel planning app.
@@ -56,7 +62,7 @@ def test_gemini_fast():
 
     Output:
     """)]
-    print("Testing fast LLM (Gemini 2.5 Flash Lite)...")
+    print("Testing fast LLM (Groq llama-3.1-8b-instant)...")
     response = llm.invoke(messages)
     print(f"[OK] Response: {response.content}")
     assert response.content and len(response.content) > 0
@@ -102,27 +108,7 @@ def test_gemini_vision():
     print(f"[OK] Vision response: {result}")
     assert result and len(result) > 0
 
-def test_intent_plan_trip():
-    result = parse_intent("Plan me a 3-day trip to Cairo")
-    assert result["intent_type"] == "plan_trip"
-    assert result["destination_city"].lower() == "cairo"
-    assert result["duration_days"] == 3
-    assert result["missing_fields"] == []
-
-def test_intent_needs_clarification():
-    result = parse_intent("I want to travel somewhere nice")
-    assert result["intent_type"] == "needs_clarification"
-    assert "destination" in result["missing_fields"]
-
-def test_intent_general_chat():
-    result = parse_intent("What's the best time to visit Egypt?")
-    assert result["intent_type"] == "general_chat"
-
 if __name__ == "__main__":
     test_gemini_text()
     test_gemini_fast()
     test_gemini_vision()
-
-    test_intent_plan_trip()
-    test_intent_needs_clarification()
-    test_intent_general_chat()

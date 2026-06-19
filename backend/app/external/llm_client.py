@@ -1,48 +1,42 @@
-from langchain_google_genai import ChatGoogleGenerativeAI
+"""
+LLM client — thin wrappers around the shared registry.
+
+All agent-specific LLM creation is now driven by ``ai_engine.llm_config``.
+The functions here exist for backward compatibility so that existing
+callers (``get_fast_llm``, ``get_planning_llm``, etc.) keep working
+without changes.
+"""
+
+from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import HumanMessage
 import base64
 
-from ai_engine.constants import (
-    GEMINI_VISION_MODEL,
-    GEMINI_PLANNING_MODEL,
-    GEMINI_FAST_MODEL,
-    GEMINI_TEMPERATURE,
-    GEMINI_MAX_TOKENS,
-)
-from app.core.config import settings
-
-GOOGLE_API_KEY = settings.google_api_key
+from ai_engine.llm_config import get_llm_for_agent
 
 
-def get_planning_llm() -> ChatGoogleGenerativeAI:
-    """Gemini 2.5 Flash for itinerary generation (reasoning + large prompts)."""
-    return ChatGoogleGenerativeAI(
-        model=GEMINI_PLANNING_MODEL,
-        temperature=GEMINI_TEMPERATURE,
-        max_tokens=GEMINI_MAX_TOKENS,
-        google_api_key=GOOGLE_API_KEY,
-    )
+# ── Backward-compatible wrappers ──────────────────────────────────────────────
+
+def get_planning_llm() -> BaseChatModel:
+    """Gemini 2.5 Flash for itinerary generation."""
+    return get_llm_for_agent("planner")
 
 
-def get_fast_llm() -> ChatGoogleGenerativeAI:
-    """Gemini 2.5 Flash Lite for intent parsing and validation (fast + cheap)."""
-    return ChatGoogleGenerativeAI(
-        model=GEMINI_FAST_MODEL,
-        temperature=0.2,         # lower temp for classification tasks
-        max_tokens=2048,
-        google_api_key=GOOGLE_API_KEY,
-    )
-
-
-def get_vision_llm() -> ChatGoogleGenerativeAI:
+def get_vision_llm() -> BaseChatModel:
     """Gemini 2.5 Flash for image understanding (native multimodal)."""
-    return ChatGoogleGenerativeAI(
-        model=GEMINI_VISION_MODEL,
-        temperature=GEMINI_TEMPERATURE,
-        max_tokens=GEMINI_MAX_TOKENS,
-        google_api_key=GOOGLE_API_KEY,
-    )
+    return get_llm_for_agent("vision")
 
+
+def get_fast_llm() -> BaseChatModel:
+    """Groq Llama 3.1 8B for intent parsing, preference, validation."""
+    return get_llm_for_agent("intent_parser")
+
+
+def get_reasoning_llm() -> BaseChatModel:
+    """Groq Llama 3.3 70B for general chat and itinerary review Q&A."""
+    return get_llm_for_agent("general_chat")
+
+
+# ── Shared utilities ──────────────────────────────────────────────────────────
 
 def analyze_image(image_bytes: bytes, prompt: str) -> str:
     """

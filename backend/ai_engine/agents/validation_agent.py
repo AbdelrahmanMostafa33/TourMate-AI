@@ -9,7 +9,7 @@ Two-layer validation:
 import json
 from ai_engine.graph.state import TripState
 from ai_engine.tools.haversine import haversine
-from app.external.llm_client import get_fast_llm
+from ai_engine.llm_config import invoke_with_fallback
 from langchain_core.messages import SystemMessage, HumanMessage
 
 
@@ -148,8 +148,6 @@ async def run_validation_agent(state: TripState) -> TripState:
         return state
 
     # ── Layer 2: LLM quality check ──
-    llm = get_fast_llm()
-
     prog_context = ""
     if prog_issues:
         prog_context = f"\n\nProgrammatic issues found (non-critical):\n" + "\n".join(f"- {i}" for i in prog_issues)
@@ -168,7 +166,7 @@ Validate the itinerary now.
     ]
 
     try:
-        response = llm.invoke(messages)
+        response = await invoke_with_fallback("validator", messages)
         raw_content = response.content.strip().strip("```json").strip("```").strip()
         llm_result = json.loads(raw_content)
 

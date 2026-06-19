@@ -1,63 +1,109 @@
-
 import asyncio
+import json
 import os
 import sys
 
 # Add the current directory to sys.path to allow imports from ai_engine
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), ".")))
 
-# Mocking app.external.groq_client and other dependencies if necessary
-# But we already created groq_client.py in the correct place.
-
 from ai_engine.chat.conversation_agent import handle_chat
 
-async def main():
-    print("Starting AI Pipeline Test...")
-    
-    user_id = "test_user_123"
-    user_message = "Plan me a 2-day trip to Cairo focusing on history and food."
-    
-    print(f"User Message: {user_message}")
-    
-    try:
-        result = await handle_chat(user_id=user_id, user_message=user_message)
-        
-        print("\n--- Test Result ---")
+# ── Test messages ──────────────────────────────────────────────────────────
+
+# Single-turn: all 8 required slots provided at once
+SINGLE_TURN_MESSAGE = (
+    "Plan me a 2-day trip to Cairo focusing on history and food. "
+    "I have a moderate budget, love cultural experiences, prefer a moderate pace, "
+    "and I'm interested in history, art, and local cuisine. "
+    "I like boutique hotels."
+)
+
+# Multi-turn: simulate a real conversation flow
+MULTI_TURN_MESSAGES = [
+    "I want to visit Cairo for 2 days",
+    "Moderate budget, cultural style, moderate pace",
+    "I'm into history, art, and food. I love local cuisine. I prefer boutique hotels.",
+]
+
+
+async def test_single_turn():
+    """Test: complete info in one message → pipeline runs immediately."""
+    print("=" * 70)
+    print("TEST 1: Single-Turn (all fields in one message)")
+    print("=" * 70)
+
+    result = await handle_chat(
+        user_id="test_single_turn",
+        user_message=SINGLE_TURN_MESSAGE,
+    )
+
+    print(f"\nResponse Type: {result.get('response_type')}")
+    print(f"Phase: {result.get('phase')}")
+    print(f"Message: {result.get('message')[:200]}...")
+
+    itinerary = result.get("itinerary")
+    if itinerary:
+        print(f"\nGenerated Itinerary ({len(itinerary.get('days', []))} days):")
+        print(json.dumps(itinerary, indent=2, default=str)[:2000])
+    else:
+        print("\nNo itinerary generated.")
+        print(f"Full response: {json.dumps(result, indent=2, default=str)[:1000]}")
+
+
+async def test_multi_turn():
+    """Test: collect slots across multiple turns → pipeline runs when complete."""
+    print("\n" + "=" * 70)
+    print("TEST 2: Multi-Turn (slots collected across turns)")
+    print("=" * 70)
+
+    session_id = None
+
+    for i, msg in enumerate(MULTI_TURN_MESSAGES, 1):
+        print(f"\n--- Turn {i} ---")
+        print(f"User: {msg}")
+
+        result = await handle_chat(
+            user_id="test_multi_turn",
+            user_message=msg,
+            session_id=session_id,
+        )
+        session_id = result.get("session_id")
+
         print(f"Response Type: {result.get('response_type')}")
-        print(f"Message: {result.get('message')}")
-        
-        # Check for pipeline errors
-        if result.get("error"):
-            print(f"Pipeline Error: {result.get('error')}")
-        
+        print(f"Phase: {result.get('phase')}")
+        print(f"Agent: {result.get('message')[:200]}")
+
         itinerary = result.get("itinerary")
         if itinerary:
-            print("\nGenerated Itinerary:")
-            import json
-            print(json.dumps(itinerary, indent=2))
-        else:
-            print("\nNo itinerary generated.")
-            
-    except Exception as e:
-        print(f"\nError during test: {e}")
-        import traceback
-        traceback.print_exc()
+            print(f"\nGenerated Itinerary ({len(itinerary.get('days', []))} days):")
+            print(json.dumps(itinerary, indent=2, default=str)[:2000])
+            break
 
-if __name__ == "__main__":
-    # Check for GOOGLE_API_KEY in OS env first, then fall back to .env via pydantic-settings
+
+async def main():
+    print("TourMate AI Pipeline Test\n")
+
+    # Check for API key
     api_key = os.environ.get("GOOGLE_API_KEY")
     if not api_key:
         try:
             from app.core.config import settings
             api_key = settings.google_api_key
         except Exception:
-            # Settings() may fail if other required .env vars are missing
             api_key = None
 
     if not api_key:
-        print("Warning: GOOGLE_API_KEY not found in environment or .env file.")
-        print("Set GOOGLE_API_KEY in your .env file or as an environment variable.")
-    else:
-        print(f"GOOGLE_API_KEY loaded from {'env var' if os.environ.get('GOOGLE_API_KEY') else '.env file'}.")
-    
+        print("WARNING: No API key found. Set GOOGLE_API_KEY in .env or as env var.")
+        return
+
+    # Run tests
+    await test_single_turn()
+    await test_multi_turn()
+
+    print("\n" + "=" * 70)
+    print("ALL TESTS COMPLETE")
+    print("=" * 70)
+
+
+if __name__ == "__main__":
     asyncio.run(main())

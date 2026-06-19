@@ -62,19 +62,17 @@ MOCK_PLACES = [
 # ── LLM Response Builders ──────────────────────────────────────────────────
 
 def build_preference_llm_response(refinements: dict | None = None) -> MagicMock:
-    """Build a mock LLM that returns preference refinement JSON."""
-    llm = MagicMock()
+    """Build a mock response for invoke_with_fallback (preference refinement)."""
     response = MagicMock()
     response.content = json.dumps(refinements or {})
-    llm.invoke.return_value = response
-    return llm
+    return response
 
 
 def build_planning_llm_response(
     num_days: int = 2,
     num_stops_per_day: int = 3,
 ) -> MagicMock:
-    """Build a mock LLM that returns a valid itinerary JSON."""
+    """Build a mock response for invoke_with_fallback (planning itinerary)."""
     days = []
     place_ids = ["place_001", "place_002", "place_003", "place_004"]
     place_names = ["Egyptian Museum", "Khan El Khalili", "Pyramids of Giza", "Al-Azhar Park"]
@@ -130,19 +128,16 @@ def build_planning_llm_response(
         "days": days,
     }
 
-    llm = MagicMock()
     response = MagicMock()
     response.content = json.dumps(itinerary)
-    llm.invoke.return_value = response
-    return llm
+    return response
 
 
 def build_validation_llm_response(
     is_valid: bool = True,
     score: int = 85,
 ) -> MagicMock:
-    """Build a mock LLM that returns a validation result."""
-    llm = MagicMock()
+    """Build a mock response for invoke_with_fallback (validation)."""
     response = MagicMock()
     response.content = json.dumps({
         "is_valid": is_valid,
@@ -150,8 +145,7 @@ def build_validation_llm_response(
         "issues": [] if is_valid else ["Pacing could be improved"],
         "suggestions": ["Consider adding a lunch break"],
     })
-    llm.invoke.return_value = response
-    return llm
+    return response
 
 
 # ── State Builder ──────────────────────────────────────────────────────────

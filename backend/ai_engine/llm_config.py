@@ -1,0 +1,453 @@
+# ai_engine/llm_config.py
+
+"""
+Shared LLM configuration registry with API key rotation and rate-limit fallback.
+
+Centralizes all LLM provider assignments in one place so that swapping
+a provider for any agent is a single-line change.  Agents should call
+``get_llm_for_agent(role)`` instead of hard-coding provider-specific
+LLM constructors.
+
+Key rotation:
+    Set comma-separated API keys in your .env to enable automatic fallback:
+        GOOGLE_API_KEY=key1,key2,key3
+        GROQ_API_KEY=key1,key2,key3
+    When a key hits a 429 rate limit, the next available key is tried.
+
+Usage::
+
+    from ai_engine.llm_config import get_llm_for_agent, invoke_with_fallback
+
+    llm = get_llm_for_agent("planner")      # → Gemini 2.5 Flash
+    llm = get_llm_for_agent("intent_parser") # → Groq Llama 3.1 8B
+
+    # Automatic fallback on rate limits:
+    response = await invoke_with_fallback("planner", messages)
+"""
+
+from __future__ import annotations
+
+import time
+import logging
+from dataclasses import dataclass, field
+from enum import Enum
+from typing import Any, Dict, List, Optional, Type
+
+from langchain_core.language_models import BaseChatModel
+from langchain_core.messages import BaseMessage
+
+logger = logging.getLogger(__name__)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Provider enum
+# ══════════════════════════════════════════════════════════════════════════════
+
+class Provider(str, Enum):
+    """Supported LLM providers."""
+    GEMINI = "gemini"
+    GROQ   = "groq"
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# LLM config dataclass
+# ══════════════════════════════════════════════════════════════════════════════
+
+@dataclass(frozen=True)
+class LLMConfig:
+    """Immutable configuration for a single LLM endpoint."""
+    provider:    Provider
+    model:       str
+    temperature: float = 0.7
+    max_tokens:  int   = 8192
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Key Manager — multi-key rotation with rate-limit awareness
+# ══════════════════════════════════════════════════════════════════════════════
+
+class KeyManager:
+    """
+    Manages multiple API keys per provider with automatic rate-limit detection.
+
+    When a key hits a 429 error, it is marked as exhausted for a configurable
+    TTL (default 60 s).  The next available key is then used.  Once all keys
+    for a provider are exhausted, ``get_key()`` returns ``None`` so callers
+    can surface a clear "all keys exhausted" error.
+    """
+
+    def __init__(self) -> None:
+        # provider → ordered list of raw key strings
+        self._keys: Dict[Provider, List[str]] = {}
+        # provider → { key_string: expiry_timestamp }
+        self._exhausted: Dict[Provider, Dict[str, float]] = {}
+        # Per-provider round-robin index
+        self._rr_index: Dict[Provider, int] = {}
+
+    # ── Registration ─────────────────────────────────────────────────────────
+
+    def register_keys(self, provider: Provider, raw: str) -> None:
+        """
+        Parse a comma-separated key string and register the keys.
+
+        Call this once at startup for each provider.
+        """
+        keys = [k.strip() for k in raw.split(",") if k.strip()]
+        self._keys[provider] = keys
+        self._exhausted[provider] = {}
+        self._rr_index[provider] = 0
+        if keys:
+            logger.info(
+                "[KeyManager] Registered %d key(s) for %s",
+                len(keys), provider.value,
+            )
+
+    def get_key(self, provider: Provider) -> Optional[str]:
+        """
+        Return the next available (non-exhausted) key for *provider*.
+
+        Uses round-robin with automatic skip of exhausted keys.
+        Returns ``None`` if no keys are available.
+        """
+        keys = self._keys.get(provider, [])
+        if not keys:
+            return None
+
+        now = time.time()
+        exhausted = self._exhausted.get(provider, {})
+
+        # Purge expired entries
+        expired = [k for k, exp in exhausted.items() if exp <= now]
+        for k in expired:
+            del exhausted[k]
+
+        # Round-robin through keys, skipping exhausted ones
+        start = self._rr_index.get(provider, 0)
+        for i in range(len(keys)):
+            idx = (start + i) % len(keys)
+            candidate = keys[idx]
+            if candidate not in exhausted:
+                self._rr_index[provider] = (idx + 1) % len(keys)
+                return candidate
+
+        return None  # all keys exhausted
+
+    def mark_exhausted(
+        self,
+        provider: Provider,
+        key: str,
+        retry_after: float = 60.0,
+    ) -> None:
+        """Mark *key* as rate-limited for *retry_after* seconds."""
+        self._exhausted.setdefault(provider, {})[key] = (
+            time.time() + retry_after
+        )
+        logger.warning(
+            "[KeyManager] Key …%s exhausted for %s (retry in %.0fs)",
+            key[-4:], provider.value, retry_after,
+        )
+
+    def get_available_count(self, provider: Provider) -> int:
+        """Number of keys currently available (not exhausted) for *provider*."""
+        keys = self._keys.get(provider, [])
+        now = time.time()
+        exhausted = self._exhausted.get(provider, {})
+        return sum(
+            1 for k in keys
+            if k not in exhausted or exhausted[k] <= now
+        )
+
+    def get_total_count(self, provider: Provider) -> int:
+        """Total registered keys for *provider*."""
+        return len(self._keys.get(provider, []))
+
+
+# ── Singleton key manager (populated at import time from settings) ────────────
+
+key_manager = KeyManager()
+
+
+def _init_key_manager() -> None:
+    """Parse env vars and register keys for all providers."""
+    from app.core.config import settings
+
+    key_manager.register_keys(Provider.GEMINI, settings.google_api_key)
+    key_manager.register_keys(Provider.GROQ, settings.groq_api_key)
+
+
+# Run once on import
+_init_key_manager()
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Agent → LLM registry
+#
+#   Edit this mapping to change which provider / model an agent uses.
+#   Keys are agent role names used by get_llm_for_agent().
+# ══════════════════════════════════════════════════════════════════════════════
+
+AGENT_LLM_REGISTRY: Dict[str, LLMConfig] = {
+    # ── Groq — classification, extraction, validation (massive RPD headroom) ──
+    "router":         LLMConfig(Provider.GROQ, "llama-3.3-70b-versatile", temperature=0.3, max_tokens=2048),
+    "intent_parser":  LLMConfig(Provider.GROQ, "llama-3.1-8b-instant",  temperature=0.2, max_tokens=2048),
+    "preference":     LLMConfig(Provider.GROQ, "llama-3.1-8b-instant",  temperature=0.2, max_tokens=2048),
+    "validator":      LLMConfig(Provider.GROQ, "llama-3.1-8b-instant",  temperature=0.2, max_tokens=2048),
+    "clarification":  LLMConfig(Provider.GROQ, "llama-3.1-8b-instant",  temperature=0.2, max_tokens=2048),
+    "general_chat":   LLMConfig(Provider.GROQ, "llama-3.3-70b-versatile", temperature=0.7, max_tokens=8192),
+    "review_qa":      LLMConfig(Provider.GROQ, "llama-3.3-70b-versatile", temperature=0.7, max_tokens=8192),
+
+    # ── Gemini — planning (reasoning) and vision (multimodal) — 20 RPD ───────
+    "planner":        LLMConfig(Provider.GEMINI, "gemini-2.5-flash", temperature=0.7, max_tokens=8192),
+    "vision":         LLMConfig(Provider.GEMINI, "gemini-2.5-flash", temperature=0.7, max_tokens=8192),
+}
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Factory — returns the right LLM instance for a given agent role
+# ══════════════════════════════════════════════════════════════════════════════
+
+def _build_gemini_llm(config: LLMConfig, api_key: str | None = None) -> BaseChatModel:
+    """Create a ChatGoogleGenerativeAI instance from config."""
+    from langchain_google_genai import ChatGoogleGenerativeAI
+
+    if api_key is None:
+        api_key = key_manager.get_key(Provider.GEMINI) or ""
+
+    return ChatGoogleGenerativeAI(
+        model=config.model,
+        temperature=config.temperature,
+        max_tokens=config.max_tokens,
+        google_api_key=api_key,
+    )
+
+
+def _build_groq_llm(config: LLMConfig, api_key: str | None = None) -> BaseChatModel:
+    """Create a ChatGroq instance from config."""
+    from langchain_groq import ChatGroq
+
+    if api_key is None:
+        api_key = key_manager.get_key(Provider.GROQ) or ""
+
+    return ChatGroq(
+        model=config.model,
+        temperature=config.temperature,
+        max_tokens=config.max_tokens,
+        groq_api_key=api_key,
+    )
+
+
+_PROVIDER_BUILDERS = {
+    Provider.GEMINI: _build_gemini_llm,
+    Provider.GROQ:   _build_groq_llm,
+}
+
+
+def get_llm_for_agent(agent_role: str) -> BaseChatModel:
+    """
+    Return the configured LLM instance for *agent_role*.
+
+    Uses the next available key from ``key_manager``.
+    Raises ``ValueError`` if the role is unknown or all keys are exhausted.
+    """
+    config = AGENT_LLM_REGISTRY.get(agent_role)
+    if config is None:
+        available = ", ".join(sorted(AGENT_LLM_REGISTRY))
+        raise ValueError(
+            f"Unknown agent role '{agent_role}'. "
+            f"Available roles: {available}"
+        )
+
+    api_key = key_manager.get_key(config.provider)
+    if api_key is None:
+        total = key_manager.get_total_count(config.provider)
+        if total == 0:
+            raise RuntimeError(
+                f"No API keys configured for {config.provider.value}. "
+                f"Set {config.provider.value.upper()}_API_KEY in your .env file."
+            )
+        raise RuntimeError(
+            f"All {total} API key(s) for {config.provider.value} are exhausted "
+            f"(role: {agent_role}). Wait for rate-limit reset or add more keys."
+        )
+
+    builder = _PROVIDER_BUILDERS[config.provider]
+    return builder(config, api_key=api_key)
+
+
+def get_config_for_agent(agent_role: str) -> LLMConfig:
+    """Return the raw LLMConfig for an agent role (useful for logging / debugging)."""
+    config = AGENT_LLM_REGISTRY.get(agent_role)
+    if config is None:
+        available = ", ".join(sorted(AGENT_LLM_REGISTRY))
+        raise ValueError(
+            f"Unknown agent role '{agent_role}'. "
+            f"Available roles: {available}"
+        )
+    return config
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# invoke_with_fallback — automatic retry across keys on rate-limit errors
+# ══════════════════════════════════════════════════════════════════════════════
+
+def _is_rate_limit_error(exc: Exception) -> bool:
+    """Check whether an exception is a rate-limit (429) error."""
+    msg = str(exc).lower()
+    # Common 429 indicators across providers
+    return any(
+        kw in msg
+        for kw in (
+            "429", "rate limit", "ratelimit", "requests per",
+            "tokens per", "quota", "too many requests",
+        )
+    )
+
+
+def _parse_retry_after(exc: Exception) -> float:
+    """Try to extract a retry-after hint from the error message."""
+    import re
+    msg = str(exc)
+    # Look for patterns like "retry after 30" or "retry-after: 2"
+    match = re.search(r"retry[-\s]after[:\s]*(\d+)", msg, re.IGNORECASE)
+    if match:
+        return float(match.group(1))
+    # Look for "try again in Ns" or "available in Ns"
+    match = re.search(r"(?:try again|available|wait)[^.]*?(\d+)\s*s", msg, re.IGNORECASE)
+    if match:
+        return float(match.group(1))
+    return 60.0  # default fallback
+
+
+async def invoke_with_fallback(
+    agent_role: str,
+    messages: list[BaseMessage],
+    max_retries: int | None = None,
+    structured_output: type | None = None,
+) -> Any:
+    """
+    Invoke the LLM for *agent_role* with automatic key rotation on 429 errors.
+
+    Algorithm:
+        1. Get next available key from KeyManager.
+        2. Build LLM instance with that key.
+        3. Call ``llm.ainvoke(messages)``.
+        4. On success → return response.
+        5. On rate-limit error → mark key exhausted, go to step 1.
+        6. If no keys left → raise the last error.
+
+    Args:
+        agent_role:   Role name from ``AGENT_LLM_REGISTRY``.
+        messages:     LangChain message list.
+        max_retries:  Maximum number of retries.  Defaults to the total
+                      number of registered keys for the provider.
+        structured_output: Optional Pydantic model class for structured output.
+                           When provided, the LLM is bound with
+                           .with_structured_output(schema) for guaranteed valid JSON.
+
+    Returns:
+        The LLM response object (same as ``BaseChatModel.ainvoke``).
+
+    Raises:
+        The last rate-limit error if all keys are exhausted, or any
+        non-rate-limit error immediately.
+    """
+    config = AGENT_LLM_REGISTRY.get(agent_role)
+    if config is None:
+        available = ", ".join(sorted(AGENT_LLM_REGISTRY))
+        raise ValueError(
+            f"Unknown agent role '{agent_role}'. "
+            f"Available roles: {available}"
+        )
+
+    provider = config.provider
+    total_keys = key_manager.get_total_count(provider)
+
+    if max_retries is None:
+        max_retries = max(total_keys, 1)
+
+    last_error: Exception | None = None
+
+    for attempt in range(max_retries):
+        api_key = key_manager.get_key(provider)
+        if api_key is None:
+            logger.warning(
+                "[Fallback] No available keys for %s on role '%s' — stopping",
+                provider.value, agent_role,
+            )
+            break
+
+        try:
+            builder = _PROVIDER_BUILDERS[provider]
+            llm = builder(config, api_key=api_key)
+            if structured_output is not None:
+                llm = llm.with_structured_output(structured_output)
+            response = await llm.ainvoke(messages)
+            return response
+
+        except Exception as exc:
+            last_error = exc
+            if _is_rate_limit_error(exc):
+                retry_after = _parse_retry_after(exc)
+                key_manager.mark_exhausted(provider, api_key, retry_after)
+                logger.warning(
+                    "[Fallback] Key …%s rate-limited on '%s' (attempt %d/%d, retry in %.0fs)",
+                    api_key[-4:], agent_role, attempt + 1, max_retries, retry_after,
+                )
+                continue
+            # Non-rate-limit error — raise immediately
+            raise
+
+    # All retries exhausted
+    raise last_error or RuntimeError(
+        f"All API keys exhausted for {provider.value} (role: {agent_role})"
+    )
+
+
+def invoke_with_fallback_sync(
+    agent_role: str,
+    messages: list[BaseMessage],
+    max_retries: int | None = None,
+) -> Any:
+    """
+    Synchronous variant of ``invoke_with_fallback``.
+
+    Use this for synchronous callers like ``parse_intent``.
+    """
+    config = AGENT_LLM_REGISTRY.get(agent_role)
+    if config is None:
+        available = ", ".join(sorted(AGENT_LLM_REGISTRY))
+        raise ValueError(
+            f"Unknown agent role '{agent_role}'. "
+            f"Available roles: {available}"
+        )
+
+    provider = config.provider
+    total_keys = key_manager.get_total_count(provider)
+
+    if max_retries is None:
+        max_retries = max(total_keys, 1)
+
+    last_error: Exception | None = None
+
+    for attempt in range(max_retries):
+        api_key = key_manager.get_key(provider)
+        if api_key is None:
+            break
+
+        try:
+            builder = _PROVIDER_BUILDERS[provider]
+            llm = builder(config, api_key=api_key)
+            response = llm.invoke(messages)
+            return response
+
+        except Exception as exc:
+            last_error = exc
+            if _is_rate_limit_error(exc):
+                retry_after = _parse_retry_after(exc)
+                key_manager.mark_exhausted(provider, api_key, retry_after)
+                continue
+            raise
+
+    raise last_error or RuntimeError(
+        f"All API keys exhausted for {provider.value} (role: {agent_role})"
+    )

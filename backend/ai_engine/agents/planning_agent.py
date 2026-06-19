@@ -10,7 +10,7 @@ It produces a structured day-by-day itinerary choosing from candidates.
 
 import json
 from langchain_core.messages import SystemMessage, HumanMessage
-from app.external.llm_client import get_planning_llm
+from ai_engine.llm_config import invoke_with_fallback
 from ai_engine.graph.state import TripState
 from ai_engine.profiling.behavioral_profile import profile_to_text
 
@@ -127,9 +127,6 @@ async def run_planning_agent(state: TripState) -> TripState:
         else "No profile available."
     )
 
-    # Initialize itinerary-planning LLM.
-    llm = get_planning_llm()
-
     # Construct the user prompt.
     prompt = f"""
 User Request: {user_message}
@@ -150,7 +147,7 @@ Generate the itinerary now.
 
     try:
         # Ask the LLM to generate the itinerary.
-        response = llm.invoke(messages)
+        response = await invoke_with_fallback("planner", messages)
 
         # Remove possible markdown code fences around JSON output.
         raw = (

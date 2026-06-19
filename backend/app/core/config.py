@@ -15,7 +15,13 @@ class Settings(BaseSettings):
     SECRET_KEY: str
 
     # === AI (Gemini) ===
+    # Comma-separated for multiple keys: key1,key2,key3
     google_api_key: str = ""
+
+    # === AI (Groq) ===
+    # Comma-separated for multiple keys: key1,key2,key3
+    groq_api_key: str = ""
+
     backend_base_url: str = "http://localhost:8000"
 
     class Config:

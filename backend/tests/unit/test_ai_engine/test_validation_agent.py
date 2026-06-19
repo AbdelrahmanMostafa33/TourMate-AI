@@ -247,14 +247,13 @@ class TestRunValidationAgent:
         )
         state = _make_state(optimized_itinerary=itinerary)
 
-        mock_llm = MagicMock()
-        with patch("ai_engine.agents.validation_agent.get_fast_llm", return_value=mock_llm):
+        with patch("ai_engine.agents.validation_agent.invoke_with_fallback") as mock_fn:
             result = await run_validation_agent(state)
 
         assert result["is_valid"] is False
         assert result["validation"]["score"] == 30
         # LLM should NOT have been called
-        mock_llm.invoke.assert_not_called()
+        mock_fn.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_critical_distance_issue_skip_llm(self):
@@ -267,12 +266,11 @@ class TestRunValidationAgent:
         )
         state = _make_state(optimized_itinerary=itinerary)
 
-        mock_llm = MagicMock()
-        with patch("ai_engine.agents.validation_agent.get_fast_llm", return_value=mock_llm):
+        with patch("ai_engine.agents.validation_agent.invoke_with_fallback") as mock_fn:
             result = await run_validation_agent(state)
 
         assert result["is_valid"] is False
-        mock_llm.invoke.assert_not_called()
+        mock_fn.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_valid_itinerary_calls_llm(self):
@@ -283,25 +281,22 @@ class TestRunValidationAgent:
             "issues": [],
             "suggestions": ["Consider adding a local food tour"],
         }
-        mock_llm = MagicMock()
-        mock_llm.invoke.return_value.content = json.dumps(llm_response)
+        mock_response = MagicMock()
+        mock_response.content = json.dumps(llm_response)
 
         state = _make_validation_state()
-        with patch("ai_engine.agents.validation_agent.get_fast_llm", return_value=mock_llm):
+        with patch("ai_engine.agents.validation_agent.invoke_with_fallback", return_value=mock_response) as mock_fn:
             result = await run_validation_agent(state)
 
-        mock_llm.invoke.assert_called_once()
+        mock_fn.assert_called_once()
         assert result["validation"]["score"] == 90
         assert result["is_valid"] is True
 
     @pytest.mark.asyncio
     async def test_llm_failure_falls_back_to_programmatic(self):
         """LLM exception → fallback to programmatic result."""
-        mock_llm = MagicMock()
-        mock_llm.invoke.side_effect = Exception("API timeout")
-
         state = _make_validation_state()
-        with patch("ai_engine.agents.validation_agent.get_fast_llm", return_value=mock_llm):
+        with patch("ai_engine.agents.validation_agent.invoke_with_fallback", side_effect=Exception("API timeout")):
             result = await run_validation_agent(state)
 
         assert "LLM validation failed" in str(result["validation"]["issues"])
@@ -309,11 +304,11 @@ class TestRunValidationAgent:
     @pytest.mark.asyncio
     async def test_llm_invalid_json_falls_back(self):
         """LLM returns invalid JSON → graceful fallback."""
-        mock_llm = MagicMock()
-        mock_llm.invoke.return_value.content = "not json"
+        mock_response = MagicMock()
+        mock_response.content = "not json"
 
         state = _make_validation_state()
-        with patch("ai_engine.agents.validation_agent.get_fast_llm", return_value=mock_llm):
+        with patch("ai_engine.agents.validation_agent.invoke_with_fallback", return_value=mock_response):
             result = await run_validation_agent(state)
 
         # Should still have a validation result
@@ -331,14 +326,14 @@ class TestRunValidationAgent:
             "issues": ["Pacing could be improved"],
             "suggestions": [],
         }
-        mock_llm = MagicMock()
-        mock_llm.invoke.return_value.content = json.dumps(llm_response)
+        mock_response = MagicMock()
+        mock_response.content = json.dumps(llm_response)
 
         state = _make_state(optimized_itinerary=itinerary)
-        with patch("ai_engine.agents.validation_agent.get_fast_llm", return_value=mock_llm):
+        with patch("ai_engine.agents.validation_agent.invoke_with_fallback", return_value=mock_response) as mock_fn:
             result = await run_validation_agent(state)
 
-        mock_llm.invoke.assert_called_once()
+        mock_fn.assert_called_once()
         # Score should be reduced due to programmatic issue
         assert result["validation"]["score"] <= 70
 
@@ -355,11 +350,11 @@ class TestRunValidationAgent:
             "issues": [],
             "suggestions": [],
         }
-        mock_llm = MagicMock()
-        mock_llm.invoke.return_value.content = json.dumps(llm_response)
+        mock_response = MagicMock()
+        mock_response.content = json.dumps(llm_response)
 
         state = _make_state(optimized_itinerary=itinerary)
-        with patch("ai_engine.agents.validation_agent.get_fast_llm", return_value=mock_llm):
+        with patch("ai_engine.agents.validation_agent.invoke_with_fallback", return_value=mock_response):
             result = await run_validation_agent(state)
 
         # 2 programmatic issues × 5 points = 10 points reduction
@@ -369,14 +364,14 @@ class TestRunValidationAgent:
     async def test_user_message_included_in_prompt(self):
         """User's original message should be in the LLM prompt."""
         llm_response = {"is_valid": True, "score": 90, "issues": [], "suggestions": []}
-        mock_llm = MagicMock()
-        mock_llm.invoke.return_value.content = json.dumps(llm_response)
+        mock_response = MagicMock()
+        mock_response.content = json.dumps(llm_response)
 
         state = _make_validation_state(user_message="I want a romantic Paris trip")
-        with patch("ai_engine.agents.validation_agent.get_fast_llm", return_value=mock_llm):
+        with patch("ai_engine.agents.validation_agent.invoke_with_fallback", return_value=mock_response) as mock_fn:
             await run_validation_agent(state)
 
-        call_args = mock_llm.invoke.call_args
-        messages = call_args[0][0]
+        call_args = mock_fn.call_args
+        messages = call_args[0][1]
         human_msg = messages[1].content
         assert "romantic Paris trip" in human_msg
