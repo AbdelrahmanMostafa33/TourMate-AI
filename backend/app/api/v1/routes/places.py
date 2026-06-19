@@ -6,9 +6,11 @@ from typing import List, Optional
 
 from app.core.database import get_db
 from app.core.security import get_current_user
+from app.models.enums import PlaceCategory
 from app.schemas.place_search import (
     PlaceSearchRequest,
     PlaceSearchResponse,
+    VALID_CATEGORIES,
 )
 from app.services.places_service import PlaceSearchService
 
@@ -41,6 +43,18 @@ async def search_places(
     - Interests/tags
     - Location (lat/lng) with distance filter
     """
+    # ── Validate categories (return 400, not 422) ──────────────────────
+    if request.categories:
+        invalid = [c for c in request.categories if c not in VALID_CATEGORIES]
+        if invalid:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"Invalid category values: {invalid}. "
+                    f"Valid options are: {sorted(VALID_CATEGORIES)}"
+                ),
+            )
+
     service = PlaceSearchService(db)
 
     result = await service.search_places(

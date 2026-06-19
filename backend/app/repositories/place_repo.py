@@ -1,12 +1,16 @@
 """Place repository with complex search queries for AI Engine integration."""
 
 from typing import List, Optional, Tuple
-from sqlalchemy import select, and_, func
+from sqlalchemy import select, and_, or_, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.models.place import Place, AttractionDetails, RestaurantDetails, HotelDetails
+from app.models.enums import PlaceCategory
 from app.repositories.base_repo import BaseRepository
+
+# ── Allowlist of valid sort fields (prevents attribute injection) ───────────
+VALID_SORT_FIELDS = {"popularity_score", "rating", "name", "review_count", "price_level"}
 
 
 class PlaceRepository(BaseRepository):
@@ -40,7 +44,7 @@ class PlaceRepository(BaseRepository):
         """
         # ── Build base queries ──────────────────────────────────────────────
         query = select(Place)
-        count_query = select(func.count(Place.place_id))
+        # count_query is rebuilt after joins are determined (see below)
 
         filters = []
 
@@ -51,9 +55,19 @@ class PlaceRepository(BaseRepository):
         if country:
             filters.append(func.lower(Place.country) == country.lower())
 
-        # Category filter
+        # Category filter (convert strings to enum values)
         if categories:
-            filters.append(Place.category.in_(categories))
+            enum_categories = []
+            for cat in categories:
+                if isinstance(cat, str):
+                    try:
+                        enum_categories.append(PlaceCategory(cat))
+                    except ValueError:
+                        continue  # skip invalid categories
+                else:
+                    enum_categories.append(cat)
+            if enum_categories:
+                filters.append(Place.category.in_(enum_categories))
 
         # Rating filter
         if min_rating is not None:
@@ -65,33 +79,57 @@ class PlaceRepository(BaseRepository):
         if max_price_level is not None:
             filters.append(Place.price_level <= max_price_level)
 
-        # Interest/Tag filter
+        # Interest/Tag filter (broad search across multiple sources)
         if interests:
+            # Join detail tables for interest matching
             query = query.outerjoin(
                 AttractionDetails,
                 Place.place_id == AttractionDetails.place_id,
-            )
-            count_query = count_query.outerjoin(
-                AttractionDetails,
-                Place.place_id == AttractionDetails.place_id,
+            ).outerjoin(
+                RestaurantDetails,
+                Place.place_id == RestaurantDetails.place_id,
+            ).outerjoin(
+                HotelDetails,
+                Place.place_id == HotelDetails.place_id,
             )
 
-            # JSON contains check: AttractionDetails.tags @> '["interest"]'
-            tag_conditions = []
+            # Build interest conditions across multiple sources
+            interest_conditions = []
             for interest in interests:
-                tag_conditions.append(
-                    AttractionDetails.tags.op("@>")(f'["{interest}"]')
-                )
-            # Also match category directly
-            category_conditions = [Place.category.ilike(f"%{i}%") for i in interests]
-            filters.append(func.or_(*tag_conditions, *category_conditions))
+                escaped = f"%{interest}%"
+                interest_conditions.extend([
+                    # 1. Attraction tags (JSON contains)
+                    AttractionDetails.tags.op("@>")(f'["{interest}"]'),
+                    # 2. Attraction subcategory (fuzzy)
+                    AttractionDetails.subcategory.ilike(escaped),
+                    # 3. Restaurant cuisine type (COALESCE for nullable)
+                    func.coalesce(RestaurantDetails.cuisine_type, "").ilike(escaped),
+                    # 4. Hotel amenities (JSON contains)
+                    HotelDetails.amenities.op("@>")(f'["{interest}"]'),
+                    # 5. Place name (fuzzy)
+                    Place.name.ilike(escaped),
+                    # 6. Place description (COALESCE for nullable)
+                    func.coalesce(Place.description, "").ilike(escaped),
+                ])
+            filters.append(or_(*interest_conditions))
 
-        # ── Apply filters ───────────────────────────────────────────────────
+        # ── Apply filters to main query ────────────────────────────────────
         if filters:
             query = query.where(and_(*filters))
-            count_query = count_query.where(and_(*filters))
 
-        # Get total count
+        # ── Get total count (rebuilt with same joins + DISTINCT) ────────────
+        count_query = select(func.count(func.distinct(Place.place_id)))
+        # Re-apply the same outerjoins if interests are present
+        if interests:
+            count_query = count_query.outerjoin(
+                AttractionDetails, Place.place_id == AttractionDetails.place_id,
+            ).outerjoin(
+                RestaurantDetails, Place.place_id == RestaurantDetails.place_id,
+            ).outerjoin(
+                HotelDetails, Place.place_id == HotelDetails.place_id,
+            )
+        if filters:
+            count_query = count_query.where(and_(*filters))
         total_result = await self.session.execute(count_query)
         total = total_result.scalar() or 0
 
@@ -102,8 +140,10 @@ class PlaceRepository(BaseRepository):
             selectinload(Place.hotel_details),
         )
 
-        # ── Sorting ─────────────────────────────────────────────────────────
-        sort_column = getattr(Place, sort_by, Place.popularity_score)
+        # ── Sorting (with allowlist validation) ──────────────────────────────
+        if sort_by not in VALID_SORT_FIELDS:
+            sort_by = "popularity_score"
+        sort_column = getattr(Place, sort_by)
         if sort_desc:
             query = query.order_by(sort_column.desc().nullslast())
         else:
@@ -162,10 +202,34 @@ class PlaceRepository(BaseRepository):
         if not interest_tags and sub_category:
             interest_tags = [sub_category.lower()]
 
+        # Build tags list from all detail sources for richer search
+        all_tags: list[str] = []
+        seen_tags: set[str] = set()
+
+        def _add_tag(tag: str) -> None:
+            lower = tag.lower()
+            if lower not in seen_tags:
+                all_tags.append(lower)
+                seen_tags.add(lower)
+
+        for t in interest_tags:
+            _add_tag(t)
+        if cuisine_type:
+            _add_tag(cuisine_type)
+        if sub_category:
+            _add_tag(sub_category)
+
+        # Hotel amenities
+        amenities: list[str] = []
+        if hasattr(place, "hotel_details") and place.hotel_details:
+            amenities = place.hotel_details.amenities or []
+            for amenity in amenities:
+                _add_tag(amenity)
+
         return {
             "id": place.place_id,
             "name": place.name,
-            "category": place.category,
+            "category": place.category.value if place.category else "",
             "sub_category": sub_category,
             "lat": place.lat or 0,
             "lon": place.lng or 0,  # Map lng → lon for AI engine compatibility
@@ -173,8 +237,9 @@ class PlaceRepository(BaseRepository):
             "rating": place.rating or 0,
             "review_count": place.review_count or 0,
             "popularity_score": place.popularity_score or 0,
-            "interest_tags": interest_tags,
+            "interest_tags": all_tags,
             "cuisine_type": cuisine_type,
+            "amenities": amenities,
             "address": place.address or "",
             "hours": place.opening_hours or {},
             "photos": (place.photo_urls or [])[:1],

@@ -3,6 +3,11 @@
 from pydantic import BaseModel, Field
 from typing import Optional, List
 
+from app.models.enums import PlaceCategory
+
+# Valid category values for validation (used by route handler for 400 response)
+VALID_CATEGORIES = {e.value for e in PlaceCategory}
+
 
 class PlaceSearchRequest(BaseModel):
     """
