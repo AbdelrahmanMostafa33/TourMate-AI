@@ -76,13 +76,18 @@ def _apply_filters(
 
     Filtering steps:
     1. Hotels are filtered by accommodation preference.
-    2. Restaurants are filtered by cuisine type (food preferences).
-    3. Attractions are filtered by sub_category (interests).
-    4. Non-hotels must satisfy a minimum rating.
-    5. Non-hotels must be within a maximum distance from the
+    2. Restaurants always pass (every trip needs food).
+    3. Non-hotel, non-restaurant places must satisfy a minimum rating.
+    4. They must be within a maximum distance from the
        computed city/activity center.
-    6. Non-hotels should match the user's interests through
+    5. They should match the user's interests through
        category, tags, or keywords in the place name.
+
+    Note: Restaurant cuisine and attraction subcategory matching
+    are handled by the Ranking Agent as soft scoring signals,
+    not hard filters here. This prevents over-filtering when
+    the user's preferences are narrow (e.g. 'museums' would
+    reject all non-museum attractions).
 
     Returns:
         A filtered list of places suitable for itinerary generation.
@@ -107,15 +112,6 @@ def _apply_filters(
         preferences.get("accommodation_type")
         or (preferences.get("accommodation_style") or "").lower()
     )
-
-    # Determine the user's food preferences.
-    # Used to filter restaurants by cuisine type.
-    # Example values:
-    # ["street food", "local cuisine"]
-    food_preferences = [
-        fp.lower() for fp in preferences.get("food_preferences", [])
-        if fp
-    ]
 
     # Store places that pass all filtering criteria.
     filtered = []
@@ -159,68 +155,6 @@ def _apply_filters(
             continue
 
         # ==========================================================
-        # RESTAURANT FILTERING
-        # ==========================================================
-        # Restaurants are filtered by cuisine type, similar to
-        # how hotels are filtered by accommodation type.
-        #
-        # If the user specified food preferences, verify that
-        # the restaurant's cuisine matches at least one.
-        #
-        # Examples:
-        # User: "street food"
-        # Place cuisine: "Fast Food & Street Food" → match
-        #
-        # User: "local cuisine"
-        # Place cuisine: "Restaurant" → match (generic)
-        #
-        if place.get("category") == "restaurant" and food_preferences:
-            cuisine = (place.get("cuisine_type") or "").lower()
-
-            # Accept if any food preference partially matches
-            # the cuisine type, or vice versa.
-            cuisine_match = any(
-                fp in cuisine or cuisine in fp
-                for fp in food_preferences
-            )
-
-            # Also accept generic "restaurant" cuisine as a
-            # fallback — it's a catch-all category.
-            if not cuisine_match and cuisine != "restaurant":
-                continue
-
-        # ==========================================================
-        # ATTRACTION FILTERING
-        # ==========================================================
-        # Attractions are filtered by sub_category, similar to
-        # how restaurants are filtered by cuisine type.
-        #
-        # If the user specified interests, verify that
-        # the attraction's sub_category matches at least one.
-        #
-        # Examples:
-        # User: "history"
-        # Place sub_category: "history" → match
-        #
-        # User: "shopping"
-        # Place sub_category: "shopping" → match
-        #
-        if place.get("category") == "attractions" and interests:
-            sub_cat = (place.get("sub_category") or "").lower()
-
-            # Accept if any interest partially matches
-            # the sub_category, or vice versa.
-            sub_match = any(
-                i in sub_cat or sub_cat in i
-                for i in interests
-            ) if sub_cat else False
-
-            # Also accept attractions with no sub_category
-            # as a fallback — they might still match via tags or name.
-            if not sub_match and sub_cat:
-                continue
-
-        # ==========================================================
         # RATING FILTER
         # ==========================================================
         # Remove places with ratings below the minimum threshold.
@@ -252,7 +186,10 @@ def _apply_filters(
         # INTEREST RELEVANCE FILTER
         # ==========================================================
         #
-        # Keep the place if:
+        # Restaurants are ALWAYS kept — every trip needs food options.
+        # The Ranking Agent handles food_preferences vs cuisine_type scoring.
+        #
+        # For other places, keep if:
         #
         # 1. User did not specify interests.
         #    (broad search mode)
@@ -278,6 +215,11 @@ def _apply_filters(
         #    interest = "pyramid"
         #    place name = "Great Pyramid of Giza"
         #
+        # Restaurants skip this filter entirely.
+        if place.get("category") == "restaurant":
+            filtered.append(place)
+            continue
+
         if interests:
 
             # Category-based matching.
