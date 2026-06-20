@@ -1,5 +1,7 @@
 """Export all models so SQLAlchemy discovers them for metadata."""
 
+from app.core.database import Base  # noqa: F401 – needed by Alembic env.py
+
 # --- Enums (re-exported for convenience) ---
 from app.models.enums import (
     TripStatus, ItineraryStatus, StopStatus, TravelMode,
