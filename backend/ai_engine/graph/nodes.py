@@ -79,7 +79,10 @@ async def optimization_node(state: TripState) -> TripState:
     """
     OPTIMIZER AGENT NODE — Reorders stops by travel time.
     """
-    print("[Optimizer] Running optimization...")
+    draft = state.get("draft_itinerary")
+    days = len(draft.get("days", [])) if draft else 0
+    total_stops = sum(len(d.get("stops", [])) for d in (draft or {}).get("days", []))
+    print(f"[Optimizer] Optimizing {days} days, {total_stops} stops...")
     return await run_optimization_agent(state)
 
 
@@ -87,5 +90,7 @@ async def validation_node(state: TripState) -> TripState:
     """
     VALIDATION AGENT NODE — Programmatic + LLM validation.
     """
-    print("[Validator] Running validation...")
+    opt = state.get("optimized_itinerary")
+    days = len(opt.get("days", [])) if opt else 0
+    print(f"[Validator] Validating {days}-day itinerary...")
     return await run_validation_agent(state)

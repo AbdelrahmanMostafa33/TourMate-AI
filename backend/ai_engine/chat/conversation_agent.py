@@ -9,7 +9,11 @@ The shared routing logic lives in _process_message(), which both the synchronous
 (handle_chat) and streaming (handle_chat_stream) entry points delegate to.
 """
 
+from datetime import datetime, timezone, timedelta
 from typing import Optional
+
+# Timeout for PLAN_GENERATION phase — if exceeded, session is reset to SLOT_FILLING
+PLAN_GENERATION_TIMEOUT_MINUTES = 5
 
 # Core routing LLM that decides what the user wants (plan, clarify, chat, etc.)
 from ai_engine.chat.unified_router import route_message
@@ -59,9 +63,28 @@ async def _process_message(
 
     # ─────────────────────────────────────────────────────────────
     # CASE 1: System is currently generating itinerary
-    # We don't interrupt planning; just acknowledge user
+    # Check for timeout — if pipeline crashed, reset to slot-filling
     # ─────────────────────────────────────────────────────────────
     if state.phase == ConversationPhase.PLAN_GENERATION:
+
+        # Check if PLAN_GENERATION has timed out (pipeline crashed)
+        if state.plan_started_at:
+            started = datetime.fromisoformat(state.plan_started_at)
+            elapsed = datetime.now(timezone.utc) - started
+            if elapsed > timedelta(minutes=PLAN_GENERATION_TIMEOUT_MINUTES):
+                # Pipeline timed out — reset to slot-filling so user can retry
+                state.transition_to(ConversationPhase.SLOT_FILLING)
+                state.plan_started_at = None
+                response = {
+                    "response_type": "clarification",
+                    "message": "I ran into an issue generating your itinerary. Let's start fresh — what kind of trip are you thinking of?",
+                    "itinerary": None,
+                    "image_features": None,
+                }
+                state.add_user_message(effective_message)
+                state.add_assistant_message(response["message"])
+                return response
+
         response = {
             "response_type": "chat",
             "message": "I'm working on your personalized itinerary! It'll be ready shortly.",
@@ -102,6 +125,15 @@ async def _process_message(
     if action == "ask_clarification" and state.slots.is_complete():
         action = "plan_trip"
 
+    # Track which field we're asking about so the next turn can disambiguate
+    # short answers (e.g. 'mixed' → pace, not food_preferences)
+    if action in ("ask_clarification", "plan_trip") and not state.slots.is_complete():
+        missing = state.slots.missing_required()
+        if missing:
+            state.last_question_field = missing[0]
+    else:
+        state.last_question_field = None
+
     response = None
 
     # ─────────────────────────────────────────────────────────────
@@ -117,6 +149,7 @@ async def _process_message(
         # If all required info is collected → generate itinerary
         if state.slots.is_complete():
             state.transition_to(ConversationPhase.PLAN_GENERATION)
+            state.plan_started_at = datetime.now(timezone.utc).isoformat()
 
             response = await _handle_plan_trip(
                 user_id,
@@ -175,6 +208,7 @@ async def _process_message(
         if state.phase == ConversationPhase.ITINERARY_REVIEW:
 
             state.transition_to(ConversationPhase.PLAN_GENERATION)
+            state.plan_started_at = datetime.now(timezone.utc).isoformat()
 
             # Merge modification request into special_requests
             extracted = dict(router_result.extracted)
@@ -235,6 +269,7 @@ async def _process_message(
         # If enough info → generate new itinerary
         if state.slots.is_complete():
             state.transition_to(ConversationPhase.PLAN_GENERATION)
+            state.plan_started_at = datetime.now(timezone.utc).isoformat()
 
             response = await _handle_plan_trip(
                 user_id,

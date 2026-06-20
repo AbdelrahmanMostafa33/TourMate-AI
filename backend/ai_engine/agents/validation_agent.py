@@ -130,6 +130,10 @@ async def run_validation_agent(state: TripState) -> TripState:
     if not optimized or state.get("error"):
         state["is_valid"] = False
         state["validation"] = {"is_valid": False, "score": 0, "issues": ["No itinerary to validate"]}
+        state["agent_messages"] = (
+            state.get("agent_messages", [])
+            + ["[Validator] valid=False score=0 issues=1 (no itinerary)"]
+        )
         return state
 
     # ── Layer 1: Programmatic checks ──
@@ -145,6 +149,11 @@ async def run_validation_agent(state: TripState) -> TripState:
             "issues": prog_issues,
             "suggestions": ["Regenerate with fewer stops or shorter distances"],
         }
+        state["agent_messages"] = (
+            state.get("agent_messages", [])
+            + [f"[Validator] valid=False score=30 "
+               f"issues={len(prog_issues)} (critical)"]
+        )
         return state
 
     # ── Layer 2: LLM quality check ──
@@ -190,5 +199,14 @@ Validate the itinerary now.
             "issues": prog_issues + [f"LLM validation failed: {str(e)}"],
             "suggestions": [],
         }
+
+    # Log validation result for pipeline traceability.
+    val = state.get("validation", {})
+    state["agent_messages"] = (
+        state.get("agent_messages", [])
+        + [f"[Validator] valid={state.get('is_valid')} "
+           f"score={val.get('score', '?')} "
+           f"issues={len(val.get('issues', []))}"]
+    )
 
     return state

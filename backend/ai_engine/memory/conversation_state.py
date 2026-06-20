@@ -241,6 +241,8 @@ class ConversationState:
     updated_at:   str = ""
     turn_count:   int = 0
     max_history:  int = 20
+    last_question_field: Optional[str] = None  # which slot was last asked about (e.g. 'pace', 'budget_level')
+    plan_started_at: Optional[str] = None  # ISO-8601 timestamp when PLAN_GENERATION started (for timeout detection)
 
     def __post_init__(self):
         now = datetime.now(timezone.utc).isoformat()
@@ -265,6 +267,8 @@ class ConversationState:
             "updated_at":   self.updated_at,
             "turn_count":   self.turn_count,
             "max_history":  self.max_history,
+            "last_question_field": self.last_question_field,
+            "plan_started_at": self.plan_started_at,
         }
 
     @classmethod
@@ -282,6 +286,8 @@ class ConversationState:
             updated_at   = data.get("updated_at", ""),
             turn_count   = data.get("turn_count", 0),
             max_history  = data.get("max_history", 20),
+            last_question_field = data.get("last_question_field"),
+            plan_started_at = data.get("plan_started_at"),
         )
 
     # ── Mutations ────────────────────────────────────────────────────────────
@@ -313,6 +319,7 @@ class ConversationState:
     def set_itinerary(self, itinerary: Dict[str, Any]) -> None:
         """Store the generated itinerary and move to ITINERARY_REVIEW."""
         self.itinerary = itinerary
+        self.plan_started_at = None
         self.transition_to(ConversationPhase.ITINERARY_REVIEW)
 
     def approve_itinerary(self, itinerary_id: str) -> None:
@@ -327,6 +334,8 @@ class ConversationState:
         self.itinerary = None
         self.itinerary_id = None
         self.turn_count = 0
+        self.last_question_field = None
+        self.plan_started_at = None
         self.history.clear()
         self._touch()
 

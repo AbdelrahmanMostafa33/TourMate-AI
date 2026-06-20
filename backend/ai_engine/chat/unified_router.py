@@ -147,10 +147,21 @@ ROUTER_SYSTEM_PROMPT = """You are TourMate AI, a travel planning assistant havin
 - Food: {food}
 - Accommodation: {accommodation}
 - Still missing: {missing_fields}
+- Last question asked about: {last_question_field}
 {itinerary_context}
 
 ## Current Message
 The user just said: "{user_message}"
+
+## IMPORTANT: Disambiguation
+The 'Last question asked about' field tells you which slot you were asking about in your previous response.
+If the user gives a short single-word answer (like 'mixed', 'high', 'nature'), they are almost certainly
+answering THAT specific question — extract it into the corresponding field, NOT into other fields.
+
+Examples:
+- If last question was 'pace' and user says 'mixed' → pace: 'mixed', NOT food_preferences
+- If last question was 'budget_level' and user says 'high' → budget_level: 'high', NOT interests
+- If last question was 'interests' and user says 'nature' → interests: ['nature'], NOT pace
 
 ## Instructions
 1. **Extract ONLY from the Current Message above** — do NOT extract information from the Conversation History. The history is for context only.
@@ -317,6 +328,7 @@ async def route_message(state: ConversationState, user_message: str) -> RouterRe
         food=", ".join(slots.food_preferences) if slots.food_preferences else "not yet provided",
         accommodation=", ".join(slots.accommodation_preferences) if slots.accommodation_preferences else "not yet provided",
         missing_fields=missing_str,
+        last_question_field=state.last_question_field or "(first message, no previous question)",
         itinerary_context=itinerary_context,
         user_message=user_message,
     )

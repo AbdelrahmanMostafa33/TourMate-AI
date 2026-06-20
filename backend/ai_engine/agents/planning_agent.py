@@ -272,6 +272,32 @@ Generate the itinerary now.
             state.get("planning_attempts", 0) + 1
         )
 
+        # Log the planning outcome for pipeline traceability.
+        total_stops = sum(
+            len(day.get("stops", []))
+            for day in itinerary.get("days", [])
+        )
+        n_hotels = len(itinerary.get("accommodation_suggestions", []))
+        state["agent_messages"] = (
+            state.get("agent_messages", [])
+            + [f"[Planner] {len(candidates)} candidates → "
+               f"{len(itinerary.get('days', []))} days, "
+               f"{total_stops} stops, {n_hotels} hotels"]
+        )
+
+        # Log planning output for pipeline traceability.
+        total_stops = sum(
+            len(day.get("stops", []))
+            for day in itinerary.get("days", [])
+        )
+        n_hotels = len(itinerary.get("accommodation_suggestions", []))
+        state["agent_messages"] = (
+            state.get("agent_messages", [])
+            + [f"[Planner] {len(candidates)} candidates → "
+               f"{len(itinerary.get('days', []))} days, "
+               f"{total_stops} stops, {n_hotels} hotels"]
+        )
+
     except Exception as e:
         # Store failure reason so downstream agents can react.
         state["error"] = (

@@ -87,4 +87,19 @@ async def run_optimization_agent(state: TripState) -> TripState:
     # Save the optimized itinerary into the shared state.
     state["optimized_itinerary"] = optimized
 
+    # Log optimization results for pipeline traceability.
+    total_stops = sum(
+        len(day.get("stops", [])) for day in optimized.get("days", [])
+    )
+    total_travel = sum(
+        day.get("total_travel_time_minutes", 0)
+        for day in optimized.get("days", [])
+    )
+    state["agent_messages"] = (
+        state.get("agent_messages", [])
+        + [f"[Optimizer] {len(optimized.get('days', []))} days, "
+           f"{total_stops} stops, "
+           f"{total_travel:.0f} min total travel"]
+    )
+
     return state

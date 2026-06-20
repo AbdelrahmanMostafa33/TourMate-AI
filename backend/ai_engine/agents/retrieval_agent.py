@@ -29,12 +29,37 @@ MAX_DISTANCE_KM = 50
 
 
 def _compute_city_center(places: list[dict]) -> Optional[tuple[float, float]]:
-    """Compute the geographic centroid of non-hotel places."""
+    """
+    Compute the geographic center (centroid) of all non-hotel places.
+
+    The centroid is calculated by averaging the latitude and longitude
+    of every place that is NOT categorized as a hotel. This can be used
+    as a representative "city center" for planning activities while
+    ignoring accommodation locations.
+
+    Returns:
+        (latitude, longitude) tuple if non-hotel places exist.
+        None if the list contains only hotels or is empty.
+    """
+
+    # Filter out hotels because accommodation locations should not
+    # influence the activity center of the itinerary.
     non_hotel = [p for p in places if p.get("category") != "hotel"]
+
+    # If there are no attractions/restaurants/etc.,
+    # we cannot compute a meaningful center.
     if not non_hotel:
         return None
+
+    # Compute the average latitude of all non-hotel places.
+    # This gives the north-south center point.
     center_lat = sum(p["lat"] for p in non_hotel) / len(non_hotel)
+
+    # Compute the average longitude of all non-hotel places.
+    # This gives the east-west center point.
     center_lon = sum(p["lon"] for p in non_hotel) / len(non_hotel)
+
+    # Return the computed geographic centroid as (latitude, longitude).
     return (center_lat, center_lon)
 
 
@@ -44,69 +69,242 @@ def _apply_filters(
     city: str,
 ) -> list[dict]:
     """
-    Apply structured filters to the place set.
+    Apply structured filtering to a list of candidate places.
 
-    Filters applied:
-    - Category: match user interests (always keep hotels)
-    - Rating: minimum threshold
-    - Distance: within MAX_DISTANCE_KM of city center
-    - Interest tags: at least one tag matches user interests
+    The goal is to remove places that do not match the user's
+    preferences while preserving accommodation options.
+
+    Filtering steps:
+    1. Hotels are filtered by accommodation preference.
+    2. Restaurants are filtered by cuisine type (food preferences).
+    3. Attractions are filtered by sub_category (interests).
+    4. Non-hotels must satisfy a minimum rating.
+    5. Non-hotels must be within a maximum distance from the
+       computed city/activity center.
+    6. Non-hotels should match the user's interests through
+       category, tags, or keywords in the place name.
+
+    Returns:
+        A filtered list of places suitable for itinerary generation.
     """
+
+    # Compute the geographic center of activity locations.
+    # This is later used to eliminate places that are too far away.
     center = _compute_city_center(places)
+
+    # Convert user interests into a set for faster membership checks.
+    # Example:
+    # {"museum", "food", "shopping"}
     interests = set(preferences.get("interests_from_conversation", []))
-    # Prefer the mapped enum value, fall back to raw accommodation_style
+
+    # Determine the user's preferred accommodation type.
+    # Priority:
+    # 1. Structured enum value (accommodation_type)
+    # 2. Raw extracted text (accommodation_style)
+    # Example values:
+    # "hotel", "hostel", "resort", "boutique hotel"
     accommodation_type = (
         preferences.get("accommodation_type")
         or (preferences.get("accommodation_style") or "").lower()
     )
 
+    # Determine the user's food preferences.
+    # Used to filter restaurants by cuisine type.
+    # Example values:
+    # ["street food", "local cuisine"]
+    food_preferences = [
+        fp.lower() for fp in preferences.get("food_preferences", [])
+        if fp
+    ]
+
+    # Store places that pass all filtering criteria.
     filtered = []
+
+    # Evaluate each candidate place independently.
     for place in places:
-        # ── Hotels: filter by accommodation_type if preference specified ──
+
+        # ==========================================================
+        # HOTEL FILTERING
+        # ==========================================================
+        # Hotels are always considered separately because they
+        # should not be filtered by interests or distance.
         if place.get("category") == "hotel":
+
+            # If the user specified an accommodation preference,
+            # verify that the hotel's type matches.
             if accommodation_type:
+
+                # Normalize hotel's accommodation type.
                 place_acc = (place.get("accommodation_type") or "").lower()
-                # Match if the place's type contains the preference, or vice versa
-                # e.g. "boutique hotel" matches "hotel", "resort" matches "resort"
+
+                # Accept partial matches in either direction.
+                #
+                # Examples:
+                # User: "hotel"
+                # Place: "boutique hotel"
+                #
+                # User: "resort"
+                # Place: "luxury resort"
+                #
+                # User: "boutique hotel"
+                # Place: "hotel"
                 if not (
                     accommodation_type in place_acc
                     or place_acc in accommodation_type
                 ):
                     continue
+
+            # Hotel passed filtering.
             filtered.append(place)
             continue
 
-        # ── Rating filter ──
+        # ==========================================================
+        # RESTAURANT FILTERING
+        # ==========================================================
+        # Restaurants are filtered by cuisine type, similar to
+        # how hotels are filtered by accommodation type.
+        #
+        # If the user specified food preferences, verify that
+        # the restaurant's cuisine matches at least one.
+        #
+        # Examples:
+        # User: "street food"
+        # Place cuisine: "Fast Food & Street Food" → match
+        #
+        # User: "local cuisine"
+        # Place cuisine: "Restaurant" → match (generic)
+        #
+        if place.get("category") == "restaurant" and food_preferences:
+            cuisine = (place.get("cuisine_type") or "").lower()
+
+            # Accept if any food preference partially matches
+            # the cuisine type, or vice versa.
+            cuisine_match = any(
+                fp in cuisine or cuisine in fp
+                for fp in food_preferences
+            )
+
+            # Also accept generic "restaurant" cuisine as a
+            # fallback — it's a catch-all category.
+            if not cuisine_match and cuisine != "restaurant":
+                continue
+
+        # ==========================================================
+        # ATTRACTION FILTERING
+        # ==========================================================
+        # Attractions are filtered by sub_category, similar to
+        # how restaurants are filtered by cuisine type.
+        #
+        # If the user specified interests, verify that
+        # the attraction's sub_category matches at least one.
+        #
+        # Examples:
+        # User: "history"
+        # Place sub_category: "history" → match
+        #
+        # User: "shopping"
+        # Place sub_category: "shopping" → match
+        #
+        if place.get("category") == "attractions" and interests:
+            sub_cat = (place.get("sub_category") or "").lower()
+
+            # Accept if any interest partially matches
+            # the sub_category, or vice versa.
+            sub_match = any(
+                i in sub_cat or sub_cat in i
+                for i in interests
+            ) if sub_cat else False
+
+            # Also accept attractions with no sub_category
+            # as a fallback — they might still match via tags or name.
+            if not sub_match and sub_cat:
+                continue
+
+        # ==========================================================
+        # RATING FILTER
+        # ==========================================================
+        # Remove places with ratings below the minimum threshold.
         rating = place.get("rating", 0) or 0
+
         if rating < MIN_RATING:
             continue
 
-        # ── Distance filter ──
+        # ==========================================================
+        # DISTANCE FILTER
+        # ==========================================================
+        # Keep attractions reasonably close to the activity center.
         if center and MAX_DISTANCE_KM:
-            dist = haversine(center[0], center[1], place["lat"], place["lon"])
+
+            # Calculate great-circle distance between
+            # city center and current place.
+            dist = haversine(
+                center[0],
+                center[1],
+                place["lat"],
+                place["lon"]
+            )
+
+            # Skip places that are too far away.
             if dist > MAX_DISTANCE_KM:
                 continue
 
-        # ── Interest relevance filter ──
-        # Keep a place if:
-        # 1. No interests specified (broad search)
-        # 2. Its category matches an interest
-        # 3. Any of its interest_tags match
+        # ==========================================================
+        # INTEREST RELEVANCE FILTER
+        # ==========================================================
+        #
+        # Keep the place if:
+        #
+        # 1. User did not specify interests.
+        #    (broad search mode)
+        #
+        # OR
+        #
+        # 2. Place category matches.
+        #    Example:
+        #    interest = "museum"
+        #    category = "museum"
+        #
+        # OR
+        #
+        # 3. At least one interest tag matches.
+        #    Example:
+        #    interest = "history"
+        #    tags = ["history", "culture"]
+        #
+        # OR
+        #
+        # 4. Interest keyword appears in the place name.
+        #    Example:
+        #    interest = "pyramid"
+        #    place name = "Great Pyramid of Giza"
+        #
         if interests:
+
+            # Category-based matching.
             category_match = place.get("category", "") in interests
+
+            # Tag-based matching.
             tag_match = any(
                 t in interests
                 for t in place.get("interest_tags", [])
             )
+
+            # Keyword search in place name.
             name_match = any(
                 kw in place.get("name", "").lower()
                 for kw in interests
             )
+
+            # Reject place if none of the matching strategies succeed.
             if not (category_match or tag_match or name_match):
                 continue
 
+        # ==========================================================
+        # PLACE PASSED ALL FILTERS
+        # ==========================================================
         filtered.append(place)
 
+    # Return the final filtered candidate set.
     return filtered
 
 
@@ -147,35 +345,128 @@ async def run_retrieval_agent(state: TripState) -> TripState:
     """
     Main Retrieval Agent workflow.
 
-    1. Load all places for the destination city.
-    2. Apply structured filters based on extracted preferences.
-    3. Ensure minimum diversity across categories.
-    4. Store filtered candidates in state for the Ranking Agent.
+    The Retrieval Agent is responsible for finding candidate places
+    that match the user's trip requirements before itinerary planning.
+
+    Workflow:
+    1. Load all available places for the destination.
+    2. Apply preference-based filtering.
+    3. Ensure a balanced mix of place categories.
+    4. Store the resulting candidates for the Ranking Agent.
+
+    Returns:
+        Updated TripState containing filtered candidate places.
     """
+
+    # ==========================================================
+    # Extract required information from the shared TripState.
+    # These values were produced by previous agents in the pipeline.
+    # ==========================================================
+
+    # Destination city for which places should be retrieved.
     city = state.get("destination_city", "")
+
+    # Number of travel days.
+    # Default to 3 if not specified.
     duration_days = state.get("duration_days") or 3
+
+    # User preferences extracted from conversation.
+    # Examples:
+    # {
+    #     "accommodation_type": "hotel",
+    #     "interests_from_conversation": ["museum", "food"]
+    # }
     preferences = state.get("extracted_preferences") or {}
+
+    # User profile generated from earlier stages.
     profile = state.get("profile") or {}
+
+    # Long-term interests stored in the user profile.
     interests = profile.get("interests", [])
 
-    # Stage 1: Load all available places for the city
-    all_places = get_places_for_city(city, interests=interests)
+    # ==========================================================
+    # STAGE 1: Retrieve all available places.
+    # ==========================================================
+    #
+    # Query the place database for the destination city.
+    # Interest information may be used to improve retrieval.
+    #
+    all_places = get_places_for_city(
+        city,
+        interests=interests
+    )
 
+    # If no places exist for the destination,
+    # terminate early and record an error.
     if not all_places:
         state["filtered_places"] = []
         state["error"] = f"No places found for city: {city}"
         return state
 
-    # Stage 2: Apply structured filters
-    filtered = _apply_filters(all_places, preferences, city)
-
-    # Stage 3: Ensure category diversity
-    diverse = _ensure_diversity(filtered, duration_days)
-
-    state["filtered_places"] = diverse
-    state["agent_messages"] = (
-        state.get("agent_messages", [])
-        + [f"[RetrievalAgent] {len(all_places)} total → {len(filtered)} filtered → {len(diverse)} after diversity"]
+    # ==========================================================
+    # STAGE 2: Apply structured filtering.
+    # ==========================================================
+    #
+    # This removes places that do not satisfy:
+    # - accommodation preferences
+    # - minimum rating
+    # - maximum distance
+    # - interest relevance
+    #
+    filtered = _apply_filters(
+        all_places,
+        preferences,
+        city
     )
 
+    # ==========================================================
+    # STAGE 3: Ensure category diversity.
+    # ==========================================================
+    #
+    # Avoid returning only one type of place.
+    #
+    # Example:
+    # Instead of:
+    #   15 museums
+    #
+    # Return:
+    #   museums
+    #   restaurants
+    #   parks
+    #   shopping
+    #   landmarks
+    #
+    # The duration influences how many places are needed.
+    #
+    diverse = _ensure_diversity(
+        filtered,
+        duration_days
+    )
+
+    # ==========================================================
+    # Store the final candidate set.
+    # ==========================================================
+    #
+    # These places will become input for the Ranking Agent,
+    # which scores and orders them.
+    #
+    state["filtered_places"] = diverse
+
+    # Record diagnostic information for debugging
+    # and agent execution tracing.
+    #
+    # Example:
+    # [RetrievalAgent] 250 total → 80 filtered → 45 after diversity
+    #
+    state["agent_messages"] = (
+        state.get("agent_messages", [])
+        + [
+            f"[RetrievalAgent] "
+            f"{len(all_places)} total → "
+            f"{len(filtered)} filtered → "
+            f"{len(diverse)} after diversity"
+        ]
+    )
+
+    # Return updated state for the next LangGraph agent.
     return state

@@ -16,13 +16,6 @@ from typing import List, Optional
 # Path to the real data file (relative to this file's location)
 _DATA_FILE = Path(__file__).resolve().parent.parent.parent.parent / "data" / "cairo" / "cairo_places_class_diagram.json"
 
-# How many top places to keep per category type (sorted by popularity_score)
-_MAX_ATTRACTIONS = 40
-_MAX_RESTAURANTS = 20
-_MAX_HOTELS = 10
-
-
-
 
 def _normalize_place(raw: dict) -> dict:
     """
@@ -102,26 +95,27 @@ def _load_real_places() -> dict[str, List[dict]]:
     # Normalize all raw records to internal format
     normalized = [_normalize_place(p) for p in all_places]
 
-    # Select top attractions by popularity
+    # No per-category caps here — the full dataset flows downstream
+    # to the Retrieval Agent (filtering) and Ranking Agent (scoring +
+    # diversity), which handle candidate selection intelligently.
+    # Sorting by popularity ensures consistent ordering for debugging.
     attractions = sorted(
         [p for p in normalized if p["category"] == "attractions"],
         key=lambda x: x.get("popularity_score", 0),
         reverse=True,
-    )[:_MAX_ATTRACTIONS]
+    )
 
-    # Select top restaurants by popularity
     restaurants = sorted(
         [p for p in normalized if p["category"] == "restaurant"],
         key=lambda x: x.get("popularity_score", 0),
         reverse=True,
-    )[:_MAX_RESTAURANTS]
+    )
 
-    # Select top hotels by popularity
     hotels = sorted(
         [p for p in normalized if p["category"] == "hotel"],
         key=lambda x: x.get("popularity_score", 0),
         reverse=True,
-    )[:_MAX_HOTELS]
+    )
 
     cairo_places = attractions + restaurants + hotels
 
@@ -208,7 +202,8 @@ def get_places_for_city(
         # 1. It is a hotel.
         # 2. Its category matches a user interest.
         # 3. Its name contains an interest keyword.
-        # 4. One of its interest_tags matches a user interest.
+        # 4. Its sub_category matches a user interest.
+        # 5. One of its interest_tags matches a user interest.
         filtered = [
             p for p in places
             if p["category"] == "hotel"
@@ -217,6 +212,7 @@ def get_places_for_city(
                 kw in p["name"].lower()
                 for kw in interests_set
             )
+            or p.get("sub_category", "") in interests_set
             or any(
                 t in interests_set
                 for t in p.get("interest_tags", [])
