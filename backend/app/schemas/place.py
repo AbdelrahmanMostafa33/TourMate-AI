@@ -87,7 +87,6 @@ class RestaurantDetailsCreate(BaseModel):
     """Create schema for RestaurantDetails."""
     cuisine_type:        Optional[str]                = None
     avg_cost_per_person: Optional[float]              = None
-    opening_hours:       Optional[Dict[str, str]]     = None  # Map<DayOfWeek, String>
 
 
 class RestaurantDetailsResponse(BaseModel):
@@ -95,7 +94,6 @@ class RestaurantDetailsResponse(BaseModel):
     place_id:            str
     cuisine_type:        Optional[str]                = None
     avg_cost_per_person: Optional[float]              = None
-    opening_hours:       Optional[Dict[str, str]]     = None
 
     class Config:
         from_attributes = True
@@ -106,18 +104,14 @@ class RestaurantDetailsResponse(BaseModel):
 class AttractionDetailsCreate(BaseModel):
     """Create schema for AttractionDetails."""
     subcategory:   Optional[str]            = None
-    tags:          Optional[List[str]]      = None
     entry_fee:     Optional[float]          = None
-    opening_hours: Optional[Dict[str, str]] = None  # Map<DayOfWeek, String>
 
 
 class AttractionDetailsResponse(BaseModel):
     """Response schema for AttractionDetails."""
     place_id:      str
     subcategory:   Optional[str]            = None
-    tags:          Optional[List[str]]      = None
     entry_fee:     Optional[float]          = None
-    opening_hours: Optional[Dict[str, str]] = None
 
     class Config:
         from_attributes = True

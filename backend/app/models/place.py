@@ -82,7 +82,6 @@ class RestaurantDetails(Base):
     place_id            = Column(String, ForeignKey("places.place_id", ondelete="CASCADE"), primary_key=True)
     cuisine_type        = Column(String, nullable=True)
     avg_cost_per_person = Column(Float, nullable=True)
-    opening_hours       = Column(JSON, nullable=True)  # Map<DayOfWeek, String>
 
     # Relationships
     place = relationship("Place", back_populates="restaurant_details")
@@ -95,9 +94,7 @@ class AttractionDetails(Base):
 
     place_id      = Column(String, ForeignKey("places.place_id", ondelete="CASCADE"), primary_key=True)
     subcategory   = Column(String, nullable=True)
-    tags          = Column(JSON, nullable=True)          # List[str]
     entry_fee     = Column(Float, nullable=True)
-    opening_hours = Column(JSON, nullable=True)          # Map<DayOfWeek, String>
 
     # Relationships
     place = relationship("Place", back_populates="attraction_details")

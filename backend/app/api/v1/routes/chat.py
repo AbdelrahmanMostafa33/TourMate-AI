@@ -80,7 +80,6 @@ async def execute_actions(actions: list, trip: Trip, db: AsyncSession) -> list:
         itinerary = Itinerary(
             itinerary_id = str(uuid.uuid4()),
             trip_id      = trip.trip_id,
-            title        = f"Trip to {trip.destination}",
         )
         db.add(itinerary)
         await db.flush()
@@ -611,7 +610,6 @@ async def websocket_new_chat(
                     itinerary = Itinerary(
                         itinerary_id = str(uuid.uuid4()),
                         trip_id      = trip.trip_id,
-                        title        = f"Trip to {trip.destination}",
                     )
                     db.add(itinerary)
                     await db.flush()

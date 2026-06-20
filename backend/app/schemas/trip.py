@@ -57,7 +57,6 @@ class DayCreate(BaseModel):
     date:           Optional[date] = None
     theme:          Optional[str]  = None
     description:    Optional[str]  = None
-    estimated_cost: Optional[float] = None
     stops:          Optional[List[StopCreate]] = []
 
 
@@ -69,7 +68,6 @@ class DayResponse(BaseModel):
     date:           Optional[date]
     theme:          Optional[str]   = None
     description:    Optional[str]   = None
-    estimated_cost: Optional[float] = None
     stops:          List[StopResponse] = []
 
     class Config:
@@ -80,9 +78,7 @@ class DayResponse(BaseModel):
 
 class ItineraryCreate(BaseModel):
     """Create schema for Itinerary – aligns with model fields."""
-    title:               Optional[str]  = None
     description:         Optional[str]  = None
-    total_estimated_cost: Optional[float] = None
     days:                Optional[List[DayCreate]] = []
 
 
@@ -91,9 +87,7 @@ class ItineraryResponse(BaseModel):
     itinerary_id:         str
     trip_id:              str
     version_number:       int
-    title:                Optional[str]   = None
     description:          Optional[str]   = None
-    total_estimated_cost: Optional[float] = None
     status:               ItineraryStatus
     created_at:           datetime
     updated_at:           datetime
@@ -114,7 +108,6 @@ class TripCreate(BaseModel):
     number_of_travelers:   Optional[int]   = 1
     traveler_group_type:   Optional[TravelerGroupType] = None
     budget:                Optional[float] = None
-    preferences:           Optional[List[str]] = None
 
 
 class TripResponse(BaseModel):
@@ -129,7 +122,6 @@ class TripResponse(BaseModel):
     traveler_group_type:  Optional[TravelerGroupType] = None
     conversation_id:      Optional[str]   = None
     budget:               Optional[float]  = None
-    preferences:          Optional[List[str]] = None
     status:               TripStatus
     created_at:           datetime
     updated_at:           Optional[datetime] = None

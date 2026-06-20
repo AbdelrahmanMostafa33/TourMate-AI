@@ -26,13 +26,13 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    # ── Drop quizzes ──────────────────────────────────────────────────────────
-    op.drop_index("ix_quizzes_user_id", table_name="quizzes")
-    op.drop_table("quizzes")
+    # ── Drop quizzes (IF EXISTS for idempotency) ─────────────────────────────
+    op.execute("DROP INDEX IF EXISTS ix_quizzes_user_id")
+    op.execute("DROP TABLE IF EXISTS quizzes")
 
-    # ── Drop behavioral_profiles ──────────────────────────────────────────────
-    op.drop_index("ix_behavioral_profiles_user_id", table_name="behavioral_profiles")
-    op.drop_table("behavioral_profiles")
+    # ── Drop behavioral_profiles (IF EXISTS for idempotency) ─────────────────
+    op.execute("DROP INDEX IF EXISTS ix_behavioral_profiles_user_id")
+    op.execute("DROP TABLE IF EXISTS behavioral_profiles")
 
 
 def downgrade() -> None:
