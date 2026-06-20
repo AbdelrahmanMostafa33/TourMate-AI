@@ -58,9 +58,16 @@ async def _process_message(
     state.slots.merge(router_result.extracted)
     state.add_user_message(effective_message, metadata={"action": router_result.action})
 
+    # Post-merge override: if slots are now complete but the router
+    # returned ask_clarification (e.g. asking about optional group_size),
+    # override to plan_trip so the pipeline triggers.
+    action = router_result.action
+    if action == "ask_clarification" and state.slots.is_complete():
+        action = "plan_trip"
+
     response = None
 
-    if router_result.action == "plan_trip":
+    if action == "plan_trip":
         if state.phase == ConversationPhase.GREETING:
             state.transition_to(ConversationPhase.SLOT_FILLING)
         if state.slots.is_complete():
@@ -74,18 +81,18 @@ async def _process_message(
             response = {"response_type": "clarification", "message": router_result.response,
                         "itinerary": None, "image_features": image_features}
 
-    elif router_result.action == "ask_clarification":
+    elif action == "ask_clarification":
         if state.phase == ConversationPhase.GREETING:
             state.transition_to(ConversationPhase.SLOT_FILLING)
         response = {"response_type": "clarification", "message": router_result.response,
                     "itinerary": None, "image_features": image_features}
 
-    elif router_result.action == "approve_itinerary":
+    elif action == "approve_itinerary":
         state.approve_itinerary(itinerary_id=None)
         response = {"response_type": "chat", "message": router_result.response,
                     "itinerary": None, "image_features": None}
 
-    elif router_result.action == "modify_itinerary":
+    elif action == "modify_itinerary":
         if state.phase == ConversationPhase.ITINERARY_REVIEW:
             state.transition_to(ConversationPhase.PLAN_GENERATION)
             extracted = dict(router_result.extracted)
@@ -99,7 +106,7 @@ async def _process_message(
             response = {"response_type": "chat", "message": router_result.response,
                         "itinerary": None, "image_features": image_features}
 
-    elif router_result.action == "answer_question":
+    elif action == "answer_question":
         response = {"response_type": "chat", "message": router_result.response,
                     "itinerary": state.itinerary if state.phase == ConversationPhase.ITINERARY_REVIEW else None,
                     "image_features": image_features}
@@ -108,7 +115,7 @@ async def _process_message(
                     "itinerary": None, "image_features": image_features}
 
     # Handle COMPLETED phase — new trip detection
-    if state.phase == ConversationPhase.COMPLETED and router_result.action in ("plan_trip", "ask_clarification"):
+    if state.phase == ConversationPhase.COMPLETED and action in ("plan_trip", "ask_clarification"):
         state.reset_for_new_trip()
         state.slots.merge(router_result.extracted)
         if state.slots.is_complete():
@@ -213,6 +220,21 @@ def _build_profile_from_slots(slots: TripSlots, trip_id: str) -> dict:
     )
 
 
+def _build_conversation_context(state) -> str:
+    """
+    Build a conversation context summary from ConversationState history.
+
+    This gives downstream agents (preference, planning) the full picture
+    of what the user said across all turns, not just the last message.
+    """
+    lines = []
+    for msg in (state.history or []):
+        role = msg.role.capitalize()
+        content = (msg.content or "")[:150]  # truncate long messages
+        lines.append(f"{role}: {content}")
+    return "\n".join(lines)
+
+
 async def _handle_plan_trip(user_id, user_message, extracted, image_features, token=None, state=None):
     """Invokes the full LangGraph pipeline for itinerary generation."""
     trip_id = getattr(state, 'trip_id', None) or user_id
@@ -250,6 +272,12 @@ async def _handle_plan_trip(user_id, user_message, extracted, image_features, to
         "missing_fields": extracted.get("missing_fields", []),
         "agent_messages": [],
     }
+
+    # Build conversation context from history so downstream agents
+    # (preference, planning) have full context, not just the last message.
+    conv_context = _build_conversation_context(state) if state else None
+    if conv_context:
+        initial_state["conversation_context"] = conv_context
 
     result_state = await trip_graph.ainvoke(initial_state)
     return {

@@ -41,7 +41,8 @@ async def preference_node(state: TripState) -> TripState:
     PREFERENCE AGENT NODE — Extracts structured preferences from
     the user's message and behavioral profile.
     """
-    print(f"[PreferenceAgent] Extracting preferences for: {state['user_message'][:50]}...")
+    ctx = (state.get("conversation_context") or state.get("user_message", ""))[:80]
+    print(f"[PreferenceAgent] Refining profile (context: {ctx}...)")
     return await run_preference_agent(state)
 
 

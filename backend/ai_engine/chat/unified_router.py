@@ -174,6 +174,10 @@ The user just said: "{user_message}"
 - **Pace**: Always normalize to one of: 'relaxed', 'moderate', or 'packed'
   - 'slow', 'easy', 'leisurely' → 'relaxed'
   - 'busy', 'intense', 'full' → 'packed'
+  - 'mixed', 'flexible', 'varied' → 'moderate'
+
+## Important Rules
+- **NEVER change travel_style based on interests.** If the user says "I like history", extract interests: ['history'] — do NOT set travel_style to 'cultural'. travel_style is ONLY set when the user explicitly describes their travel STYLE (e.g. 'I want a solo trip', 'cultural travel', 'relaxation'). The style normalization mappings (history→cultural, chill→relaxation, etc.) ONLY apply when the user is describing their travel style, NOT when they are listing interests.
 - **Duration**: Return as a string of the number (e.g. '3', '5', '7')
 
 ## Extraction Rules
@@ -428,6 +432,19 @@ async def route_message(state: ConversationState, user_message: str) -> RouterRe
     # Apply regex fallback — fills gaps the LLM missed
     regex_result = _regex_extract(user_message)
     extracted = _merge_extracted(extracted, regex_result)
+
+    # Guard: only preserve travel_style if the current message contains
+    # an UNAMBIGUOUS style keyword. Words like 'history', 'museums',
+    # 'chill' overlap with interests and should NOT trigger style extraction
+    # — neither from the LLM nor from the regex fallback.
+    UNAMBIGUOUS_STYLE_KEYWORDS = {
+        "solo", "alone", "romantic", "adventure", "hiking",
+        "family", "kids", "cultural travel", "relaxation trip",
+    }
+    msg_lower = user_message.lower()
+    has_unambiguous_style = any(kw in msg_lower for kw in UNAMBIGUOUS_STYLE_KEYWORDS)
+    if not has_unambiguous_style and extracted.get("travel_style"):
+        del extracted["travel_style"]
 
     # If destination + duration are complete AND the current message
     # contributed new info (not just history), override to plan_trip.

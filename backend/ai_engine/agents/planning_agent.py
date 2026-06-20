@@ -26,7 +26,7 @@ You will receive:
 3. Pre-filtered candidate places (already ranked by relevance by upstream agents)
 
 Rules:
-- 3-5 stops per day
+- **2-5 stops per day (last day can be lighter with just 2 morning stops)**. Never create empty days or "departure day" entries with no stops.
 - Mix categories: don't stack 3 restaurants in a row
 - Prefer higher `score` places when interest overlap is equal
 - For each stop, copy `id`, `name`, `lat`, `lon` exactly as given

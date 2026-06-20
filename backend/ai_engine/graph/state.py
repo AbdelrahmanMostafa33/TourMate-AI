@@ -55,6 +55,10 @@ class TripState(TypedDict):
     user_message: str
     # Raw input from the user (e.g., "Plan me a 5-day trip to Paris")
 
+    conversation_context: Optional[str]
+    # Full conversation history summary for context-aware agents
+    # (preference, planning) — built from ConversationState.history
+
     token: Optional[str]
     # Firebase auth token for authenticated API calls (e.g. profile loading)
 

@@ -66,7 +66,11 @@ def _derive_scores(profile: TripProfile) -> dict:
     }
 
     # ── Luxury Score ──────────────────────────────────────────────
-    budget_map = {"budget": 0.15, "moderate": 0.5, "luxury": 0.9}
+    budget_map = {
+        "budget": 0.15,
+        "moderate": 0.5,
+        "luxury": 0.9
+    }
     scores["luxury_score"] = budget_map.get(profile.get("budget_level"), 0.5)
 
     # Boost if high-end accommodation
@@ -163,19 +167,24 @@ async def run_preference_agent(state: TripState) -> TripState:
     3. Calculate confidence
     4. Store enriched profile in state for downstream agents
     """
-    user_message = state.get("user_message", "")
+    # Use full conversation context (all turns) if available,
+    # falling back to just the last user message.
+    conversation_context = state.get("conversation_context") or state.get("user_message", "")
     profile = state.get("profile") or {}
     destination = state.get("destination_city", "")
 
-    # Step 1: Ask LLM to suggest refinements based on user message
+    # Step 1: Ask LLM to suggest refinements based on full conversation
     profile_context = _build_profile_context(profile)
-    prompt = f"""User Message: "{user_message}"
+    prompt = f"""Conversation History:
+{conversation_context}
+
 Destination: {destination or 'not specified'}
 
 Current Profile:
 {profile_context}
 
-Review this profile and suggest any refinements based on the user message.
+Review this profile and suggest any refinements based on the full conversation.
+Only change fields where the user explicitly stated a preference that differs from the current profile.
 If the profile looks correct, return an empty object {{}}."""
 
     messages = [
