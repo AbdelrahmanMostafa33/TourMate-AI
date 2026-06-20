@@ -27,13 +27,13 @@ def get_vision_llm() -> BaseChatModel:
 
 
 def get_fast_llm() -> BaseChatModel:
-    """Groq Llama 3.1 8B for intent parsing, preference, validation."""
-    return get_llm_for_agent("intent_parser")
+    """Groq Llama 3.1 8B for preference extraction and validation."""
+    return get_llm_for_agent("preference")
 
 
 def get_reasoning_llm() -> BaseChatModel:
-    """Groq Llama 3.3 70B for general chat and itinerary review Q&A."""
-    return get_llm_for_agent("general_chat")
+    """Groq Llama 3.3 70B for itinerary review Q&A."""
+    return get_llm_for_agent("review_qa")
 
 
 # ── Shared utilities ──────────────────────────────────────────────────────────

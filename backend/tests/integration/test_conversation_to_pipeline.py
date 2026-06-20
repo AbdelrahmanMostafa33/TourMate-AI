@@ -14,7 +14,7 @@ All external calls (LLM, Redis, OSRM, HTTP) are mocked.
 Agent logic (slot filling, profile building, phase transitions) runs for real.
 
 Updated: Uses unified router (route_message + RouterResult) instead of the
-old 3-call pattern (parse_intent + invoke_with_fallback).
+old 3-call pattern.
 """
 
 import pytest

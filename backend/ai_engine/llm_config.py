@@ -19,7 +19,7 @@ Usage::
     from ai_engine.llm_config import get_llm_for_agent, invoke_with_fallback
 
     llm = get_llm_for_agent("planner")      # → Gemini 2.5 Flash
-    llm = get_llm_for_agent("intent_parser") # → Groq Llama 3.1 8B
+    llm = get_llm_for_agent("router")        # → Groq Llama 3.3 70B
 
     # Automatic fallback on rate limits:
     response = await invoke_with_fallback("planner", messages)
@@ -189,11 +189,8 @@ _init_key_manager()
 AGENT_LLM_REGISTRY: Dict[str, LLMConfig] = {
     # ── Groq — classification, extraction, validation (massive RPD headroom) ──
     "router":         LLMConfig(Provider.GROQ, "llama-3.3-70b-versatile", temperature=0.3, max_tokens=2048),
-    "intent_parser":  LLMConfig(Provider.GROQ, "llama-3.1-8b-instant",  temperature=0.2, max_tokens=2048),
     "preference":     LLMConfig(Provider.GROQ, "llama-3.1-8b-instant",  temperature=0.2, max_tokens=2048),
     "validator":      LLMConfig(Provider.GROQ, "llama-3.1-8b-instant",  temperature=0.2, max_tokens=2048),
-    "clarification":  LLMConfig(Provider.GROQ, "llama-3.1-8b-instant",  temperature=0.2, max_tokens=2048),
-    "general_chat":   LLMConfig(Provider.GROQ, "llama-3.3-70b-versatile", temperature=0.7, max_tokens=8192),
     "review_qa":      LLMConfig(Provider.GROQ, "llama-3.3-70b-versatile", temperature=0.7, max_tokens=8192),
 
     # ── Gemini — planning (reasoning) and vision (multimodal) — 20 RPD ───────
@@ -411,7 +408,7 @@ def invoke_with_fallback_sync(
     """
     Synchronous variant of ``invoke_with_fallback``.
 
-    Use this for synchronous callers like ``parse_intent``.
+    Use this for synchronous callers (e.g. preference agent).
     """
     config = AGENT_LLM_REGISTRY.get(agent_role)
     if config is None:

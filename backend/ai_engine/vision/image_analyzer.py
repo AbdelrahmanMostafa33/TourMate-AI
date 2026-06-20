@@ -40,7 +40,7 @@ def analyze_travel_image(image_bytes: bytes) -> dict:
         # analyze_image() handles base64 encoding internally.
         raw_response: str = analyze_image(image_bytes, VISION_EXTRACTION_PROMPT)
 
-        # Strip markdown fences — same defensive pattern as intent_parser.py
+        # Strip markdown fences for safe JSON parsing
         cleaned = raw_response.strip().strip("```json").strip("```").strip()
 
         parsed = json.loads(cleaned)
