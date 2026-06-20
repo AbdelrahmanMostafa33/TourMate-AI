@@ -20,6 +20,15 @@ import sys
 # Add the current directory to sys.path to allow imports from ai_engine
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), ".")))
 
+# Load .env BEFORE any ai_engine imports so LangSmith env vars are available
+# when @traced decorators are applied at import time.
+from dotenv import load_dotenv
+load_dotenv()
+
+# Initialize LangSmith tracing status
+from ai_engine.observability import setup_langsmith
+setup_langsmith()
+
 from ai_engine.chat.conversation_agent import handle_chat
 from ai_engine.memory.redis_memory import get_session_manager
 from ai_engine.llm_config import token_tracker

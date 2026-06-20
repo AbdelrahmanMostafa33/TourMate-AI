@@ -16,6 +16,7 @@ from app.api.v1.routes import saved_places as saved_places_router
 from app.api.v1.routes import recommendations as recommendations_router
 from app.api.v1.routes import images as images_router
 from app.api.v1.routes import places as places_router
+from ai_engine.observability.tracing import setup_langsmith
 
 
 @asynccontextmanager
@@ -23,6 +24,10 @@ async def lifespan(app: FastAPI):
     # ── إنشاء الـ Tables لما السيرفر يشتغل ───────────────────────────────────
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+
+    # ── Initialize LangSmith tracing ───────────────────────────────────────
+    setup_langsmith()
+
     yield
 
 

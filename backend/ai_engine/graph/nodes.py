@@ -6,8 +6,10 @@ from ai_engine.agents.ranking_agent import run_ranking_agent
 from ai_engine.agents.planning_agent import run_planning_agent
 from ai_engine.agents.optimization_agent import run_optimization_agent
 from ai_engine.agents.validation_agent import run_validation_agent
+from ai_engine.observability import traced
 
 
+@traced(name="load_profile", tags=["agent", "profile"])
 async def load_profile_node(state: TripState) -> TripState:
     """
     ENTRY NODE — Loads the per-trip profile into TripState.
@@ -36,6 +38,7 @@ async def load_profile_node(state: TripState) -> TripState:
     return state
 
 
+@traced(name="preference_agent", tags=["agent", "preference"], metadata={"role": "preference"})
 async def preference_node(state: TripState) -> TripState:
     """
     PREFERENCE AGENT NODE — Extracts structured preferences from
@@ -46,6 +49,7 @@ async def preference_node(state: TripState) -> TripState:
     return await run_preference_agent(state)
 
 
+@traced(name="retrieval_agent", tags=["agent", "retrieval"], metadata={"role": "retrieval"})
 async def retrieval_node(state: TripState) -> TripState:
     """
     RETRIEVAL AGENT NODE — Filters places from the database using
@@ -55,6 +59,7 @@ async def retrieval_node(state: TripState) -> TripState:
     return await run_retrieval_agent(state)
 
 
+@traced(name="ranking_agent", tags=["agent", "ranking"], metadata={"role": "ranking"})
 async def ranking_node(state: TripState) -> TripState:
     """
     RANKING AGENT NODE — Scores candidates with multi-signal ranking
@@ -65,6 +70,7 @@ async def ranking_node(state: TripState) -> TripState:
     return await run_ranking_agent(state)
 
 
+@traced(name="planning_agent", tags=["agent", "planner"], metadata={"role": "planner"})
 async def planning_node(state: TripState) -> TripState:
     """
     PLANNING AGENT NODE — Generates the itinerary using the LLM,
@@ -75,6 +81,7 @@ async def planning_node(state: TripState) -> TripState:
     return await run_planning_agent(state)
 
 
+@traced(name="optimization_agent", tags=["agent", "optimizer"], metadata={"role": "optimizer"})
 async def optimization_node(state: TripState) -> TripState:
     """
     OPTIMIZER AGENT NODE — Reorders stops by travel time.
@@ -86,6 +93,7 @@ async def optimization_node(state: TripState) -> TripState:
     return await run_optimization_agent(state)
 
 
+@traced(name="validation_agent", tags=["agent", "validator"], metadata={"role": "validator"})
 async def validation_node(state: TripState) -> TripState:
     """
     VALIDATION AGENT NODE — Programmatic + LLM validation.
