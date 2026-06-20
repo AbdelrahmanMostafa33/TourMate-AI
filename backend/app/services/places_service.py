@@ -27,6 +27,7 @@ class PlaceSearchService:
         interests: Optional[List[str]] = None,
         lat: Optional[float] = None,
         lng: Optional[float] = None,
+        accommodation_type: Optional[str] = None,
         max_distance_km: Optional[float] = None,
         limit: int = 50,
         offset: int = 0,
@@ -51,6 +52,7 @@ class PlaceSearchService:
             interests=interests,
             lat=lat,
             lng=lng,
+            accommodation_type=accommodation_type,
             max_distance_km=max_distance_km,
             limit=limit,
             offset=offset,
@@ -63,6 +65,7 @@ class PlaceSearchService:
             "categories": categories,
             "min_rating": min_rating,
             "interests": interests,
+            "accommodation_type": accommodation_type,
         }
 
         return {

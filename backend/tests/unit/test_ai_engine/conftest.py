@@ -69,6 +69,7 @@ def _make_hotel(**overrides) -> dict:
         lon=31.24,
         interest_tags=[],
         sub_category="luxury hotel",
+        accommodation_type="hotel",
     )
     base.update(overrides)
     return base

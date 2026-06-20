@@ -4,6 +4,8 @@ from pydantic import BaseModel
 from typing import Optional, List, Dict
 from datetime import datetime
 
+from app.models.enums import AccommodationType
+
 
 # ─── Place (base) ────────────────────────────────────────────────────────────
 
@@ -59,19 +61,21 @@ class PlaceResponse(BaseModel):
 
 class HotelDetailsCreate(BaseModel):
     """Create schema for HotelDetails."""
-    star_class:        Optional[int]          = None
-    nightly_rate:      Optional[float]        = None
-    amenities:         Optional[List[str]]    = None
-    booking_platforms: Optional[List[str]]    = None
+    star_class:         Optional[int]              = None
+    nightly_rate:       Optional[float]            = None
+    amenities:          Optional[List[str]]        = None
+    booking_platforms:  Optional[List[str]]        = None
+    accommodation_type: Optional[AccommodationType] = None
 
 
 class HotelDetailsResponse(BaseModel):
     """Response schema for HotelDetails."""
-    place_id:          str
-    star_class:        Optional[int]          = None
-    nightly_rate:      Optional[float]        = None
-    amenities:         Optional[List[str]]    = None
-    booking_platforms: Optional[List[str]]    = None
+    place_id:           str
+    star_class:         Optional[int]              = None
+    nightly_rate:       Optional[float]            = None
+    amenities:          Optional[List[str]]        = None
+    booking_platforms:  Optional[List[str]]        = None
+    accommodation_type: Optional[AccommodationType] = None
 
     class Config:
         from_attributes = True

@@ -19,9 +19,51 @@ from ai_engine.agents.preference_agent import (
     _derive_scores,
     _calculate_confidence,
     run_preference_agent,
+    map_accommodation_to_enum,
 )
 from ai_engine.graph.state import TripProfile
 from tests.unit.test_ai_engine.conftest import _make_state, _make_profile
+
+
+# ── map_accommodation_to_enum Tests ──────────────────────────────────────
+
+class TestMapAccommodationToEnum:
+
+    def test_hostel_keyword(self):
+        assert map_accommodation_to_enum(["cheap hostel"]) == "hostel"
+
+    def test_resort_keyword(self):
+        assert map_accommodation_to_enum(["beach resort"]) == "resort"
+
+    def test_luxury_keyword(self):
+        assert map_accommodation_to_enum(["luxury hotel"]) == "luxury"
+
+    def test_boutique_keyword(self):
+        assert map_accommodation_to_enum(["boutique hotel"]) == "luxury"
+
+    def test_hotel_keyword(self):
+        assert map_accommodation_to_enum(["standard hotel"]) == "hotel"
+
+    def test_airbnb_keyword(self):
+        assert map_accommodation_to_enum(["airbnb apartment"]) == "hotel"
+
+    def test_unrecognized_returns_none(self):
+        assert map_accommodation_to_enum(["some random place"]) is None
+
+    def test_empty_list_returns_none(self):
+        assert map_accommodation_to_enum([]) is None
+
+    def test_first_match_wins(self):
+        assert map_accommodation_to_enum(["luxury resort"]) == "resort"
+
+    def test_case_insensitive(self):
+        assert map_accommodation_to_enum(["HOSTEL"]) == "hostel"
+
+    def test_five_star_maps_to_luxury(self):
+        assert map_accommodation_to_enum(["five star hotel"]) == "luxury"
+
+    def test_backpacker_maps_to_hostel(self):
+        assert map_accommodation_to_enum(["backpacker dorm"]) == "hostel"
 
 
 # ── _build_profile_context Tests ──────────────────────────────────────────────

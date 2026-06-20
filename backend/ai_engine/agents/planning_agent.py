@@ -32,6 +32,8 @@ Rules:
 - For each stop, copy `id`, `name`, `lat`, `lon` exactly as given
 - Hotels are NOT tour stops — they go in `accommodation_suggestions` at the top level
 - Pick 2-3 hotels from the hotel candidates, covering different price ranges
+- Use `accommodation_type` to match the user's accommodation preference (e.g. resort, hostel, hotel)
+- Include `accommodation_type` and `amenities` in accommodation_suggestions
 - Alternate indoor and outdoor attractions
 - Keep total walking time reasonable (check distances between consecutive stops)
 - Do not exceed 8 hours of activities per day
@@ -46,6 +48,7 @@ JSON schema:
       "id": string,
       "name": string,
       "sub_category": string,
+      "accommodation_type": string,
       "lat": float,
       "lon": float,
       "why_recommended": string,
@@ -80,7 +83,7 @@ def _trim_for_prompt(place: dict) -> dict:
     Reduce a place record to only the information needed
     by the LLM for itinerary planning.
     """
-    return {
+    trimmed = {
         "id": place["id"],
         "name": place["name"],
         "category": place["category"],
@@ -90,6 +93,11 @@ def _trim_for_prompt(place: dict) -> dict:
         "rating": place.get("rating", 0),
         "score": round(place.get("popularity_score", 0), 1),
     }
+    # Include accommodation_type for hotels so the LLM can filter by type
+    if place.get("category") == "hotel":
+        trimmed["accommodation_type"] = place.get("accommodation_type", "")
+        trimmed["amenities"] = place.get("amenities", [])
+    return trimmed
 
 
 async def run_planning_agent(state: TripState) -> TripState:
@@ -181,6 +189,8 @@ Generate the itinerary now.
             full = place_index.get(hotel.get("id"))
             if full:
                 hotel["category"] = full.get("category", "hotel")
+                hotel["accommodation_type"] = full.get("accommodation_type", "")
+                hotel["amenities"] = full.get("amenities", [])
                 hotel["photos"] = full.get("photos", [])[:1]
                 hotel["address"] = full.get("address")
                 hotel["maps_link"] = full.get("maps_link")

@@ -54,12 +54,25 @@ def _apply_filters(
     """
     center = _compute_city_center(places)
     interests = set(preferences.get("interests_from_conversation", []))
-    walking_tolerance = preferences.get("walking_tolerance", "medium")
+    # Prefer the mapped enum value, fall back to raw accommodation_style
+    accommodation_type = (
+        preferences.get("accommodation_type")
+        or (preferences.get("accommodation_style") or "").lower()
+    )
 
     filtered = []
     for place in places:
-        # ── Always keep hotels (needed for accommodation suggestions) ──
+        # ── Hotels: filter by accommodation_type if preference specified ──
         if place.get("category") == "hotel":
+            if accommodation_type:
+                place_acc = (place.get("accommodation_type") or "").lower()
+                # Match if the place's type contains the preference, or vice versa
+                # e.g. "boutique hotel" matches "hotel", "resort" matches "resort"
+                if not (
+                    accommodation_type in place_acc
+                    or place_acc in accommodation_type
+                ):
+                    continue
             filtered.append(place)
             continue
 

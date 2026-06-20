@@ -4,7 +4,7 @@
 from app.models.enums import (
     TripStatus, ItineraryStatus, StopStatus, TravelMode,
     StopClassification, TimeOfDay, TravelerGroupType,
-    PlaceCategory,
+    PlaceCategory, AccommodationType,
     BookingType, BookingStatus, BookingProvider,
     PaymentMethod, PaymentStatus, PaymentProvider,
     RecommendationType, RecommendationStatus,
