@@ -45,7 +45,6 @@ class ImageResponse(BaseModel):
     """Response schema for Image – aligns with model fields."""
     image_id:         str
     trip_id:          str
-    user_id:          str
     file_name:        str
     file_url:         Optional[str]
     uploaded_at:      datetime

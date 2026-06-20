@@ -26,7 +26,6 @@ def make_trip_create_data():
         "end_date": "2026-07-03",
         "number_of_travelers": 2,
         "budget": 1500.0,
-        "preferences": ["culture", "food"],
     }
 
 
@@ -41,7 +40,6 @@ def make_mock_trip(trip_id="trip_001", user_id="user_001"):
     trip.end_date = date(2026, 7, 3)
     trip.number_of_travelers = 2
     trip.budget = 1500.0
-    trip.preferences = ["culture", "food"]
     trip.status = TripStatus.planning
     trip.created_at = datetime.utcnow()
     trip.itineraries = []
@@ -75,16 +73,13 @@ def make_mock_itinerary(trip_id="trip_001"):
     day.date = date(2026, 7, 1)
     day.theme = None
     day.description = None
-    day.estimated_cost = None
     day.stops = [stop]
 
     itinerary = MagicMock(spec=Itinerary)
     itinerary.itinerary_id = itinerary_id
     itinerary.trip_id = trip_id
     itinerary.version_number = 1
-    itinerary.title = "Trip to Cairo"
     itinerary.description = None
-    itinerary.total_estimated_cost = None
     itinerary.status = ItineraryStatus.draft
     itinerary.created_at = datetime.utcnow()
     itinerary.updated_at = datetime.utcnow()
@@ -147,7 +142,6 @@ async def test_create_trip_success(mock_auth):
     assert trip_obj.user_id == "user_001"
     assert trip_obj.destination == "Cairo, Egypt"
     assert trip_obj.trip_name == "Cairo Adventure"
-    assert trip_obj.preferences == ["culture", "food"]
     assert trip_obj.number_of_travelers == 2
 
     # Response should have auto_message and conversation_id
@@ -324,27 +318,25 @@ async def test_update_trip_status_not_found(mock_auth):
 
 # ── Tests: build_auto_message helper ─────────────────────────────────────────
 
-def test_build_auto_message_includes_preferences():
-    """build_auto_message should include preferences when provided."""
+def test_build_auto_message_includes_budget():
+    """build_auto_message should include budget when provided."""
     from app.api.v1.routes.trips import build_auto_message
     from app.schemas.trip import TripCreate
 
     data = TripCreate(
         destination="Paris, France",
-        preferences=["romance", "wine"],
+        budget=2000.0,
     )
     msg = build_auto_message(data, delta=2)
     assert "Paris" in msg
-    assert "romance" in msg
-    assert "wine" in msg
+    assert "$2000" in msg
 
 
-def test_build_auto_message_no_preferences():
-    """build_auto_message should not include preferences section when None."""
+def test_build_auto_message_no_budget():
+    """build_auto_message should not include budget section when None."""
     from app.api.v1.routes.trips import build_auto_message
     from app.schemas.trip import TripCreate
 
     data = TripCreate(destination="Tokyo, Japan")
     msg = build_auto_message(data, delta=3)
     assert "Tokyo" in msg
-    assert "preferences" not in msg.lower() or "preferences are" not in msg

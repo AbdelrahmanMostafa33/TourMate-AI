@@ -110,9 +110,7 @@ class PlaceRepository(BaseRepository):
             for interest in interests:
                 escaped = f"%{interest}%"
                 interest_conditions.extend([
-                    # 1. Attraction tags (JSON contains)
-                    AttractionDetails.tags.op("@>")(f'["{interest}"]'),
-                    # 2. Attraction subcategory (fuzzy)
+                    # 1. Attraction subcategory (fuzzy)
                     AttractionDetails.subcategory.ilike(escaped),
                     # 3. Restaurant cuisine type (COALESCE for nullable)
                     func.coalesce(RestaurantDetails.cuisine_type, "").ilike(escaped),
@@ -206,7 +204,6 @@ class PlaceRepository(BaseRepository):
 
         if hasattr(place, "attraction_details") and place.attraction_details:
             sub_category = place.attraction_details.subcategory or ""
-            interest_tags = place.attraction_details.tags or []
             entry_fee = place.attraction_details.entry_fee
         elif hasattr(place, "restaurant_details") and place.restaurant_details:
             cuisine_type = place.restaurant_details.cuisine_type or ""

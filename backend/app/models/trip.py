@@ -26,7 +26,6 @@ class Trip(Base):
     traveler_group_type  = Column(SAEnum(TravelerGroupType, name="traveler_group_type"), nullable=True)
     conversation_id      = Column(String, ForeignKey("conversations.conversation_id"), nullable=True, index=True)
     budget               = Column(Float, nullable=True)
-    preferences          = Column(JSON, nullable=True)  # List[str]
     status               = Column(
         SAEnum(TripStatus, name="trip_status"),
         default=TripStatus.planning,

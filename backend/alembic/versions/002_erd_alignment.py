@@ -54,9 +54,9 @@ def upgrade() -> None:
     payment_provider = sa.Enum("stripe", "paypal", "apple_pay", "google_pay", "other", name="payment_provider")
     payment_provider.create(op.get_bind(), checkfirst=True)
 
-    # ── Drop old tables ───────────────────────────────────────────────────────
-    op.drop_table("quizzes")
-    op.drop_table("behavioral_profiles")
+    # ── Drop old tables (IF EXISTS for idempotency) ──────────────────────────
+    op.execute("DROP TABLE IF EXISTS quizzes")
+    op.execute("DROP TABLE IF EXISTS behavioral_profiles")
 
     # ── Create trip_profiles ───────────────────────────────────────────────────
     op.create_table(

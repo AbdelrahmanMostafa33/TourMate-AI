@@ -20,9 +20,7 @@ class Itinerary(Base):
     itinerary_id        = Column(String, primary_key=True)
     trip_id             = Column(String, ForeignKey("trips.trip_id", ondelete="CASCADE"), nullable=False, index=True)
     version_number      = Column(Integer, default=1)
-    title               = Column(String, nullable=True)
     description         = Column(Text, nullable=True)
-    total_estimated_cost = Column(Float, nullable=True)
     status              = Column(
         SAEnum(ItineraryStatus, name="itinerary_status"),
         default=ItineraryStatus.draft,
@@ -47,7 +45,6 @@ class Day(Base):
     date            = Column(Date, nullable=True)
     theme           = Column(String, nullable=True)
     description     = Column(Text, nullable=True)
-    estimated_cost  = Column(Float, nullable=True)
 
     # Relationships
     itinerary = relationship("Itinerary", back_populates="days")

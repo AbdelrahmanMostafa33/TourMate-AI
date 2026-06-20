@@ -18,7 +18,6 @@ class Image(Base):
 
     image_id          = Column(String, primary_key=True)
     trip_id           = Column(String, ForeignKey("trips.trip_id", ondelete="CASCADE"), nullable=False, index=True)
-    user_id           = Column(String, ForeignKey("users.user_id"), nullable=False, index=True)
     file_name         = Column(String, nullable=False)
     file_url          = Column(String, nullable=True)
     uploaded_at       = Column(DateTime, default=func.now())
@@ -30,7 +29,6 @@ class Image(Base):
 
     # Relationships
     trip     = relationship("Trip", back_populates="images")
-    user     = relationship("User", back_populates="images")
     features = relationship("ImageFeature", back_populates="image", cascade="all, delete-orphan")
 
 

@@ -118,10 +118,9 @@ def _make_place_model(**overrides):
     return place
 
 
-def _make_attraction_details(subcategory="museum", tags=None):
+def _make_attraction_details(subcategory="museum"):
     d = MagicMock()
     d.subcategory = subcategory
-    d.tags = tags or ["history", "art"]
     d.entry_fee = 50.0
     return d
 
@@ -153,16 +152,14 @@ def _place_to_dict(place) -> dict:
 class TestPlaceToDictEnrichment:
     """_place_to_dict should merge tags from all detail sources."""
 
-    def test_attraction_tags_included_in_interest_tags(self):
+    def test_attraction_subcategory_included_in_interest_tags(self):
         place = _make_place_model(
             attraction_details=_make_attraction_details(
-                subcategory="museum", tags=["history", "art", "culture"]
+                subcategory="museum"
             )
         )
         result = _place_to_dict(place)
-        assert "history" in result["interest_tags"]
-        assert "art" in result["interest_tags"]
-        assert "culture" in result["interest_tags"]
+        assert "museum" in result["interest_tags"]
 
     def test_cuisine_type_included_in_interest_tags(self):
         place = _make_place_model(
@@ -199,7 +196,7 @@ class TestPlaceToDictEnrichment:
     def test_subcategory_included_in_interest_tags(self):
         place = _make_place_model(
             attraction_details=_make_attraction_details(
-                subcategory="historic", tags=["history"]
+                subcategory="historic"
             )
         )
         result = _place_to_dict(place)
@@ -208,7 +205,7 @@ class TestPlaceToDictEnrichment:
     def test_tags_are_case_deduplicated(self):
         place = _make_place_model(
             attraction_details=_make_attraction_details(
-                subcategory="Italian", tags=["italian"]
+                subcategory="Italian"
             ),
             restaurant_details=_make_restaurant_details(cuisine_type="italian"),
         )

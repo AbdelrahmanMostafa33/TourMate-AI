@@ -31,8 +31,6 @@ def build_auto_message(data: TripCreate, delta: int) -> str:
         msg += f", for {data.number_of_travelers} travelers"
     if data.budget:
         msg += f", with a total budget of ${data.budget}"
-    if data.preferences:
-        msg += f", my preferences are: {', '.join(data.preferences)}"
     return msg
 
 
@@ -64,7 +62,6 @@ async def create_trip(
         end_date             = data.end_date,
         number_of_travelers  = data.number_of_travelers,
         budget               = data.budget,
-        preferences          = data.preferences,
     )
     db.add(trip)
     await db.flush()
@@ -73,7 +70,6 @@ async def create_trip(
     itinerary = Itinerary(
         itinerary_id = str(uuid.uuid4()),
         trip_id      = trip.trip_id,
-        title        = f"Trip to {data.destination}",
     )
     db.add(itinerary)
     await db.flush()
@@ -96,7 +92,6 @@ async def create_trip(
     # ── إنشاء Conversation ───────────────────────────────────────────────
     conversation = Conversation(
         conversation_id = str(uuid.uuid4()),
-        trip_id         = trip.trip_id,
         user_id         = user_id,
     )
     db.add(conversation)

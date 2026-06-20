@@ -47,7 +47,7 @@ def _normalize_place(raw: dict) -> dict:
     if raw.get("attractionDetails"):
         ad = raw["attractionDetails"]
         sub_category = ad.get("subcategory") or ""
-        interest_tags = ad.get("tags") or []
+        # tags field removed per new ERD; derive interest_tags from subcategory
     elif raw.get("restaurantDetails"):
         rd = raw["restaurantDetails"]
         cuisine_type = rd.get("cuisineType") or ""
