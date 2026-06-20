@@ -164,7 +164,7 @@ class TestTrimForPrompt:
         candidate = _make_candidate()
         trimmed = _trim_for_prompt(candidate)
 
-        expected_keys = {"id", "name", "category", "sub_category", "lat", "lon", "rating", "score"}
+        expected_keys = {"id", "name", "category", "sub_category", "interest_tags", "lat", "lon", "rating", "score"}
         assert set(trimmed.keys()) == expected_keys
 
     def test_hotel_includes_accommodation_type(self):
@@ -179,13 +179,22 @@ class TestTrimForPrompt:
         assert "accommodation_type" not in trimmed
         assert "amenities" not in trimmed
 
+    def test_restaurant_includes_cuisine_type(self):
+        restaurant = _make_restaurant_candidate()
+        trimmed = _trim_for_prompt(restaurant)
+        assert trimmed["cuisine_type"] == "local cuisine"
+
+    def test_non_restaurant_excludes_cuisine_type(self):
+        place = _make_candidate()
+        trimmed = _trim_for_prompt(place)
+        assert "cuisine_type" not in trimmed
+
     def test_removes_large_fields(self):
         candidate = _make_candidate()
         trimmed = _trim_for_prompt(candidate)
 
         assert "description" not in trimmed
         assert "review_count" not in trimmed
-        assert "interest_tags" not in trimmed
         assert "photos" not in trimmed
         assert "maps_link" not in trimmed
         assert "address" not in trimmed
