@@ -40,10 +40,14 @@ from ai_engine.vision.multimodal_fusion import fuse_image_with_profile
 # Profile loaders (real backend vs fallback mock profile)
 from ai_engine.tools.profile_tool import load_trip_profile, load_mock_profile
 
+# LangSmith tracing
+from ai_engine.observability import traced
+
 
 # ── Shared Core ────────────────────────────────────────────────────────────────
 
 
+@traced(name="process_message", tags=["conversation", "routing"], metadata={"component": "conversation_agent"})
 async def _process_message(
     user_id: str,
     state: ConversationState,
@@ -327,6 +331,7 @@ def _parse_image(image_bytes: Optional[bytes]) -> Optional[dict]:
 # ── Public API ─────────────────────────────────────────────────────────────────
 
 
+@traced(name="handle_chat", tags=["conversation", "entry_point"], metadata={"component": "conversation_agent"})
 async def handle_chat(
     user_id: str,
     user_message: str,
@@ -457,6 +462,7 @@ def _build_conversation_context(state) -> str:
     return "\n".join(lines)
 
 
+@traced(name="plan_trip_pipeline", tags=["conversation", "pipeline"], metadata={"component": "conversation_agent"})
 async def _handle_plan_trip(user_id, user_message, extracted, image_features, token=None, state=None):
     """Runs full LangGraph itinerary generation pipeline."""
 

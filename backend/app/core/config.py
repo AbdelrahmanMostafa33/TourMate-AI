@@ -24,6 +24,12 @@ class Settings(BaseSettings):
 
     backend_base_url: str = "http://localhost:8000"
 
+    # === LangSmith (Observability) ===
+    # Set these in your .env to enable tracing:
+    #   LANGCHAIN_TRACING_V2=true
+    #   LANGCHAIN_API_KEY=ls_...
+    #   LANGCHAIN_PROJECT=tourmate-ai
+
     class Config:
         env_file = ".env"
         extra = "ignore"

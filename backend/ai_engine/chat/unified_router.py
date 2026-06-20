@@ -27,6 +27,7 @@ from ai_engine.memory.conversation_state import (
     ConversationPhase,
 )
 from ai_engine.tools.slot_normalizer import normalize_extracted_slots
+from ai_engine.observability import traced
 
 logger = logging.getLogger(__name__)
 
@@ -143,6 +144,7 @@ ROUTER_SYSTEM_PROMPT = """You are TourMate AI, a travel planning assistant havin
 - Duration: {duration}
 - Budget: {budget}
 - Style: {style}
+- Pace: {pace}
 - Interests: {interests}
 - Food: {food}
 - Accommodation: {accommodation}
@@ -155,8 +157,8 @@ The user just said: "{user_message}"
 
 ## IMPORTANT: Disambiguation
 The 'Last question asked about' field tells you which slot you were asking about in your previous response.
-If the user gives a short single-word answer (like 'mixed', 'high', 'nature'), they are almost certainly
-answering THAT specific question — extract it into the corresponding field, NOT into other fields.
+If the user gives a short single-word answer, they are almost certainly answering THAT specific question —
+extract it into the corresponding field, NOT into other fields.
 
 Examples:
 - If last question was 'pace' and user says 'mixed' → pace: 'mixed', NOT food_preferences
@@ -171,43 +173,32 @@ Examples:
    - Good: "Cairo! Great choice. How many days are you thinking?"
    - Bad: "Please provide your destination and duration."
 5. Ask for ONE thing at a time, not everything at once
-6. NEVER confirm or ask "Is that correct?" — if the user provides a clear answer, accept it immediately and move on to the next question. Confirmation turns waste the user's time.
+6. NEVER confirm or ask "Is that correct?" — if the user provides a clear answer, accept it immediately and move on.
    - Bad: "You've indicated a high budget. Is that correct?"
    - Good: "Great, high budget! What kind of travel style are you thinking of?"
-7. If ALL required info is collected (destination + duration + budget + style + interests + food + accommodation), set action to "plan_trip"
+7. If ALL required info is collected (destination + duration + budget + style + pace + interests + food + accommodation), set action to "plan_trip"
 8. If they ask a travel question, answer it naturally and helpfully
 9. If they approve an itinerary, confirm it warmly
 10. If they request changes to an itinerary, acknowledge and set action to "modify_itinerary"
 11. Be warm but concise — no filler words like "I understand", "Certainly!", "Of course!"
 12. Respond in the same language the user writes in
 
-## Extraction Guidance
-- **Budget**: Detect budget intent and extract the raw phrase. A downstream normalizer
-  will canonicalize to 'budget', 'moderate', or 'luxury'. Just capture the user's words.
-- **Style**: Extract travel style ONLY when the user explicitly describes their travel STYLE
-  (e.g. 'I want a solo trip', 'cultural travel', 'relaxation'). Do NOT confuse interests
-  with style — 'I like history' → interests: ['history'], NOT travel_style: 'cultural'.
-- **Pace**: Detect pace intent and extract the raw phrase. A downstream normalizer will
-  canonicalize to 'relaxed', 'moderate', or 'packed'.
-- **Accommodation**: Extract the user's accommodation preference as a natural language phrase.
-  A downstream normalizer will map to canonical types (hostel, hotel, resort, luxury hotel).
+## Extraction Rules
+- **Budget**: Extract the raw phrase. A downstream normalizer canonicalizes to 'budget', 'moderate', or 'luxury'.
+- **Style**: Extract ONLY when the user explicitly describes their travel STYLE
+  (e.g. 'I want a solo trip', 'cultural travel'). Do NOT confuse interests with style —
+  'I like history' → interests: ['history'], NOT travel_style: 'cultural'.
+- **Pace**: Extract the raw phrase. A downstream normalizer canonicalizes to 'relaxed', 'moderate', or 'packed'.
+- **Interests**: Extract the user's exact words. Common mappings: 'parks' → 'nature',
+  'museums' → 'history'. Do NOT substitute your own terms — use what the user said.
+- **Food preferences**: Extract from phrases like 'local food', 'street food', 'vegetarian', etc.
+- **Accommodation**: Extract as a phrase containing: 'hotel', 'hostel', 'resort', 'luxury', 'boutique', 'palace'.
   Return as a list with ONE item, e.g. ['boutique hotel'] not ['luxury', 'boutique', 'hotel'].
 - **Duration**: Return as a string of the number (e.g. '3', '5', '7')
-
-## Important Rules
-- **NEVER change travel_style based on interests.** travel_style is ONLY set when the user
-  explicitly describes their travel STYLE, not when listing interests.
-- **NEVER ask for information they already provided** — check the Current State above.
-
-## Extraction Rules
-- **Food preferences**: Extract from phrases like 'local food', 'street food', 'vegetarian', etc.
-- **Interests**: Extract from phrases like 'history', 'architecture', 'art', 'shopping', etc.
-- **Accommodation**: Extract as a phrase containing: 'hotel', 'hostel', 'resort', 'luxury', 'boutique', 'palace'.
 - **If the user sends a greeting or casual message with no new travel info, do NOT extract any slots — leave extracted empty.**"""
 
 
 # ── Context Building ─────────────────────────────────────────────────────────
-
 def _build_conversation_history(state: ConversationState, max_messages: int = 10) -> str:
     """Build a text summary of recent conversation for the LLM prompt."""
     recent = state.history[-max_messages:]
@@ -300,6 +291,7 @@ def _build_extracted_dict(extracted: ExtractedSlots) -> dict:
 
 # ── Main Router Function ─────────────────────────────────────────────────────
 
+@traced(name="unified_router", tags=["conversation", "router"], metadata={"component": "unified_router"})
 async def route_message(state: ConversationState, user_message: str) -> RouterResult:
     """
     Single context-aware LLM call with structured output.
@@ -324,6 +316,7 @@ async def route_message(state: ConversationState, user_message: str) -> RouterRe
         duration=f"{slots.duration_days} days" if slots.duration_days else "not yet provided",
         budget=slots.budget_level or "not yet provided",
         style=slots.travel_style or "not yet provided",
+        pace=slots.pace or "not yet provided",
         interests=", ".join(slots.interests) if slots.interests else "not yet provided",
         food=", ".join(slots.food_preferences) if slots.food_preferences else "not yet provided",
         accommodation=", ".join(slots.accommodation_preferences) if slots.accommodation_preferences else "not yet provided",
