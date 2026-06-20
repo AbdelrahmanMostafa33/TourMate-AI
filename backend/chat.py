@@ -14,7 +14,6 @@ Commands:
 """
 
 import asyncio
-import json
 import os
 import sys
 
@@ -23,6 +22,7 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), ".")))
 
 from ai_engine.chat.conversation_agent import handle_chat
 from ai_engine.memory.redis_memory import get_session_manager
+from ai_engine.llm_config import token_tracker
 
 
 # ── Formatting helpers ─────────────────────────────────────────────────────
@@ -42,7 +42,7 @@ def print_header():
 ║                  🌍 TourMate AI — Interactive Chat           ║
 ║                                                              ║
 ║  Type your travel request and I'll plan your trip!           ║
-║  Commands: /quit  /reset  /debug  /history  /slots  /session ║
+║  Commands: /quit  /reset  /debug  /history  /usage  /help   ║
 ╚══════════════════════════════════════════════════════════════╝{RESET}
 """)
 
@@ -156,6 +156,7 @@ async def chat_loop():
                 None, lambda: input(f"{GREEN}{BOLD}You ▸ {RESET}")
             )
         except (EOFError, KeyboardInterrupt):
+            token_tracker.print_summary()
             print(f"\n{DIM}Goodbye! 👋{RESET}")
             break
 
@@ -169,6 +170,7 @@ async def chat_loop():
         cmd = user_input.lower()
 
         if cmd in ("/quit", "/exit", "/q"):
+            token_tracker.print_summary()
             print(f"{DIM}Goodbye! 👋{RESET}")
             break
 
@@ -252,6 +254,10 @@ async def chat_loop():
                 print(f"{DIM}No active session yet.{RESET}\n")
             continue
 
+        elif cmd == "/usage":
+            token_tracker.print_summary()
+            continue
+
         elif cmd in ("/help", "/h", "?"):
             print(f"""
 {BOLD}Commands:{RESET}
@@ -261,6 +267,7 @@ async def chat_loop():
   /history       Show conversation history
   /slots         Show collected trip slots
   /session       Show session info (ID, phase, turns)
+  /usage         Show token usage summary
   /help          Show this help message
 """)
             continue

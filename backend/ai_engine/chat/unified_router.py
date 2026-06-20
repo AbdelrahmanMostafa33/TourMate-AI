@@ -15,7 +15,6 @@ The router:
 
 from __future__ import annotations
 
-import re
 import logging
 from typing import Dict, Any, List, Optional, Literal
 
@@ -27,6 +26,7 @@ from ai_engine.memory.conversation_state import (
     ConversationState,
     ConversationPhase,
 )
+from ai_engine.tools.slot_normalizer import normalize_extracted_slots
 
 logger = logging.getLogger(__name__)
 
@@ -160,50 +160,39 @@ The user just said: "{user_message}"
    - Good: "Cairo! Great choice. How many days are you thinking?"
    - Bad: "Please provide your destination and duration."
 5. Ask for ONE thing at a time, not everything at once
-6. If ALL required info is collected (destination + duration + budget + style + interests + food + accommodation), set action to "plan_trip"
-7. If they ask a travel question, answer it naturally and helpfully
-8. If they approve an itinerary, confirm it warmly
-9. If they request changes to an itinerary, acknowledge and set action to "modify_itinerary"
-10. Be warm but concise — no filler words like "I understand", "Certainly!", "Of course!"
-11. Respond in the same language the user writes in
+6. NEVER confirm or ask "Is that correct?" — if the user provides a clear answer, accept it immediately and move on to the next question. Confirmation turns waste the user's time.
+   - Bad: "You've indicated a high budget. Is that correct?"
+   - Good: "Great, high budget! What kind of travel style are you thinking of?"
+7. If ALL required info is collected (destination + duration + budget + style + interests + food + accommodation), set action to "plan_trip"
+8. If they ask a travel question, answer it naturally and helpfully
+9. If they approve an itinerary, confirm it warmly
+10. If they request changes to an itinerary, acknowledge and set action to "modify_itinerary"
+11. Be warm but concise — no filler words like "I understand", "Certainly!", "Of course!"
+12. Respond in the same language the user writes in
 
-## Normalization Rules (MUST follow)
-- **Budget**: Always normalize to one of: 'budget', 'moderate', or 'luxury'
-  - 'medium', 'mid-range', 'average', 'mid' → 'moderate'
-  - 'cheap', 'low', 'economy', 'affordable' → 'budget'
-  - 'high-end', 'expensive', 'luxurious', 'premium', '5-star' → 'luxury'
-- **Style**: Always normalize to one of: 'romantic', 'adventure', 'family', 'solo', 'cultural', or 'relaxation'
-  - 'history', 'museums', 'heritage' → 'cultural'
-  - 'chill', 'rest', 'beach' → 'relaxation'
-  - 'hiking', 'outdoor', 'active' → 'adventure'
-- **Pace**: Always normalize to one of: 'relaxed', 'moderate', or 'packed'
-  - 'slow', 'easy', 'leisurely' → 'relaxed'
-  - 'busy', 'intense', 'full' → 'packed'
-  - 'mixed', 'flexible', 'varied' → 'moderate'
-- **Accommodation**: Always normalize to a phrase containing one of: 'hotel', 'hostel', 'resort', 'luxury', 'boutique'
-  - 'cheap place', 'budget stay', 'dorm', 'backpacker' → ['hostel']
-  - 'nice resort', 'beach resort', 'all-inclusive', 'spa resort' → ['resort']
-  - 'luxury', 'five star', 'high-end', 'premium', 'boutique', 'palace', 'upscale' → ['luxury hotel']
-  - 'hotel', 'apartment', 'airbnb', 'motel', 'standard' → ['hotel']
-  - Always return as a list with ONE item, e.g. ['resort'] not ['nice resort']
-
-## Important Rules
-- **NEVER change travel_style based on interests.** If the user says "I like history", extract interests: ['history'] — do NOT set travel_style to 'cultural'. travel_style is ONLY set when the user explicitly describes their travel STYLE (e.g. 'I want a solo trip', 'cultural travel', 'relaxation'). The style normalization mappings (history→cultural, chill→relaxation, etc.) ONLY apply when the user is describing their travel style, NOT when they are listing interests.
+## Extraction Guidance
+- **Budget**: Detect budget intent and extract the raw phrase. A downstream normalizer
+  will canonicalize to 'budget', 'moderate', or 'luxury'. Just capture the user's words.
+- **Style**: Extract travel style ONLY when the user explicitly describes their travel STYLE
+  (e.g. 'I want a solo trip', 'cultural travel', 'relaxation'). Do NOT confuse interests
+  with style — 'I like history' → interests: ['history'], NOT travel_style: 'cultural'.
+- **Pace**: Detect pace intent and extract the raw phrase. A downstream normalizer will
+  canonicalize to 'relaxed', 'moderate', or 'packed'.
+- **Accommodation**: Extract the user's accommodation preference as a natural language phrase.
+  A downstream normalizer will map to canonical types (hostel, hotel, resort, luxury hotel).
+  Return as a list with ONE item, e.g. ['boutique hotel'] not ['luxury', 'boutique', 'hotel'].
 - **Duration**: Return as a string of the number (e.g. '3', '5', '7')
 
+## Important Rules
+- **NEVER change travel_style based on interests.** travel_style is ONLY set when the user
+  explicitly describes their travel STYLE, not when listing interests.
+- **NEVER ask for information they already provided** — check the Current State above.
+
 ## Extraction Rules
-- **Food preferences**: Extract from phrases like 'local food', 'local cuisine', 'street food', 'traditional dishes', 'seafood', 'vegetarian', 'vegan', 'halal', 'kosher', etc.
-  - 'I love local food' → food_preferences: ['local cuisine']
-  - 'I want to try street food' → food_preferences: ['street food']
-- **Interests**: Extract from phrases like 'history', 'architecture', 'art', 'shopping', 'nightlife', 'nature', 'photography', etc.
-  - 'I love history and architecture' → interests: ['history', 'architecture']
-- **Accommodation**: Extract the user's accommodation preference as a natural language phrase containing one of these keywords: 'hotel', 'hostel', 'resort', 'luxury', 'boutique', 'palace'. Map their words to the closest match:
-  - 'cheap place to stay', 'budget accommodation', 'backpacker', 'dorm' → ['hostel']
-  - 'nice resort', 'beach resort', 'all-inclusive' → ['resort']
-  - 'luxury hotel', 'five star', 'high-end', 'premium', 'boutique', 'palace' → ['luxury hotel']
-  - 'hotel', 'apartment', 'airbnb', 'motel', 'standard' → ['hotel']
-  - If unclear, default to ['hotel']
-- **If the user sends a greeting or casual message with no new travel info (e.g. 'hello', 'hi', 'how are you'), do NOT extract any slots — leave extracted empty.**"""
+- **Food preferences**: Extract from phrases like 'local food', 'street food', 'vegetarian', etc.
+- **Interests**: Extract from phrases like 'history', 'architecture', 'art', 'shopping', etc.
+- **Accommodation**: Extract as a phrase containing: 'hotel', 'hostel', 'resort', 'luxury', 'boutique', 'palace'.
+- **If the user sends a greeting or casual message with no new travel info, do NOT extract any slots — leave extracted empty.**"""
 
 
 # ── Context Building ─────────────────────────────────────────────────────────
@@ -245,98 +234,6 @@ def _build_itinerary_summary(state: ConversationState) -> str:
     return "\n".join(lines)
 
 
-# ── Regex Fallback Extraction ────────────────────────────────────────────────
-
-_DURATION_PATTERNS = [
-    r"(\d+)\s*-?\s*days?",
-    r"for\s+(\d+)\s*-?\s*days?",
-    r"(\d+)\s*-?\s*nights?",
-]
-
-_BUDGET_MAP = {
-    # Longer / more specific matches first to avoid partial-word collisions
-    "mid-range": "moderate", "mid range": "moderate",
-    "high-end": "luxury", "five star": "luxury",
-    "affordable": "budget", "average": "moderate",
-    "premium": "luxury", "5-star": "luxury",
-    "medium": "moderate",
-    "moderate": "moderate",
-    "luxury": "luxury",
-    "budget": "budget",
-    "cheap": "budget",
-}
-
-_STYLE_MAP = {
-    "romantic": "romantic", "adventure": "adventure", "hiking": "adventure",
-    "family": "family", "kids": "family", "solo": "solo", "alone": "solo",
-    "museums": "cultural", "history": "cultural", "cultural": "cultural",
-    "relax": "relaxation", "chill": "relaxation", "relaxation": "relaxation",
-}
-
-_DESTINATION_KEYWORDS = {
-    "cairo": "cairo", "paris": "paris", "london": "london", "dubai": "dubai",
-    "tokyo": "tokyo", "rome": "rome", "istanbul": "istanbul", "bali": "bali",
-    "bangkok": "bangkok", "new york": "new york", "barcelona": "barcelona",
-    "amsterdam": "amsterdam", "berlin": "berlin", "madrid": "madrid",
-    "lisbon": "lisbon", "vienna": "vienna", "prague": "prague",
-    "athens": "athens", "marrakech": "marrakech", "singapore": "singapore",
-    "sharm el sheikh": "sharm el sheikh", "luxor": "luxor", "aswan": "aswan",
-}
-
-
-def _regex_extract(user_message: str) -> dict:
-    """Regex-based extraction as a safety net."""
-    msg = user_message.lower().strip()
-    result = {}
-
-    for pattern in _DURATION_PATTERNS:
-        match = re.search(pattern, msg)
-        if match:
-            result["duration_days"] = int(match.group(1))
-            break
-
-    for keyword, level in _BUDGET_MAP.items():
-        if keyword in msg:
-            result["budget_level"] = level
-            break
-
-    for keyword, style in _STYLE_MAP.items():
-        if keyword in msg:
-            result["travel_style"] = style
-            break
-
-    for keyword, city in _DESTINATION_KEYWORDS.items():
-        if keyword in msg:
-            result["destination_city"] = city
-            break
-
-    return result
-
-
-def _merge_extracted(llm_extracted: dict, regex_extracted: dict) -> dict:
-    """Merge LLM extraction with regex fallback. Regex fills gaps only."""
-    merged = dict(llm_extracted)
-    for key, value in regex_extracted.items():
-        if key in ("interests", "food_preferences", "accommodation_preferences"):
-            existing = merged.get(key) or []
-            if not isinstance(existing, list):
-                existing = []
-            if isinstance(value, str):
-                items = [v.strip() for v in value.split(",") if v.strip()]
-            else:
-                items = value
-            for v in items:
-                if v not in existing:
-                    existing.append(v)
-            merged[key] = existing if existing else None
-        elif merged.get(key) is None:
-            if isinstance(value, str) and key in ("interests", "food_preferences", "accommodation_preferences"):
-                merged[key] = [v.strip() for v in value.split(",") if v.strip()]
-            else:
-                merged[key] = value
-    return merged
-
-
 # ── Action Normalization ─────────────────────────────────────────────────────
 
 _ACTION_ALIASES = {
@@ -376,12 +273,18 @@ def _coerce_int(value) -> int | None:
 
 
 def _build_extracted_dict(extracted: ExtractedSlots) -> dict:
-    """Convert Pydantic ExtractedSlots to a plain dict, dropping None values.
-    Also coerces duration_days and group_size to int."""
+    """Convert Pydantic ExtractedSlots to a plain dict, drop None values,
+    coerce duration_days/group_size to int, then apply deterministic
+    normalization (budget, pace, style, food, accommodation)."""
     raw = extracted.model_dump()
     raw["duration_days"] = _coerce_int(raw.get("duration_days"))
     raw["group_size"] = _coerce_int(raw.get("group_size"))
-    return {k: v for k, v in raw.items() if v is not None}
+    raw = {k: v for k, v in raw.items() if v is not None}
+
+    # Deterministic post-processing — replaces LLM-dependent normalization.
+    # The LLM extracts raw values; this step guarantees canonical forms.
+    normalized = normalize_extracted_slots(raw)
+    return normalized
 
 
 # ── Main Router Function ─────────────────────────────────────────────────────
@@ -391,7 +294,6 @@ async def route_message(state: ConversationState, user_message: str) -> RouterRe
     Single context-aware LLM call with structured output.
 
     Uses .with_structured_output() to guarantee valid JSON from the LLM.
-    Falls back to regex extraction if the LLM fails.
     """
     # Build context
     history_text = _build_conversation_history(state)
@@ -440,42 +342,23 @@ async def route_message(state: ConversationState, user_message: str) -> RouterRe
         extracted = _build_extracted_dict(router_output.extracted)
         response_text = router_output.response
     else:
-        # Fallback: use regex extraction + default response
-        action = "answer_question"
+        # LLM failed — return generic response (all 10 keys exhausted)
+        logger.error("Router LLM failed with all keys exhausted")
         extracted = {}
-        response_text = "I'm here to help with your travel plans! Feel free to ask me anything."
+        action = "answer_question"
+        response_text = "I'm having trouble connecting to my AI service. Please try again in a moment."
 
-    # Apply regex fallback — fills gaps the LLM missed
-    regex_result = _regex_extract(user_message)
-    extracted = _merge_extracted(extracted, regex_result)
-
-    # Guard: only preserve travel_style if the current message contains
-    # an UNAMBIGUOUS style keyword. Words like 'history', 'museums',
-    # 'chill' overlap with interests and should NOT trigger style extraction
-    # — neither from the LLM nor from the regex fallback.
-    UNAMBIGUOUS_STYLE_KEYWORDS = {
-        "solo", "alone", "romantic", "adventure", "hiking",
-        "family", "kids", "cultural travel", "relaxation trip",
-    }
-    msg_lower = user_message.lower()
-    has_unambiguous_style = any(kw in msg_lower for kw in UNAMBIGUOUS_STYLE_KEYWORDS)
-    if not has_unambiguous_style and extracted.get("travel_style"):
-        del extracted["travel_style"]
-
-    # If destination + duration are complete AND the current message
-    # contributed new info (not just history), override to plan_trip.
-    # We check if regex found anything new OR if LLM extracted from current msg.
-    has_new_from_message = bool(regex_result) or (
-        router_output is not None and any([
-            router_output.extracted.destination_city,
-            router_output.extracted.duration_days,
-            router_output.extracted.budget_level,
-            router_output.extracted.travel_style,
-        ])
-    )
-    if has_new_from_message and extracted.get("destination_city") and extracted.get("duration_days"):
-        if action not in ("approve_itinerary", "modify_itinerary"):
-            action = "plan_trip"
+    # If LLM extracted destination + duration from current message,
+    # override to plan_trip to trigger itinerary generation.
+    if router_output is not None and any([
+        router_output.extracted.destination_city,
+        router_output.extracted.duration_days,
+        router_output.extracted.budget_level,
+        router_output.extracted.travel_style,
+    ]):
+        if extracted.get("destination_city") and extracted.get("duration_days"):
+            if action not in ("approve_itinerary", "modify_itinerary"):
+                action = "plan_trip"
 
     return RouterResult(
         action=action,

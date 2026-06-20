@@ -6,8 +6,6 @@ from ai_engine.chat.unified_router import (
     _coerce_int,
     _build_extracted_dict,
     _normalize_action,
-    _merge_extracted,
-    _regex_extract,
     ExtractedSlots,
     RouterOutput,
     RouterResult,
@@ -71,83 +69,6 @@ class TestNormalizeAction:
     def test_case_insensitive(self):
         assert _normalize_action("Plan_Trip") == "plan_trip"
         assert _normalize_action("GENERAL_CHAT") == "answer_question"
-
-
-# -- _regex_extract tests --
-
-class TestRegexExtract:
-    def test_duration_days(self):
-        result = _regex_extract("I want a 3-day trip")
-        assert result["duration_days"] == 3
-
-    def test_duration_for_3_days(self):
-        result = _regex_extract("for 3 days")
-        assert result["duration_days"] == 3
-
-    def test_duration_nights(self):
-        result = _regex_extract("5 nights in Cairo")
-        assert result["duration_days"] == 5
-
-    def test_budget_medium(self):
-        result = _regex_extract("medium budget")
-        assert result["budget_level"] == "moderate"
-
-    def test_budget_luxury(self):
-        result = _regex_extract("luxury trip")
-        assert result["budget_level"] == "luxury"
-
-    def test_budget_cheap(self):
-        result = _regex_extract("cheap trip")
-        assert result["budget_level"] == "budget"
-
-    def test_style_cultural(self):
-        result = _regex_extract("cultural trip")
-        assert result["travel_style"] == "cultural"
-
-    def test_style_adventure(self):
-        result = _regex_extract("adventure hiking trip")
-        assert result["travel_style"] == "adventure"
-
-    def test_destination_cairo(self):
-        result = _regex_extract("trip to Cairo")
-        assert result["destination_city"] == "cairo"
-
-    def test_destination_paris(self):
-        result = _regex_extract("I love Paris")
-        assert result["destination_city"] == "paris"
-
-    def test_combined(self):
-        result = _regex_extract("3 days in Cairo, moderate budget")
-        assert result["duration_days"] == 3
-        assert result["destination_city"] == "cairo"
-        assert result["budget_level"] == "moderate"
-
-    def test_no_match(self):
-        result = _regex_extract("hello there")
-        assert result == {}
-
-
-# -- _merge_extracted tests --
-
-class TestMergeExtracted:
-    def test_fills_gaps(self):
-        llm = {"destination_city": "cairo"}
-        regex = {"duration_days": 3, "destination_city": "paris"}
-        merged = _merge_extracted(llm, regex)
-        assert merged["destination_city"] == "cairo"  # LLM wins
-        assert merged["duration_days"] == 3  # regex fills gap
-
-    def test_list_merge(self):
-        llm = {"interests": ["history"]}
-        regex = {"interests": ["food"]}
-        merged = _merge_extracted(llm, regex)
-        assert merged["interests"] == ["history", "food"]
-
-    def test_string_to_list_coercion(self):
-        llm = {}
-        regex = {"food_preferences": "local cuisine, vegetarian"}
-        merged = _merge_extracted(llm, regex)
-        assert merged["food_preferences"] == ["local cuisine", "vegetarian"]
 
 
 # -- ExtractedSlots Pydantic model tests --

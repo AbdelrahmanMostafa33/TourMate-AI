@@ -29,14 +29,155 @@ from __future__ import annotations
 
 import time
 import logging
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from enum import Enum
-from typing import Any, Dict, List, Optional, Type
+from typing import Any, Dict, List, Optional
 
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import BaseMessage
+from langchain_core.callbacks import BaseCallbackHandler
 
 logger = logging.getLogger(__name__)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Token Tracker — tracks token usage across all LLM calls
+# ══════════════════════════════════════════════════════════════════════════════
+
+@dataclass
+class TokenUsage:
+    """Token counts for a single LLM call."""
+    prompt_tokens: int = 0
+    completion_tokens: int = 0
+    total_tokens: int = 0
+
+
+class TokenTracker:
+    """Tracks cumulative token usage across all LLM calls in a session.
+
+    Usage::
+
+        from ai_engine.llm_config import token_tracker
+
+        # After each LLM call, pass the response:
+        token_tracker.record("router", response)
+
+        # Print summary:
+        token_tracker.print_summary()
+    """
+
+    def __init__(self) -> None:
+        self._calls: list[dict] = []  # per-call log
+        self._by_role: dict[str, TokenUsage] = {}  # aggregated by role
+        self._total = TokenUsage()  # grand total
+
+    def record_from_llm_output(self, role: str, llm_output: dict) -> None:
+        """Extract token usage from LLMResult.llm_output and record it.
+
+        This works even with .with_structured_output() because it reads from
+        the LLM's raw output, not the parsed response.
+        """
+        usage_dict = (llm_output or {}).get("token_usage") or {}
+        if not usage_dict:
+            return
+
+        # Groq format: prompt_tokens, completion_tokens, total_tokens
+        # Gemini format: prompt_token_count, candidates_token_count, total_token_count
+        prompt = usage_dict.get("prompt_tokens") if "prompt_tokens" in usage_dict else usage_dict.get("prompt_token_count", 0)
+        completion = usage_dict.get("completion_tokens") if "completion_tokens" in usage_dict else usage_dict.get("candidates_token_count", 0)
+        total = usage_dict.get("total_tokens") if "total_tokens" in usage_dict else usage_dict.get("total_token_count", 0)
+
+        if prompt == 0 and completion == 0:
+            return
+
+        usage = TokenUsage(prompt_tokens=prompt, completion_tokens=completion, total_tokens=total)
+        self._record_usage(role, usage)
+
+    def _record_usage(self, role: str, usage: TokenUsage) -> None:
+        """Internal: append usage to tracking data."""
+        self._calls.append({
+            "role": role,
+            "prompt": usage.prompt_tokens,
+            "completion": usage.completion_tokens,
+            "total": usage.total_tokens,
+        })
+
+        agg = self._by_role.setdefault(role, TokenUsage())
+        agg.prompt_tokens += usage.prompt_tokens
+        agg.completion_tokens += usage.completion_tokens
+        agg.total_tokens += usage.total_tokens
+
+        self._total.prompt_tokens += usage.prompt_tokens
+        self._total.completion_tokens += usage.completion_tokens
+        self._total.total_tokens += usage.total_tokens
+
+        logger.info(
+            "[Tokens] %s → prompt=%d  completion=%d  total=%d",
+            role, usage.prompt_tokens, usage.completion_tokens, usage.total_tokens,
+        )
+
+    @property
+    def total(self) -> TokenUsage:
+        """Grand total token usage across all calls."""
+        return self._total
+
+    @property
+    def call_count(self) -> int:
+        """Total number of LLM calls tracked."""
+        return len(self._calls)
+
+    def print_summary(self) -> None:
+        """Print a formatted summary of all token usage."""
+        if not self._calls:
+            print("\n[Tokens] No LLM calls recorded.")
+            return
+
+        print(f"\n{'='*55}")
+        print(f"  Token Usage Summary ({len(self._calls)} LLM calls)")
+        print(f"{'='*55}")
+
+        # Per-role breakdown
+        print(f"  {'Role':<16} {'Prompt':>8} {'Complete':>8} {'Total':>8}")
+        print(f"  {'-'*16} {'-'*8} {'-'*8} {'-'*8}")
+        for role, usage in sorted(self._by_role.items()):
+            print(
+                f"  {role:<16} {usage.prompt_tokens:>8,} "
+                f"{usage.completion_tokens:>8,} {usage.total_tokens:>8,}"
+            )
+
+        # Grand total
+        t = self._total
+        print(f"  {'-'*16} {'-'*8} {'-'*8} {'-'*8}")
+        print(
+            f"  {'TOTAL':<16} {t.prompt_tokens:>8,} "
+            f"{t.completion_tokens:>8,} {t.total_tokens:>8,}"
+        )
+        print(f"{'='*55}\n")
+
+    def reset(self) -> None:
+        """Clear all recorded data."""
+        self._calls.clear()
+        self._by_role.clear()
+        self._total = TokenUsage()
+
+
+# Singleton token tracker
+token_tracker = TokenTracker()
+
+
+class _TokenTrackingCallback(BaseCallbackHandler):
+    """LangChain callback that records token usage after every LLM call.
+
+    Works with both plain and .with_structured_output() calls because it
+    reads from LLMResult.llm_output, which is always populated.
+    """
+
+    def __init__(self, role: str) -> None:
+        self.role = role
+
+    def on_llm_end(self, response, **kwargs) -> None:
+        llm_output = getattr(response, "llm_output", None) or {}
+        token_tracker.record_from_llm_output(self.role, llm_output)
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -378,7 +519,7 @@ async def invoke_with_fallback(
             llm = builder(config, api_key=api_key)
             if structured_output is not None:
                 llm = llm.with_structured_output(structured_output)
-            response = await llm.ainvoke(messages)
+            response = await llm.ainvoke(messages, config={"callbacks": [_TokenTrackingCallback(agent_role)]})
             return response
 
         except Exception as exc:
@@ -434,7 +575,7 @@ def invoke_with_fallback_sync(
         try:
             builder = _PROVIDER_BUILDERS[provider]
             llm = builder(config, api_key=api_key)
-            response = llm.invoke(messages)
+            response = llm.invoke(messages, config={"callbacks": [_TokenTrackingCallback(agent_role)]})
             return response
 
         except Exception as exc:
