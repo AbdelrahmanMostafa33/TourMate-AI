@@ -1,4 +1,4 @@
-"""Place Search schemas for AI Engine integration."""
+"""Place Search schemas for AI Engine integration + user exploration."""
 
 from pydantic import BaseModel, Field
 from typing import Optional, List
@@ -60,7 +60,7 @@ class PlaceSearchRequest(BaseModel):
 
 class PlaceSearchResponse(BaseModel):
     """
-    Response schema for place search.
+    Response schema for place search (DB-backed).
     Returns places in the format expected by AI engine agents.
     """
     places: List[dict] = Field(..., description="Filtered places in AI engine format")
@@ -81,6 +81,43 @@ class PlaceSearchResponse(BaseModel):
                         "rating": 4.5,
                         "popularity_score": 85.0,
                         "interest_tags": ["history", "culture"],
+                    }
+                ],
+                "total": 1,
+                "filters_applied": {"city": "cairo", "categories": ["attraction"]},
+            }
+        }
+
+
+class ExplorePlacesResponse(BaseModel):
+    """
+    Response schema for user-facing place exploration.
+    Loads from curated JSON data files (treated as DB until seeded).
+    """
+    places: List[dict] = Field(..., description="Matching places")
+    total: int = Field(..., description="Total matching places across all data files")
+    filters_applied: dict = Field(..., description="Summary of applied filters")
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "places": [
+                    {
+                        "id": "lo-747C0ECE",
+                        "name": "Giza Necropolis",
+                        "category": "attractions",
+                        "sub_category": "Historic Sites",
+                        "lat": 29.9772,
+                        "lon": 31.1324,
+                        "rating": 4.6,
+                        "review_count": 25400,
+                        "popularity_score": 94.4,
+                        "city": "Cairo",
+                        "country": "Egypt",
+                        "address": "Al Ahram, Nazlet El-Semman, Giza",
+                        "nightly_rate": None,
+                        "star_class": None,
+                        "photos": ["https://example.com/giza.jpg"],
                     }
                 ],
                 "total": 1,

@@ -21,7 +21,7 @@ class PlaceRepository(BaseRepository):
 
     async def search_places(
         self,
-        city: str,
+        city: Optional[str] = None,
         country: Optional[str] = None,
         categories: Optional[List[str]] = None,
         min_rating: Optional[float] = None,
@@ -48,8 +48,9 @@ class PlaceRepository(BaseRepository):
 
         filters = []
 
-        # City filter (case-insensitive)
-        filters.append(func.lower(Place.city) == city.lower())
+        # City filter (case-insensitive, optional)
+        if city:
+            filters.append(func.lower(Place.city) == city.lower())
 
         # Country filter
         if country:
@@ -226,13 +227,20 @@ class PlaceRepository(BaseRepository):
             for amenity in amenities:
                 _add_tag(amenity)
 
+        # Hotel-specific pricing
+        nightly_rate = None
+        star_class = None
+        if hasattr(place, "hotel_details") and place.hotel_details:
+            nightly_rate = getattr(place.hotel_details, "nightly_rate", None)
+            star_class = getattr(place.hotel_details, "star_class", None)
+
         return {
             "id": place.place_id,
             "name": place.name,
             "category": place.category.value if place.category else "",
             "sub_category": sub_category,
             "lat": place.lat or 0,
-            "lon": place.lng or 0,  # Map lng → lon for AI engine compatibility
+            "lon": place.lng or 0,
             "description": place.description or "",
             "rating": place.rating or 0,
             "review_count": place.review_count or 0,
@@ -242,6 +250,94 @@ class PlaceRepository(BaseRepository):
             "amenities": amenities,
             "address": place.address or "",
             "hours": place.opening_hours or {},
+            "city": place.city or "",
+            "country": place.country or "",
+            "nightly_rate": nightly_rate,
+            "star_class": star_class,
             "photos": (place.photo_urls or [])[:1],
             "maps_link": place.maps_link,
         }
+
+    async def get_explore_filters(self, q: Optional[str] = None) -> dict:
+        """
+        Query the database for location suggestions and category options.
+        Used by the explore/filters endpoint to populate the mobile
+        app location picker and category tabs.
+
+        When q is provided (location search autocomplete), returns
+        matching cities grouped with their country (e.g. "Cairo, Egypt").
+        """
+        # ── Location suggestions (cities with country) ────────────────
+        # Group by (city, country) so each suggestion shows "City, Country"
+        loc_q = (
+            select(
+                Place.city,
+                Place.country,
+                func.count(Place.place_id).label("cnt"),
+            )
+            .where(Place.city.isnot(None))
+            .where(Place.city != "")
+            .where(Place.country.isnot(None))
+            .where(Place.country != "")
+        )
+
+        if q:
+            # Text search across city and country name
+            pattern = f"%{q.strip()}%"
+            loc_q = loc_q.where(
+                or_(
+                    Place.city.ilike(pattern),
+                    Place.country.ilike(pattern),
+                )
+            )
+
+        loc_q = loc_q.group_by(Place.city, Place.country)
+        loc_q = loc_q.order_by(func.count(Place.place_id).desc())
+        loc_q = loc_q.limit(20)
+
+        loc_result = await self.session.execute(loc_q)
+        locations = []
+        for row in loc_result.all():
+            city_name = (row[0] or "").strip()
+            country_name = (row[1] or "").strip()
+            locations.append({
+                "key": city_name.lower(),
+                "city": city_name,
+                "country": country_name,
+                "display": f"{city_name}, {country_name}",
+                "count": row[2],
+            })
+
+        # ── Countries with counts ─────────────────────────────────────
+        country_q = (
+            select(Place.country, func.count(Place.place_id).label("cnt"))
+            .where(Place.country.isnot(None))
+            .where(Place.country != "")
+            .group_by(Place.country)
+            .order_by(func.count(Place.place_id).desc())
+        )
+        country_result = await self.session.execute(country_q)
+        countries = [
+            {"key": (row[0] or "").strip().lower(), "display": (row[0] or "").strip(), "count": row[1]}
+            for row in country_result.all()
+        ]
+
+        # ── Categories with counts ────────────────────────────────────
+        cat_q = (
+            select(Place.category, func.count(Place.place_id).label("cnt"))
+            .group_by(Place.category)
+            .order_by(func.count(Place.place_id).desc())
+        )
+        cat_result = await self.session.execute(cat_q)
+        categories = []
+        for row in cat_result.all():
+            val = row[0]
+            cat_val = val.value if hasattr(val, "value") else str(val) if val else ""
+            categories.append({"key": cat_val, "display": cat_val.title(), "count": row[1]})
+
+        return {
+            "locations": locations,
+            "countries": countries,
+            "categories": categories,
+        }
+

@@ -18,7 +18,7 @@ class PlaceSearchService:
 
     async def search_places(
         self,
-        city: str,
+        city: Optional[str] = None,
         country: Optional[str] = None,
         categories: Optional[List[str]] = None,
         min_rating: Optional[float] = None,
@@ -58,12 +58,17 @@ class PlaceSearchService:
             sort_desc=sort_desc,
         )
 
-        filters_applied = {
-            "city": city,
-            "categories": categories,
-            "min_rating": min_rating,
-            "interests": interests,
-        }
+        filters_applied = {}
+        if city:
+            filters_applied["city"] = city
+        if country:
+            filters_applied["country"] = country
+        if categories:
+            filters_applied["categories"] = categories
+        if min_rating is not None:
+            filters_applied["min_rating"] = min_rating
+        if interests:
+            filters_applied["interests"] = interests
 
         return {
             "places": places,
@@ -93,3 +98,11 @@ class PlaceSearchService:
                 places = await self.repo.get_places_by_city(city)
 
         return places
+
+    async def get_explore_filters(self, q: Optional[str] = None) -> dict:
+        """
+        Get location suggestions and category options from the database.
+        Used by the explore/filters endpoint to populate the mobile app
+        location picker and category tabs.
+        """
+        return await self.repo.get_explore_filters(q=q)
