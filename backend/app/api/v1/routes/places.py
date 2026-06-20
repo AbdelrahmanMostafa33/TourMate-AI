@@ -27,16 +27,25 @@ router = APIRouter()
 @router.get("/explore/filters")
 async def get_explore_filters(
     q: Optional[str] = Query(None, description="Search text for location autocomplete (e.g. 'Cai' → 'Cairo, Egypt')"),
+    limit: int = Query(20, ge=1, le=50, description="Max location suggestions to return"),
     db: AsyncSession = Depends(get_db),
 ):
     """
     Get location suggestions and category options for the explore endpoint.
 
     Populates the mobile app's location picker and category tabs.
-    When q is provided, returns matching cities grouped with their country
-    for the search/autocomplete input (e.g. typing 'Cai' → 'Cairo, Egypt').
+    Returns locations with type info (country vs city) for the picker UI.
+
+    When q is provided, returns matching locations for autocomplete.
+    Without q, returns popular locations sorted by place count.
 
     **No auth required** — public browsing endpoint.
+
+    **Response format:**
+    - locations: List of location objects with key, city, country, display,
+      subtitle, type (country/city), and count
+    - countries: Simplified country list for quick access
+    - categories: Category tabs with counts
 
     **Examples:**
     - GET /places/explore/filters → all locations + categories
@@ -44,7 +53,11 @@ async def get_explore_filters(
     - GET /places/explore/filters?q=egypt → locations in Egypt
     """
     service = PlaceSearchService(db)
-    return await service.get_explore_filters(q=q)
+    result = await service.get_explore_filters(q=q)
+    # Apply limit to locations
+    if "locations" in result:
+        result["locations"] = result["locations"][:limit]
+    return result
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -56,8 +69,9 @@ async def get_explore_filters(
 @router.get("/explore", response_model=ExplorePlacesResponse)
 async def explore_places(
     city: Optional[str] = Query(None, description="Filter by city name (e.g. Cairo, Dubai)"),
-    country: Optional[str] = Query(None, description="Filter by country (e.g. Egypt, UAE)"),
-    category: Optional[str] = Query(None, description="Filter by category: attractions, restaurant, hotel"),
+    country: Optional[str] = Query("Egypt", description="Filter by country (e.g. Egypt, UAE). Defaults to Egypt."),
+    category: Optional[str] = Query("hotel", description="Filter by category: attractions, restaurant, hotel. Defaults to hotel."),
+    no_defaults: Optional[bool] = Query(None, description="If true, ignore country/category defaults and return all places."),
     limit: int = Query(50, ge=1, le=200, description="Max results to return"),
     offset: int = Query(0, ge=0, description="Results offset for pagination"),
     db: AsyncSession = Depends(get_db),
@@ -70,29 +84,41 @@ async def explore_places(
 
     **No auth required** — public browsing endpoint.
 
+    **Defaults:** country=Egypt, category=hotel (matches mobile app initial state).
+
     **Examples:**
-    - GET /places/explore?city=cairo
+    - GET /places/explore (returns hotels in Egypt, sorted by popularity)
+    - GET /places/explore?category=attractions
+    - GET /places/explore?city=cairo&category=restaurant
     - GET /places/explore?country=egypt&category=attractions
-    - GET /places/explore?city=dubai&category=hotel&limit=10
     """
-    # Normalize category for DB query
+    # ── Handle no_defaults: clear both country and category ───────
     categories = None
-    if category:
-        cat_lower = category.lower().strip()
-        cat_map = {
-            "attraction": "attraction", "attractions": "attraction",
-            "restaurant": "restaurant", "restaurants": "restaurant",
-            "hotel": "hotel", "hotels": "hotel",
-        }
-        if cat_lower not in cat_map:
-            raise HTTPException(
-                status_code=400,
-                detail=(
-                    f"Invalid category: '{category}'. "
-                    f"Valid options are: attractions, restaurant, hotel"
-                ),
-            )
-        categories = [cat_map[cat_lower]]
+    if no_defaults:
+        country = None
+        categories = None
+    else:
+        # Normalize category for DB query
+        if category:
+            cat_lower = category.lower().strip()
+            cat_map = {
+                "attraction": "attraction", "attractions": "attraction",
+                "restaurant": "restaurant", "restaurants": "restaurant",
+                "hotel": "hotel", "hotels": "hotel",
+            }
+            if cat_lower not in cat_map:
+                raise HTTPException(
+                    status_code=400,
+                    detail=(
+                        f"Invalid category: '{category}'. "
+                        f"Valid options are: attractions, restaurant, hotel"
+                    ),
+                )
+            categories = [cat_map[cat_lower]]
+
+        # Normalize country (strip whitespace, default to Egypt)
+        if country:
+            country = country.strip()
 
     service = PlaceSearchService(db)
 

@@ -201,12 +201,17 @@ class PlaceRepository(BaseRepository):
         interest_tags: list[str] = []
         cuisine_type = ""
 
+        entry_fee = None
+        avg_cost_per_person = None
+
         if hasattr(place, "attraction_details") and place.attraction_details:
             sub_category = place.attraction_details.subcategory or ""
             interest_tags = place.attraction_details.tags or []
+            entry_fee = place.attraction_details.entry_fee
         elif hasattr(place, "restaurant_details") and place.restaurant_details:
             cuisine_type = place.restaurant_details.cuisine_type or ""
             sub_category = cuisine_type
+            avg_cost_per_person = place.restaurant_details.avg_cost_per_person
         elif hasattr(place, "hotel_details") and place.hotel_details:
             sub_category = (place.hotel_details.accommodation_type or "hotel").lower()
 
@@ -266,6 +271,9 @@ class PlaceRepository(BaseRepository):
             "hours": place.opening_hours or {},
             "city": place.city or "",
             "country": place.country or "",
+            "price_level": place.price_level,
+            "entry_fee": entry_fee,
+            "avg_cost_per_person": avg_cost_per_person,
             "nightly_rate": nightly_rate,
             "star_class": star_class,
             "photos": (place.photo_urls or [])[:1],
@@ -278,11 +286,39 @@ class PlaceRepository(BaseRepository):
         Used by the explore/filters endpoint to populate the mobile
         app location picker and category tabs.
 
-        When q is provided (location search autocomplete), returns
-        matching cities grouped with their country (e.g. "Cairo, Egypt").
+        Returns locations with type info (country vs city) for the
+        location picker's "Recent locations" display.
         """
-        # ── Location suggestions (cities with country) ────────────────
-        # Group by (city, country) so each suggestion shows "City, Country"
+        # ── Countries (top-level locations) ────────────────────────────
+        country_q = (
+            select(
+                Place.country,
+                func.count(Place.place_id).label("cnt"),
+            )
+            .where(Place.country.isnot(None))
+            .where(Place.country != "")
+            .group_by(Place.country)
+            .order_by(func.count(Place.place_id).desc())
+        )
+        if q:
+            pattern = f"%{q.strip()}%"
+            country_q = country_q.where(Place.country.ilike(pattern))
+
+        country_result = await self.session.execute(country_q)
+        countries = []
+        for row in country_result.all():
+            country_name = (row[0] or "").strip()
+            countries.append({
+                "key": country_name.lower(),
+                "city": country_name,
+                "country": country_name,
+                "display": country_name,
+                "subtitle": "Country",
+                "type": "country",
+                "count": row[1],
+            })
+
+        # ── Cities (grouped with country) ──────────────────────────────
         loc_q = (
             select(
                 Place.city,
@@ -296,7 +332,6 @@ class PlaceRepository(BaseRepository):
         )
 
         if q:
-            # Text search across city and country name
             pattern = f"%{q.strip()}%"
             loc_q = loc_q.where(
                 or_(
@@ -310,31 +345,22 @@ class PlaceRepository(BaseRepository):
         loc_q = loc_q.limit(20)
 
         loc_result = await self.session.execute(loc_q)
-        locations = []
+        cities = []
         for row in loc_result.all():
             city_name = (row[0] or "").strip()
             country_name = (row[1] or "").strip()
-            locations.append({
+            cities.append({
                 "key": city_name.lower(),
                 "city": city_name,
                 "country": country_name,
                 "display": f"{city_name}, {country_name}",
+                "subtitle": f"{city_name}, {country_name}",
+                "type": "city",
                 "count": row[2],
             })
 
-        # ── Countries with counts ─────────────────────────────────────
-        country_q = (
-            select(Place.country, func.count(Place.place_id).label("cnt"))
-            .where(Place.country.isnot(None))
-            .where(Place.country != "")
-            .group_by(Place.country)
-            .order_by(func.count(Place.place_id).desc())
-        )
-        country_result = await self.session.execute(country_q)
-        countries = [
-            {"key": (row[0] or "").strip().lower(), "display": (row[0] or "").strip(), "count": row[1]}
-            for row in country_result.all()
-        ]
+        # Merge: countries first, then cities (for "Recent locations")
+        locations = countries + cities
 
         # ── Categories with counts ────────────────────────────────────
         cat_q = (
@@ -351,7 +377,7 @@ class PlaceRepository(BaseRepository):
 
         return {
             "locations": locations,
-            "countries": countries,
+            "countries": [{"key": c["key"], "display": c["display"], "count": c["count"]} for c in countries],
             "categories": categories,
         }
 

@@ -125,7 +125,7 @@ class PlaceSearchResponse(BaseModel):
 class ExplorePlacesResponse(BaseModel):
     """
     Response schema for user-facing place exploration.
-    Loads from curated JSON data files (treated as DB until seeded).
+    Returns places sorted by popularity with category-specific fields.
     """
     places: List[dict] = Field(..., description="Matching places")
     total: int = Field(..., description="Total matching places across all data files")
@@ -138,22 +138,40 @@ class ExplorePlacesResponse(BaseModel):
                     {
                         "id": "lo-747C0ECE",
                         "name": "Giza Necropolis",
-                        "category": "attractions",
+                        "category": "attraction",
                         "sub_category": "Historic Sites",
                         "lat": 29.9772,
                         "lon": 31.1324,
-                        "rating": 4.6,
-                        "review_count": 25400,
+                        "rating": 4.8,
+                        "review_count": 94000,
                         "popularity_score": 94.4,
-                        "city": "Cairo",
+                        "city": "Giza",
                         "country": "Egypt",
                         "address": "Al Ahram, Nazlet El-Semman, Giza",
+                        "entry_fee": 10.0,
                         "nightly_rate": None,
                         "star_class": None,
                         "photos": ["https://example.com/giza.jpg"],
+                    },
+                    {
+                        "id": "lo-ABC123",
+                        "name": "Kempinski Nile Hotel",
+                        "category": "hotel",
+                        "sub_category": "luxury",
+                        "lat": 30.0531,
+                        "lon": 31.2254,
+                        "rating": 4.7,
+                        "review_count": 13400,
+                        "popularity_score": 92.0,
+                        "city": "Cairo",
+                        "country": "Egypt",
+                        "address": "Cairo, Egypt",
+                        "nightly_rate": 168.0,
+                        "star_class": 5,
+                        "photos": ["https://example.com/kempinski.jpg"],
                     }
                 ],
-                "total": 1,
-                "filters_applied": {"city": "cairo", "categories": ["attraction"]},
+                "total": 2,
+                "filters_applied": {"country": "Egypt", "categories": ["hotel"]},
             }
         }
