@@ -30,6 +30,7 @@ class PlaceRepository(BaseRepository):
         interests: Optional[List[str]] = None,
         lat: Optional[float] = None,
         lng: Optional[float] = None,
+        accommodation_type: Optional[str] = None,
         max_distance_km: Optional[float] = None,
         limit: int = 50,
         offset: int = 0,
@@ -79,6 +80,16 @@ class PlaceRepository(BaseRepository):
             filters.append(Place.price_level >= min_price_level)
         if max_price_level is not None:
             filters.append(Place.price_level <= max_price_level)
+
+        # Accommodation type filter (requires HotelDetails join)
+        if accommodation_type:
+            query = query.outerjoin(
+                HotelDetails,
+                Place.place_id == HotelDetails.place_id,
+            )
+            filters.append(
+                func.lower(HotelDetails.accommodation_type) == accommodation_type.lower()
+            )
 
         # Interest/Tag filter (broad search across multiple sources)
         if interests:
@@ -197,7 +208,7 @@ class PlaceRepository(BaseRepository):
             cuisine_type = place.restaurant_details.cuisine_type or ""
             sub_category = cuisine_type
         elif hasattr(place, "hotel_details") and place.hotel_details:
-            sub_category = "hotel"
+            sub_category = (place.hotel_details.accommodation_type or "hotel").lower()
 
         # Derive tags from sub_category if empty
         if not interest_tags and sub_category:
@@ -220,10 +231,12 @@ class PlaceRepository(BaseRepository):
         if sub_category:
             _add_tag(sub_category)
 
-        # Hotel amenities
+        # Hotel amenities & accommodation type
         amenities: list[str] = []
+        accommodation_type = ""
         if hasattr(place, "hotel_details") and place.hotel_details:
             amenities = place.hotel_details.amenities or []
+            accommodation_type = place.hotel_details.accommodation_type or ""
             for amenity in amenities:
                 _add_tag(amenity)
 
@@ -248,6 +261,7 @@ class PlaceRepository(BaseRepository):
             "interest_tags": all_tags,
             "cuisine_type": cuisine_type,
             "amenities": amenities,
+            "accommodation_type": accommodation_type,
             "address": place.address or "",
             "hours": place.opening_hours or {},
             "city": place.city or "",

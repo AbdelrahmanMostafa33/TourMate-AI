@@ -82,7 +82,12 @@ class ExtractedSlots(BaseModel):
     )
     accommodation_preferences: Optional[List[str]] = Field(
         default=None,
-        description="Accommodation preferences (e.g. ['boutique hotel', 'hostel'])",
+        description=(
+            "Accommodation preferences using natural language that maps to accommodation types. "
+            "Use terms containing one of these keywords: 'hotel' (standard), 'hostel' (budget/shared), "
+            "'resort' (all-inclusive/beach), 'luxury'/'boutique'/'palace' (high-end). "
+            "Examples: ['boutique hotel'], ['hostel'], ['beach resort'], ['luxury hotel']"
+        ),
     )
 
 
@@ -175,6 +180,12 @@ The user just said: "{user_message}"
   - 'slow', 'easy', 'leisurely' → 'relaxed'
   - 'busy', 'intense', 'full' → 'packed'
   - 'mixed', 'flexible', 'varied' → 'moderate'
+- **Accommodation**: Always normalize to a phrase containing one of: 'hotel', 'hostel', 'resort', 'luxury', 'boutique'
+  - 'cheap place', 'budget stay', 'dorm', 'backpacker' → ['hostel']
+  - 'nice resort', 'beach resort', 'all-inclusive', 'spa resort' → ['resort']
+  - 'luxury', 'five star', 'high-end', 'premium', 'boutique', 'palace', 'upscale' → ['luxury hotel']
+  - 'hotel', 'apartment', 'airbnb', 'motel', 'standard' → ['hotel']
+  - Always return as a list with ONE item, e.g. ['resort'] not ['nice resort']
 
 ## Important Rules
 - **NEVER change travel_style based on interests.** If the user says "I like history", extract interests: ['history'] — do NOT set travel_style to 'cultural'. travel_style is ONLY set when the user explicitly describes their travel STYLE (e.g. 'I want a solo trip', 'cultural travel', 'relaxation'). The style normalization mappings (history→cultural, chill→relaxation, etc.) ONLY apply when the user is describing their travel style, NOT when they are listing interests.
@@ -186,7 +197,12 @@ The user just said: "{user_message}"
   - 'I want to try street food' → food_preferences: ['street food']
 - **Interests**: Extract from phrases like 'history', 'architecture', 'art', 'shopping', 'nightlife', 'nature', 'photography', etc.
   - 'I love history and architecture' → interests: ['history', 'architecture']
-- **Accommodation**: Extract from phrases like 'boutique hotel', 'hostel', ' Airbnb', 'resort', 'budget hotel', etc.
+- **Accommodation**: Extract the user's accommodation preference as a natural language phrase containing one of these keywords: 'hotel', 'hostel', 'resort', 'luxury', 'boutique', 'palace'. Map their words to the closest match:
+  - 'cheap place to stay', 'budget accommodation', 'backpacker', 'dorm' → ['hostel']
+  - 'nice resort', 'beach resort', 'all-inclusive' → ['resort']
+  - 'luxury hotel', 'five star', 'high-end', 'premium', 'boutique', 'palace' → ['luxury hotel']
+  - 'hotel', 'apartment', 'airbnb', 'motel', 'standard' → ['hotel']
+  - If unclear, default to ['hotel']
 - **If the user sends a greeting or casual message with no new travel info (e.g. 'hello', 'hi', 'how are you'), do NOT extract any slots — leave extracted empty.**"""
 
 

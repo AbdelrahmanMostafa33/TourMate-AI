@@ -81,6 +81,18 @@ def _score_preference(place: dict, preferences: dict) -> float:
             score += 1.0
         checks += 1
 
+    # Accommodation type match (hotels only)
+    accommodation_style = (preferences.get("accommodation_style") or "").lower()
+    if accommodation_style and place_category == "hotel":
+        place_acc = (place.get("accommodation_type", "") or "").lower()
+        if place_acc and (
+            accommodation_style in place_acc
+            or place_acc in accommodation_style
+            or any(w in place_acc for w in accommodation_style.split())
+        ):
+            score += 1.0
+        checks += 1
+
     return score / max(checks, 1)
 
 

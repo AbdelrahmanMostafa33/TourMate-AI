@@ -3,10 +3,11 @@
 from pydantic import BaseModel, Field
 from typing import Optional, List
 
-from app.models.enums import PlaceCategory
+from app.models.enums import PlaceCategory, AccommodationType
 
 # Valid category values for validation (used by route handler for 400 response)
 VALID_CATEGORIES = {e.value for e in PlaceCategory}
+VALID_ACCOMMODATION_TYPES = {e.value for e in AccommodationType}
 
 
 class PlaceSearchRequest(BaseModel):
@@ -20,6 +21,11 @@ class PlaceSearchRequest(BaseModel):
     # Category filters
     categories: Optional[List[str]] = Field(
         None, description="Filter by categories: attraction, restaurant, hotel"
+    )
+
+    # Accommodation type filter (hotels only)
+    accommodation_type: Optional[str] = Field(
+        None, description=f"Filter hotels by type: {sorted(VALID_ACCOMMODATION_TYPES)}"
     )
 
     # Rating filters
@@ -62,6 +68,14 @@ class PlaceSearchResponse(BaseModel):
     """
     Response schema for place search (DB-backed).
     Returns places in the format expected by AI engine agents.
+
+    Each place dict includes:
+    - id, name, category, sub_category
+    - lat, lon (coordinates)
+    - rating, popularity_score, review_count
+    - interest_tags (merged from all detail sources)
+    - cuisine_type (restaurants only)
+    - amenities, accommodation_type (hotels only)
     """
     places: List[dict] = Field(..., description="Filtered places in AI engine format")
     total: int = Field(..., description="Total matching places in database")
@@ -81,10 +95,29 @@ class PlaceSearchResponse(BaseModel):
                         "rating": 4.5,
                         "popularity_score": 85.0,
                         "interest_tags": ["history", "culture"],
+                    },
+                    {
+                        "id": "place_002",
+                        "name": "Four Seasons Hotel Cairo",
+                        "category": "hotel",
+                        "sub_category": "luxury",
+                        "lat": 30.0531,
+                        "lon": 31.2254,
+                        "rating": 4.8,
+                        "popularity_score": 92.0,
+                        "interest_tags": ["luxury"],
+                        "amenities": ["spa", "pool", "gym"],
+                        "accommodation_type": "luxury",
                     }
                 ],
-                "total": 1,
-                "filters_applied": {"city": "cairo", "categories": ["attraction"]},
+                "total": 2,
+                "filters_applied": {
+                    "city": "cairo",
+                    "categories": ["attraction", "hotel"],
+                    "accommodation_type": None,
+                    "min_rating": None,
+                    "interests": None,
+                },
             }
         }
 

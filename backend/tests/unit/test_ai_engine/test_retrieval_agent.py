@@ -159,6 +159,44 @@ class TestApplyFilters:
         assert "Museum" in names
         assert "Sports Bar" not in names
 
+    def test_hotel_filtered_by_accommodation_type(self):
+        """When accommodation_style is set, only matching hotels are kept."""
+        hotel = _make_hotel(accommodation_type="hotel")
+        hostel = _make_hotel(id="h2", name="Test Hostel", accommodation_type="hostel")
+        resort = _make_hotel(id="h3", name="Test Resort", accommodation_type="resort")
+        prefs = {
+            "interests_from_conversation": [],
+            "accommodation_style": "resort",
+        }
+        filtered = _apply_filters([hotel, hostel, resort], prefs, "Cairo")
+        names = {p["name"] for p in filtered}
+        assert "Test Resort" in names
+        assert "Test Hotel" not in names
+        assert "Test Hostel" not in names
+
+    def test_hotel_kept_when_no_accommodation_style(self):
+        """When no accommodation_style is set, all hotels are kept."""
+        hotel = _make_hotel(accommodation_type="hotel")
+        hostel = _make_hotel(id="h2", name="Test Hostel", accommodation_type="hostel")
+        prefs = {
+            "interests_from_conversation": [],
+        }
+        filtered = _apply_filters([hotel, hostel], prefs, "Cairo")
+        assert len(filtered) == 2
+
+    def test_accommodation_style_partial_match(self):
+        """'boutique hotel' should match a hotel with type 'hotel'."""
+        hotel = _make_hotel(accommodation_type="hotel")
+        hostel = _make_hotel(id="h2", name="Test Hostel", accommodation_type="hostel")
+        prefs = {
+            "interests_from_conversation": [],
+            "accommodation_style": "boutique hotel",
+        }
+        filtered = _apply_filters([hotel, hostel], prefs, "Cairo")
+        names = {p["name"] for p in filtered}
+        assert "Test Hotel" in names
+        assert "Test Hostel" not in names
+
     def test_empty_places_returns_empty(self):
         filtered = _apply_filters([], {"interests_from_conversation": []}, "Cairo")
         assert filtered == []

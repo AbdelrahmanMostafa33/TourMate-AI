@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import '../data/repository/chat_repository.dart';
@@ -7,28 +8,34 @@ import 'chat_state.dart';
 class ChatCubit extends Cubit<ChatState> {
   final ChatRepository _repo;
 
-  List<ChatMessage> _messages = [];
+  final List<ChatMessage> _messages = [];
   String _buffer = "";
+  StreamSubscription<dynamic>? _subscription;
 
   ChatCubit(this._repo) : super(const ChatState.initial());
 
   Future<void> connect() async {
     emit(const ChatState.loading());
-
     await _repo.connect();
+    _listenToStream();
+    emit(ChatState.connected(messages: _messages, isTyping: false));
+  }
 
-    _repo.messages?.listen(
+  void _listenToStream() {
+    _subscription?.cancel();
+    _subscription = _repo.messages?.listen(
       _handleEvent,
       onError: (error) {
-      emit(ChatState.error("Connection error: $error"));
-    },
+        if (!isClosed) {
+          emit(ChatState.error("Connection error: $error"));
+        }
+      },
       onDone: () {
-        // WebSocket closed by server
-        emit(ChatState.error("Connection closed. Please try again."));
+        if (!isClosed) {
+          emit(ChatState.error("Connection closed. Please try again."));
+        }
       },
     );
-
-    emit(ChatState.connected(messages: _messages, isTyping: false));
   }
 
   void sendMessage(String message) {
@@ -55,7 +62,7 @@ class ChatCubit extends Cubit<ChatState> {
     });
   }
 
-  void _handleEvent(dynamic event) {
+  Future<void> _handleEvent(dynamic event) async {
     final data = jsonDecode(event);
 
     switch (data["type"]) {
@@ -100,21 +107,41 @@ class ChatCubit extends Cubit<ChatState> {
         break;
 
       case "trip_created":
-      // later: navigate to trips screen
+        final tripId = data["trip_id"] as String?;
+        if (tripId != null) {
+          _repo.disconnect();
+          _buffer = "";
+          try {
+            await _repo.connectToTrip(tripId);
+            _listenToStream();
+          } catch (e) {
+            if (!isClosed) {
+              emit(ChatState.error("Failed to reconnect: $e"));
+            }
+          }
+        }
         break;
 
       case "actions":
-      // later: show itinerary UI
+        // Actions from AI (ADD_ACTIVITY, UPDATE_ACTIVITY, etc.)
+        // Could be used to update a local itinerary state
+        break;
+
+      case "itinerary_updated":
+        // Itinerary was modified by the backend
         break;
 
       case "error":
-        emit(ChatState.error(data["data"]));
+        if (!isClosed) {
+          emit(ChatState.error(data["data"]));
+        }
         break;
     }
   }
 
   @override
   Future<void> close() {
+    _subscription?.cancel();
     _repo.disconnect();
     return super.close();
   }

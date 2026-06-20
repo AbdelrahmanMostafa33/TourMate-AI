@@ -1,9 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/gestures.dart';
-import '../../../../core/errors/api_result.dart';
 import '../../data/datasource/firebase_auth_service.dart';
 import '../../../../core/network/service_locator.dart';
-import '../../../quiz/data/repository/quiz_repository.dart';
+import '../../../../core/errors/api_result.dart';
 import '../../data/repository/auth_repository.dart';
 import '../../data/repository/profile_repository.dart';
 import '../widgets/custom_textfield.dart';
@@ -46,23 +45,16 @@ class _SignInScreenState extends State<SignInScreen> {
       );
 
       /// 3. NAVIGATION LOGIC 🔥
-      profile.when(
-        success: (profile) {
-          if (profile.quizCompleted) {
-            Navigator.pushReplacementNamed(context, "/home");
-          } else {
-            Navigator.pushReplacementNamed(context, "/quiz-decision");
-          }
-        },
-        failure: (message) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(message),
-              backgroundColor: Colors.red,
-            ),
-          );
-        },
-      );
+      if (profile is Success) {
+        Navigator.pushReplacementNamed(context, "/home");
+      } else if (profile is Failure) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text((profile as Failure).message),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
 
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -84,8 +76,6 @@ class _SignInScreenState extends State<SignInScreen> {
 
       final firebase = locator<FirebaseAuthService>();
       final repo = locator<AuthRepository>();
-      final profileRepo = locator<ProfileRepository>();
-      final quizRepo = locator<QuizRepository>();
 
       await firebase.signInWithGoogle();
 
@@ -93,48 +83,13 @@ class _SignInScreenState extends State<SignInScreen> {
 
       if(!mounted) return;
 
-      final result = await profileRepo.getProfile();
-
-      await result.when(
-        success: (profile) async {
-          /// Profile exists → do nothing
-        },
-        failure: (message) async {
-          /// If profile NOT found → create default profile
-          if (message.contains("not found") || message.contains("404")) {
-            await quizRepo.skipQuiz();
-          } else {
-            throw Exception(message); // real error
-          }
-        },
-      );
-
-      /// Fetch profile again AFTER ensuring it exists
-      final profile = await profileRepo.getProfile();
-
-      /// 3. NAVIGATION LOGIC 🔥
-      profile.when(
-        success: (profile) {
-          if (profile.quizCompleted) {
-            Navigator.pushReplacementNamed(context, "/profile");
-          } else {
-            Navigator.pushReplacementNamed(context, "/quiz-decision");
-          }
-        },
-        failure: (message) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(message),
-              backgroundColor: Colors.red,
-            ),
-          );
-        },
-      );
+      /// Navigate to home
+      Navigator.pushReplacementNamed(context, "/home");
 
     } catch(e) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(handleAuthError(e)),    // ✅ nice
+          content: Text(handleAuthError(e)),
           backgroundColor: Colors.red.shade700,
         ),
       );

@@ -1,17 +1,16 @@
 class RegisterRequest {
-
   final String fullName;
-  final String? phone;
+  final String? phoneNumber;
 
   RegisterRequest({
     required this.fullName,
-    this.phone,
+    this.phoneNumber,
   });
 
   Map<String, dynamic> toJson() {
     return {
       "full_name": fullName,
-      "phone": phone,
+      "phone_number": phoneNumber,
     };
   }
 }

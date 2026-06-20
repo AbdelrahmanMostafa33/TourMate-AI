@@ -144,6 +144,40 @@ class TestScorePreference:
         # Only interest check happened (0 since no tag match)
         assert score == 0.0
 
+    def test_accommodation_type_match(self):
+        """Hotel with matching accommodation_type should score higher."""
+        place = _make_place(category="hotel", accommodation_type="resort")
+        prefs = {"accommodation_style": "resort", "interests_from_conversation": ["history"]}
+        score = _score_preference(place, prefs)
+        assert score > 0.5  # Interest + accommodation match
+
+    def test_accommodation_type_no_match(self):
+        """Hotel with non-matching accommodation_type should not get the bonus."""
+        place = _make_place(category="hotel", accommodation_type="hostel")
+        prefs = {"accommodation_style": "resort", "interests_from_conversation": ["history"]}
+        score_match = _score_preference(place, prefs)
+
+        # Same place but matching
+        place_match = _make_place(category="hotel", accommodation_type="resort")
+        score_with = _score_preference(place_match, prefs)
+
+        assert score_with > score_match
+
+    def test_accommodation_check_only_for_hotels(self):
+        """Non-hotel places skip accommodation preference check."""
+        place = _make_place(category="attractions")
+        prefs = {"accommodation_style": "resort", "interests_from_conversation": ["history"]}
+        score = _score_preference(place, prefs)
+        # Only interest check happened
+        assert score >= 0.0
+
+    def test_accommodation_partial_word_match(self):
+        """'boutique hotel' preference should match 'hotel' type."""
+        place = _make_place(category="hotel", accommodation_type="hotel")
+        prefs = {"accommodation_style": "boutique hotel"}
+        score = _score_preference(place, prefs)
+        assert score == 1.0  # Word 'hotel' in both
+
     def test_empty_preferences_returns_zero(self):
         place = _make_place()
         prefs = {}

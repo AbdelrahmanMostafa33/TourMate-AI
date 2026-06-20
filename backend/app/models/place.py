@@ -11,7 +11,7 @@ from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 
 from app.core.database import Base
-from app.models.enums import PlaceCategory
+from app.models.enums import PlaceCategory, AccommodationType
 
 
 
@@ -63,8 +63,12 @@ class HotelDetails(Base):
     place_id          = Column(String, ForeignKey("places.place_id", ondelete="CASCADE"), primary_key=True)
     star_class        = Column(Integer, nullable=True)
     nightly_rate      = Column(Float, nullable=True)
-    amenities         = Column(JSON, nullable=True)          # List[str]
-    booking_platforms  = Column(JSON, nullable=True)         # List[str]
+    amenities          = Column(JSON, nullable=True)          # List[str]
+    booking_platforms   = Column(JSON, nullable=True)         # List[str]
+    accommodation_type = Column(
+        SAEnum(AccommodationType, name="accommodation_type"),
+        nullable=True,
+    )
 
     # Relationships
     place = relationship("Place", back_populates="hotel_details")

@@ -49,6 +49,7 @@ def _normalize_place(raw: dict) -> dict:
     sub_category = ""
     interest_tags = []
     cuisine_type = ""
+    accommodation_type = ""
 
     if raw.get("attractionDetails"):
         ad = raw["attractionDetails"]
@@ -60,7 +61,8 @@ def _normalize_place(raw: dict) -> dict:
         # Derive sub_category from cuisine
         sub_category = cuisine_type
     elif raw.get("hotelDetails"):
-        sub_category = "hotel"
+        accommodation_type = (raw["hotelDetails"].get("accommodation_type") or "hotel").lower()
+        sub_category = accommodation_type
 
     # If no tags from detail, derive from sub_category
     if not interest_tags and sub_category:
@@ -80,6 +82,7 @@ def _normalize_place(raw: dict) -> dict:
         "popularity_score": raw.get("popularityScore") or raw.get("popularity_score", 0),
         "interest_tags": interest_tags,
         "cuisine_type": cuisine_type,
+        "accommodation_type": accommodation_type if raw.get("hotelDetails") else "",
         "address": raw.get("address", ""),
         "hours": raw.get("openingHours") or {},
         "photos": (raw.get("photoUrls") or raw.get("photos") or [])[:1],

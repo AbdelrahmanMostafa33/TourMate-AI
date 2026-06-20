@@ -60,6 +60,13 @@ class PlaceCategory(str, PyEnum):
     attraction = "attraction"
 
 
+class AccommodationType(str, PyEnum):
+    hotel    = "hotel"
+    hostel   = "hostel"
+    resort   = "resort"
+    luxury   = "luxury"
+
+
 # ─── Booking & Payment ───────────────────────────────────────────────────────
 
 class BookingType(str, PyEnum):

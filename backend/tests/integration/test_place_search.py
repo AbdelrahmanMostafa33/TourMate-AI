@@ -134,12 +134,13 @@ def _make_restaurant_details(cuisine_type="Italian"):
     return d
 
 
-def _make_hotel_details(amenities=None):
+def _make_hotel_details(amenities=None, accommodation_type=None):
     d = MagicMock()
     d.star_class = 4
     d.nightly_rate = 150.0
     d.amenities = amenities or ["wifi", "pool"]
     d.booking_platforms = ["booking.com"]
+    d.accommodation_type = accommodation_type or "hotel"
     return d
 
 
@@ -232,9 +233,15 @@ class TestPlaceToDictEnrichment:
         assert result["cuisine_type"] == ""
 
     def test_null_amenities_does_not_crash(self):
+        d = MagicMock()
+        d.star_class = 4
+        d.nightly_rate = 150.0
+        d.amenities = None
+        d.booking_platforms = ["booking.com"]
+        d.accommodation_type = None
         place = _make_place_model(
             category=PlaceCategory.hotel,
-            hotel_details=MagicMock(amenities=None),
+            hotel_details=d,
             attraction_details=None,
             restaurant_details=None,
         )
@@ -280,6 +287,25 @@ class TestSortValidation:
 # ═════════════════════════════════════════════════════════════════════════════
 # 4. Schema Request Validation
 # ═════════════════════════════════════════════════════════════════════════════
+
+
+class TestAccommodationTypeFilter:
+    """accommodation_type filter should work in the request schema."""
+
+    def test_accommodation_type_accepted(self):
+        req = PlaceSearchRequest(city="Cairo", accommodation_type="hotel")
+        assert req.accommodation_type == "hotel"
+
+    def test_accommodation_type_none_by_default(self):
+        req = PlaceSearchRequest(city="Cairo")
+        assert req.accommodation_type is None
+
+    def test_accommodation_type_with_category(self):
+        req = PlaceSearchRequest(
+            city="Cairo", categories=["hotel"], accommodation_type="resort"
+        )
+        assert req.accommodation_type == "resort"
+        assert req.categories == ["hotel"]
 
 
 class TestSchemaValidation:

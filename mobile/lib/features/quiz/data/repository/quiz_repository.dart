@@ -1,30 +1,29 @@
 import '../../../../core/errors/api_result.dart';
-import '../../../../core/network/api_services.dart';
 import '../../data/models/persona_response.dart';
 
 class QuizRepository {
-  final ApiServices api;
+  QuizRepository();
 
-  QuizRepository(this.api);
-
-  /// Skip quiz → default persona
+  /// Skip quiz → default persona (no backend endpoint — returns default)
   Future<ApiResult<PersonaResponse>> skipQuiz() async {
-    try {
-      final res = await api.skipQuiz();
-      return ApiResult.success(res);
-    } catch (e) {
-      return ApiResult.failure(e.toString());
-    }
+    return ApiResult.success(const PersonaResponse(
+      personaName: 'The Open Explorer',
+      personaBio: 'A curious traveler ready to explore the world.',
+      interests: [],
+      suggestedQuestions: [],
+      quizCompleted: false,
+    ));
   }
 
-  /// Submit quiz
+  /// Submit quiz (no backend endpoint — returns default)
   Future<ApiResult<PersonaResponse>> submitQuiz(
       Map<String, dynamic> body) async {
-    try {
-      final res = await api.submitQuiz(body);
-      return ApiResult.success(res);
-    } catch (e) {
-      return ApiResult.failure(e.toString());
-    }
+    return ApiResult.success(const PersonaResponse(
+      personaName: 'The Open Explorer',
+      personaBio: 'A curious traveler ready to explore the world.',
+      interests: [],
+      suggestedQuestions: [],
+      quizCompleted: false,
+    ));
   }
 }

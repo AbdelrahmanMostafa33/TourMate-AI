@@ -57,6 +57,8 @@ def _make_hotel_candidate(**overrides) -> dict:
         category="hotel",
         sub_category="luxury hotel",
         interest_tags=[],
+        accommodation_type="hotel",
+        amenities=["wifi", "pool", "spa"],
     )
     base.update(overrides)
     return base
@@ -162,8 +164,30 @@ class TestTrimForPrompt:
         candidate = _make_candidate()
         trimmed = _trim_for_prompt(candidate)
 
-        expected_keys = {"id", "name", "category", "sub_category", "lat", "lon", "rating", "score"}
+        expected_keys = {"id", "name", "category", "sub_category", "interest_tags", "lat", "lon", "rating", "score"}
         assert set(trimmed.keys()) == expected_keys
+
+    def test_hotel_includes_accommodation_type(self):
+        hotel = _make_hotel_candidate()
+        trimmed = _trim_for_prompt(hotel)
+        assert trimmed["accommodation_type"] == "hotel"
+        assert trimmed["amenities"] == ["wifi", "pool", "spa"]
+
+    def test_non_hotel_excludes_accommodation_type(self):
+        place = _make_candidate()
+        trimmed = _trim_for_prompt(place)
+        assert "accommodation_type" not in trimmed
+        assert "amenities" not in trimmed
+
+    def test_restaurant_includes_cuisine_type(self):
+        restaurant = _make_restaurant_candidate()
+        trimmed = _trim_for_prompt(restaurant)
+        assert trimmed["cuisine_type"] == "local cuisine"
+
+    def test_non_restaurant_excludes_cuisine_type(self):
+        place = _make_candidate()
+        trimmed = _trim_for_prompt(place)
+        assert "cuisine_type" not in trimmed
 
     def test_removes_large_fields(self):
         candidate = _make_candidate()
@@ -171,7 +195,6 @@ class TestTrimForPrompt:
 
         assert "description" not in trimmed
         assert "review_count" not in trimmed
-        assert "interest_tags" not in trimmed
         assert "photos" not in trimmed
         assert "maps_link" not in trimmed
         assert "address" not in trimmed
@@ -339,6 +362,8 @@ class TestPlanningAgentEdgeCases:
 
         hotel = result["draft_itinerary"]["accommodation_suggestions"][0]
         assert hotel.get("category") == "hotel"
+        assert hotel.get("accommodation_type") == "hotel"
+        assert hotel.get("amenities") == ["wifi", "pool", "spa"]
 
     @pytest.mark.asyncio
     async def test_user_message_included_in_prompt(self):

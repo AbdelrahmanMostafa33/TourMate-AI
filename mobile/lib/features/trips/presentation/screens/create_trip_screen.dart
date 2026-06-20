@@ -70,24 +70,28 @@ class _CreateTripViewState extends State<_CreateTripView> {
   }
 
   void _submit() {
-    if (_cityController.text.trim().isEmpty ||
-        _countryController.text.trim().isEmpty) {
+    final city = _cityController.text.trim();
+    final country = _countryController.text.trim();
+    if (city.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("City and country are required")),
+        const SnackBar(content: Text("City is required")),
       );
       return;
     }
 
+    final destination = country.isNotEmpty ? "$city, $country" : city;
+    final prefsText = _preferencesController.text.trim();
+    final preferences = prefsText.isNotEmpty
+        ? prefsText.split(',').map((e) => e.trim()).where((e) => e.isNotEmpty).toList()
+        : null;
+
     final request = CreateTripRequest(
-      destinationCity: _cityController.text.trim(),
-      destinationCountry: _countryController.text.trim(),
+      destination: destination,
       startDate: _startDate?.toIso8601String(),
       endDate: _endDate?.toIso8601String(),
-      budgetTotal: double.tryParse(_budgetController.text.trim()),
-      travelerCount: int.tryParse(_travelersController.text.trim()),
-      preferences: _preferencesController.text.trim().isEmpty
-          ? null
-          : _preferencesController.text.trim(),
+      budget: double.tryParse(_budgetController.text.trim()),
+      numberOfTravelers: int.tryParse(_travelersController.text.trim()),
+      preferences: preferences,
     );
 
     context.read<TripsCubit>().createTrip(request);

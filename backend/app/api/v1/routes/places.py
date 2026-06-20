@@ -11,6 +11,7 @@ from app.schemas.place_search import (
     PlaceSearchResponse,
     ExplorePlacesResponse,
     VALID_CATEGORIES,
+    VALID_ACCOMMODATION_TYPES,
 )
 from app.services.places_service import PlaceSearchService
 
@@ -128,11 +129,20 @@ async def search_places(
 
     **Filters supported:**
     - City (required)
-    - Categories (attraction, restaurant, hotel)
+    - Categories: attraction, restaurant, hotel
+    - Accommodation type (hotels only): hotel, hostel, resort, luxury
     - Rating (min)
     - Price level (min/max)
     - Interests/tags
     - Location (lat/lng) with distance filter
+
+    **Returns:**
+    - places: List of place dicts in AI engine format
+    - total: Total matching places in database
+    - filters_applied: Summary of applied filters
+
+    **Errors:**
+    - 400: Invalid category or accommodation_type values
     """
     # Validate categories (return 400, not 422)
     if request.categories:
@@ -146,6 +156,16 @@ async def search_places(
                 ),
             )
 
+    # ── Validate accommodation_type (return 400) ──────────────────────
+    if request.accommodation_type and request.accommodation_type not in VALID_ACCOMMODATION_TYPES:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Invalid accommodation_type: {request.accommodation_type}. "
+                f"Valid options are: {sorted(VALID_ACCOMMODATION_TYPES)}"
+            ),
+        )
+
     service = PlaceSearchService(db)
 
     result = await service.search_places(
@@ -156,6 +176,7 @@ async def search_places(
         min_price_level=request.min_price_level,
         max_price_level=request.max_price_level,
         interests=request.interests,
+        accommodation_type=request.accommodation_type,
         lat=request.lat,
         lng=request.lng,
         max_distance_km=request.max_distance_km,
