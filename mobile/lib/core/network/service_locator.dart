@@ -49,7 +49,7 @@ Future<void> setupLocator() async {
   );
 
   locator.registerLazySingleton<QuizRepository>(
-        () => QuizRepository(locator<ApiServices>()),
+        () => QuizRepository(),
   );
 
   locator.registerLazySingleton(

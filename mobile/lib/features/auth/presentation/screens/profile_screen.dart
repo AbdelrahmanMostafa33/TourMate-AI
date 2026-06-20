@@ -50,8 +50,8 @@ class _ProfileView extends StatelessWidget {
                             radius: 28,
                             backgroundColor: Colors.black,
                             child: Text(
-                              data.fullName.isNotEmpty
-                                  ? data.fullName[0]
+                              (data.fullName ?? "U").isNotEmpty
+                                  ? (data.fullName ?? "U")[0]
                                   : "U",
                               style: const TextStyle(color: Colors.white),
                             ),
@@ -62,7 +62,7 @@ class _ProfileView extends StatelessWidget {
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Text(
-                                data.fullName,
+                                data.fullName ?? "User",
                                 style: const TextStyle(
                                   fontSize: 22,
                                   fontWeight: FontWeight.bold,
@@ -82,95 +82,65 @@ class _ProfileView extends StatelessWidget {
                       const SizedBox(height: 20),
 
                       /// ================= BASIC INFO =================
-                      Text("Age: ${data.age ?? "N/A"}"),
-                      Text("Role: ${data.role}"),
+                      if (data.phoneNumber != null && data.phoneNumber!.isNotEmpty)
+                        Text("Phone: ${data.phoneNumber}"),
+                      if (data.homeCity != null && data.homeCity!.isNotEmpty)
+                        Text("Home City: ${data.homeCity}"),
+                      if (data.travelerPersona != null && data.travelerPersona!.isNotEmpty)
+                        Text("Persona: ${data.travelerPersona}"),
 
                       const SizedBox(height: 20),
 
-                      /// ================= PERSONA =================
-                      Text(
-                        data.personaName ?? "No Persona Yet",
-                        style: const TextStyle(
-                          fontSize: 20,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-
-                      const SizedBox(height: 10),
-
-                      Container(
-                        width: double.infinity,
-                        padding: const EdgeInsets.all(14),
-                        decoration: BoxDecoration(
-                          border: Border.all(color: Colors.grey.shade400),
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: Text(
-                          data.personaBio ?? "No bio available",
-                          style: const TextStyle(height: 1.5),
-                        ),
-                      ),
-
-                      const SizedBox(height: 16),
-
-                      /// ================= QUIZ BUTTON (KEEP LOGIC) =================
-                      Align(
-                        alignment: Alignment.centerRight,
-                        child: ElevatedButton(
-                          onPressed: () {
-                            Navigator.pushReplacementNamed(
-                                context, "/quiz");
-                          },
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.black,
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 18,
-                              vertical: 10,
-                            ),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(20),
-                            ),
-                          ),
-                          child: Text(
-                            data.quizCompleted
-                                ? "Retake Quiz"
-                                : "Take Quiz",
-                            style: const TextStyle(color: Colors.white),
+                      /// ================= TRIP PROFILE =================
+                      if (data.tripProfile != null) ...[
+                        const Text(
+                          "Trip Profile",
+                          style: TextStyle(
+                            fontSize: 20,
+                            fontWeight: FontWeight.bold,
                           ),
                         ),
-                      ),
+                        const SizedBox(height: 10),
+                        if (data.tripProfile!.budgetLevel != null)
+                          Text("Budget: ${data.tripProfile!.budgetLevel}"),
+                        if (data.tripProfile!.travelStyle != null)
+                          Text("Style: ${data.tripProfile!.travelStyle}"),
+                        if (data.tripProfile!.pace != null)
+                          Text("Pace: ${data.tripProfile!.pace}"),
+                        const SizedBox(height: 10),
+                      ],
 
                       const SizedBox(height: 20),
 
                       /// ================= INTERESTS =================
-                      const Text(
-                        "INTERESTS",
-                        style: TextStyle(
-                          color: Colors.grey,
-                          fontWeight: FontWeight.bold,
-                          letterSpacing: 1,
+                      if (data.tripProfile?.interests != null && data.tripProfile!.interests!.isNotEmpty) ...[
+                        const Text(
+                          "INTERESTS",
+                          style: TextStyle(
+                            color: Colors.grey,
+                            fontWeight: FontWeight.bold,
+                            letterSpacing: 1,
+                          ),
                         ),
-                      ),
-
-                      const SizedBox(height: 12),
-
-                      Wrap(
-                        spacing: 10,
-                        runSpacing: 10,
-                        children: (data.interests ?? []).map((interest) {
-                          return Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 14,
-                              vertical: 8,
-                            ),
-                            decoration: BoxDecoration(
-                              color: Colors.grey.shade300,
-                              borderRadius: BorderRadius.circular(20),
-                            ),
-                            child: Text(interest),
-                          );
-                        }).toList(),
-                      ),
+                        const SizedBox(height: 12),
+                        Wrap(
+                          spacing: 10,
+                          runSpacing: 10,
+                          children: data.tripProfile!.interests!.map((interest) {
+                            return Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 14,
+                                vertical: 8,
+                              ),
+                              decoration: BoxDecoration(
+                                color: Colors.grey.shade300,
+                                borderRadius: BorderRadius.circular(20),
+                              ),
+                              child: Text(interest),
+                            );
+                          }).toList(),
+                        ),
+                      ],
 
                       const Spacer(),
                     ],

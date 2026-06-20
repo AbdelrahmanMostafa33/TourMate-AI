@@ -11,6 +11,10 @@ class ChatRepository {
     await _ws.connectNewChat();
   }
 
+  Future<void> connectToTrip(String tripId, {String? autoMsg}) async {
+    await _ws.connectToTrip(tripId, autoMsg: autoMsg);
+  }
+
   void sendMessage(String message) {
     _ws.sendMessage(message);
   }

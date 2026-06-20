@@ -1,47 +1,31 @@
 class CreateTripRequest {
-  final String destinationCity;
-  final String destinationCountry;
+  final String destination;
+  final String? tripName;
   final String? startDate;
   final String? endDate;
-  final double? budgetTotal;
-  final int? travelerCount;
-  final String? preferences;
-  final String inputMode;
+  final int? numberOfTravelers;
+  final double? budget;
+  final List<String>? preferences;
 
   CreateTripRequest({
-    required this.destinationCity,
-    required this.destinationCountry,
+    required this.destination,
+    this.tripName,
     this.startDate,
     this.endDate,
-    this.budgetTotal,
-    this.travelerCount,
+    this.numberOfTravelers,
+    this.budget,
     this.preferences,
-    this.inputMode = "manual", // default value
   });
-
-  factory CreateTripRequest.fromJson(Map<String, dynamic> json) {
-    return CreateTripRequest(
-      destinationCity: json['destination_city'],
-      destinationCountry: json['destination_country'],
-      startDate: json['start_date'],
-      endDate: json['end_date'],
-      budgetTotal: json['budget_total']?.toDouble(),
-      travelerCount: json['traveler_count'],
-      preferences: json['preferences'],
-      inputMode: json['input_mode'] ?? "manual",
-    );
-  }
 
   Map<String, dynamic> toJson() {
     return {
-      'destination_city': destinationCity,
-      'destination_country': destinationCountry,
-      'start_date': startDate,
-      'end_date': endDate,
-      'budget_total': budgetTotal,
-      'traveler_count': travelerCount,
-      'preferences': preferences,
-      'input_mode': inputMode,
+      'destination': destination,
+      if (tripName != null) 'trip_name': tripName,
+      if (startDate != null) 'start_date': startDate,
+      if (endDate != null) 'end_date': endDate,
+      if (numberOfTravelers != null) 'number_of_travelers': numberOfTravelers,
+      if (budget != null) 'budget': budget,
+      if (preferences != null) 'preferences': preferences,
     };
   }
 }

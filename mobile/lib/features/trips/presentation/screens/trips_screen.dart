@@ -142,7 +142,7 @@ class _TripsScreenState extends State<TripsScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  "${trip.destinationCity}, ${trip.destinationCountry}",
+                  trip.destination,
                   style: const TextStyle(
                     fontSize: 16,
                     fontWeight: FontWeight.bold,
@@ -150,7 +150,7 @@ class _TripsScreenState extends State<TripsScreen> {
                 ),
                 const SizedBox(height: 6),
                 Text(
-                  "${trip.durationDays} days",
+                  trip.durationDays > 0 ? "${trip.durationDays} days" : "",
                   style: TextStyle(color: Colors.grey[600]),
                 ),
                 const SizedBox(height: 6),
