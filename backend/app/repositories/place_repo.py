@@ -352,6 +352,10 @@ class PlaceRepository(BaseRepository):
             _add_tag(sub_category)
 
         # Hotel amenities & accommodation type
+        # NOTE: amenities are NOT added as individual interest_tags — the amenities
+        # field is already returned separately and `_add_tag(amenity)` just bloated
+        # the prompt with 10+ redundant per-hotel tags like "pool", "gym", "free wifi".
+        # The sub_category (accommodation_type) is sufficient as a hotel tag.
         amenities: list[str] = []
         accommodation_type = ""
         if hasattr(place, "hotel_details") and place.hotel_details:
@@ -359,8 +363,6 @@ class PlaceRepository(BaseRepository):
             accommodation_type = place.hotel_details.accommodation_type or ""
             if hasattr(accommodation_type, "value"):
                 accommodation_type = accommodation_type.value
-            for amenity in amenities:
-                _add_tag(amenity)
 
         # Hotel-specific pricing
         nightly_rate = None

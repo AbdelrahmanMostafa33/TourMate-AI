@@ -189,22 +189,25 @@ def _cap_candidates(
     max_attractions: int = 80,
     max_restaurants: int = 15,
     max_hotels: int = 10,
+    samples_per_subcategory: int = 6,
 ) -> list[dict]:
     """
-    Cap the number of candidates per category.
+    Cap the number of candidates per category using per-subcategory sampling.
 
-    The SQL-level stratified query already ensures diverse representation
-    (top K from each subcategory). This function just caps the totals
-    to keep the candidate set manageable for downstream agents.
+    Instead of taking the top N attractions by global popularity (which
+    causes low-popularity subcategories like nightlife to get zero slots),
+    this takes the top K from EACH subcategory. This guarantees every
+    subcategory gets representation regardless of popularity scores.
 
     Args:
         places: List of candidate places (already diverse via SQL).
         max_attractions: Max total attractions to keep.
         max_restaurants: Max restaurants to keep.
         max_hotels: Max hotels to keep.
+        samples_per_subcategory: Top K places to take from each subcategory.
 
     Returns:
-        List of place dicts with per-category caps applied.
+        List of place dicts with per-subcategory caps applied.
     """
     hotels = [p for p in places if p.get("category") == "hotel"]
     restaurants = [p for p in places if p.get("category") == "restaurant"]
@@ -213,12 +216,36 @@ def _cap_candidates(
         if p.get("category") not in ("hotel", "restaurant")
     ]
 
-    # Sort each by popularity score
-    attractions.sort(key=lambda p: p.get("popularity_score", 0) or 0, reverse=True)
+    # Sort restaurants and hotels by popularity score
     restaurants.sort(key=lambda p: p.get("popularity_score", 0) or 0, reverse=True)
     hotels.sort(key=lambda p: p.get("popularity_score", 0) or 0, reverse=True)
 
-    result = attractions[:max_attractions]
+    # Group attractions by subcategory and take top K from each
+    by_subcategory: dict[str, list[dict]] = {}
+    for p in attractions:
+        sub = (p.get("sub_category") or "").lower() or "other"
+        by_subcategory.setdefault(sub, []).append(p)
+
+    result = []
+    for sub in by_subcategory:
+        # Sort each subcategory's places by popularity
+        group = by_subcategory[sub]
+        group.sort(key=lambda p: p.get("popularity_score", 0) or 0, reverse=True)
+        result.extend(group[:samples_per_subcategory])
+
+    # If we have room, fill remaining slots with the best from across all subcategories
+    if len(result) < max_attractions:
+        remaining = max_attractions - len(result)
+        extras = []
+        for sub in by_subcategory:
+            group = by_subcategory[sub]
+            extras.extend(group[samples_per_subcategory:])
+        extras.sort(key=lambda p: p.get("popularity_score", 0) or 0, reverse=True)
+        result.extend(extras[:remaining])
+
+    # Safety cap: ensure we never exceed max_attractions
+    result = result[:max_attractions]
+
     result.extend(restaurants[:max_restaurants])
     result.extend(hotels[:max_hotels])
     return result

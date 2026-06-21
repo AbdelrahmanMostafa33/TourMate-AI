@@ -171,7 +171,8 @@ class TestPlaceToDictEnrichment:
         assert "italian" in result["interest_tags"]
         assert result["cuisine_type"] == "Italian"
 
-    def test_hotel_amenities_included_in_interest_tags(self):
+    def test_hotel_amenities_not_in_interest_tags(self):
+        """Hotel amenities are in the amenities field — not duplicated as individual interest_tags."""
         place = _make_place_model(
             category=PlaceCategory.hotel,
             hotel_details=_make_hotel_details(amenities=["spa", "pool", "gym"]),
@@ -179,9 +180,13 @@ class TestPlaceToDictEnrichment:
             restaurant_details=None,
         )
         result = _place_to_dict(place)
-        assert "spa" in result["interest_tags"]
-        assert "pool" in result["interest_tags"]
-        assert "gym" in result["interest_tags"]
+        # Amenities should NOT be in interest_tags (kept only in amenities field)
+        assert "spa" not in result["interest_tags"]
+        assert "pool" not in result["interest_tags"]
+        assert "gym" not in result["interest_tags"]
+        # Only the subcategory (accommodation_type) should be the tag
+        assert "hotel" in result["interest_tags"]
+        assert result["interest_tags"] == ["hotel"]
         assert result["amenities"] == ["spa", "pool", "gym"]
 
     def test_amenities_empty_for_non_hotel(self):
@@ -246,8 +251,9 @@ class TestPlaceToDictEnrichment:
         assert result["amenities"] == []
         assert result["interest_tags"] == ["hotel"]
 
-    def test_hotel_amenities_merge_with_hotel_subcategory(self):
-        """Hotel details: subcategory + amenities should all appear in interest_tags."""
+    def test_hotel_subcategory_in_interest_tags(self):
+        """Hotel subcategory (accommodation_type) appears in interest_tags,
+        but amenities are NOT duplicated as individual tags."""
         place = _make_place_model(
             category=PlaceCategory.hotel,
             attraction_details=None,
@@ -257,8 +263,9 @@ class TestPlaceToDictEnrichment:
         result = _place_to_dict(place)
         tags_lower = [t.lower() for t in result["interest_tags"]]
         assert "hotel" in tags_lower  # default subcategory
-        assert "spa" in tags_lower
-        assert "gym" in tags_lower
+        # Amenities are NOT in interest_tags anymore
+        assert "spa" not in tags_lower
+        assert "gym" not in tags_lower
 
 
 # ═════════════════════════════════════════════════════════════════════════════

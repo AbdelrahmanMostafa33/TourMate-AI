@@ -133,12 +133,17 @@ class TestGetPlacesForCityE2E:
 
 
     async def test_hotel_amenities_and_details_populated(self, seeded_db):
-        """Hotel details (amenities, accommodation_type) should be in the result."""
+        """Hotel details (amenities, accommodation_type) should be in the result.
+        Amenities are NOT duplicated as individual interest_tags."""
         places = await seeded_db("Cairo")
         marriott = next(p for p in places if p["name"] == "Marriott Mena House")
         assert marriott["accommodation_type"] == "luxury"
-        assert "pool" in marriott.get("interest_tags", [])
-        assert "spa" in marriott.get("interest_tags", [])
+        # Amenities are stored in the amenities field, not as individual interest_tags
+        assert "wifi" in marriott.get("amenities", [])
+        assert "pool" in marriott.get("amenities", [])
+        assert "spa" in marriott.get("amenities", [])
+        assert "pool" not in marriott.get("interest_tags", [])
+        assert "spa" not in marriott.get("interest_tags", [])
 
     async def test_restaurant_cuisine_populated(self, seeded_db):
         """Restaurant cuisine_type should appear in interest_tags."""

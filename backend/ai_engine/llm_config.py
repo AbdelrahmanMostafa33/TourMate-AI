@@ -209,19 +209,17 @@ class LLMConfig:
 
 class KeyManager:
     """
-    Manages multiple API keys per provider with automatic rate-limit detection.
+    Manages multiple API keys per provider with round-robin rotation.
 
-    When a key hits a 429 error, it is marked as exhausted for a configurable
-    TTL (default 60 s).  The next available key is then used.  Once all keys
-    for a provider are exhausted, ``get_key()`` returns ``None`` so callers
-    can surface a clear "all keys exhausted" error.
+    Keys are never marked globally exhausted — callers track failed keys
+    locally per retry sequence. ``get_key()`` returns the next available
+    key via round-robin, providing ``None`` only when no keys are
+    registered for the provider.
     """
 
     def __init__(self) -> None:
         # provider → ordered list of raw key strings
         self._keys: Dict[Provider, List[str]] = {}
-        # provider → { key_string: expiry_timestamp }
-        self._exhausted: Dict[Provider, Dict[str, float]] = {}
         # Per-provider round-robin index
         self._rr_index: Dict[Provider, int] = {}
 
@@ -235,7 +233,6 @@ class KeyManager:
         """
         keys = [k.strip() for k in raw.split(",") if k.strip()]
         self._keys[provider] = keys
-        self._exhausted[provider] = {}
         self._rr_index[provider] = 0
         if keys:
             logger.info(
@@ -245,58 +242,23 @@ class KeyManager:
 
     def get_key(self, provider: Provider) -> Optional[str]:
         """
-        Return the next available (non-exhausted) key for *provider*.
+        Return the next available key for *provider* via round-robin.
 
-        Uses round-robin with automatic skip of exhausted keys.
-        Returns ``None`` if no keys are available.
+        Keys are never marked exhausted — callers handle their own retry
+        tracking. Returns ``None`` only if no keys are registered.
         """
         keys = self._keys.get(provider, [])
         if not keys:
             return None
 
-        now = time.time()
-        exhausted = self._exhausted.get(provider, {})
-
-        # Purge expired entries
-        expired = [k for k, exp in exhausted.items() if exp <= now]
-        for k in expired:
-            del exhausted[k]
-
-        # Round-robin through keys, skipping exhausted ones
-        start = self._rr_index.get(provider, 0)
-        for i in range(len(keys)):
-            idx = (start + i) % len(keys)
-            candidate = keys[idx]
-            if candidate not in exhausted:
-                self._rr_index[provider] = (idx + 1) % len(keys)
-                return candidate
-
-        return None  # all keys exhausted
-
-    def mark_exhausted(
-        self,
-        provider: Provider,
-        key: str,
-        retry_after: float = 60.0,
-    ) -> None:
-        """Mark *key* as rate-limited for *retry_after* seconds."""
-        self._exhausted.setdefault(provider, {})[key] = (
-            time.time() + retry_after
-        )
-        logger.warning(
-            "[KeyManager] Key …%s exhausted for %s (retry in %.0fs)",
-            key[-4:], provider.value, retry_after,
-        )
+        idx = self._rr_index.get(provider, 0)
+        key = keys[idx]
+        self._rr_index[provider] = (idx + 1) % len(keys)
+        return key
 
     def get_available_count(self, provider: Provider) -> int:
-        """Number of keys currently available (not exhausted) for *provider*."""
-        keys = self._keys.get(provider, [])
-        now = time.time()
-        exhausted = self._exhausted.get(provider, {})
-        return sum(
-            1 for k in keys
-            if k not in exhausted or exhausted[k] <= now
-        )
+        """Number of registered keys for *provider*."""
+        return len(self._keys.get(provider, []))
 
     def get_total_count(self, provider: Provider) -> int:
         """Total registered keys for *provider*."""
@@ -329,7 +291,7 @@ _init_key_manager()
 
 AGENT_LLM_REGISTRY: Dict[str, LLMConfig] = {
     # ── Groq — classification, extraction, validation (massive RPD headroom) ──
-    "router":         LLMConfig(Provider.GROQ, "llama-3.3-70b-versatile", temperature=0.3, max_tokens=2048),
+    "router":         LLMConfig(Provider.GROQ, "llama-3.3-70b-versatile", temperature=0.7, max_tokens=2048),
     "preference":     LLMConfig(Provider.GROQ, "llama-3.1-8b-instant",  temperature=0.2, max_tokens=2048),
     "validator":      LLMConfig(Provider.GROQ, "llama-3.3-70b-versatile", temperature=0.2, max_tokens=2048),
     "review_qa":      LLMConfig(Provider.GROQ, "llama-3.3-70b-versatile", temperature=0.7, max_tokens=8192),
@@ -441,21 +403,6 @@ def _is_rate_limit_error(exc: Exception) -> bool:
     )
 
 
-def _parse_retry_after(exc: Exception) -> float:
-    """Try to extract a retry-after hint from the error message."""
-    import re
-    msg = str(exc)
-    # Look for patterns like "retry after 30" or "retry-after: 2"
-    match = re.search(r"retry[-\s]after[:\s]*(\d+)", msg, re.IGNORECASE)
-    if match:
-        return float(match.group(1))
-    # Look for "try again in Ns" or "available in Ns"
-    match = re.search(r"(?:try again|available|wait)[^.]*?(\d+)\s*s", msg, re.IGNORECASE)
-    if match:
-        return float(match.group(1))
-    return 60.0  # default fallback
-
-
 async def invoke_with_fallback(
     agent_role: str,
     messages: list[BaseMessage],
@@ -504,6 +451,10 @@ async def invoke_with_fallback(
         max_retries = max(total_keys, 1)
 
     last_error: Exception | None = None
+    # Local set of keys already tried in THIS retry sequence.
+    # Keys are NOT marked globally exhausted — the next key is tried immediately
+    # and keys remain available for subsequent calls.
+    tried_keys: set[str] = set()
 
     for attempt in range(max_retries):
         api_key = key_manager.get_key(provider)
@@ -513,6 +464,17 @@ async def invoke_with_fallback(
                 provider.value, agent_role,
             )
             break
+
+        # Skip keys already tried in this retry sequence
+        if api_key in tried_keys:
+            # All keys exhausted — stop spinning
+            if len(tried_keys) >= total_keys:
+                logger.warning(
+                    "[Fallback] All %d key(s) tried on %s for role '%s' — stopping",
+                    total_keys, provider.value, agent_role,
+                )
+                break
+            continue
 
         try:
             builder = _PROVIDER_BUILDERS[provider]
@@ -525,11 +487,10 @@ async def invoke_with_fallback(
         except Exception as exc:
             last_error = exc
             if _is_rate_limit_error(exc):
-                retry_after = _parse_retry_after(exc)
-                key_manager.mark_exhausted(provider, api_key, retry_after)
+                tried_keys.add(api_key)
                 logger.warning(
-                    "[Fallback] Key …%s rate-limited on '%s' (attempt %d/%d, retry in %.0fs)",
-                    api_key[-4:], agent_role, attempt + 1, max_retries, retry_after,
+                    "[Fallback] Key …%s rate-limited on '%s' (attempt %d/%d, trying next key)",
+                    api_key[-4:], agent_role, attempt + 1, max_retries,
                 )
                 continue
             # Non-rate-limit error — raise immediately
@@ -566,11 +527,18 @@ def invoke_with_fallback_sync(
         max_retries = max(total_keys, 1)
 
     last_error: Exception | None = None
+    # Local set of keys already tried in THIS retry sequence — no persistent TTL
+    tried_keys: set[str] = set()
 
     for attempt in range(max_retries):
         api_key = key_manager.get_key(provider)
         if api_key is None:
             break
+
+        if api_key in tried_keys:
+            if len(tried_keys) >= total_keys:
+                break
+            continue
 
         try:
             builder = _PROVIDER_BUILDERS[provider]
@@ -581,8 +549,7 @@ def invoke_with_fallback_sync(
         except Exception as exc:
             last_error = exc
             if _is_rate_limit_error(exc):
-                retry_after = _parse_retry_after(exc)
-                key_manager.mark_exhausted(provider, api_key, retry_after)
+                tried_keys.add(api_key)
                 continue
             raise
 

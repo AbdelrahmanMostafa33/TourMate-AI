@@ -14,8 +14,6 @@ import logging
 from langchain_core.messages import SystemMessage, HumanMessage
 from ai_engine.llm_config import invoke_with_fallback
 from ai_engine.graph.state import TripState
-from ai_engine.profiling.behavioral_profile import profile_to_text
-
 logger = logging.getLogger(__name__)
 
 
@@ -25,9 +23,10 @@ PLANNER_SYSTEM_PROMPT = """
 You are the Planning Agent for TourMate AI. Create a structured, multi-day travel itinerary.
 
 You will receive:
-1. User request (what the user wants)
-2. User profile summary (preferences, interests, scores)
-3. Pre-filtered candidate places (already ranked by relevance by upstream agents)
+1. User request with trip context (preferences, interests, duration)
+2. Dimension scores (luxury, culture, adventure) if available
+3. Candidate attractions & restaurants (already ranked by relevance) — these go in day stops
+4. Candidate hotels (listed separately) — these go in accommodation_suggestions
 
 ## Scoring Reference
 - Each place has a `score` (0–100). Higher = more relevant to the user.
@@ -74,6 +73,9 @@ You will receive:
 - For each stop, copy `id`, `name`, `lat`, `lon`, `interest_tags` **exactly** as given — do not invent places.
 - Prefer places whose `interest_tags` overlap with the user's interests.
 - If a place has no matching `interest_tags`, only include it if the `score` is very high (>85).
+- **CRITICAL: Every user interest from the User Profile must appear in at least one stop across the entire itinerary.** Check the user's interests list and verify each one is covered before finalizing. For example, if the user is interested in nightlife, include at least one stop with `sub_category: "nightlife"`. If they want shopping, include at least one `sub_category: "shopping"` stop. Use the `sub_category` field on each candidate to match interests.
+  - Interest-to-subcategory mapping: history→"history", nightlife→"nightlife", shopping→"shopping", parks→"parks", museums→"museums", nature→"nature", religious→"religious", family→"family", sports→"sports", wellness→"wellness", entertainment→"entertainment", sightseeing→"sightseeing".
+  - **Before outputting, scan your itinerary: does every user interest have at least one matching stop? If not, keep selecting until all interests are represented.**
 
 ### Hotels
 - Hotels are NOT tour stops — they go in `accommodation_suggestions` at the top level.
@@ -113,6 +115,7 @@ JSON schema:
           "name": string,
           "category": string,
           "sub_category": string,
+          "cuisine_type": string (include for restaurants, omit for others),
           "interest_tags": [string],
           "lat": float,
           "lon": float,
@@ -140,16 +143,18 @@ def _trim_for_prompt(place: dict) -> dict:
         "interest_tags": place.get("interest_tags", []),
         "lat": place["lat"],
         "lon": place["lon"],
-        "rating": place.get("rating", 0),
         "score": round(place.get("popularity_score", 0), 1),
     }
     # Include cuisine_type for restaurants so the LLM can match food preferences
     if place.get("category") == "restaurant" and place.get("cuisine_type"):
         trimmed["cuisine_type"] = place["cuisine_type"]
-    # Include accommodation_type and amenities for hotels
+    # Include accommodation_type and top amenities for hotels (trimmed to reduce prompt size)
     if place.get("category") == "hotel":
         trimmed["accommodation_type"] = place.get("accommodation_type", "")
-        trimmed["amenities"] = place.get("amenities", [])
+        amenities = place.get("amenities", [])
+        trimmed["amenities"] = amenities[:3] if len(amenities) > 3 else amenities
+        # Hotels don't need verbose interest_tags — just the category is enough
+        trimmed["interest_tags"] = ["hotel"]
     return trimmed
 
 
@@ -348,13 +353,6 @@ async def run_planning_agent(state: TripState) -> TripState:
     # Trim place objects to essential planning information.
     trimmed = [_trim_for_prompt(p) for p in candidates]
 
-    # Convert behavioral profile into a text summary for the LLM.
-    profile_summary = (
-        profile_to_text(profile)
-        if profile
-        else "No profile available."
-    )
-
     # Build a richer user request from profile context.
     # The raw user_message may be terse (e.g. "resort") — synthesize
     # a meaningful request from the profile so the LLM has context.
@@ -371,24 +369,38 @@ async def run_planning_agent(state: TripState) -> TripState:
         if style:
             parts.append(f"{style} style")
         if interests:
-            parts.append(f"interested in {', '.join(interests[:3])}")
+            parts.append(f"interested in {', '.join(interests)}")
         if food:
-            parts.append(f"loves {', '.join(food[:2])}")
+            parts.append(f"loves {', '.join(food)}")
         # Only add accommodation if not already mentioned in user message
         if accommodation and accommodation[0].lower() not in msg_lower:
-            parts.append(f"prefers {accommodation[0]}")
+            parts.append(f"prefers {', '.join(accommodation)}")
         if parts:
             synthesized_request = f"{user_message} ({'; '.join(parts)})"
 
-    # Construct the user prompt.
-    prompt = f"""
-User Request: {synthesized_request}
-Trip Duration: {duration_days} days
-User Profile:
-{profile_summary}
+    # Separate hotels from attractions/restaurants so the LLM isn't confused
+    attractions_restaurants = [p for p in trimmed if p.get("category") != "hotel"]
+    hotels = [p for p in trimmed if p.get("category") == "hotel"]
 
-Candidate Places in {city} ({len(trimmed)} pre-filtered and ranked by relevance):
-{json.dumps(trimmed, indent=2, ensure_ascii=False)}
+    # Extract unique info (dimension scores) that synthesized_request doesn't have
+    profile_dimensions = []
+    if profile:
+        for dim in ["luxury_score", "culture_score", "adventure_score"]:
+            val = profile.get(dim)
+            if val is not None:
+                profile_dimensions.append(f"{dim.replace('_', ' ').capitalize()}: {val}")
+    dimension_text = "\n".join(profile_dimensions) if profile_dimensions else ""
+
+    # Construct the user prompt — avoids duplicating info from synthesized_request
+    prompt = f"""User Request: {synthesized_request}
+Trip Duration: {duration_days} days
+{dimension_text}
+
+Candidate Attractions & Restaurants in {city} ({len(attractions_restaurants)}):
+{json.dumps(attractions_restaurants, indent=2, ensure_ascii=False)}
+
+Candidate Hotels ({len(hotels)}):
+{json.dumps(hotels, indent=2, ensure_ascii=False)}
 
 Generate the itinerary now.
 """
@@ -485,12 +497,16 @@ Generate the itinerary now.
                 stop["photos"] = full.get("photos", [])[:1]
                 stop["address"] = full.get("address")
                 stop["maps_link"] = full.get("maps_link")
+                # Reattach cuisine_type if available (the LLM may omit it)
+                if full.get("cuisine_type") and not stop.get("cuisine_type"):
+                    stop["cuisine_type"] = full["cuisine_type"]
 
     # Enrich accommodation suggestions.
     for hotel in itinerary.get("accommodation_suggestions", []):
         full = place_index.get(hotel.get("id"))
         if full:
             hotel["category"] = full.get("category", "hotel")
+            hotel["rating"] = full.get("rating", hotel.get("rating", 0))
             hotel["accommodation_type"] = full.get("accommodation_type", "")
             hotel["amenities"] = full.get("amenities", [])
             hotel["photos"] = full.get("photos", [])[:1]
