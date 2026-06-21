@@ -7,6 +7,7 @@ class RegisterRequest(BaseModel):
     """Create schema for User registration – aligns with model fields."""
     full_name:    str
     phone_number: Optional[str] = None
+    home_city: Optional[str] = None
 
 
 class UserResponse(BaseModel):

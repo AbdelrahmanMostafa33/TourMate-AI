@@ -32,6 +32,7 @@ async def register(
         email        = email,
         full_name    = body.full_name,
         phone_number = body.phone_number,
+        home_city = body.home_city,
     )
     db.add(new_user)
     await db.commit()

@@ -19,6 +19,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
   final nameController = TextEditingController();
   final phoneController = TextEditingController();
   final emailController = TextEditingController();
+  final homeCityController = TextEditingController();
   final passwordController = TextEditingController();
   final confirmController = TextEditingController();
 
@@ -47,6 +48,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
         RegisterRequest(
           fullName: nameController.text,
           phoneNumber: phoneController.text,
+          homeCity: homeCityController.text,
         ),
       );
 
@@ -124,6 +126,14 @@ class _SignUpScreenState extends State<SignUpScreen> {
               CustomTextField(
                 controller: emailController,
                 hint: "Email",
+              ),
+
+              const SizedBox(height: 15),
+
+              CustomTextField(
+                controller: homeCityController,
+                hint: "Home City",
+                isPassword: true,
               ),
 
               const SizedBox(height: 15),
