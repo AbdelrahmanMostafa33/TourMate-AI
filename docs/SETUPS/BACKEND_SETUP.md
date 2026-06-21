@@ -94,7 +94,8 @@ This installs all dependencies defined in `pyproject.toml`, including:
 - **Pydantic / pydantic-settings** — data validation and `.env` loading
 - **Redis** — caching and session management
 - **Firebase Admin** — authentication
-- **LangGraph + LangChain + Groq** — AI engine
+- **LangGraph + LangChain + Groq** — AI engine orchestration
+- **langchain-google-genai** — Gemini LLM integration
 - **Passlib + python-jose** — password hashing and JWT tokens
 
 > For development tools (pytest, ruff), run: `pip install -e '.[dev]'`
@@ -145,11 +146,21 @@ psql -U tourmate_user -d tourmate -h localhost -W
 # Type \q to exit
 ```
 
+### Step 4 — Seed Cairo places data (optional)
+
+The project includes a seed script to populate the database with Cairo places data:
+
+```bash
+python seed_cairo_places.py
+```
+
+This populates the `places` table with real POIs (restaurants, attractions, hotels) including Bayesian popularity scores.
+
 ---
 
 ## 6. Redis Setup
 
-Redis is used for caching and conversation memory.
+Redis is used for conversation session management and caching.
 
 ### Windows
 
@@ -225,13 +236,43 @@ FIREBASE_CREDENTIALS=firebase-credentials.json
 # You can run:  python -c "import secrets; print(secrets.token_hex(32))"
 SECRET_KEY=paste-your-generated-secret-here
 
+# === AI (Gemini) ===
+# Get a free API key from https://aistudio.google.com/apikey
+# Comma-separated for multiple keys: key1,key2,key3
+GOOGLE_API_KEY=your-google-gemini-api-key-here
+
 # === AI (Groq) ===
 # Get a free API key from https://console.groq.com
+# Comma-separated for multiple keys: key1,key2,key3
 GROQ_API_KEY=your-groq-api-key-here
 
 # === Backend ===
 BACKEND_BASE_URL=http://localhost:8000
+
+# === LangSmith (Observability — optional) ===
+# Enable tracing to see agent execution in the LangSmith dashboard
+# 1. Sign up at https://smith.langchain.com
+# 2. Create a project called "tourmate-ai"
+# 3. Copy your API key and paste below
+LANGCHAIN_TRACING_V2=true
+LANGCHAIN_API_KEY=ls_your-langsmith-api-key
+LANGCHAIN_PROJECT=tourmate-ai
 ```
+
+### Required vs Optional Variables
+
+| Variable | Required | Purpose |
+|----------|----------|---------|
+| `DATABASE_URL` | ✅ Yes | PostgreSQL connection string |
+| `REDIS_URL` | ✅ Yes | Redis connection for session management |
+| `SECRET_KEY` | ✅ Yes | JWT signing key |
+| `GOOGLE_API_KEY` | ✅ Yes | Gemini LLM for planning + vision |
+| `GROQ_API_KEY` | ✅ Yes | Groq LLM for routing + validation |
+| `FIREBASE_CREDENTIALS` | ✅ Yes | Firebase auth service account |
+| `BACKEND_BASE_URL` | No | Defaults to `http://localhost:8000` |
+| `LANGCHAIN_TRACING_V2` | No | Enables LangSmith tracing |
+| `LANGCHAIN_API_KEY` | No | LangSmith API key (required if tracing enabled) |
+| `LANGCHAIN_PROJECT` | No | LangSmith project name (defaults to "default") |
 
 ### Generate a SECRET_KEY
 
@@ -242,6 +283,17 @@ python -c "import secrets; print(secrets.token_hex(32))"
 ```
 
 Copy the output into the `SECRET_KEY` field in your `.env`.
+
+### API Key Rotation
+
+Both `GOOGLE_API_KEY` and `GROQ_API_KEY` support **multiple comma-separated keys** for automatic rotation:
+
+```env
+GOOGLE_API_KEY=key1,key2,key3
+GROQ_API_KEY=key1,key2,key3
+```
+
+When a key hits a rate limit (429), the system automatically switches to the next available key. This is useful for staying within free-tier limits.
 
 ---
 
@@ -260,6 +312,7 @@ INFO:     Uvicorn running on http://127.0.0.1:8000 (Press CTRL+C to quit)
 INFO:     Started reloader process [...] using StatReload
 INFO:     Started server process [...]
 INFO:     Waiting for application startup.
+[LangSmith] Tracing enabled — project: tourmate-ai
 INFO:     Application startup complete.
 ```
 
@@ -289,6 +342,11 @@ You should see the FastAPI Swagger UI with all available routes grouped by:
 - **Users** — `/api/v1/users/...`
 - **Trips** — `/api/v1/trips/...`
 - **Chat** — `/api/v1/...`
+- **Places** — `/api/v1/places/...`
+- **Reviews** — `/api/v1/reviews/...`
+- **Saved Places** — `/api/v1/saved-places/...`
+- **Recommendations** — `/api/v1/recommendations/...`
+- **Images** — `/api/v1/images/...`
 
 ### Check database tables were created
 
@@ -299,7 +357,9 @@ psql -U tourmate_user -d tourmate -h localhost -W
 Inside psql:
 ```sql
 \dt
--- Should list tables: users, profiles, trips, chat_messages, etc.
+-- Should list tables: users, profiles, trips, chat_messages,
+-- places, saved_places, reviews, recommendations, images,
+-- bookings, feedback, trip_profiles, system_log, etc.
 ```
 
 ---
@@ -309,32 +369,106 @@ Inside psql:
 ```
 backend/
 │
-├── app/                        # FastAPI application
-│   ├── api/v1/routes/          # Route handlers (auth, users, trips, chat)
+├── app/                        # FastAPI application layer
+│   ├── api/v1/routes/          # Route handlers
+│   │   ├── auth.py             # Register, login (Firebase)
+│   │   ├── users.py            # Profile & quiz endpoints
+│   │   ├── trips.py            # Trip CRUD & itinerary
+│   │   ├── chat.py             # WebSocket chat + history
+│   │   ├── places.py           # Place search & exploration
+│   │   ├── reviews.py          # Place reviews
+│   │   ├── saved_places.py     # Saved places
+│   │   ├── recommendations.py  # AI recommendations
+│   │   ├── images.py           # Image management
+│   │   ├── bookings.py         # Booking simulation
+│   │   ├── feedback.py         # User feedback
+│   │   └── health.py           # Health check
 │   ├── core/                   # Config, database engine, security
+│   │   ├── config.py           # Settings (env vars)
+│   │   ├── database.py         # Async SQLAlchemy engine
+│   │   ├── firebase.py         # Firebase token verification
+│   │   └── security.py         # Auth dependency
+│   ├── external/               # External API clients
+│   │   ├── llm_client.py       # Gemini LLM wrappers
+│   │   ├── groq_client.py      # Legacy (now uses llm_client)
+│   │   └── osrm_client.py      # OSRM routing/distance matrix
 │   ├── models/                 # SQLAlchemy ORM models
-│   ├── schemas/                # Pydantic request/response schemas
+│   ├── schemas/                # Pydantic request/response
 │   ├── services/               # Business logic layer
-│   ├── external/               # Groq client and other external APIs
+│   ├── repositories/           # Database query abstraction
 │   ├── ws/                     # WebSocket manager
-│   └── main.py                 # App entry point and lifespan
+│   └── main.py                 # App entry point & lifespan
 │
-├── ai_engine/                  # LangGraph AI engine (separate from app/)
-│   ├── graph/                  # StateGraph: nodes, edges, builder, state
-│   ├── profiling/              # Cold start and behavioral profiling
-│   ├── chat/                   # Intent parsing and chat handling
-│   ├── tools/                  # LangChain tools (profile, places, etc.)
-│   ├── agents/                 # Planning, optimization, validation agents
-│   └── __init__.py             # Public API — import only from here
+├── ai_engine/                  # LangGraph AI engine (separate layer)
+│   ├── agents/                 # Specialized AI agents
+│   │   ├── retrieval_agent.py  # DB-based place filtering
+│   │   ├── ranking_agent.py    # Multi-signal scoring + diversity
+│   │   ├── planning_agent.py   # LLM itinerary generation
+│   │   ├── optimization_agent.py # 2-opt + OSRM routing
+│   │   ├── validation_agent.py # Feasibility + quality checks
+│   │   ├── preference_agent.py # Structured preference extraction
+│   │   └── orchestrator.py     # Agent coordination
+│   ├── chat/                   # Conversation handling
+│   │   ├── conversation_agent.py # Main chat processing + state machine
+│   │   └── unified_router.py   # Single LLM call routing (structured output)
+│   ├── graph/                  # LangGraph pipeline
+│   │   ├── state.py            # TripState + TripProfile TypedDicts
+│   │   ├── nodes.py            # Agent node wrappers
+│   │   ├── edges.py            # Conditional routing logic
+│   │   └── graph_builder.py    # Graph assembly & compilation
+│   ├── memory/                 # Session & conversation state
+│   │   ├── redis_memory.py     # Redis-backed session persistence
+│   │   └── conversation_state.py # State machine (GREETING → SLOT_FILLING → PLAN_GENERATION → REVIEW)
+│   ├── profiling/              # Behavioral profiling
+│   │   ├── behavioral_profile.py # Profile-to-text helpers
+│   │   └── profile_updater.py  # Profile refinement
+│   ├── tools/                  # External integrations
+│   │   ├── places_tool.py      # Place search (DB-backed)
+│   │   ├── routing_tool.py     # OSRM routing + matrix
+│   │   ├── weather_tool.py     # Weather data
+│   │   ├── profile_tool.py     # Profile loading (real + mock)
+│   │   ├── haversine.py        # Distance calculations
+│   │   └── slot_normalizer.py  # Deterministic slot normalization
+│   ├── vision/                 # Image analysis pipeline
+│   │   ├── image_analyzer.py   # Travel image understanding (Gemini)
+│   │   ├── feature_extractor.py # Visual feature extraction
+│   │   └── multimodal_fusion.py # Image + profile fusion
+│   ├── evaluation/             # Agent metrics & explainability
+│   ├── observability/          # LangSmith tracing
+│   │   └── tracing.py          # @traced decorator + setup
+│   ├── prompts/                # LLM prompt templates
+│   ├── exceptions/             # AI engine exceptions
+│   ├── llm_config.py           # Multi-provider LLM registry + key rotation
+│   └── constants.py            # Model names, session config
 │
-├── tests/                      # Unit and integration tests
+├── tests/                      # Test suite
+│   ├── unit/test_ai_engine/    # AI engine unit tests (17+ files)
+│   ├── unit/test_services/     # Service layer tests
+│   ├── unit/test_routes/       # API route tests
+│   ├── integration/            # Integration tests
+│   └── e2e/                    # End-to-end tests
+│
+├── alembic/                    # Database migrations (10+ versions)
+├── seed_cairo_places.py        # Cairo POI seed script
 ├── .env                        # Your local environment variables (not in Git)
 ├── firebase-credentials.json   # Firebase service account (not in Git)
 ├── pyproject.toml              # Python dependencies (single source of truth)
 └── README.md
 ```
 
-> **Important rule:** Code inside `app/` must **never** import directly from `ai_engine` submodules. Always import from `ai_engine` top-level only (e.g. `from ai_engine import build_trip_graph`).
+### AI Pipeline Flow
+
+The itinerary generation follows this pipeline:
+
+```
+User Message → Unified Router (LLM decision)
+    ↓
+Conversation Agent (state machine)
+    ↓
+LangGraph Pipeline:
+  load_profile → preference → retrieval → ranking → planner → optimizer → validator
+                                                          ↑_______________↓ (retry if invalid)
+```
 
 ---
 
@@ -399,7 +533,25 @@ uvicorn app.main:app --reload
 
 ### ❌ `pydantic_settings.env_settings.EnvSettingsError` / missing env variable
 
-Your `.env` file is missing a required key or has a typo. Double-check that all keys in Step 8 are present with real values (no placeholders).
+Your `.env` file is missing a required key or has a typo. Double-check that all required keys in Step 8 are present with real values (no placeholders).
+
+Required variables: `DATABASE_URL`, `SECRET_KEY`, `GOOGLE_API_KEY`, `GROQ_API_KEY`
+
+---
+
+### ❌ `No API keys configured for gemini` / `No API keys configured for groq`
+
+Your `.env` is missing `GOOGLE_API_KEY` or `GROQ_API_KEY`. Both are required for the AI engine to function. Get free API keys from:
+- Gemini: https://aistudio.google.com/apikey
+- Groq: https://console.groq.com
+
+---
+
+### ❌ `[LangSmith] LANGCHAIN_TRACING_V2=true but LANGCHAIN_API_KEY not set`
+
+You enabled tracing but forgot the API key. Either:
+1. Add `LANGCHAIN_API_KEY=ls_...` to your `.env`, or
+2. Set `LANGCHAIN_TRACING_V2=false` to disable tracing
 
 ---
 
@@ -413,10 +565,17 @@ Use this as a final checklist before asking for help:
 - [ ] `psql -U tourmate_user -d tourmate -h localhost` connects successfully
 - [ ] Redis running (`redis-cli ping` returns `PONG`)
 - [ ] `firebase-credentials.json` placed in `backend/` root
-- [ ] `.env` file created with all 6 variables filled in
+- [ ] `.env` file created with all required variables filled in:
+  - [ ] `DATABASE_URL`
+  - [ ] `REDIS_URL`
+  - [ ] `SECRET_KEY`
+  - [ ] `GOOGLE_API_KEY`
+  - [ ] `GROQ_API_KEY`
+  - [ ] `FIREBASE_CREDENTIALS`
 - [ ] Running uvicorn from inside the `backend/` folder
 - [ ] `http://localhost:8000/` returns `{"message": "TourMate Backend Running"}`
+- [ ] (Optional) LangSmith tracing works at https://smith.langchain.com
 
 ---
 
-*Last updated: April 2026 — TourMate AI Team*
+*Last updated: June 2026 — TourMate AI Team*

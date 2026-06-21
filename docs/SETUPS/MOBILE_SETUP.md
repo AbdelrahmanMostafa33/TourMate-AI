@@ -19,8 +19,9 @@
 11. [Run the App](#11-run-the-app)
 12. [Run on a Physical Android Device](#12-run-on-a-physical-android-device)
 13. [Project Structure Overview](#13-project-structure-overview)
-14. [Common Errors & Fixes](#14-common-errors--fixes)
-15. [Quick-Start Checklist](#15-quick-start-checklist)
+14. [Key Dependencies](#14-key-dependencies)
+15. [Common Errors & Fixes](#15-common-errors--fixes)
+16. [Quick-Start Checklist](#16-quick-start-checklist)
 
 ---
 
@@ -30,6 +31,7 @@
 |------|---------|----------|
 | Android Studio | Hedgehog (2023.1.1) or newer | https://developer.android.com/studio |
 | Flutter SDK | 3.19.x or newer | https://docs.flutter.dev/get-started/install |
+| Dart SDK | ^3.9.2 (bundled with Flutter) | included with Flutter |
 | Java (JDK) | 17 (bundled with Android Studio) | bundled — no separate install needed |
 | Git | Latest | https://git-scm.com/downloads |
 
@@ -156,13 +158,7 @@ You need a virtual device to test the app without a physical phone.
 
 ```bash
 git clone https://github.com/AbdooMatrix/TourMate-AI.git
-cd TourMate-AI
-```
-
-The mobile app lives in the `mobile/` folder (or `flutter_app/` — check the repo structure after cloning).
-
-```bash
-cd mobile   # adjust to whatever the folder is named
+cd TourMate-AI/mobile
 ```
 
 ---
@@ -197,6 +193,16 @@ Got dependencies!
 
 > If you see `pubspec.yaml not found`, you're in the wrong directory.
 
+### Generate code (freezed models, Retrofit clients)
+
+The project uses code generation for immutable models and API clients. After installing dependencies, run:
+
+```bash
+dart run build_runner build --delete-conflicting-outputs
+```
+
+> Re-run this command whenever you modify a freezed model or Retrofit interface.
+
 ---
 
 ## 9. Firebase Setup (google-services.json)
@@ -229,13 +235,13 @@ mobile/
 Open `google-services.json` and check the `package_name` field:
 
 ```json
-"package_name": "com.tourmate.ai"
+"package_name": "com.example.tourmate"
 ```
 
-Open `mobile/android/app/build.gradle` and confirm `applicationId` matches:
+Open `mobile/android/app/build.gradle.kts` and confirm `applicationId` matches:
 
-```gradle
-applicationId "com.tourmate.ai"
+```kotlin
+applicationId = "com.example.tourmate"
 ```
 
 They must be identical.
@@ -244,18 +250,16 @@ They must be identical.
 
 ## 10. Configure the Backend URL
 
-The mobile app needs to know where the FastAPI backend is running.
+The mobile app communicates with the FastAPI backend via REST API and WebSocket.
 
 ### If testing with an emulator
 
 The Android emulator cannot reach `localhost` on your machine — it uses a special IP instead.
 
-Find the config file (likely `lib/core/constants.dart` or `lib/config/api_config.dart`) and set:
+Find the config file (likely `lib/core/network/api_services.dart` or `lib/core/constants.dart`) and set:
 
 ```dart
-const String baseUrl = 'http://10.0.2.2:8000';
-//                              ^^^^^^^^^^
-//                              This maps to your PC's localhost inside the emulator
+// http://10.0.2.2 maps to your PC's localhost inside the emulator
 ```
 
 ### If testing with a physical device
@@ -268,19 +272,11 @@ ipconfig
 # Look for "IPv4 Address" under your Wi-Fi adapter — e.g. 192.168.1.5
 ```
 
-Then set:
-
-```dart
-const String baseUrl = 'http://192.168.1.5:8000';
-```
+Then set the base URL to `http://192.168.1.5:8000`.
 
 ### If the backend is deployed
 
-Replace with the deployed URL:
-
-```dart
-const String baseUrl = 'https://api.tourmate.ai';
-```
+Replace with the deployed URL (e.g. `https://api.tourmate.ai`).
 
 ---
 
@@ -354,46 +350,171 @@ flutter run
 
 ## 13. Project Structure Overview
 
+The mobile app uses a **feature-first** folder architecture:
+
 ```
 mobile/
 │
-├── lib/                          # All Dart source code lives here
-│   ├── main.dart                 # App entry point
+├── lib/
+│   ├── main.dart                         # App entry point
+│   ├── firebase_options.dart             # Firebase config (auto-generated)
 │   │
-│   ├── core/                     # Shared utilities
-│   │   ├── constants.dart        # Base URL, API keys, app-wide constants
-│   │   ├── theme.dart            # Colors, fonts, app theme
-│   │   └── router.dart           # Navigation routes (GoRouter / auto_route)
+│   ├── app/
+│   │   ├── app.dart                      # MaterialApp + providers
+│   │   └── app_router.dart               # Route definitions
 │   │
-│   ├── features/                 # Feature-first folder structure
-│   │   ├── auth/                 # Login, register, Firebase auth
-│   │   │   ├── data/             # API calls and Firebase calls
-│   │   │   ├── domain/           # Business logic and models
-│   │   │   └── presentation/     # Screens and widgets
-│   │   │
-│   │   ├── chat/                 # AI chat interface
-│   │   ├── trips/                # Trip planning and history
-│   │   ├── profile/              # User profile and preferences quiz
-│   │   └── home/                 # Home / dashboard screen
+│   ├── core/                             # Shared infrastructure
+│   │   ├── errors/
+│   │   │   ├── api_result.dart           # API result wrapper (freezed)
+│   │   │   └── auth_error_handler.dart   # Auth error handling
+│   │   ├── layout/
+│   │   │   └── main_shell.dart           # Bottom nav shell
+│   │   └── network/
+│   │       ├── api_services.dart         # Retrofit API client (generated)
+│   │       ├── dio_factory.dart          # Dio HTTP client setup
+│   │       └── service_locator.dart      # get_it dependency injection
 │   │
-│   └── shared/                   # Reusable widgets used across features
-│       ├── widgets/
-│       └── services/             # HTTP client, local storage, etc.
+│   └── features/                         # Feature modules
+│       ├── auth/                         # Authentication
+│       │   ├── data/
+│       │   │   ├── datasource/
+│       │   │   │   └── firebase_auth_service.dart
+│       │   │   ├── models/
+│       │   │   │   ├── register_request.dart
+│       │   │   │   ├── user_response.dart
+│       │   │   │   └── full_profile_response.dart
+│       │   │   └── repository/
+│       │   │       ├── auth_repository.dart
+│       │   │       └── profile_repository.dart
+│       │   ├── logic/
+│       │   │   ├── profile_cubit.dart
+│       │   │   └── profile_state.dart (+freezed)
+│       │   └── presentation/
+│       │       ├── screens/
+│       │       │   ├── signin_screen.dart
+│       │       │   ├── signup_screen.dart
+│       │       │   ├── profile_screen.dart
+│       │       │   └── quiz_decision_screen.dart
+│       │       └── widgets/
+│       │           └── custom_textfield.dart
+│       │
+│       ├── chat/                         # AI Chat interface
+│       │   ├── data/
+│       │   │   ├── datasource/
+│       │   │   │   └── chat_ws_service.dart  # WebSocket client
+│       │   │   ├── models/
+│       │   │   │   └── chat_message.dart
+│       │   │   └── repository/
+│       │   │       └── chat_repository.dart
+│       │   ├── logic/
+│       │   │   ├── chat_cubit.dart
+│       │   │   └── chat_state.dart (+freezed)
+│       │   └── presentation/
+│       │       ├── screens/
+│       │       │   └── chat_screen.dart
+│       │       └── widgets/
+│       │           └── message_bubble.dart
+│       │
+│       ├── quiz/                         # Onboarding personality quiz (8 screens)
+│       │   ├── data/
+│       │   │   ├── models/
+│       │   │   │   ├── quiz_answers.dart
+│       │   │   │   ├── quiz_submit_request.dart
+│       │   │   │   └── persona_response.dart
+│       │   │   └── repository/
+│       │   │       └── quiz_repository.dart
+│       │   ├── logic/
+│       │   │   ├── quiz_cubit.dart
+│       │   │   └── quiz_state.dart (+freezed)
+│       │   └── presentation/
+│       │       ├── screens/
+│       │       │   ├── onboarding_flow.dart
+│       │       │   ├── screen1_basics.dart
+│       │       │   ├── screen2_vacation.dart
+│       │       │   ├── screen3_accommodation.dart
+│       │       │   ├── screen4_activities.dart
+│       │       │   ├── screen5_dining.dart
+│       │       │   ├── screen6_interests.dart
+│       │       │   ├── screen7_traveler_type.dart
+│       │       │   └── screen8_summary.dart
+│       │       └── widgets/
+│       │           ├── choice_chip2.dart
+│       │           ├── nav_buttons.dart
+│       │           ├── quiz_scaffold.dart
+│       │           ├── radio_option.dart
+│       │           └── slider_toggle.dart
+│       │
+│       ├── trips/                        # Trip management
+│       │   ├── data/
+│       │   │   ├── models/
+│       │   │   │   ├── trip_summary_model.dart
+│       │   │   │   └── create_trip_request.dart
+│       │   │   └── repository/
+│       │   │       └── trips_repository.dart
+│       │   ├── logic/
+│       │   │   ├── trips_cubit.dart
+│       │   │   └── trips_state.dart (+freezed)
+│       │   └── presentation/
+│       │       └── screens/
+│       │           ├── trips_screen.dart
+│       │           └── create_trip_screen.dart
+│       │
+│       └── splash/                       # Splash / loading screen
+│           └── splash_screen.dart
 │
-├── android/                      # Android-specific native config
+├── android/                              # Android native config
 │   └── app/
-│       ├── google-services.json  # Firebase config (NOT in Git — add manually)
-│       └── build.gradle          # App-level Gradle config
+│       ├── build.gradle.kts
+│       └── google-services.json          # Firebase config (NOT in Git)
 │
-├── assets/                       # Images, fonts, icons, Lottie animations
+├── ios/                                  # iOS native config
+│   └── Runner/
+│       └── GoogleService-Info.plist      # Firebase config (NOT in Git)
 │
-├── pubspec.yaml                  # Flutter dependencies (like requirements.txt)
-└── pubspec.lock                  # Locked dependency versions
+├── assets/images/                        # App images and icons
+├── pubspec.yaml                          # Flutter dependencies
+└── pubspec.lock                          # Locked dependency versions
+```
+
+### Feature Module Pattern
+
+Each feature follows the same internal structure:
+
+```
+feature/
+├── data/
+│   ├── datasource/    # Remote/local data sources (API calls, Firebase)
+│   ├── models/        # Data models (freezed + json_serializable)
+│   └── repository/    # Repository pattern (abstracts data sources)
+├── logic/
+│   ├── feature_cubit.dart    # State management (flutter_bloc)
+│   └── feature_state.dart    # State classes (freezed union types)
+└── presentation/
+    ├── screens/       # Full-screen widgets
+    └── widgets/       # Reusable feature-specific widgets
 ```
 
 ---
 
-## 14. Common Errors & Fixes
+## 14. Key Dependencies
+
+| Package | Purpose |
+|---------|---------|
+| `flutter_bloc` | State management (Cubit pattern) |
+| `freezed` + `freezed_annotation` | Immutable data classes with union types |
+| `json_serializable` | Automatic JSON serialization |
+| `dio` | HTTP client for REST API |
+| `retrofit` | Type-safe API client (generates from annotations) |
+| `get_it` | Dependency injection / service locator |
+| `firebase_core` + `firebase_auth` | Firebase integration |
+| `google_sign_in` | Google OAuth sign-in |
+| `web_socket_channel` | WebSocket for real-time chat |
+| `flutter_secure_storage` | Secure token storage |
+| `shared_preferences` | Local key-value storage |
+
+---
+
+## 15. Common Errors & Fixes
 
 ---
 
@@ -441,7 +562,7 @@ You're using `localhost` or `127.0.0.1` in the base URL. The emulator can't reac
 
 Change to:
 ```dart
-const String baseUrl = 'http://10.0.2.2:8000';
+// http://10.0.2.2 maps to your PC's localhost inside the emulator
 ```
 
 ---
@@ -461,7 +582,7 @@ sdk.dir=C\:\\Users\\YourName\\AppData\\Local\\Android\\Sdk
 
 ### ❌ `A problem occurred evaluating project ':app'` (package name mismatch)
 
-The `package_name` in `google-services.json` doesn't match `applicationId` in `build.gradle`. Make sure both are exactly `com.tourmate.ai`.
+The `package_name` in `google-services.json` doesn't match `applicationId` in `build.gradle.kts`. Make sure both are exactly `com.example.tourmate`.
 
 ---
 
@@ -489,7 +610,17 @@ Also make sure virtualization is enabled in your BIOS (VT-x on Intel, AMD-V on A
 
 ---
 
-## 15. Quick-Start Checklist
+### ❌ `build_runner` / code generation errors
+
+If you see errors about generated files (`.freezed.dart`, `.g.dart`):
+
+```bash
+dart run build_runner build --delete-conflicting-outputs
+```
+
+---
+
+## 16. Quick-Start Checklist
 
 Use this before asking for help:
 
@@ -499,11 +630,12 @@ Use this before asking for help:
 - [ ] Emulator created and running (or physical device connected)
 - [ ] Repo cloned and `mobile/` folder opened in Android Studio
 - [ ] `flutter pub get` completed without errors
+- [ ] `dart run build_runner build --delete-conflicting-outputs` ran successfully
 - [ ] `google-services.json` placed in `mobile/android/app/`
-- [ ] Base URL set to `http://10.0.2.2:8000` for emulator (or correct IP for device)
+- [ ] Base URL configured for your setup (emulator / device / deployed)
 - [ ] Backend is running (`uvicorn app.main:app --reload`)
 - [ ] `flutter run` launches the app without errors
 
 ---
 
-*Last updated: April 2026 — TourMate AI Team*
+*Last updated: June 2026 — TourMate AI Team*

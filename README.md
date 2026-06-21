@@ -1,8 +1,3 @@
-# TourMate AI — README.md
-
-Here's a comprehensive, professional README for your project:
-
-```markdown
 <div align="center">
 
 # 🧳 TourMate AI
@@ -13,13 +8,14 @@ Here's a comprehensive, professional README for your project:
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.100+-009688?style=for-the-badge&logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com)
 [![Flutter](https://img.shields.io/badge/Flutter-3.x-02569B?style=for-the-badge&logo=flutter&logoColor=white)](https://flutter.dev)
 [![LangGraph](https://img.shields.io/badge/LangGraph-Agent_Framework-FF6F00?style=for-the-badge)](https://github.com/langchain-ai/langgraph)
+[![Gemini](https://img.shields.io/badge/Gemini-2.5_Flash-4285F4?style=for-the-badge&logo=google&logoColor=white)](https://ai.google.dev)
 [![Groq](https://img.shields.io/badge/Groq-LLM_Inference-000000?style=for-the-badge)](https://groq.com)
 [![Firebase](https://img.shields.io/badge/Firebase-Auth-FFCA28?style=for-the-badge&logo=firebase&logoColor=black)](https://firebase.google.com)
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-Database-4169E1?style=for-the-badge&logo=postgresql&logoColor=white)](https://www.postgresql.org)
 
 *TourMate AI generates personalized, multi-day travel itineraries through natural conversation — powered by a multi-agent AI system that understands your travel personality.*
 
-[Features](#-features) · [Architecture](#-architecture) · [Getting Started](#-getting-started) · [API Reference](#-api-reference) · [Sprint Progress](#-sprint-progress) · [Team](#-team)
+[Features](#-features) · [Architecture](#-architecture) · [Getting Started](#-getting-started) · [API Reference](#-api-reference) · [Tech Stack](#%EF%B8%8F-tech-stack) · [Team](#-team)
 
 </div>
 
@@ -34,11 +30,11 @@ Instead of browsing generic travel guides, users simply **chat** with TourMate �
 ### What Makes TourMate Different?
 
 - 🧠 **Behavioral Profiling** — Learns your travel style through an onboarding quiz and adapts over time
-- 🤖 **Multi-Agent Pipeline** — Planning, Optimization, and Validation agents collaborate via LangGraph
-- 🖼️ **Multimodal Input** — Understands both text and images to extract travel preferences
-- 🗺️ **Real-World Data** — Integrates Overpass API (POIs) and OSRM (routing) for realistic itineraries
-- 💬 **Conversational Modifications** — Modify plans using natural language ("swap day 1 and 2", "add a museum")
-- 🔄 **Adaptive Personalization** — Feedback loop refines recommendations with every interaction
+- 🤖 **7-Agent Pipeline** — Preference, Retrieval, Ranking, Planning, Optimization, and Validation agents collaborate via LangGraph
+- 🖼️ **Multimodal Input** — Gemini 2.5 Flash VLM understands both text and images to extract travel preferences
+- 🗺️ **Real-World Data** — PostgreSQL-backed place database with Bayesian popularity scores + OSRM routing
+- 💬 **Unified Router** — Single context-aware LLM call handles intent, slot extraction, and responses
+- 🔄 **Adaptive Personalization** — Redis-backed session memory with conversation state machine
 
 ---
 
@@ -50,37 +46,40 @@ Instead of browsing generic travel guides, users simply **chat** with TourMate �
 - Role-based access control (user/admin)
 
 ### 🧬 Intelligent Profiling
-- Onboarding personality quiz (travel style, budget, interests, pace)
+- 8-screen onboarding personality quiz (travel style, budget, interests, pace, accommodation, dining)
 - AI-generated travel persona (e.g., "The Curious Culture Seeker")
-- Behavioral profile stored and updated in PostgreSQL
+- Per-trip behavioral profiles stored in PostgreSQL
 - Profile-aware itinerary personalization
 
 ### 💬 Multimodal Chat
 - Real-time WebSocket-based chat interface
-- Natural language intent parsing (Llama 3.1 8B)
-- Image analysis for travel preference extraction (Llama 4 Scout VLM)
-- Clarifying questions when input is incomplete
-- Persistent conversation history
+- Unified Router — single structured-output LLM call for intent + extraction
+- Gemini VLM image analysis for travel preference extraction
+- Conversation state machine: GREETING → SLOT_FILLING → PLAN_GENERATION → ITINERARY_REVIEW
+- Redis-backed session persistence with automatic TTL
 
 ### 🗓️ AI Itinerary Generation
-- Multi-agent LangGraph pipeline:
-  - **Planning Agent** — Generates raw itinerary using Llama 3.3 70B
-  - **Optimization Agent** — Reorders stops using OSRM routing data
-  - **Validation Agent** — Checks feasibility and time constraints
-- Day-by-day itinerary with activities, times, locations, and notes
-- Real POI data from Overpass API
+- 7-agent LangGraph pipeline:
+  - **Load Profile** — Loads user behavioral profile from DB
+  - **Preference Agent** — Extracts structured preferences from conversation (Groq Llama 3.1 8B)
+  - **Retrieval Agent** — Filters places using SQL-style criteria from PostgreSQL
+  - **Ranking Agent** — Scores candidates with multi-signal formula + diversity
+  - **Planning Agent** — Generates day-by-day itinerary (Gemini 2.5 Flash)
+  - **Optimization Agent** — Reorders stops using OSRM routing + 2-opt
+  - **Validation Agent** — Programmatic feasibility + LLM quality checks (Groq Llama 3.1 8B)
+- Automatic retry loop when validation fails
 
-### 📍 Booking Simulation
-- Simulated accommodation and activity booking
-- Trip confirmation and cancellation flows
-- Natural language itinerary modification commands
-- Trip library for upcoming and past plans
+### 📍 Places & Exploration
+- Database of real Cairo POIs (restaurants, attractions, hotels)
+- Bayesian popularity scores per category
+- Place search with filtering and sorting
+- Save and review places
 
 ### 📊 Transparency & Learning
-- Full agent decision logging
+- Full agent decision logging with agent_messages trace
+- LangSmith observability for agent execution tracing
 - User feedback collection on completed plans
-- Feedback-driven behavioral profile refinement
-- Data-driven insights dashboard
+- Token usage tracking across all LLM calls
 
 ---
 
@@ -89,50 +88,57 @@ Instead of browsing generic travel guides, users simply **chat** with TourMate �
 ```
 ┌──────────────────────────────────────────────────────────────┐
 │                    Flutter Mobile App                         │
-│         (Chat UI · Itinerary View · Profile · Explore)       │
+│      (Chat UI · Quiz · Itinerary View · Trips · Auth)       │
 └───────────────────┬──────────────────┬───────────────────────┘
                     │ REST API         │ WebSocket
                     ▼                  ▼
 ┌──────────────────────────────────────────────────────────────┐
 │                   FastAPI Backend                             │
-│  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌────────────────┐  │
-│  │   Auth   │ │  Trips   │ │  Users   │ │     Chat       │  │
-│  │ Firebase │ │   CRUD   │ │ Profiles │ │  WebSocket +   │  │
-│  │          │ │          │ │  + Quiz  │ │  History       │  │
-│  └──────────┘ └──────────┘ └──────────┘ └───────┬────────┘  │
-│                                                  │           │
-│  ┌───────────────┐  ┌─────────────┐  ┌──────────▼────────┐  │
-│  │  PostgreSQL   │  │   Firebase  │  │   AI Engine       │  │
-│  │  Users/Trips  │  │   Storage   │  │   (ai_engine/)    │  │
-│  │  Profiles     │  │   Images    │  │                   │  │
-│  │  Conversations│  │             │  │                   │  │
-│  └───────────────┘  └─────────────┘  └──────────┬────────┘  │
-└──────────────────────────────────────────────────┼───────────┘
-                                                   │
-                    ┌──────────────────────────────▼───────────┐
-                    │         LangGraph Pipeline                │
-                    │                                          │
-                    │  ┌────────┐   ┌───────────┐   ┌───────┐ │
-                    │  │ Intent │──▶│  Profile  │──▶│ Plan  │ │
-                    │  │ Parser │   │  Loader   │   │ Agent │ │
-                    │  └────────┘   └───────────┘   └───┬───┘ │
-                    │                                   │     │
-                    │  ┌────────┐   ┌───────────┐       │     │
-                    │  │Validate│◀──│ Optimize  │◀──────┘     │
-                    │  │ Agent  │   │   Agent   │             │
-                    │  └────────┘   └───────────┘             │
-                    │                                          │
-                    │  External: Groq API · Overpass · OSRM    │
-                    └──────────────────────────────────────────┘
+│  ┌──────┐ ┌──────┐ ┌──────┐ ┌──────┐ ┌──────┐ ┌──────────┐ │
+│  │ Auth │ │Users │ │Trips │ │Places│ │Reviews│ │  Images  │ │
+│  └──┬───┘ └──┬───┘ └──┬───┘ └──┬───┘ └──┬───┘ └────┬─────┘ │
+│     │        │        │        │        │           │        │
+│  ┌──┴────────┴────────┴────────┴────────┴───────────┴─────┐  │
+│  │              WebSocket Manager (ws/)                    │  │
+│  └────────────────────────┬───────────────────────────────┘  │
+│                           │                                  │
+│  ┌────────────┐ ┌─────────┴──────┐ ┌──────────────────────┐ │
+│  │ PostgreSQL │ │   AI Engine    │ │      Redis           │ │
+│  │ Users/     │ │  (ai_engine/)  │ │  Sessions + Cache    │ │
+│  │ Trips/     │ │                │ │                      │ │
+│  │ Places/    │ │                │ │                      │ │
+│  │ Reviews    │ │                │ │                      │ │
+│  └────────────┘ └────────┬───────┘ └──────────────────────┘ │
+└───────────────────────────┼──────────────────────────────────┘
+                            │
+           ┌────────────────▼────────────────┐
+           │      Conversation Agent          │
+           │   (Unified Router + State Mgmt) │
+           └────────────────┬────────────────┘
+                            │
+           ┌────────────────▼────────────────┐
+           │      LangGraph Pipeline          │
+           │                                  │
+           │  load_profile → preference       │
+           │      → retrieval → ranking       │
+           │      → planner → optimizer       │
+           │      → validator ──┐             │
+           │                    │ (retry)     │
+           │                    └──→ planner  │
+           │                                  │
+           │  External: Gemini · Groq · OSRM  │
+           └──────────────────────────────────┘
 ```
 
-### AI Models (via Groq)
+### AI Models — Dual Provider Setup
 
-| Model | Purpose | Use Case |
-|-------|---------|----------|
-| **Llama 3.3 70B** | Planning & Generation | Itinerary creation, NL modifications |
-| **Llama 3.1 8B** | Fast Classification | Intent parsing, validation |
-| **Llama 4 Scout** | Vision (VLM) | Travel image analysis |
+| Provider | Model | Role | Use Case |
+|----------|-------|------|----------|
+| **Google Gemini** | Gemini 2.5 Flash | Planning + Vision | Itinerary generation, image understanding |
+| **Groq** | Llama 3.3 70B Versatile | Router + Review QA | Unified routing, itinerary review Q&A |
+| **Groq** | Llama 3.1 8B Instant | Fast Classification | Preference extraction, validation |
+
+Both providers support **multi-key rotation** with automatic rate-limit fallback.
 
 ---
 
@@ -142,8 +148,9 @@ Instead of browsing generic travel guides, users simply **chat** with TourMate �
 
 - **Python** 3.11+
 - **PostgreSQL** 14+
-- **Flutter** 3.x
-- **Node.js** (for Firebase CLI, optional)
+- **Redis** (for session management)
+- **Flutter** 3.x (for mobile app)
+- **Google Gemini API Key** — [Get one here](https://aistudio.google.com/apikey)
 - **Groq API Key** — [Get one here](https://console.groq.com)
 - **Firebase Project** — [Create one here](https://console.firebase.google.com)
 
@@ -151,7 +158,7 @@ Instead of browsing generic travel guides, users simply **chat** with TourMate �
 
 ```bash
 # 1. Clone the repository
-git clone https://github.com/your-org/TourMate-AI.git
+git clone https://github.com/AbdooMatrix/TourMate-AI.git
 cd TourMate-AI/backend
 
 # 2. Create virtual environment
@@ -166,44 +173,55 @@ source venv/bin/activate
 pip install -e .
 
 # 4. Set up environment variables
-cp .env.example .env
+# Create .env file (see below)
 ```
 
-Edit `.env` with your credentials:
+Create a `.env` file in the `backend/` folder:
 
 ```env
-DATABASE_URL=postgresql://user:password@localhost:5432/tourmate
+# === Required ===
+DATABASE_URL=postgresql+asyncpg://user:password@localhost:5432/tourmate
 REDIS_URL=redis://localhost:6379/0
 SECRET_KEY=your-secret-key-here
-groq_api_key=gsk_your_groq_api_key
+GOOGLE_API_KEY=your-google-gemini-api-key
+GROQ_API_KEY=your-groq-api-key
 FIREBASE_CREDENTIALS=firebase-credentials.json
-```
 
-> ⚠️ **Never commit `.env` or `firebase-credentials.json` to version control.**
+# === Optional (LangSmith tracing) ===
+LANGCHAIN_TRACING_V2=true
+LANGCHAIN_API_KEY=ls_your-langsmith-key
+LANGCHAIN_PROJECT=tourmate-ai
+```
 
 ```bash
 # 5. Set up PostgreSQL database
 createdb tourmate
 
-# 6. Run the server
+# 6. Seed Cairo places data (optional)
+python seed_cairo_places.py
+
+# 7. Run the server
 uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
 The API will be available at `http://localhost:8000` with docs at `/docs`.
 
-### Frontend Setup
+### Mobile App Setup
 
 ```bash
-cd TourMate-AI/frontend
+cd TourMate-AI/mobile
 
 # 1. Install Flutter dependencies
 flutter pub get
 
-# 2. Configure Firebase
+# 2. Generate code (freezed models, Retrofit clients)
+dart run build_runner build --delete-conflicting-outputs
+
+# 3. Configure Firebase
 # Place google-services.json (Android) in android/app/
 # Place GoogleService-Info.plist (iOS) in ios/Runner/
 
-# 3. Run the app
+# 4. Run the app
 flutter run
 ```
 
@@ -233,48 +251,39 @@ pytest tests/unit/test_ai_engine/test_llm_client.py::test_intent_plan_trip -v
 TourMate-AI/
 ├── backend/
 │   ├── ai_engine/                    # 🤖 AI Layer
-│   │   ├── agents/                   # Agent implementations
-│   │   ├── chat/                     # Chat handler + intent parser
-│   │   │   ├── chat_handler.py       # Main chat processing
-│   │   │   └── intent_parser.py      # NL intent classification
-│   │   ├── evaluation/               # Agent metrics & explainability
+│   │   ├── agents/                   # 7 specialized agents
+│   │   ├── chat/                     # Conversation handling
 │   │   ├── graph/                    # LangGraph pipeline
-│   │   │   ├── state.py              # TripState + BehavioralProfile
-│   │   │   ├── nodes.py              # Agent node functions
-│   │   │   ├── edges.py              # Conditional routing logic
-│   │   │   └── graph_builder.py      # Graph assembly & compilation
-│   │   ├── memory/                   # Conversation memory (Redis)
-│   │   ├── profiling/                # Behavioral profiling
-│   │   │   ├── behavioral_profile.py # Profile-to-text helpers
-│   │   │   └── cold_start.py         # Persona generation
-│   │   ├── prompts/                  # LLM prompt templates
-│   │   ├── tools/                    # External tool integrations
-│   │   │   └── profile_tool.py       # Profile loading (mock + real)
+│   │   ├── memory/                   # Redis session management
+│   │   ├── tools/                    # External integrations
 │   │   ├── vision/                   # Image analysis pipeline
-│   │   └── constants.py              # Model names & settings
+│   │   ├── evaluation/               # Agent metrics & explainability
+│   │   ├── observability/            # LangSmith tracing
+│   │   ├── llm_config.py             # Multi-provider LLM registry + key rotation
+│   │   └── constants.py              # Model names & session config
 │   │
 │   ├── app/                          # ⚙️ Backend Layer
-│   │   ├── api/v1/routes/            # API endpoints
-│   │   │   ├── auth.py               # Registration & login
-│   │   │   ├── chat.py               # WebSocket chat + history
-│   │   │   ├── trips.py              # Trip CRUD
-│   │   │   └── users.py              # Profile & quiz endpoints
+│   │   ├── api/v1/routes/            # API endpoints (12 routers)
 │   │   ├── core/                     # Config, DB, security
-│   │   ├── external/                 # Third-party clients
-│   │   │   └── groq_client.py        # Groq API (planning/fast/vision)
+│   │   ├── external/                 # Gemini, OSRM clients
 │   │   ├── models/                   # SQLAlchemy ORM models
 │   │   ├── schemas/                  # Pydantic request/response
+│   │   ├── repositories/             # Database query abstraction
 │   │   ├── services/                 # Business logic
-│   │   ├── ws/                       # WebSocket manager
-│   │   └── main.py                   # FastAPI app entry point
+│   │   └── ws/                       # WebSocket manager
 │   │
-│   └── tests/                        # 🧪 Test Suite
-│       ├── unit/
-│       ├── integration/
-│       └── e2e/
+│   └── tests/                        # 🧪 17+ unit tests, integration, e2e
 │
-└── frontend/                         # 🎨 Flutter App
+└── mobile/                           # 🎨 Flutter App (feature-first)
     └── lib/
+        ├── app/                      # App config + routing
+        ├── core/                     # Network, errors, layout
+        └── features/
+            ├── auth/                 # Sign in/up, profile, quiz
+            ├── chat/                 # WebSocket chat + cubit
+            ├── quiz/                 # 8-screen onboarding flow
+            ├── trips/                # Trip management
+            └── splash/               # Splash screen
 ```
 
 ---
@@ -307,6 +316,35 @@ TourMate-AI/
 | `GET` | `/api/v1/trips/{trip_id}/itinerary` | Get full itinerary |
 | `PATCH` | `/api/v1/trips/{trip_id}/status` | Update trip status |
 
+### Places
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/api/v1/places/search` | Search places by criteria |
+| `GET` | `/api/v1/places/city/{city}` | Get places by city |
+| `GET` | `/api/v1/places/explore` | Explore nearby places |
+
+### Reviews & Saved Places
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `POST` | `/api/v1/reviews/` | Create a review |
+| `GET` | `/api/v1/reviews/place/{place_id}` | Get reviews for a place |
+| `DELETE` | `/api/v1/reviews/{review_id}` | Delete a review |
+| `POST` | `/api/v1/saved-places/` | Save a place |
+| `GET` | `/api/v1/saved-places/` | Get saved places |
+| `DELETE` | `/api/v1/saved-places/{place_id}` | Unsave a place |
+
+### Recommendations & Images
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/api/v1/recommendations/trip/{trip_id}` | Get recommendations |
+| `POST` | `/api/v1/recommendations/{id}/accept` | Accept recommendation |
+| `POST` | `/api/v1/recommendations/{id}/reject` | Reject recommendation |
+| `GET` | `/api/v1/images/trip/{trip_id}` | Get images for trip |
+| `DELETE` | `/api/v1/images/{image_id}` | Delete image |
+
 ### Chat
 
 | Method | Endpoint | Description |
@@ -323,28 +361,12 @@ TourMate-AI/
 { "message": "Plan me a 3-day trip to Cairo" }
 
 // Server → Client
-{ "type": "typing" }                              // AI is thinking
-{ "type": "token", "data": "Here's" }             // Streaming token
-{ "type": "done" }                                 // Response complete
-{ "type": "actions", "data": [...] }               // DB mutations
-{ "type": "trip_created", "trip_id": "uuid" }      // New trip created
-{ "type": "itinerary_updated" }                    // Itinerary changed
-{ "type": "error", "data": "message" }             // Error occurred
+{ "type": "session", "data": { "session_id": "...", "phase": "slot_filling" } }
+{ "type": "phase", "data": { "phase": "plan_generation" } }
+{ "type": "text", "content": "Here's" }             // Streaming token
+{ "type": "done", "data": null }                     // Response complete
+{ "type": "error", "data": "message" }               // Error occurred
 ```
-
----
-
-## 🗓️ Sprint Progress
-
-| Sprint | Focus | Status |
-|--------|-------|--------|
-| Sprint 1 | Auth Setup | ✅ Complete |
-| Sprint 2 | User Profiling | ✅ Complete |
-| Sprint 3 | Multimodal Chat | 🔄 In Progress |
-| Sprint 4 | Itinerary Engine | ⬜ Upcoming |
-| Sprint 5 | Booking Simulation | ⬜ Upcoming |
-| Sprint 6 | Explore & Profile | ⬜ Upcoming |
-| Sprint 7 | Logging & Learning | ⬜ Upcoming |
 
 ---
 
@@ -352,25 +374,28 @@ TourMate-AI/
 
 ### Backend
 - **FastAPI** — Async Python web framework
-- **PostgreSQL** — Relational database
-- **SQLAlchemy** (async) — ORM
+- **PostgreSQL** — Relational database with async SQLAlchemy
+- **Redis** — Conversation session management + caching
 - **Firebase Admin SDK** — Authentication
-- **Redis** — Conversation caching (planned)
+- **Alembic** — Database migrations (10+ versions)
 
 ### AI Engine
 - **LangGraph** — Multi-agent orchestration framework
-- **Groq API** — Ultra-fast LLM inference
-  - Llama 3.3 70B (planning)
-  - Llama 3.1 8B (classification)
-  - Llama 4 Scout (vision)
-- **LangChain** — LLM abstractions
-- **Overpass API** — OpenStreetMap POI data
-- **OSRM** — Open-source routing engine
+- **Google Gemini 2.5 Flash** — Planning (reasoning) + Vision (multimodal)
+- **Groq Llama 3.3 70B** — Unified routing + review QA
+- **Groq Llama 3.1 8B** — Fast classification + validation
+- **LangChain** — LLM abstractions + structured output
+- **LangSmith** — Agent execution tracing (optional)
+- **OSRM** — Open-source routing engine + distance matrix
 
-### Frontend
+### Mobile (Flutter)
 - **Flutter** — Cross-platform mobile framework
 - **FlutterFire** — Firebase integration
-- **WebSocket** — Real-time chat communication
+- **flutter_bloc** — State management (Cubit pattern)
+- **freezed** — Immutable data classes with union types
+- **dio + retrofit** — Type-safe HTTP client
+- **get_it** — Dependency injection
+- **web_socket_channel** — Real-time chat communication
 
 ---
 
@@ -402,6 +427,7 @@ pytest -v -x
 - All API endpoints require Firebase Bearer token authentication
 - WebSocket connections authenticated via token query parameter
 - Database credentials stored only in environment variables
+- API keys support multi-key rotation with automatic rate-limit fallback
 
 ---
 
@@ -417,7 +443,7 @@ This project is developed as part of an academic capstone project.
 |------|-------|------------------|
 | 🎨 Frontend | 2 | Flutter UI, FlutterFire integration |
 | ⚙️ Backend | 2 | FastAPI, PostgreSQL, Firebase |
-| 🤖 AI | 2 | LangGraph agents, Groq integration, profiling |
+| 🤖 AI | 2 | LangGraph agents, Gemini/Groq integration, profiling |
 
 ---
 
@@ -426,48 +452,3 @@ This project is developed as part of an academic capstone project.
 **Built with ❤️ by the TourMate AI Team**
 
 </div>
-```
-
----
-
-## How to Use
-
-Save this as `README.md` in your project root:
-
-```
-D:\Projects\TourMate-AI\README.md
-```
-
-### Also create `.env.example` (safe to commit):
-
-```env
-DATABASE_URL=postgresql://user:password@localhost:5432/tourmate
-REDIS_URL=redis://localhost:6379/0
-SECRET_KEY=change-me-to-a-random-string
-groq_api_key=gsk_your_key_here
-FIREBASE_CREDENTIALS=firebase-credentials.json
-```
-
-### Update `.gitignore`:
-
-```gitignore
-# Secrets
-.env
-firebase-credentials.json
-*.pem
-*.key
-
-# Python
-__pycache__/
-*.pyc
-venv/
-.pytest_cache/
-
-# IDE
-.vscode/
-.idea/
-
-# OS
-.DS_Store
-Thumbs.db
-```
