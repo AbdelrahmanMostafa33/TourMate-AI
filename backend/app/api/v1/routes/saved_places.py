@@ -18,6 +18,16 @@ async def save_place(
     current_user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    # Check for duplicate save
+    existing = await db.execute(
+        select(SavedPlace).where(
+            SavedPlace.user_id == current_user["uid"],
+            SavedPlace.place_id == body.place_id,
+        )
+    )
+    if existing.scalar_one_or_none():
+        raise HTTPException(status_code=409, detail="Place already saved")
+
     sp = SavedPlace(
         saved_place_id=str(uuid.uuid4()),
         user_id=current_user["uid"],
@@ -36,7 +46,9 @@ async def get_saved_places(
     db: AsyncSession = Depends(get_db),
 ):
     result = await db.execute(
-        select(SavedPlace).where(SavedPlace.user_id == current_user["uid"])
+        select(SavedPlace)
+        .where(SavedPlace.user_id == current_user["uid"])
+        .order_by(SavedPlace.saved_at.desc())
     )
     return result.scalars().all()
 

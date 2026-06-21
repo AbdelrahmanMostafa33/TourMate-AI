@@ -1,6 +1,6 @@
 """SavedPlace model."""
 
-from sqlalchemy import Column, String, Text, DateTime, ForeignKey
+from sqlalchemy import Column, String, Text, DateTime, ForeignKey, UniqueConstraint
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 
@@ -9,6 +9,9 @@ from app.core.database import Base
 
 class SavedPlace(Base):
     __tablename__ = "saved_places"
+    __table_args__ = (
+        UniqueConstraint("user_id", "place_id", name="uq_saved_place_user_place"),
+    )
 
     saved_place_id = Column(String, primary_key=True)
     user_id        = Column(String, ForeignKey("users.user_id"), nullable=False, index=True)

@@ -22,5 +22,5 @@ class User(Base):
     trips            = relationship("Trip",            back_populates="user", cascade="all, delete-orphan")
     conversations    = relationship("Conversation",    back_populates="user", cascade="all, delete-orphan")
     reviews          = relationship("Review",          back_populates="user")
-    saved_places     = relationship("SavedPlace",      back_populates="user")
+    saved_places     = relationship("SavedPlace",      back_populates="user", cascade="all, delete-orphan")
 
