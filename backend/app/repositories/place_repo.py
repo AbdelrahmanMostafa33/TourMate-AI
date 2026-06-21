@@ -313,7 +313,7 @@ class PlaceRepository(BaseRepository):
             country_name = (row[0] or "").strip()
             countries.append({
                 "key": country_name.lower(),
-                "city": country_name,
+                "city": None,
                 "country": country_name,
                 "display": country_name,
                 "subtitle": "Country",
@@ -363,7 +363,9 @@ class PlaceRepository(BaseRepository):
             })
 
         # Merge: countries first, then cities (for "Recent locations")
-        locations = countries + cities
+        #Safety cap: limit countries so a pathological short query can never
+        # silently crowd out every city suggestion.
+        locations = countries[:5] + cities
 
         # ── Categories with counts ────────────────────────────────────
         cat_q = (
