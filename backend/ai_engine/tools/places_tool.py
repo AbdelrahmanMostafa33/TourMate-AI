@@ -91,14 +91,16 @@ async def get_places_for_city(
             # for place-related queries.
             repo = PlaceRepository(session)
 
-            # Fetch all places belonging to the specified city.
-            # The repository handles SQL generation and execution.
-            places = await repo.get_places_by_city(city_key)
+            # Use the diverse query that samples top K from each subcategory.
+            places = await repo.get_places_by_city_diverse(
+                city_key,
+                per_subcategory=20,
+                max_restaurants=15,
+                max_hotels=10,
+            )
 
-        # Log successful retrieval for observability.
-        # Useful for monitoring data availability and debugging.
         logger.info(
-            "[PlacesTool] Loaded %d places for %s from database",
+            "[PlacesTool] Loaded %d places for %s (stratified by subcategory)",
             len(places),
             city_key,
         )

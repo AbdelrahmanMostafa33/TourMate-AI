@@ -33,6 +33,23 @@ WEIGHT_DIVERSITY = 0.10
 MAX_TOTAL_CANDIDATES = 40
 
 
+# Maps user interests (from conversation) to actual DB sub_categories.
+# Used by _score_preference so that e.g. "parks" boosts places with sub_category="parks".
+INTEREST_TO_SUBCATEGORY = {
+    "parks": "parks", "park": "parks", "nature": "nature", "outdoors": "nature",
+    "history": "history", "historical": "history",
+    "nightlife": "nightlife", "night": "nightlife",
+    "shopping": "shopping",
+    "religion": "religious", "religious": "religious", "spiritual": "religious",
+    "art": "museums", "culture": "museums", "museums": "museums",
+    "sports": "sports", "fitness": "sports",
+    "family": "family",
+    "wellness": "wellness", "spa": "wellness",
+    "sightseeing": "sightseeing",
+    "entertainment": "entertainment", "shows": "entertainment",
+}
+
+
 def _score_popularity(place: dict) -> float:
     """Normalize popularity score to 0–1 range."""
     pop = place.get("popularity_score", 0) or 0
@@ -52,10 +69,21 @@ def _score_preference(place: dict, preferences: dict) -> float:
     interests = set(preferences.get("interests_from_conversation", []))
     place_tags = set(place.get("interest_tags", []))
     place_category = place.get("category", "")
+    place_subcategory = (place.get("sub_category", "") or "").lower()
 
     # Interest match (0 or 1)
     if interests:
-        if place_category in interests or place_tags & interests:
+        matched = False
+        for interest in interests:
+            mapped_sub = INTEREST_TO_SUBCATEGORY.get(interest.lower())
+            if (
+                place_category == interest
+                or interest.lower() in place_tags
+                or (mapped_sub and place_subcategory == mapped_sub)
+            ):
+                matched = True
+                break
+        if matched:
             score += 1.0
         checks += 1
 
@@ -187,7 +215,7 @@ def _diversity_optimize(
     """
     # Category caps based on trip duration
     category_caps = {
-        "attractions": min(duration_days * 4, 18),
+        "attraction": min(duration_days * 4, 18),
         "restaurant": min(duration_days * 3, 12),
         "hotel": min(duration_days + 2, 7),
         "_default": 5,
@@ -242,7 +270,7 @@ async def run_ranking_agent(state: TripState) -> TripState:
 
     # ── Target per category for diversity scoring ──
     target_per_category = {
-        "attractions": max(duration_days * 2, 4),
+        "attraction": max(duration_days * 2, 4),
         "restaurant": max(duration_days, 3),
         "hotel": max(duration_days // 2 + 1, 2),
     }

@@ -49,14 +49,21 @@ def _make_plan_result(city, days, **extra):
     )
 
 
-def _make_mock_graph_result():
+def _make_mock_graph_result(is_valid=True):
+    """Build a mock LangGraph pipeline result.
+
+    Args:
+        is_valid: If True, the itinerary passed validation (normal success).
+                  If False, simulates stale state from a retry loop.
+    """
     return {
         "optimized_itinerary": {
             "days": [{"day_number": 1, "stops": [
                 {"name": "Pyramids of Giza", "start_time": "09:00"},
                 {"name": "Egyptian Museum", "start_time": "14:00"},
             ]}]
-        }
+        },
+        "is_valid": is_valid,
     }
 
 

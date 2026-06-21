@@ -171,7 +171,7 @@ class PlaceRepository(BaseRepository):
         return places_dict, total
 
     async def get_places_by_city(
-        self, city: str, limit: int = 100
+        self, city: str, limit: int = 500
     ) -> List[dict]:
         """Get all places for a city, sorted by popularity."""
         query = (
@@ -188,6 +188,98 @@ class PlaceRepository(BaseRepository):
         result = await self.session.execute(query)
         places = result.scalars().unique().all()
         return [self._place_to_dict(p) for p in places]
+
+    async def get_places_by_city_diverse(
+        self, city: str,
+        per_subcategory: int = 20,
+        max_restaurants: int = 15,
+        max_hotels: int = 10,
+    ) -> List[dict]:
+        """
+        Get places for a city with SQL-level stratified sampling.
+
+        Instead of taking the top N places by popularity (which could all be
+        from the same subcategory), this method queries the top K places from
+        EACH attraction subcategory. This guarantees diverse representation:
+        parks, museums, history, shopping, etc. all get equal opportunity
+        regardless of their aggregate popularity scores.
+
+        Args:
+            city: Destination city name.
+            per_subcategory: Top N places to fetch per attraction subcategory.
+            max_restaurants: Max restaurant candidates to fetch.
+            max_hotels: Max hotel candidates to fetch.
+
+        Returns:
+            List of place dicts with balanced subcategory representation.
+        """
+        city_key = city.lower().strip()
+
+        # Step 1: Get all unique subcategories for this city's attractions
+        subcat_query = (
+            select(func.distinct(AttractionDetails.subcategory))
+            .join(Place, Place.place_id == AttractionDetails.place_id)
+            .where(func.lower(Place.city) == city_key)
+            .where(AttractionDetails.subcategory.isnot(None))
+            .where(AttractionDetails.subcategory != "")
+        )
+        subcat_result = await self.session.execute(subcat_query)
+        subcategories = [row[0] for row in subcat_result.all()]
+
+        all_places = []
+
+        # Step 2: For each subcategory, get top N places (with ORM eager loading)
+        for sub in subcategories:
+            q = (
+                select(Place)
+                .options(
+                    selectinload(Place.attraction_details),
+                    selectinload(Place.restaurant_details),
+                    selectinload(Place.hotel_details),
+                )
+                .join(AttractionDetails, Place.place_id == AttractionDetails.place_id)
+                .where(func.lower(Place.city) == city_key)
+                .where(AttractionDetails.subcategory == sub)
+                .order_by(Place.popularity_score.desc().nullslast())
+                .limit(per_subcategory)
+            )
+            result = await self.session.execute(q)
+            places = result.scalars().unique().all()
+            all_places.extend(places)
+
+        # Step 3: Get top restaurants
+        rest_q = (
+            select(Place)
+            .options(
+                selectinload(Place.attraction_details),
+                selectinload(Place.restaurant_details),
+                selectinload(Place.hotel_details),
+            )
+            .where(func.lower(Place.city) == city_key)
+            .where(cast(Place.category, SAString) == "restaurant")
+            .order_by(Place.popularity_score.desc().nullslast())
+            .limit(max_restaurants)
+        )
+        rest_result = await self.session.execute(rest_q)
+        all_places.extend(rest_result.scalars().unique().all())
+
+        # Step 4: Get top hotels
+        hotel_q = (
+            select(Place)
+            .options(
+                selectinload(Place.attraction_details),
+                selectinload(Place.restaurant_details),
+                selectinload(Place.hotel_details),
+            )
+            .where(func.lower(Place.city) == city_key)
+            .where(cast(Place.category, SAString) == "hotel")
+            .order_by(Place.popularity_score.desc().nullslast())
+            .limit(max_hotels)
+        )
+        hotel_result = await self.session.execute(hotel_q)
+        all_places.extend(hotel_result.scalars().unique().all())
+
+        return [self._place_to_dict(p) for p in all_places]
 
     def _place_to_dict(self, place: Place) -> dict:
         """

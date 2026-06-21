@@ -184,36 +184,43 @@ def _apply_filters(
     return filtered
 
 
-def _ensure_diversity(places: list[dict], duration_days: int) -> list[dict]:
+def _cap_candidates(
+    places: list[dict],
+    max_attractions: int = 80,
+    max_restaurants: int = 15,
+    max_hotels: int = 10,
+) -> list[dict]:
     """
-    Ensure the filtered set has minimum category diversity.
+    Cap the number of candidates per category.
 
-    Even after interest filtering, we want to guarantee that the
-    planner has at least a few options in each major category.
+    The SQL-level stratified query already ensures diverse representation
+    (top K from each subcategory). This function just caps the totals
+    to keep the candidate set manageable for downstream agents.
+
+    Args:
+        places: List of candidate places (already diverse via SQL).
+        max_attractions: Max total attractions to keep.
+        max_restaurants: Max restaurants to keep.
+        max_hotels: Max hotels to keep.
+
+    Returns:
+        List of place dicts with per-category caps applied.
     """
-    min_per_category = {
-        "attractions": max(duration_days * 2, 4),
-        "restaurant": max(duration_days, 3),
-        "hotel": max(duration_days // 2 + 1, 2),
-    }
+    hotels = [p for p in places if p.get("category") == "hotel"]
+    restaurants = [p for p in places if p.get("category") == "restaurant"]
+    attractions = [
+        p for p in places
+        if p.get("category") not in ("hotel", "restaurant")
+    ]
 
-    by_category: dict[str, list] = {}
-    for place in places:
-        cat = place.get("category", "other")
-        by_category.setdefault(cat, []).append(place)
+    # Sort each by popularity score
+    attractions.sort(key=lambda p: p.get("popularity_score", 0) or 0, reverse=True)
+    restaurants.sort(key=lambda p: p.get("popularity_score", 0) or 0, reverse=True)
+    hotels.sort(key=lambda p: p.get("popularity_score", 0) or 0, reverse=True)
 
-    result = []
-    for cat, min_count in min_per_category.items():
-        available = by_category.get(cat, [])
-        # Take up to the minimum needed, sorted by popularity
-        available.sort(key=lambda p: p.get("popularity_score", 0) or 0, reverse=True)
-        result.extend(available[:min_count])
-
-    # Also include any other categories not in min_per_category
-    for cat, cat_places in by_category.items():
-        if cat not in min_per_category:
-            result.extend(cat_places)
-
+    result = attractions[:max_attractions]
+    result.extend(restaurants[:max_restaurants])
+    result.extend(hotels[:max_hotels])
     return result
 
 
@@ -287,27 +294,28 @@ async def run_retrieval_agent(state: TripState) -> TripState:
     )
 
     # ==========================================================
-    # STAGE 3: Ensure category diversity.
+    # STAGE 3: Stratified sampling across subcategories.
     # ==========================================================
     #
-    # Avoid returning only one type of place.
+    # Instead of taking the top N places by popularity, we sample
+    # evenly across subcategories (parks, museums, history, shopping,
+    # etc.) to guarantee diverse representation. This ensures that
+    # lower-popularity categories like parks or museums are not
+    # crowded out by shopping malls in the top-100 list.
     #
     # Example:
     # Instead of:
-    #   15 museums
+    #   6 shopping malls + 3 restaurants + 2 hotels
     #
     # Return:
-    #   museums
-    #   restaurants
-    #   parks
-    #   shopping
-    #   landmarks
+    #   top 6 parks + top 6 museums + top 6 history + top 6 shopping
+    #   + top 10 restaurants + top 5 hotels
     #
-    # The duration influences how many places are needed.
-    #
-    diverse = _ensure_diversity(
+    diverse = _cap_candidates(
         filtered,
-        duration_days
+        max_attractions=80,
+        max_restaurants=15,
+        max_hotels=10,
     )
 
     # ==========================================================
@@ -331,7 +339,7 @@ async def run_retrieval_agent(state: TripState) -> TripState:
             f"[RetrievalAgent] "
             f"{len(all_places)} total → "
             f"{len(filtered)} filtered → "
-            f"{len(diverse)} after diversity"
+            f"{len(diverse)} after capping"
         ]
     )
 

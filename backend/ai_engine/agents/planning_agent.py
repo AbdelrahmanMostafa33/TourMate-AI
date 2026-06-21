@@ -187,6 +187,55 @@ def _extract_json_from_llm_output(text: str) -> str:
     return text[first_brace:last_brace + 1]
 
 
+def _repair_missing_commas(text: str) -> str:
+    """
+    Insert missing commas by using json.JSONDecodeError position hints.
+
+    The LLM (especially Gemini) commonly produces JSON with missing commas
+    between fields, like:
+        {"name": "Museum" "id": "123"}   → missing comma after "Museum"
+        {"scores": [1 2 3]}               → missing commas in array
+        {"a": 1 {"b": 2}}               → missing comma before nested object
+
+    This function iteratively:
+    1. Attempts json.loads()
+    2. If it fails with a missing-comma error, inserts a comma at the
+       error position and retries (up to 5 iterations).
+
+    Returns the repaired JSON string (which may still be invalid on
+    non-comma errors — the caller falls through to _repair_truncated_json).
+    """
+    repaired = text
+
+    for _ in range(5):
+        try:
+            json.loads(repaired)
+            return repaired  # Valid JSON — done
+        except json.JSONDecodeError as e:
+            # Only handle missing comma / property name errors here.
+            if not ("Expecting '" in e.msg and "delimiter" in e.msg):
+                if "Expecting property name" not in e.msg:
+                    break  # Non-comma error — let truncation repair handle it
+            pos = e.pos
+            # Guard: don't insert at end of string
+            if pos >= len(repaired):
+                break
+            if repaired[pos] in (',', '}', ']', ':', ' '):
+                break  # Already has comma or structural — different issue
+
+            # If error position points to a key inside a newly-started nested
+            # object (e.g. {"a": 1 {"b": 2}}), the comma needs to go BEFORE
+            # the opening brace, not before the key string.
+            if (pos > 0 and repaired[pos] == '"'
+                    and repaired[pos - 1] in ('{', '[')):
+                pos = pos - 1
+
+            repaired = repaired[:pos] + ',' + repaired[pos:]
+            continue
+
+    return repaired  # Best attempt
+
+
 def _repair_truncated_json(text: str) -> str:
     """Attempt to repair JSON that was truncated by max_tokens limit.
 
@@ -263,6 +312,15 @@ async def run_planning_agent(state: TripState) -> TripState:
     Now receives pre-ranked candidates from the Ranking Agent
     instead of doing its own candidate selection.
     """
+
+    # ── Clear stale state from previous retries ────────────────────────
+    # If the pipeline loops back (e.g. after validation failure), leftover
+    # values from the first pass can leak through.  Clear them so the
+    # downstream nodes (optimizer → validator) start fresh.
+    state["draft_itinerary"] = None
+    state["optimized_itinerary"] = None
+    state["is_valid"] = None
+    state["error"] = None
 
     # Extract trip information from workflow state.
     user_message = state.get("user_message", "")
@@ -367,14 +425,24 @@ Generate the itinerary now.
             try:
                 itinerary = json.loads(extracted)
             except json.JSONDecodeError as parse_err:
-                # Attempt to repair truncated JSON before giving up.
+                # ── Repair chain ────────────────────────────────────────
+                # 1. Try missing comma repair (most common Gemini issue)
                 logger.warning(
-                    "[Planner] JSON parse failed on attempt %d: %s — attempting repair",
+                    "[Planner] JSON parse failed on attempt %d: %s — attempting comma repair",
                     attempt, parse_err,
                 )
-                repaired = _repair_truncated_json(extracted)
-                itinerary = json.loads(repaired)
-                logger.info("[Planner] Repaired truncated JSON successfully")
+                repaired = _repair_missing_commas(extracted)
+                try:
+                    itinerary = json.loads(repaired)
+                    logger.info("[Planner] Comma repair succeeded")
+                except json.JSONDecodeError:
+                    # 2. Try truncation repair (unclosed brackets, unterminated strings)
+                    logger.warning(
+                        "[Planner] Comma repair failed — attempting truncation repair",
+                    )
+                    repaired = _repair_truncated_json(repaired)
+                    itinerary = json.loads(repaired)
+                    logger.info("[Planner] Truncation repair succeeded")
 
             # Validate essential structure.
             if not isinstance(itinerary, dict) or "days" not in itinerary:

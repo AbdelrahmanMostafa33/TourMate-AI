@@ -674,9 +674,33 @@ async def _handle_plan_trip(user_id, user_message, extracted, image_features, to
     # ─────────────────────────────────────────────────────────────
     s = state.slots if state else None
 
+    # Build a rich trip summary for downstream agents (validator, planner)
+    # Instead of passing only the last user message (e.g. "street food"),
+    # combine it with all collected trip preferences so the validator
+    # can make quality judgments against the full user request.
+    rich_user_message = user_message
+    if s and (s.interests or s.food_preferences or s.accommodation_preferences or s.travel_style or s.budget_level):
+        context_parts = []
+        if s.destination_city:
+            context_parts.append(f"{s.duration_days or '?'}-day trip to {s.destination_city}")
+        if s.budget_level:
+            context_parts.append(f"budget: {s.budget_level}")
+        if s.travel_style:
+            context_parts.append(f"style: {s.travel_style}")
+        if s.pace:
+            context_parts.append(f"pace: {s.pace}")
+        if s.interests:
+            context_parts.append(f"interests: {', '.join(s.interests)}")
+        if s.food_preferences:
+            context_parts.append(f"food: {', '.join(s.food_preferences)}")
+        if s.accommodation_preferences:
+            context_parts.append(f"accommodation: {', '.join(s.accommodation_preferences)}")
+        context_str = " | ".join(context_parts)
+        rich_user_message = f"{user_message} | Trip context: {context_str}"
+
     initial_state = {
         "user_id": user_id,
-        "user_message": user_message,
+        "user_message": rich_user_message,
         "profile": profile,
         "token": token,
         "trip_id": trip_id,
@@ -716,18 +740,23 @@ async def _handle_plan_trip(user_id, user_message, extracted, image_features, to
 
     optimized = result_state.get("optimized_itinerary")
     pipeline_error = result_state.get("error")
+    is_valid = result_state.get("is_valid")
 
-    # Build the message: format itinerary if successful, else show error
-    if optimized:
+    # Build the message: show the itinerary only if it passed validation.
+    # If optimized exists but is_valid is False, the pipeline retried and
+    # the stale value from the first pass is hanging around — show the error.
+    if optimized and is_valid:
         message = _format_itinerary(optimized)
     elif pipeline_error:
         message = f"I ran into an issue generating your itinerary: {pipeline_error}. Please try again."
+    elif optimized:
+        message = "The itinerary didn't pass quality checks. I'm generating a new version — one moment please."
     else:
         message = "I wasn't able to generate a complete itinerary. Please try again."
 
-    # Always transition to ITINERARY_REVIEW so the next message
-    # doesn't hit the PLAN_GENERATION guard.
-    if state and optimized:
+    # Only set the itinerary if it passed validation.
+    # Otherwise go back to slot filling so the user can retry.
+    if state and optimized and is_valid:
         state.set_itinerary(optimized)
     elif state:
         # Pipeline failed — go back to slot filling so user can retry

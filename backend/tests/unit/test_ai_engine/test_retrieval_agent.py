@@ -16,7 +16,7 @@ from unittest.mock import patch, MagicMock, AsyncMock
 from ai_engine.agents.retrieval_agent import (
     _compute_city_center,
     _apply_filters,
-    _ensure_diversity,
+    _cap_candidates,
     run_retrieval_agent,
     MIN_RATING,
     MAX_DISTANCE_KM,
@@ -198,72 +198,50 @@ class TestApplyFilters:
         assert filtered == []
 
 
-# ── _ensure_diversity Tests ───────────────────────────────────────────────────
+# ── _cap_candidates Tests ────────────────────────────────────────────────────
 
-class TestEnsureDiversity:
+class TestCapCandidates:
 
-    def test_returns_attractions_up_to_min(self):
-        places = [_make_place(id=f"a_{i}", category="attractions") for i in range(10)]
-        result = _ensure_diversity(places, duration_days=3)
-        attractions = [p for p in result if p["category"] == "attractions"]
-        # min attractions = max(3*2, 4) = 6
-        assert len(attractions) <= 6
+    def test_caps_attractions(self):
+        """Should cap attractions at max_attractions."""
+        attractions = [_make_place(id=f"a_{i}") for i in range(100)]
+        result = _cap_candidates(attractions, max_attractions=30, max_restaurants=0, max_hotels=0)
+        assert len(result) == 30
 
-    def test_returns_restaurants_up_to_min(self):
-        places = [_make_restaurant(id=f"r_{i}") for i in range(10)]
-        result = _ensure_diversity(places, duration_days=3)
-        restaurants = [p for p in result if p["category"] == "restaurant"]
-        # min restaurants = max(3, 3) = 3
-        assert len(restaurants) <= 3
+    def test_caps_restaurants(self):
+        """Should cap restaurants at max_restaurants."""
+        restaurants = [_make_restaurant(id=f"r_{i}") for i in range(20)]
+        result = _cap_candidates(restaurants, max_restaurants=10, max_attractions=0, max_hotels=0)
+        rest = [p for p in result if p["category"] == "restaurant"]
+        assert len(rest) == 10
 
-    def test_returns_hotels_up_to_min(self):
-        places = [_make_hotel(id=f"h_{i}") for i in range(10)]
-        result = _ensure_diversity(places, duration_days=3)
-        hotels = [p for p in result if p["category"] == "hotel"]
-        # min hotels = max(3//2+1, 2) = 2
-        assert len(hotels) <= 2
+    def test_caps_hotels(self):
+        """Should cap hotels at max_hotels."""
+        hotels = [_make_hotel(id=f"h_{i}") for i in range(20)]
+        result = _cap_candidates(hotels, max_hotels=5, max_attractions=0, max_restaurants=0)
+        hotel = [p for p in result if p["category"] == "hotel"]
+        assert len(hotel) == 5
 
-    def test_fewer_places_than_min_returns_all(self):
-        """If fewer places than minimum, return all of them."""
-        places = [_make_place(id="a1", category="attractions")]
-        result = _ensure_diversity(places, duration_days=3)
+    def test_fewer_places_returns_all(self):
+        """If fewer places than cap, return all."""
+        places = [_make_place(id="a1")]
+        result = _cap_candidates(places, max_attractions=80)
         assert len(result) == 1
 
-    def test_other_categories_preserved(self):
-        """Categories not in min_per_category should be fully preserved."""
-        places = [
-            _make_place(id=f"shop_{i}", category="shopping") for i in range(5)
-        ]
-        result = _ensure_diversity(places, duration_days=3)
-        shopping = [p for p in result if p["category"] == "shopping"]
-        assert len(shopping) == 5
-
     def test_sorted_by_popularity(self):
-        """Within a category, places should be sorted by popularity (descending)."""
+        """Places should be sorted by popularity (descending)."""
         places = [
-            _make_place(id="a_low", category="attractions", popularity_score=10),
-            _make_place(id="a_high", category="attractions", popularity_score=90),
-            _make_place(id="a_mid", category="attractions", popularity_score=50),
+            _make_place(id="low", popularity_score=10),
+            _make_place(id="high", popularity_score=90),
+            _make_place(id="mid", popularity_score=50),
         ]
-        result = _ensure_diversity(places, duration_days=3)
-        attractions = [p for p in result if p["category"] == "attractions"]
-        # Should be sorted by popularity descending
-        scores = [p["popularity_score"] for p in attractions]
+        result = _cap_candidates(places, max_attractions=3)
+        scores = [p["popularity_score"] for p in result]
         assert scores == sorted(scores, reverse=True)
 
     def test_empty_places_returns_empty(self):
-        result = _ensure_diversity([], duration_days=3)
+        result = _cap_candidates([])
         assert result == []
-
-    def test_longer_trip_requests_more(self):
-        """Duration 7 should request more attractions than duration 2."""
-        places_2d = [_make_place(id=f"a_{i}", category="attractions", popularity_score=80) for i in range(20)]
-        places_7d = [_make_place(id=f"a_{i}", category="attractions", popularity_score=80) for i in range(20)]
-
-        result_2d = _ensure_diversity(places_2d, duration_days=2)
-        result_7d = _ensure_diversity(places_7d, duration_days=7)
-
-        assert len(result_7d) > len(result_2d)
 
 
 # ── run_retrieval_agent Tests ─────────────────────────────────────────────────

@@ -18,7 +18,7 @@ from langchain_core.messages import SystemMessage, HumanMessage
 
 MAX_DAILY_TRAVEL_MINUTES = 180    # 3 hours of travel per day
 MAX_DAILY_STOPS = 8               # No more than 8 stops per day
-MIN_DAILY_STOPS = 2               # At least 2 stops per day
+MIN_DAILY_STOPS = 3               # At least 2 stops per day
 MAX_CONSECUTIVE_CATEGORY = 2      # No more than 2 of same category in a row
 MIN_TOTAL_DAYS = 1                # At least 1 day planned
 MAX_DISTANCE_BETWEEN_STOPS_KM = 40  # Sanity check for consecutive stops
@@ -165,7 +165,7 @@ async def run_validation_agent(state: TripState) -> TripState:
     prompt = f"""
 User Request: {user_message}
 Optimized Itinerary:
-{json.dumps(optimized, indent=2)}{prog_context}
+{json.dumps(optimized, indent=2, ensure_ascii=False)}{prog_context}
 
 Validate the itinerary now.
     """
