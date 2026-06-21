@@ -385,3 +385,5 @@ class PlaceRepository(BaseRepository):
             "countries": [{"key": c["key"], "display": c["display"], "count": c["count"]} for c in countries],
             "categories": categories,
         }
+        
+        
