@@ -14,6 +14,37 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from ai_engine.graph.state import TripProfile
 from tests.unit.test_ai_engine.conftest import _make_profile, _make_state, _make_place, _make_hotel, _make_restaurant
 
+from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
+from app.core.database import Base
+
+
+# ── Test Database URL ─────────────────────────────────────────────────────
+
+TEST_DATABASE_URL = "sqlite+aiosqlite:///:memory:"
+
+
+@pytest.fixture
+async def db_session():
+    """Create a fresh in-memory SQLite async database for each test.
+
+    Creates all tables from the SQLAlchemy metadata, then yields an
+    ``AsyncSession``.  The database is fully torn down after each test.
+    """
+    engine = create_async_engine(TEST_DATABASE_URL, echo=False)
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+
+    factory = async_sessionmaker(
+        bind=engine,
+        class_=AsyncSession,
+        expire_on_commit=False,
+    )
+
+    async with factory() as session:
+        yield session
+
+    await engine.dispose()
+
 
 # ── Shared Mock Place Data ─────────────────────────────────────────────────
 

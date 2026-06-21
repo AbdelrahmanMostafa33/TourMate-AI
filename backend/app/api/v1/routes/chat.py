@@ -1,9 +1,11 @@
+import logging
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, delete
 from sqlalchemy.orm import selectinload
-from datetime import date, timedelta
 import uuid
+
+logger = logging.getLogger(__name__)
 
 from app.core.database import get_db
 from app.core.firebase import verify_token
@@ -12,47 +14,11 @@ from app.models.trip import Trip
 from app.models.itinerary import Itinerary, Day, ItineraryStop
 from app.models.chat import Conversation, Message
 from app.models.profile import TripProfile
+from app.services.chat_service import ChatService
 from app.ws.manager import manager
 from datetime import time as dt_time
 
 router = APIRouter()
-
-
-# ═════════════════════════════════════════════════════════════════════════════
-# Helper: صورة الرحلة للـ AI
-# ═════════════════════════════════════════════════════════════════════════════
-
-def build_trip_snapshot(trip: Trip) -> dict:
-    days_data = []
-    for itinerary in trip.itineraries:
-        for day in itinerary.days:
-            days_data.append({
-                "day_id":     day.day_id,
-                "day_number": day.day_number,
-                "date":       str(day.date) if day.date else None,
-                "stops": [
-                    {
-                        "stop_id":          stop.stop_id,
-                        "place_id":         stop.place_id,
-                        "scheduled_time":   str(stop.scheduled_time) if stop.scheduled_time else None,
-                        "duration_minutes": stop.duration_minutes,
-                        "order_in_day":     stop.order_in_day,
-                        "travel_mode":      stop.travel_mode.value if stop.travel_mode else None,
-                        "estimated_cost":   stop.estimated_cost,
-                        "ai_notes":         stop.ai_notes,
-                        "user_notes":       stop.user_notes,
-                        "status":           stop.status.value if stop.status else None,
-                    }
-                    for stop in day.stops
-                ],
-            })
-    return {
-        "trip_id":     trip.trip_id,
-        "destination": trip.destination,
-        "days":        days_data,
-    }
-
-#--------------------------------------------------------
 
 
 def parse_time(raw_time) -> dt_time | None:
@@ -68,6 +34,8 @@ def parse_time(raw_time) -> dt_time | None:
         except (ValueError, IndexError):
             return None
     return None
+
+
 # ═════════════════════════════════════════════════════════════════════════════
 # Helper: نفذ الـ actions على الـ DB
 # ═════════════════════════════════════════════════════════════════════════════
@@ -78,8 +46,8 @@ async def execute_actions(actions: list, trip: Trip, db: AsyncSession) -> list:
     # Get the first itinerary for this trip (or create one)
     if not trip.itineraries:
         itinerary = Itinerary(
-            itinerary_id = str(uuid.uuid4()),
-            trip_id      = trip.trip_id,
+            itinerary_id=str(uuid.uuid4()),
+            trip_id=trip.trip_id,
         )
         db.add(itinerary)
         await db.flush()
@@ -93,13 +61,13 @@ async def execute_actions(actions: list, trip: Trip, db: AsyncSession) -> list:
         # ── ADD_DAY ──────────────────────────────────────────────────────
         if action_type == "ADD_DAY":
             day_number = data.get("day_number", 1)
-            all_days = [d for it in trip.itineraries for d in it.days]
-            existing = next((d for d in all_days if d.day_number == day_number), None)
+            all_days   = [d for it in trip.itineraries for d in it.days]
+            existing   = next((d for d in all_days if d.day_number == day_number), None)
             if not existing:
                 new_day = Day(
-                    itinerary_id = itinerary.itinerary_id,
-                    day_number   = day_number,
-                    date         = data.get("date"),
+                    itinerary_id=itinerary.itinerary_id,
+                    day_number=day_number,
+                    date=data.get("date"),
                 )
                 db.add(new_day)
                 await db.flush()
@@ -108,8 +76,8 @@ async def execute_actions(actions: list, trip: Trip, db: AsyncSession) -> list:
         # ── ADD_ACTIVITY ─────────────────────────────────────────────────
         elif action_type == "ADD_ACTIVITY":
             day_number = data.get("day_number", 1)
-            all_days = [d for it in trip.itineraries for d in it.days]
-            day = next((d for d in all_days if d.day_number == day_number), None)
+            all_days   = [d for it in trip.itineraries for d in it.days]
+            day        = next((d for d in all_days if d.day_number == day_number), None)
             if not day:
                 day = Day(itinerary_id=itinerary.itinerary_id, day_number=day_number)
                 db.add(day)
@@ -117,12 +85,18 @@ async def execute_actions(actions: list, trip: Trip, db: AsyncSession) -> list:
 
             scheduled_time = parse_time(data.get("time"))
             new_stop = ItineraryStop(
-                day_id           = day.day_id,
-                place_snapshot   = {"name": data.get("name", ""), "type": data.get("type", "attraction"), "location_name": data.get("location_name"), "lat": data.get("lat"), "lng": data.get("lng")},
-                scheduled_time   = scheduled_time,
-                duration_minutes = int(data["duration_hours"] * 60) if data.get("duration_hours") else None,
-                order_in_day     = data.get("order_in_day", 0),
-                ai_notes         = data.get("notes"),
+                day_id=day.day_id,
+                place_snapshot={
+                    "name":          data.get("name", ""),
+                    "type":          data.get("type", "attraction"),
+                    "location_name": data.get("location_name"),
+                    "lat":           data.get("lat"),
+                    "lng":           data.get("lng"),
+                },
+                scheduled_time=scheduled_time,
+                duration_minutes=int(data["duration_hours"] * 60) if data.get("duration_hours") else None,
+                order_in_day=data.get("order_in_day", 0),
+                ai_notes=data.get("notes"),
             )
             db.add(new_stop)
             await db.flush()
@@ -181,20 +155,8 @@ async def get_or_create_conversation(
     db:      AsyncSession,
 ) -> Conversation:
     """Get or create a conversation for a trip via the Trip.conversation FK."""
-    if trip.conversation:
-        return trip.conversation
-
-    conversation = Conversation(
-        conversation_id = str(uuid.uuid4()),
-        user_id         = user_id,
-    )
-    db.add(conversation)
-    await db.flush()
-
-    # Link conversation to trip via FK
-    trip.conversation_id = conversation.conversation_id
-    await db.flush()
-
+    svc          = ChatService(db)
+    conversation = await svc.get_or_create_conversation(user_id, trip.trip_id)
     return conversation
 
 
@@ -204,7 +166,7 @@ async def get_or_create_conversation(
 
 async def get_profile_data(user_id: str, trip_id: str, db: AsyncSession) -> dict:
     """Get trip profile data for the AI pipeline."""
-    result = await db.execute(
+    result  = await db.execute(
         select(TripProfile).where(TripProfile.trip_id == trip_id)
     )
     profile = result.scalar_one_or_none()
@@ -213,31 +175,26 @@ async def get_profile_data(user_id: str, trip_id: str, db: AsyncSession) -> dict
         return {}
 
     return {
-        # ── Preference ENUMs ─────────────────────────────────────────
-        "budget_level":            profile.budget_level,
-        "travel_style":            profile.travel_style,
-        "pace":                    profile.pace,
-
-        # ── Lists ───────────────────────────────────────────────────
-        "interests":               profile.interests or [],
-        "food_preferences":        profile.food_preferences or [],
+        "budget_level":              profile.budget_level,
+        "travel_style":              profile.travel_style,
+        "pace":                      profile.pace,
+        "interests":                 profile.interests or [],
+        "food_preferences":          profile.food_preferences or [],
         "accommodation_preferences": profile.accommodation_preferences or [],
-
-        # ── AI Scoring ───────────────────────────────────────────────
-        "luxury_score":            profile.luxury_score,
-        "culture_score":           profile.culture_score,
-        "adventure_score":         profile.adventure_score,
-        "shopping_score":          profile.shopping_score,
-        "family_score":            profile.family_score,
-        "confidence":              profile.confidence,
+        "luxury_score":              profile.luxury_score,
+        "culture_score":             profile.culture_score,
+        "adventure_score":           profile.adventure_score,
+        "shopping_score":            profile.shopping_score,
+        "family_score":              profile.family_score,
+        "confidence":                profile.confidence,
     }
 
 
 # ═════════════════════════════════════════════════════════════════════════════
-# Helper: معالجة رسالة واحدة (مشتركة بين الـ endpoints)
+# Helper: معالجة رسالة واحدة مع تدفق (streaming)
 # ═════════════════════════════════════════════════════════════════════════════
 
-async def process_message(
+async def process_message_stream(
     user_text:    str,
     trip:         Trip,
     conversation: Conversation,
@@ -247,164 +204,92 @@ async def process_message(
     user_id:      str,
     token:        str,
 ):
+    """Process a message with streaming token-by-token response."""
+    svc = ChatService(db)
 
-    # ── حفظ رسالة اليوزر ─────────────────────────────────────────────────
-    user_msg = Message(
-        message_id      = str(uuid.uuid4()),
-        conversation_id = conversation.conversation_id,
-        sender          = "user",
-        content         = user_text,
-    )
-    db.add(user_msg)
+    # ── Save user message ─────────────────────────────────────────────────
+    await svc.save_user_message(conversation.conversation_id, user_text)
     await db.commit()
-
-    # ── جيب الـ history ──────────────────────────────────────────────────
-    history_result = await db.execute(
-        select(Message)
-        .where(Message.conversation_id == conversation.conversation_id)
-        .order_by(Message.timestamp.desc())
-        .limit(10)
-    )
-    history_list = [
-        {"sender": m.sender, "content": m.content}
-        for m in reversed(history_result.scalars().all())
-    ]
-
-    # ── جيب Trip snapshot محدّث ──────────────────────────────────────────
-    trip_snapshot = build_trip_snapshot(trip)
 
     # ── typing ───────────────────────────────────────────────────────────
     await manager.send(ws_key, {"type": "typing"})
 
-    # ── كلم الـ AI ───────────────────────────────────────────────────────
+    # ── Stream AI response ───────────────────────────────────────────────
     full_response = ""
     actions       = []
+    ai_session_id = None
 
     try:
-        from ai_engine.chat.conversation_agent import handle_chat
-        result = await handle_chat(
+        from ai_engine.chat.conversation_agent import handle_chat_stream
+
+        async for chunk in handle_chat_stream(
             user_id=user_id,
             user_message=user_text,
             token=token,
-        )
-        full_response = result.get("message", "")
-        if result.get("itinerary"):
-            actions = [{"type": "CREATE_TRIP", "data": result["itinerary"]}]
-        await manager.send(ws_key, {
-            "type": "token",
-            "data": full_response,
-        })
+        ):
+            event_type = chunk.get("type")
 
-    except Exception:
-        # ══════════════════════════════════════════════════════════════
-        # MOCK placeholder
-        # ══════════════════════════════════════════════════════════════
-        full_response = (
-            "Here's your trip plan! 🎉\n\n"
-            "**Day 1:**\n"
-            "- 🏨 09:00 Check in at Hotel\n"
-            "- 🏛️ 10:30 City Walking Tour\n"
-            "- 🍽️ 13:00 Lunch at Local Restaurant\n"
-            "- 🏛️ 15:00 Museum Visit\n"
-        )
+            if event_type == "session":
+                session_data  = chunk.get("data", {})
+                ai_session_id = session_data.get("session_id")
 
-        for token_chunk in full_response.split():
-            await manager.send(ws_key, {
-                "type": "token",
-                "data": token_chunk + " ",
-            })
+            elif event_type == "text":
+                content        = chunk.get("content", "")
+                full_response += content
+                await manager.send(ws_key, {"type": "token", "data": content})
 
-        actions = [
-            {
-                "type": "ADD_ACTIVITY",
-                "data": {
-                    "day_number":    1,
-                    "name":          "Check in at Hotel",
-                    "type":          "hotel",
-                    "time":          "09:00",
-                    "duration_hours": 1.0,
-                    "order_in_day":  1,
-                    "location_name": "City Center Hotel",
-                    "lat":           30.0444,
-                    "lng":           31.2357,
-                    "notes":         "Central location",
-                },
-            },
-            {
-                "type": "ADD_ACTIVITY",
-                "data": {
-                    "day_number":    1,
-                    "name":          "City Walking Tour",
-                    "type":          "attraction",
-                    "time":          "10:30",
-                    "duration_hours": 2.0,
-                    "order_in_day":  2,
-                    "location_name": "Old Town Square",
-                    "lat":           30.0459,
-                    "lng":           31.2243,
-                    "notes":         "Guided tour of main sights",
-                },
-            },
-            {
-                "type": "ADD_ACTIVITY",
-                "data": {
-                    "day_number":    1,
-                    "name":          "Lunch at Local Restaurant",
-                    "type":          "restaurant",
-                    "time":          "13:00",
-                    "duration_hours": 1.5,
-                    "order_in_day":  3,
-                    "location_name": "Local Restaurant",
-                    "lat":           30.0500,
-                    "lng":           31.2450,
-                    "notes":         "Try the local cuisine",
-                },
-            },
-            {
-                "type": "ADD_ACTIVITY",
-                "data": {
-                    "day_number":    1,
-                    "name":          "Museum Visit",
-                    "type":          "attraction",
-                    "time":          "15:00",
-                    "duration_hours": 2.0,
-                    "order_in_day":  4,
-                    "location_name": "National Museum",
-                    "lat":           30.0478,
-                    "lng":           31.2336,
-                    "notes":         "History and culture",
-                },
-            },
-        ]
+            elif event_type == "phase":
+                await manager.send(ws_key, chunk)
 
-    # ── done ─────────────────────────────────────────────────────────────
-    await manager.send(ws_key, {"type": "done", "data": None})
+            elif event_type == "result":
+                result         = chunk.get("data", {})
+                result_message = result.get("message", "")
+                if result_message:
+                    full_response = result_message
+                if result.get("itinerary"):
+                    actions = [{"type": "CREATE_TRIP", "data": result["itinerary"]}]
 
-    # ── نفذ الـ actions ──────────────────────────────────────────────────
+            elif event_type == "done":
+                await manager.send(ws_key, {"type": "done", "data": None})
+
+    except Exception as exc:
+        logger.exception("[ChatRoutes] AI engine streaming failed: %s", exc)
+        error_response = ChatService.build_error_response()
+        full_response  = error_response["message"]
+        actions        = []
+        ai_session_id  = None
+        await manager.send(ws_key, {"type": "token", "data": full_response})
+        await manager.send(ws_key, {"type": "done", "data": None})
+
+    # ── Execute actions (ADD_ACTIVITY, etc.) ─────────────────────────────
     updated_actions = []
     if actions:
         await db.refresh(trip, ["itineraries"])
         updated_actions = await execute_actions(actions, trip, db)
 
-    # ── احفظ رد الـ AI ───────────────────────────────────────────────────
-    ai_msg = Message(
-        message_id      = str(uuid.uuid4()),
-        conversation_id = conversation.conversation_id,
-        sender          = "agent",
-        content         = full_response,
-    )
-    db.add(ai_msg)
+    # ── Save AI response to DB ───────────────────────────────────────────
+    if full_response:
+        await svc.save_agent_message(conversation.conversation_id, full_response)
+
+    # ── Sync Redis state to DB ────────────────────────────────────────────
+    if ai_session_id:
+        try:
+            from ai_engine.memory.redis_memory import get_session_manager
+            redis_manager = await get_session_manager()
+            if redis_manager.is_connected:
+                redis_state = await redis_manager.load(ai_session_id)
+                if redis_state and redis_state.history:
+                    redis_msgs = [m.to_dict() for m in redis_state.history]
+                    await svc.sync_redis_to_db(conversation.conversation_id, redis_msgs)
+        except Exception as sync_err:
+            logger.warning("[ChatRoutes] Redis sync failed (non-fatal): %s", sync_err)
+
     await db.commit()
 
-    # ── بلّغ Flutter ─────────────────────────────────────────────────────
+    # ── Notify Flutter of actions ─────────────────────────────────────────
     if updated_actions:
-        await manager.send(ws_key, {
-            "type": "actions",
-            "data": updated_actions,
-        })
+        await manager.send(ws_key, {"type": "actions", "data": updated_actions})
         await manager.send(ws_key, {"type": "itinerary_updated"})
-
-
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -443,24 +328,26 @@ async def websocket_new_chat(
             if not user_text:
                 continue
 
+            # FIX: svc defined at the top of every loop iteration
+            svc = ChatService(db)
+
             # ══════════════════════════════════════════════════════════════
-            # لو Trip موجود خلاص → استخدم process_message العادية
+            # لو Trip موجود خلاص → استخدم process_message_stream
             # ══════════════════════════════════════════════════════════════
             if trip and conversation:
                 lock = manager.get_lock(ws_key)
                 async with lock:
-                    await process_message(
-                        user_text    = user_text,
-                        trip         = trip,
-                        conversation = conversation,
-                        profile_data = profile_data,
-                        ws_key       = ws_key,
-                        db           = db,
-                        user_id      = user_id,
-                        token        = token,
+                    await process_message_stream(
+                        user_text=user_text,
+                        trip=trip,
+                        conversation=conversation,
+                        profile_data=profile_data,
+                        ws_key=ws_key,
+                        db=db,
+                        user_id=user_id,
+                        token=token,
                     )
 
-                # ── حدّث history ─────────────────────────────────────────
                 history_list.append({"role": "user", "content": user_text})
                 if len(history_list) > 20:
                     history_list = history_list[-20:]
@@ -472,197 +359,87 @@ async def websocket_new_chat(
 
             pending_messages.append({"role": "user", "content": user_text})
 
-            # ── typing ───────────────────────────────────────────────────
             await manager.send(ws_key, {"type": "typing"})
 
-            # ── كلم الـ AI ───────────────────────────────────────────────
             full_response = ""
             actions       = []
 
             try:
-                from ai_engine.chat.conversation_agent import handle_chat
-                result = await handle_chat(
+                from ai_engine.chat.conversation_agent import handle_chat_stream
+
+                async for chunk in handle_chat_stream(
                     user_id=user_id,
                     user_message=user_text,
                     token=token,
-                )
-                full_response = result.get("message", "")
-                if result.get("itinerary"):
-                    actions = [{"type": "CREATE_TRIP", "data": result["itinerary"]}]
-                await manager.send(ws_key, {
-                    "type": "token",
-                    "data": full_response,
-                })
+                ):
+                    event_type = chunk.get("type")
 
-            except Exception:
-                # ══════════════════════════════════════════════════════════
-                # MOCK: placeholder لحد ما الـ AI Team يخلصوا
-                # ══════════════════════════════════════════════════════════
-                full_response = (
-                    "Sounds great! Let me plan that for you 🎉\n\n"
-                    "**Day 1:**\n"
-                    "- 🏨 09:00 Check in at Hotel\n"
-                    "- 🏛️ 10:30 City Walking Tour\n"
-                    "- 🍽️ 13:00 Lunch at Local Restaurant\n"
-                )
+                    if event_type == "text":
+                        content        = chunk.get("content", "")
+                        full_response += content
+                        await manager.send(ws_key, {"type": "token", "data": content})
 
-                for token_chunk in full_response.split():
-                    await manager.send(ws_key, {
-                        "type": "token",
-                        "data": token_chunk + " ",
-                    })
+                    elif event_type == "phase":
+                        await manager.send(ws_key, chunk)
 
-                mock_start = date.today() + timedelta(days=7)
-                mock_days  = 3
+                    elif event_type == "result":
+                        result         = chunk.get("data", {})
+                        result_message = result.get("message", "")
+                        if result_message:
+                            full_response = result_message
+                        if result.get("itinerary"):
+                            actions = [{"type": "CREATE_TRIP", "data": result["itinerary"]}]
 
-                actions = [
-                    {
-                        "type": "CREATE_TRIP",
-                        "data": {
-                            "destination":         "Cairo, Egypt",
-                            "start_date":          str(mock_start),
-                            "end_date":            str(mock_start + timedelta(days=mock_days - 1)),
-                            "number_of_travelers": 1,
-                        },
-                    },
-                    {
-                        "type": "ADD_ACTIVITY",
-                        "data": {
-                            "day_number":    1,
-                            "name":          "Check in at Hotel",
-                            "type":          "hotel",
-                            "time":          "09:00",
-                            "duration_hours": 1.0,
-                            "order_in_day":  1,
-                            "location_name": "City Center Hotel",
-                            "lat":           30.0444,
-                            "lng":           31.2357,
-                            "notes":         "Central location",
-                        },
-                    },
-                    {
-                        "type": "ADD_ACTIVITY",
-                        "data": {
-                            "day_number":    1,
-                            "name":          "City Walking Tour",
-                            "type":          "attraction",
-                            "time":          "10:30",
-                            "duration_hours": 2.0,
-                            "order_in_day":  2,
-                            "location_name": "Old Town Square",
-                            "lat":           30.0459,
-                            "lng":           31.2243,
-                            "notes":         "Guided tour",
-                        },
-                    },
-                    {
-                        "type": "ADD_ACTIVITY",
-                        "data": {
-                            "day_number":    1,
-                            "name":          "Lunch at Local Restaurant",
-                            "type":          "restaurant",
-                            "time":          "13:00",
-                            "duration_hours": 1.5,
-                            "order_in_day":  3,
-                            "location_name": "Local Restaurant",
-                            "lat":           30.0500,
-                            "lng":           31.2450,
-                            "notes":         "Try the local food",
-                        },
-                    },
-                ]
+                    elif event_type == "done":
+                        await manager.send(ws_key, {"type": "done"})
 
-            # ── done ─────────────────────────────────────────────────────
-            await manager.send(ws_key, {"type": "done"})
+            except Exception as exc:
+                logger.exception("[ChatRoutes] AI engine streaming failed in websocket_new_chat: %s", exc)
+                error_response = ChatService.build_error_response()
+                full_response  = error_response["message"]
+                actions        = []
+                await manager.send(ws_key, {"type": "token", "data": full_response})
+                await manager.send(ws_key, {"type": "done"})
 
             # ══════════════════════════════════════════════════════════════
             # شوف لو فيه CREATE_TRIP
             # ══════════════════════════════════════════════════════════════
             for action in actions:
                 if action.get("type") == "CREATE_TRIP" and not trip:
-                    action_data = action.get("data", {})
-
-                    start_date_raw = action_data.get("start_date")
-                    end_date_raw = action_data.get("end_date")
-                    delta = action_data.get("duration_days", 1)  # fallback for backward compat
-
-                    # ✅ Convert strings → date objects RIGHT HERE, once
-                    start_date = date.fromisoformat(start_date_raw) if start_date_raw else None
-                    end_date = date.fromisoformat(end_date_raw) if end_date_raw else None
-
-                    if start_date and end_date:
-                        delta = (end_date - start_date).days + 1
-
-                    # ── أنشئ Trip ─────────────────────────────────────────
-                    trip = Trip(
-                        trip_id             = str(uuid.uuid4()),
-                        user_id             = user_id,
-                        destination         = action_data.get("destination", action_data.get("destination_city", "") + ", " + action_data.get("destination_country", "")),
-                        start_date          = start_date,
-                        end_date            = end_date,
-                        number_of_travelers  = action_data.get("traveler_count", action_data.get("number_of_travelers", 1)),
-                        budget              = action_data.get("budget", action_data.get("budget_total")),
+                    created = await svc.create_trip_from_ai_result(
+                        user_id,
+                        {"itinerary": action.get("data", {})},
                     )
-                    db.add(trip)
-                    await db.flush()
 
-                    # ── أنشئ Itinerary + Days ─────────────────────────────
-                    itinerary = Itinerary(
-                        itinerary_id = str(uuid.uuid4()),
-                        trip_id      = trip.trip_id,
-                    )
-                    db.add(itinerary)
-                    await db.flush()
-
-                    if start_date:
-                        for i in range(delta):
-                            db.add(Day(
-                                itinerary_id = itinerary.itinerary_id,
-                                day_number   = i + 1,
-                                date         = start_date + timedelta(days=i),
-                            ))
-                    else:
-                        for i in range(delta):
-                            db.add(Day(
-                                itinerary_id = itinerary.itinerary_id,
-                                day_number   = i + 1,
-                            ))
-
-                    await db.flush()
-
-                    # ── أنشئ Conversation ─────────────────────────────────
-                    conversation = Conversation(
-                        conversation_id = str(uuid.uuid4()),
-                        user_id         = user_id,
-                    )
-                    db.add(conversation)
-                    await db.flush()
-                    trip.conversation_id = conversation.conversation_id
+                    trip         = created["trip"]
+                    conversation = created["conversation"]
 
                     # ── احفظ كل الرسايل المعلقة ───────────────────────────
                     for msg in pending_messages:
-                        db.add(Message(
-                            message_id      = str(uuid.uuid4()),
-                            conversation_id = conversation.conversation_id,
-                            sender          = "user" if msg["role"] == "user" else "agent",
-                            content         = msg["content"],
-                        ))
+                        await svc.save_message(
+                            conversation_id=conversation.conversation_id,
+                            sender="user" if msg["role"] == "user" else "agent",
+                            content=msg["content"],
+                        )
                     pending_messages = []
 
                     await db.commit()
 
-                    # ── بلّغ Flutter ──────────────────────────────────────
+                    # ── بلّغ Flutter بالـ trip_id والـ itinerary ──────────
                     await manager.send(ws_key, {
-                        "type":    "trip_created",
-                        "trip_id": trip.trip_id,
+                        "type":         "trip_created",
+                        "trip_id":      trip.trip_id,
+                        "itinerary_id": created["itinerary"].itinerary_id,
                     })
+
+                    profile_data = await get_profile_data(user_id, trip.trip_id, db)
 
                     # ── حدّث ws_key ──────────────────────────────────────
                     manager.disconnect(ws_key)
                     ws_key = trip.trip_id
                     await manager.connect_existing(ws_key, websocket)
 
-                    break      # ← خرج من loop الـ actions
+                    break
 
             # ══════════════════════════════════════════════════════════════
             # نفذ باقي الـ Actions (ADD_ACTIVITY, etc.)
@@ -674,28 +451,16 @@ async def websocket_new_chat(
                 updated_actions = await execute_actions(non_create_actions, trip, db)
                 await db.commit()
 
-            # ── احفظ رد الـ AI ────────────────────────────────────────────
-            pending_messages.append({
-                "role":    "assistant",
-                "content": full_response,
-            })
+            # ── احفظ رد الـ AI في pending أو في الـ DB لو conversation موجودة ──
+            pending_messages.append({"role": "assistant", "content": full_response})
 
             if conversation and full_response:
-                ai_msg = Message(
-                    message_id      = str(uuid.uuid4()),
-                    conversation_id = conversation.conversation_id,
-                    sender          = "agent",
-                    content         = full_response,
-                )
-                db.add(ai_msg)
+                await svc.save_agent_message(conversation.conversation_id, full_response)
                 await db.commit()
 
             # ── بلّغ Flutter لو في تغييرات ────────────────────────────────
             if updated_actions:
-                await manager.send(ws_key, {
-                    "type": "actions",
-                    "data": updated_actions,
-                })
+                await manager.send(ws_key, {"type": "actions", "data": updated_actions})
                 await manager.send(ws_key, {"type": "itinerary_updated"})
 
             # ── حدّث history ─────────────────────────────────────────────
@@ -707,6 +472,7 @@ async def websocket_new_chat(
     except WebSocketDisconnect:
         manager.disconnect(ws_key)
 
+
 # ═════════════════════════════════════════════════════════════════════════════
 # WS /ws/chat/{trip_id}?token=xxx&auto_msg=xxx
 # سيناريو 1: الفورم → الشات
@@ -717,7 +483,7 @@ async def websocket_chat(
     trip_id:   str,
     websocket: WebSocket,
     token:     str          = Query(...),
-    auto_msg:  str          = Query(default=None),     # ← Flutter يبعت auto_message هنا
+    auto_msg:  str          = Query(default=None),
     db:        AsyncSession = Depends(get_db),
 ):
     # ── Auth ─────────────────────────────────────────────────────────────
@@ -764,15 +530,15 @@ async def websocket_chat(
         # ══════════════════════════════════════════════════════════════════
         if auto_msg and auto_msg.strip():
             async with lock:
-                await process_message(
-                    user_text    = auto_msg.strip(),
-                    trip         = trip,
-                    conversation = conversation,
-                    profile_data = profile_data,
-                    ws_key       = trip_id,
-                    db           = db,
-                    user_id      = user_id,
-                    token        = token,
+                await process_message_stream(
+                    user_text=auto_msg.strip(),
+                    trip=trip,
+                    conversation=conversation,
+                    profile_data=profile_data,
+                    ws_key=trip_id,
+                    db=db,
+                    user_id=user_id,
+                    token=token,
                 )
 
         # ── الـ Loop العادي ───────────────────────────────────────────────
@@ -783,19 +549,20 @@ async def websocket_chat(
                 continue
 
             async with lock:
-                await process_message(
-                    user_text    = user_text,
-                    trip         = trip,
-                    conversation = conversation,
-                    profile_data = profile_data,
-                    ws_key       = trip_id,
-                    db           = db,
-                    user_id      = user_id,
-                    token        = token,
+                await process_message_stream(
+                    user_text=user_text,
+                    trip=trip,
+                    conversation=conversation,
+                    profile_data=profile_data,
+                    ws_key=trip_id,
+                    db=db,
+                    user_id=user_id,
+                    token=token,
                 )
 
     except WebSocketDisconnect:
         manager.disconnect(trip_id)
+
 
 # ═════════════════════════════════════════════════════════════════════════════
 # GET /chat/{trip_id}/history
@@ -807,7 +574,6 @@ async def get_history(
     current_user: dict         = Depends(get_current_user),
     db:           AsyncSession = Depends(get_db),
 ):
-    # Find trip and its linked conversation
     trip_result = await db.execute(
         select(Trip).options(selectinload(Trip.conversation)).where(
             Trip.trip_id == trip_id,
@@ -844,7 +610,6 @@ async def clear_chat(
     current_user: dict         = Depends(get_current_user),
     db:           AsyncSession = Depends(get_db),
 ):
-    # Find trip and its linked conversation
     trip_result = await db.execute(
         select(Trip).options(selectinload(Trip.conversation)).where(
             Trip.trip_id == trip_id,
