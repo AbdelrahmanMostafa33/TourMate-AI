@@ -58,11 +58,16 @@ class PlaceRepository(BaseRepository):
             filters.append(func.lower(Place.country) == country.lower())
 
         # Category filter (case-insensitive string comparison)
+        # NOTE: Place.category is a PostgreSQL enum column (place_category type).
+        # func.lower() has no overload for enum types in Postgres, so we must
+        # cast to text first — same pattern used below for accommodation_type.
         if categories:
             valid = {c.value for c in PlaceCategory}
             cat_values = [c.lower().strip() for c in categories if c.lower().strip() in valid]
             if cat_values:
-                filters.append(func.lower(Place.category).in_(cat_values))
+                filters.append(
+                    func.lower(cast(Place.category, SAString)).in_(cat_values)
+                )
 
         # Rating filter
         if min_rating is not None:
@@ -245,10 +250,15 @@ class PlaceRepository(BaseRepository):
             nightly_rate = getattr(place.hotel_details, "nightly_rate", None)
             star_class = getattr(place.hotel_details, "star_class", None)
 
+        # Category enum -> plain string value for the AI engine response
+        category_value = place.category
+        if hasattr(category_value, "value"):
+            category_value = category_value.value
+
         return {
             "id": place.place_id,
             "name": place.name,
-            "category": place.category or "",
+            "category": category_value or "",
             "sub_category": sub_category,
             "lat": place.lat or 0,
             "lon": place.lng or 0,
@@ -373,4 +383,3 @@ class PlaceRepository(BaseRepository):
             "countries": [{"key": c["key"], "display": c["display"], "count": c["count"]} for c in countries],
             "categories": categories,
         }
-
