@@ -144,5 +144,14 @@ class TestGetMissingFields:
         state = ConversationState(user_id="user1")
         state.slots.destination_city = "Paris"
         state.slots.duration_days = 5
+        state.slots.travel_dates = "next month"
+        state.slots.group_size = 2
+        state.slots.traveler_group_type = "solo"
+        state.slots.budget_level = "moderate"
+        state.slots.travel_style = "cultural"
+        state.slots.pace = "moderate"
+        state.slots.interests = ["history", "food"]
+        state.slots.food_preferences = ["local cuisine"]
+        state.slots.accommodation_preferences = ["hotel"]
         missing = get_missing_fields_from_state(state)
         assert len(missing) == 0

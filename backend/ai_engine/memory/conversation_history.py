@@ -231,6 +231,8 @@ def _format_slot_context(state: ConversationState) -> str:
         collected.append(f"dates: {state.slots.travel_dates}")
     if state.slots.group_size:
         collected.append(f"group size: {state.slots.group_size}")
+    if state.slots.traveler_group_type:
+        collected.append(f"traveler group: {state.slots.traveler_group_type}")
     if state.slots.special_requests:
         collected.append(f"special requests: {state.slots.special_requests}")
 

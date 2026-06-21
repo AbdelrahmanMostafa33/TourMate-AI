@@ -637,7 +637,10 @@ _INTEREST_SYNONYM_MAP: Dict[str, str] = {
     "party": "nightlife",
     "partying": "nightlife",
     "nature": "nature",
-    "parks": "nature",
+    "parks": "parks",
+    "park": "parks",
+    "gardens": "parks",
+    "garden": "parks",
     "nature walks": "nature",
     "wildlife": "nature",
     "photography": "photography",
@@ -729,6 +732,129 @@ def normalize_interests(interests: Optional[List[str]]) -> Optional[List[str]]:
 
 
 # ══════════════════════════════════════════════════════════════════════════════
+# Traveler group type normalization
+# ══════════════════════════════════════════════════════════════════════════════
+
+VALID_TRAVELER_GROUP_TYPES = {"solo", "couple", "family", "friends", "business"}
+
+_TRAVELER_GROUP_MAP: Dict[str, str] = {
+    # Already canonical
+    "solo": "solo",
+    "couple": "couple",
+    "family": "family",
+    "friends": "friends",
+    "business": "business",
+
+    # Solo synonyms
+    "alone": "solo",
+    "by myself": "solo",
+    "just me": "solo",
+    "solo traveler": "solo",
+    "solo travel": "solo",
+    "single": "solo",
+    "on my own": "solo",
+    "independent": "solo",
+    "traveling alone": "solo",
+    "travelling alone": "solo",
+    "one person": "solo",
+    "just myself": "solo",
+
+    # Couple synonyms
+    "romantic": "couple",
+    "honeymoon": "couple",
+    "with my partner": "couple",
+    "with my girlfriend": "couple",
+    "with my boyfriend": "couple",
+    "with my wife": "couple",
+    "with my husband": "couple",
+    "with my spouse": "couple",
+    "as a couple": "couple",
+    "two people": "couple",
+    "pair": "couple",
+    "date": "couple",
+    "anniversary": "couple",
+    "me and my partner": "couple",
+
+    # Family synonyms
+    "with kids": "family",
+    "with children": "family",
+    "with my kids": "family",
+    "with my children": "family",
+    "with my family": "family",
+    "family trip": "family",
+    "family vacation": "family",
+    "family holiday": "family",
+    "kids": "family",
+    "children": "family",
+    "child": "family",
+    "baby": "family",
+    "toddler": "family",
+    "multi-generational": "family",
+    "multigenerational": "family",
+    "extended family": "family",
+
+    # Friends synonyms
+    "with friends": "friends",
+    "with my friends": "friends",
+    "group of friends": "friends",
+    "friend group": "friends",
+    "buddies": "friends",
+    "mates": "friends",
+    "pals": "friends",
+    "crew": "friends",
+    "gang": "friends",
+    "squad": "friends",
+    "besties": "friends",
+
+    # Business synonyms
+    "work": "business",
+    "work trip": "business",
+    "business trip": "business",
+    "corporate": "business",
+    "conference": "business",
+    "meeting": "business",
+    "workation": "business",
+    "professional": "business",
+    "work travel": "business",
+    "work-related": "business",
+    "work related": "business",
+    "business travel": "business",
+}
+
+
+def normalize_traveler_group_type(value: Optional[str]) -> Optional[str]:
+    """
+    Normalize a raw traveler group type string to one of:
+    'solo', 'couple', 'family', 'friends', 'business'.
+
+    Examples::
+
+        normalize_traveler_group_type("just me")       → "solo"
+        normalize_traveler_group_type("with my wife")  → "couple"
+        normalize_traveler_group_type("with kids")     → "family"
+        normalize_traveler_group_type("group of friends") → "friends"
+        normalize_traveler_group_type("business trip") → "business"
+        normalize_traveler_group_type(None)             → None
+    """
+    if not value or not isinstance(value, str):
+        return None
+
+    normalized = value.lower().strip()
+
+    # Direct match (includes all canonical values as keys)
+    if normalized in _TRAVELER_GROUP_MAP:
+        return _TRAVELER_GROUP_MAP[normalized]
+
+    # Word-boundary substring match
+    for keyword, canonical in _TRAVELER_GROUP_MAP.items():
+        if _contains_word(normalized, keyword):
+            return canonical
+
+    logger.debug("[SlotNormalizer] Could not normalize traveler_group_type: %r", value)
+    return None
+
+
+# ══════════════════════════════════════════════════════════════════════════════
 # Main entry point — normalize all extracted slots at once
 # ══════════════════════════════════════════════════════════════════════════════
 
@@ -779,6 +905,9 @@ def normalize_extracted_slots(extracted: Dict[str, Any]) -> Dict[str, Any]:
 
     if "travel_style" in result:
         result["travel_style"] = normalize_style(result["travel_style"])
+
+    if "traveler_group_type" in result:
+        result["traveler_group_type"] = normalize_traveler_group_type(result["traveler_group_type"])
 
     # ── List normalizations ──────────────────────────────────────────────
 

@@ -43,7 +43,7 @@ INTEREST_TO_SUBCATEGORY = {
     "religion": "religious", "religious": "religious", "spiritual": "religious",
     "art": "museums", "culture": "museums", "museums": "museums",
     "sports": "sports", "fitness": "sports",
-    "family": "family",
+    "family": "family", "family activities": "family",
     "wellness": "wellness", "spa": "wellness",
     "sightseeing": "sightseeing",
     "entertainment": "entertainment", "shows": "entertainment",

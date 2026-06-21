@@ -39,10 +39,11 @@ def _make_router_result(action, response="OK", **extracted):
 
 
 def _make_plan_result(city, days, **extra):
-    """Build a complete plan_trip RouterResult."""
+    """Build a complete plan_trip RouterResult with all required fields."""
     return _make_router_result(
         "plan_trip", response="Generating your itinerary!",
         destination_city=city, duration_days=days,
+        travel_dates="next month", group_size=2, traveler_group_type="solo",
         budget_level="moderate", travel_style="cultural", pace="moderate",
         interests=["history", "food"], food_preferences=["local cuisine"],
         accommodation_preferences=["hotel"], **extra,

@@ -695,6 +695,12 @@ async def _handle_plan_trip(user_id, user_message, extracted, image_features, to
             context_parts.append(f"food: {', '.join(s.food_preferences)}")
         if s.accommodation_preferences:
             context_parts.append(f"accommodation: {', '.join(s.accommodation_preferences)}")
+        if s.travel_dates:
+            context_parts.append(f"dates: {s.travel_dates}")
+        if s.group_size:
+            context_parts.append(f"travelers: {s.group_size}")
+        if s.traveler_group_type:
+            context_parts.append(f"group: {s.traveler_group_type}")
         context_str = " | ".join(context_parts)
         rich_user_message = f"{user_message} | Trip context: {context_str}"
 
@@ -725,6 +731,7 @@ async def _handle_plan_trip(user_id, user_message, extracted, image_features, to
         "travel_dates": (s.travel_dates if s else None) or extracted.get("travel_dates"),
         "special_requests": (s.special_requests if s else None) or extracted.get("special_requests"),
         "group_size": (s.group_size if s else None) or extracted.get("group_size"),
+        "traveler_group_type": (s.traveler_group_type if s else None) or extracted.get("traveler_group_type"),
 
         "missing_fields": extracted.get("missing_fields", []),
         "agent_messages": [],

@@ -57,6 +57,10 @@ class ExtractedSlots(BaseModel):
         default=None,
         description="Number of travelers (e.g. 2)",
     )
+    traveler_group_type: Optional[str] = Field(
+        default=None,
+        description="Traveler group type: 'solo', 'couple', 'family', 'friends', or 'business'",
+    )
     special_requests: Optional[str] = Field(
         default=None,
         description="Any special requirements or requests",
@@ -148,6 +152,9 @@ ROUTER_SYSTEM_PROMPT = """You are TourMate AI, a travel planning assistant havin
 - Interests: {interests}
 - Food: {food}
 - Accommodation: {accommodation}
+- Travel dates: {travel_dates}
+- Group size: {group_size}
+- Traveler group type: {traveler_group_type}
 - Still missing: {missing_fields}
 - Last question asked about: {last_question_field}
 {itinerary_context}
@@ -176,8 +183,17 @@ Examples:
 6. NEVER confirm or ask "Is that correct?" — if the user provides a clear answer, accept it immediately and move on.
    - Bad: "You've indicated a high budget. Is that correct?"
    - Good: "Great, high budget! What kind of travel style are you thinking of?"
-7. If ALL required info is collected (destination + duration + budget + style + pace + interests + food + accommodation), set action to "plan_trip"
-8. When asking about accommodation, offer these specific types: Hotel, Hostel, Resort, Boutique Hotel, Luxury Hotel, or Apartment/Airbnb.
+7. If ALL required info is collected (destination + duration + dates + travelers + traveler group type + budget + style + pace + interests + food + accommodation), set action to "plan_trip"
+8. When asking for a field, **always offer specific examples** so the user knows what to say:
+   - **budget**: "Are you looking at a budget, moderate, or luxury trip?"
+   - **pace**: "Would you prefer a relaxed, moderate, or packed pace?"
+   - **style**: "What kind of travel style? E.g. romantic, adventure, family, solo, cultural, or relaxation."
+   - **interests**: "What are you interested in? Options include history, culture, museums, shopping, nightlife, nature, parks, sightseeing, entertainment, family activities, sports, wellness, or religious sites."
+   - **food**: "Any food preferences? Like local cuisine, street food, vegetarian, vegan, or specific cuisines?"
+   - **accommodation**: "What type of accommodation? Hotel, Hostel, Resort, Boutique Hotel, Luxury Hotel, or Apartment/Airbnb?"
+   - **traveler group**: "Are you traveling solo, as a couple, with family, with friends, or for business?"
+   - **travelers**: "How many people are traveling?"
+   - **dates**: "When are you planning to go? Any specific dates?"
 9. If they ask a travel question, answer it naturally and helpfully
 9. If they approve an itinerary, confirm it warmly
 10. If they request changes to an itinerary, acknowledge and set action to "modify_itinerary"
@@ -190,8 +206,8 @@ Examples:
   (e.g. 'I want a solo trip', 'cultural travel'). Do NOT confuse interests with style —
   'I like history' → interests: ['history'], NOT travel_style: 'cultural'.
 - **Pace**: Extract the raw phrase. A downstream normalizer canonicalizes to 'relaxed', 'moderate', or 'packed'.
-- **Interests**: Extract the user's exact words. Common mappings: 'parks' → 'nature',
-  'museums' → 'history'. Do NOT substitute your own terms — use what the user said.
+- **Interests**: Extract the user's exact words. Common mappings: 'parks' → 'parks',
+  'museums' → 'museums'. Do NOT substitute your own terms — use what the user said.
 - **Food preferences**: Extract from phrases like 'local food', 'street food', 'vegetarian', etc.
 - **Accommodation**: Extract as a phrase containing: 'hotel', 'hostel', 'resort', 'luxury', 'boutique', 'palace'.
   Return as a list with ONE item, e.g. ['boutique hotel'] not ['luxury', 'boutique', 'hotel'].
@@ -321,6 +337,9 @@ async def route_message(state: ConversationState, user_message: str) -> RouterRe
         interests=", ".join(slots.interests) if slots.interests else "not yet provided",
         food=", ".join(slots.food_preferences) if slots.food_preferences else "not yet provided",
         accommodation=", ".join(slots.accommodation_preferences) if slots.accommodation_preferences else "not yet provided",
+        travel_dates=slots.travel_dates or "not yet provided",
+        group_size=str(slots.group_size) if slots.group_size else "not yet provided",
+        traveler_group_type=slots.traveler_group_type or "not yet provided",
         missing_fields=missing_str,
         last_question_field=state.last_question_field or "(first message, no previous question)",
         itinerary_context=itinerary_context,

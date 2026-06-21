@@ -74,7 +74,7 @@ You will receive:
 - Prefer places whose `interest_tags` overlap with the user's interests.
 - If a place has no matching `interest_tags`, only include it if the `score` is very high (>85).
 - **CRITICAL: Every user interest from the User Profile must appear in at least one stop across the entire itinerary.** Check the user's interests list and verify each one is covered before finalizing. For example, if the user is interested in nightlife, include at least one stop with `sub_category: "nightlife"`. If they want shopping, include at least one `sub_category: "shopping"` stop. Use the `sub_category` field on each candidate to match interests.
-  - Interest-to-subcategory mapping: history→"history", nightlife→"nightlife", shopping→"shopping", parks→"parks", museums→"museums", nature→"nature", religious→"religious", family→"family", sports→"sports", wellness→"wellness", entertainment→"entertainment", sightseeing→"sightseeing".
+  - Interest-to-subcategory mapping: history→"history", nightlife→"nightlife", shopping→"shopping", parks→"parks", museums→"museums", culture→"museums", nature→"nature", religious→"religious", family→"family", family activities→"family", sports→"sports", wellness→"wellness", entertainment→"entertainment", sightseeing→"sightseeing".
   - **Before outputting, scan your itinerary: does every user interest have at least one matching stop? If not, keep selecting until all interests are represented.**
 
 ### Hotels

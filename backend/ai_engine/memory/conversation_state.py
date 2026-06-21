@@ -75,8 +75,9 @@ class TripSlots:
     destination_city:    Optional[str] = None
     destination_country: Optional[str] = None
     duration_days:       Optional[int] = None
-    travel_dates:        Optional[str] = None
-    group_size:          Optional[int] = None
+    travel_dates:        Optional[str] = None        # "June 15-20, 2026" or "next summer"
+    group_size:          Optional[int] = None         # number of travelers
+    traveler_group_type: Optional[str] = None          # "solo" | "couple" | "family" | "friends" | "business"
     special_requests:    Optional[str] = None
 
     # ── Profile Preferences (required) ─────────────────────────────
@@ -94,6 +95,12 @@ class TripSlots:
             missing.append("destination")
         if self.duration_days is None:
             missing.append("duration")
+        if not self.travel_dates:
+            missing.append("dates")
+        if self.group_size is None:
+            missing.append("travelers")
+        if not self.traveler_group_type:
+            missing.append("traveler_group_type")
         if not self.budget_level:
             missing.append("budget_level")
         if not self.travel_style:
@@ -127,6 +134,7 @@ class TripSlots:
             duration_days          = data.get("duration_days"),
             travel_dates           = data.get("travel_dates"),
             group_size             = data.get("group_size"),
+            traveler_group_type    = data.get("traveler_group_type"),
             special_requests       = data.get("special_requests"),
             budget_level           = data.get("budget_level"),
             travel_style           = data.get("travel_style"),
@@ -149,6 +157,7 @@ class TripSlots:
             "duration_days":          "duration_days",
             "travel_dates":           "travel_dates",
             "group_size":             "group_size",
+            "traveler_group_type":    "traveler_group_type",
             "special_requests":       "special_requests",
             "budget_level":           "budget_level",
             "travel_style":           "travel_style",
@@ -364,6 +373,8 @@ class ConversationState:
             lines.append(f"Dates: {self.slots.travel_dates}")
         if self.slots.group_size:
             lines.append(f"Group size: {self.slots.group_size}")
+        if self.slots.traveler_group_type:
+            lines.append(f"Traveler group: {self.slots.traveler_group_type}")
         if self.slots.special_requests:
             lines.append(f"Special requests: {self.slots.special_requests}")
 
