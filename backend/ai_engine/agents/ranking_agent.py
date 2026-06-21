@@ -30,7 +30,7 @@ WEIGHT_DIVERSITY = 0.10
 
 # ── Candidate caps ───────────────────────────────────────────────────────────
 
-MAX_TOTAL_CANDIDATES = 30
+MAX_TOTAL_CANDIDATES = 40
 
 
 def _score_popularity(place: dict) -> float:
@@ -187,10 +187,10 @@ def _diversity_optimize(
     """
     # Category caps based on trip duration
     category_caps = {
-        "attractions": min(duration_days * 3, 12),
-        "restaurant": min(duration_days * 2, 8),
-        "hotel": min(duration_days + 1, 5),
-        "_default": 3,
+        "attractions": min(duration_days * 4, 18),
+        "restaurant": min(duration_days * 3, 12),
+        "hotel": min(duration_days + 2, 7),
+        "_default": 5,
     }
 
     by_category: dict[str, list] = {}

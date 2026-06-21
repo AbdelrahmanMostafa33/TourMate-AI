@@ -7,6 +7,7 @@ Two-layer validation:
 """
 
 import json
+import re
 from ai_engine.graph.state import TripState
 from ai_engine.tools.haversine import haversine
 from ai_engine.llm_config import invoke_with_fallback
@@ -176,8 +177,15 @@ Validate the itinerary now.
 
     try:
         response = await invoke_with_fallback("validator", messages)
-        raw_content = response.content.strip().strip("```json").strip("```").strip()
-        llm_result = json.loads(raw_content)
+        raw = response.content.strip()
+        fence = re.search(r"```(?:json)?\s*\n?(.*?)\n?\s*```", raw, re.DOTALL)
+        if fence:
+            raw = fence.group(1).strip()
+        brace_start = raw.find("{")
+        brace_end = raw.rfind("}")
+        if brace_start != -1 and brace_end > brace_start:
+            raw = raw[brace_start:brace_end + 1]
+        llm_result = json.loads(raw)
 
         # Merge programmatic and LLM issues
         all_issues = prog_issues + llm_result.get("issues", [])

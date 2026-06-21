@@ -331,11 +331,10 @@ async def _process_message_inner(
 
     # ─────────────────────────────────────────────────────────────
     # FINAL STATE UPDATES
-    # Attach generated itinerary + store assistant message in memory
+    # Store assistant message in memory.
+    # NOTE: itinerary phase transitions are handled inside _handle_plan_trip,
+    # not here, to avoid double set_itinerary calls.
     # ─────────────────────────────────────────────────────────────
-    if response and response.get("itinerary"):
-        state.set_itinerary(response["itinerary"])
-
     if response and response.get("message"):
         state.add_assistant_message(response["message"])
 
@@ -538,6 +537,104 @@ def _build_conversation_context(state) -> str:
     return "\n".join(lines)
 
 
+def _format_itinerary(itinerary: dict) -> str:
+    """Convert a structured itinerary dict into a human-readable text message.
+
+    The itinerary is produced by the LangGraph pipeline as a nested dict with
+    days, stops, and accommodation suggestions.  This function formats it into
+    a readable summary suitable for displaying in chat.
+    """
+    if not itinerary:
+        return "I wasn't able to generate a complete itinerary. Please try again."
+
+    lines = []
+    destination = itinerary.get("destination", "your destination")
+    days = itinerary.get("days", [])
+    hotels = itinerary.get("accommodation_suggestions", [])
+
+    lines.append(f"🌍 Here's your {len(days)}-day itinerary for {destination}!")
+    lines.append("")
+
+    for day in days:
+        day_num = day.get("day_number", "?")
+        theme = day.get("theme", "")
+        stops = day.get("stops", [])
+
+        header = f"📅 Day {day_num}"
+        if theme:
+            header += f" — {theme}"
+        lines.append(header)
+        lines.append("-" * 40)
+
+        for stop in stops:
+            name = stop.get("name", "Unknown")
+            time_slot = stop.get("suggested_time_of_day", "")
+            duration = stop.get("estimated_duration_minutes", 0)
+            why = stop.get("why_recommended", "")
+            travel = stop.get("travel_time_to_next_minutes")
+            mode = stop.get("transport_mode", "")
+
+            # Time-of-day emoji
+            time_emoji = {"morning": "🌅", "afternoon": "☀️", "evening": "🌙"}.get(time_slot, "📍")
+            time_label = time_slot.capitalize() if time_slot else ""
+
+            line = f"  {time_emoji} {name}"
+            if time_label:
+                line += f" ({time_label})"
+            if duration:
+                line += f" — {duration} min"
+            lines.append(line)
+
+            if why:
+                lines.append(f"    💡 {why}")
+
+            # Place details: category, rating, coordinates, address
+            cat = stop.get("category", "")
+            sub = stop.get("sub_category", "")
+            lat = stop.get("lat")
+            lon = stop.get("lon")
+            rating = stop.get("rating")
+            addr = stop.get("address", "")
+            details = []
+            if cat or sub:
+                details.append(f"{cat}/{sub}" if sub else cat)
+            if rating:
+                details.append(f"{rating}")
+            if lat and lon:
+                details.append(f"{lat}, {lon}")
+            if details:
+                lines.append(f"    📍 {', '.join(details)}")
+            if addr:
+                lines.append(f"    📫 {addr}")
+
+            if travel is not None and travel > 0:
+                mode_emoji = "🚶" if mode == "walking" else "🚗"
+                lines.append(f"    {mode_emoji} {travel:.0f} min to next stop")
+
+        lines.append("")
+
+    if hotels:
+        lines.append("🏨 Accommodation Suggestions:")
+        for hotel in hotels:
+            name = hotel.get("name", "Unknown")
+            acc_type = hotel.get("accommodation_type", "")
+            why = hotel.get("why_recommended", "")
+            rating = hotel.get("rating", 0)
+
+            line = f"  • {name}"
+            if acc_type:
+                line += f" ({acc_type})"
+            if rating:
+                line += f" ⭐ {rating}"
+            lines.append(line)
+            if why:
+                lines.append(f"    💡 {why}")
+        lines.append("")
+
+    lines.append("You can ask me to modify any part of this itinerary, or approve it to proceed!")
+    return "\n".join(lines)
+
+
 @traced(name="plan_trip_pipeline", tags=["conversation", "pipeline"], metadata={"component": "conversation_agent"})
 async def _handle_plan_trip(user_id, user_message, extracted, image_features, token=None, state=None):
     """Runs full LangGraph itinerary generation pipeline."""
@@ -617,9 +714,31 @@ async def _handle_plan_trip(user_id, user_message, extracted, image_features, to
     # Execute LangGraph itinerary pipeline
     result_state = await trip_graph.ainvoke(initial_state)
 
+    optimized = result_state.get("optimized_itinerary")
+    pipeline_error = result_state.get("error")
+
+    # Build the message: format itinerary if successful, else show error
+    if optimized:
+        message = _format_itinerary(optimized)
+    elif pipeline_error:
+        message = f"I ran into an issue generating your itinerary: {pipeline_error}. Please try again."
+    else:
+        message = "I wasn't able to generate a complete itinerary. Please try again."
+
+    # Always transition to ITINERARY_REVIEW so the next message
+    # doesn't hit the PLAN_GENERATION guard.
+    if state and optimized:
+        state.set_itinerary(optimized)
+    elif state:
+        # Pipeline failed — go back to slot filling so user can retry
+        state.transition_to(ConversationPhase.SLOT_FILLING)
+        state.plan_started_at = None
+
     return {
         "response_type": "itinerary",
-        "message": "Here's your personalized itinerary!",
-        "itinerary": result_state.get("optimized_itinerary"),
+        "message": message,
+        "itinerary": optimized,
         "image_features": image_features,
+        "agent_messages": result_state.get("agent_messages", []),
+        "validation": result_state.get("validation"),
     }

@@ -413,8 +413,8 @@ class TestPlanningAgentEdgeCases:
         assert result["error"] is None
 
     @pytest.mark.asyncio
-    async def test_empty_itinerary_still_produces_draft(self):
-        """LLM returns empty days → still stored as draft (downstream handles it)."""
+    async def test_empty_itinerary_retries_then_errors(self):
+        """LLM returns empty days → validation catches it, retries, then errors."""
         state = _make_planning_state()
         mock_llm = MagicMock()
         mock_llm.content = json.dumps({"destination": "Cairo", "days": [], "accommodation_suggestions": []})
@@ -422,9 +422,9 @@ class TestPlanningAgentEdgeCases:
         with patch("ai_engine.agents.planning_agent.invoke_with_fallback", return_value=mock_llm):
             result = await run_planning_agent(state)
 
-        assert result["draft_itinerary"] is not None
-        assert result["draft_itinerary"]["days"] == []
-        assert result["error"] is None
+        assert result["draft_itinerary"] is None
+        assert result["error"] is not None
+        assert "failed" in result["error"].lower()
 
     @pytest.mark.asyncio
     async def test_hydration_skips_unknown_ids(self):

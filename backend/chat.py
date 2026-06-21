@@ -1,5 +1,4 @@
-"""
-Interactive Chat Loop for TourMate AI Pipeline
+"""Interactive Chat Loop for TourMate AI Pipeline
 
 Usage:
     python chat.py
@@ -11,11 +10,14 @@ Commands:
     /history        — Show conversation history
     /slots          — Show collected trip slots
     /session        — Show session info (ID, phase, turn count)
+    /export         — Export itinerary + pipeline trace to JSON file
 """
 
 import asyncio
+import json
 import os
 import sys
+from datetime import datetime, timezone
 
 # Add the current directory to sys.path to allow imports from ai_engine
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), ".")))
@@ -117,10 +119,104 @@ def print_debug(result: dict):
     print(f"{DIM}  session_id:    {result.get('session_id', 'N/A')[:16]}...{RESET}")
     if result.get("itinerary"):
         days = len(result["itinerary"].get("days", []))
-        print(f"{DIM}  itinerary:     {days} days{RESET}")
+        total_stops = sum(len(d.get("stops", [])) for d in result["itinerary"].get("days", []))
+        hotels = len(result["itinerary"].get("accommodation_suggestions", []))
+        print(f"{DIM}  itinerary:     {days} days, {total_stops} stops, {hotels} hotels{RESET}")
     else:
         print(f"{DIM}  itinerary:     None{RESET}")
+
+    # ── Agent Pipeline Trace ──
+    agent_messages = result.get("agent_messages", [])
+    if agent_messages:
+        print(f"\n{BOLD}  Pipeline Trace:{RESET}")
+        for msg in agent_messages:
+            # Color-code by agent name
+            if "[LoadProfile]" in msg:
+                color = CYAN
+            elif "[PreferenceAgent]" in msg:
+                color = GREEN
+            elif "[RetrievalAgent]" in msg:
+                color = YELLOW
+            elif "[RankingAgent]" in msg:
+                color = YELLOW
+            elif "[Planner]" in msg:
+                color = GREEN
+            elif "[Optimizer]" in msg:
+                color = GREEN
+            elif "[Validator]" in msg:
+                color = CYAN
+            else:
+                color = DIM
+            print(f"{color}    {msg}{RESET}")
+
+    # ── Validation Results ──
+    validation = result.get("validation")
+    if validation:
+        score = validation.get("score", "?")
+        is_valid = validation.get("is_valid", False)
+        issues = validation.get("issues", [])
+        status_color = GREEN if is_valid else RED
+        print(f"\n{BOLD}  Validation:{RESET} {status_color}score={score}{RESET}")
+        if issues:
+            for issue in issues:
+                print(f"{RED}    ⚠ {issue}{RESET}")
+
     print(f"{DIM}{'─'*30}{RESET}")
+
+
+# ── Export ──────────────────────────────────────────────────────────────────
+
+
+async def _handle_export(session_id: str | None, last_result: dict | None):
+    """Export itinerary, pipeline trace, and debug info to a JSON file."""
+    if not session_id:
+        print(f"{RED}No active session. Start a conversation first.{RESET}")
+        return
+
+    try:
+        manager = await get_session_manager()
+        state = await manager.load(session_id)
+    except Exception as e:
+        print(f"{RED}Error loading session: {e}{RESET}")
+        return
+
+    # Build export payload
+    export = {
+        "exported_at": datetime.now(timezone.utc).isoformat(),
+        "session": {
+            "session_id": session_id,
+            "user_id": state.user_id,
+            "phase": state.phase.value,
+            "turn_count": state.turn_count,
+            "created_at": state.created_at,
+            "updated_at": state.updated_at,
+        },
+        "slots": state.slots.to_dict(),
+        "itinerary": state.itinerary,
+        "agent_messages": (
+            last_result.get("agent_messages", []) if last_result else []
+        ),
+        "validation": (
+            last_result.get("validation") if last_result else None
+        ),
+        "conversation_history": [
+            {"role": m.role, "content": m.content, "timestamp": m.timestamp}
+            for m in (state.history or [])
+        ],
+    }
+
+    # Save to file
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    filename = f"tourmate_export_{timestamp}.json"
+    filepath = os.path.join(os.getcwd(), filename)
+
+    try:
+        with open(filepath, "w", encoding="utf-8") as f:
+            json.dump(export, f, indent=2, ensure_ascii=False, default=str)
+        print(f"{GREEN}✅ Exported to {filepath}{RESET}")
+        print(f"{DIM}   Contains: session info, slots, itinerary, pipeline trace, validation, history{RESET}")
+    except Exception as e:
+        print(f"{RED}Error writing export file: {e}{RESET}")
 
 
 # ── Main chat loop ─────────────────────────────────────────────────────────
@@ -155,6 +251,7 @@ async def chat_loop():
     session_id = None
     debug_mode = False
     turn = 0
+    last_result = None
 
     print(f"{DIM}Start chatting! (Type /help for commands){RESET}\n")
 
@@ -263,6 +360,10 @@ async def chat_loop():
                 print(f"{DIM}No active session yet.{RESET}\n")
             continue
 
+        elif cmd == "/export":
+            await _handle_export(session_id, last_result)
+            continue
+
         elif cmd == "/usage":
             token_tracker.print_summary()
             continue
@@ -276,6 +377,7 @@ async def chat_loop():
   /history       Show conversation history
   /slots         Show collected trip slots
   /session       Show session info (ID, phase, turns)
+  /export        Export itinerary + trace to JSON file
   /usage         Show token usage summary
   /help          Show this help message
 """)
@@ -314,6 +416,9 @@ async def chat_loop():
             print_bot_msg(message)
         else:
             print_bot_msg(message or "(empty response)")
+
+        # Track last result for /export
+        last_result = result
 
         # Debug output
         if debug_mode:
