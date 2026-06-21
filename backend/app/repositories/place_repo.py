@@ -289,85 +289,93 @@ class PlaceRepository(BaseRepository):
         Used by the explore/filters endpoint to populate the mobile
         app location picker and category tabs.
 
-        Returns locations with type info (country vs city) for the
-        location picker's "Recent locations" display.
+        Without `q`, locations/countries are returned EMPTY. The
+        "Recent locations" section shown in the picker UI is populated
+        client-side from the user's own local search history — this
+        endpoint has no concept of per-user history (it's unauthenticated),
+        so it must not fall back to globally popular locations here, as
+        that would misrepresent "recent" with "most common in the DB".
+
+        With `q`, returns locations whose city/country match the text
+        (autocomplete-style substring search).
+
+        Categories are always returned regardless of `q`.
         """
-        # ── Countries (top-level locations) ────────────────────────────
-        country_q = (
-            select(
-                Place.country,
-                func.count(Place.place_id).label("cnt"),
-            )
-            .where(Place.country.isnot(None))
-            .where(Place.country != "")
-            .group_by(Place.country)
-            .order_by(func.count(Place.place_id).desc())
-        )
+        q = q.strip() if q else None
+
+        countries: list[dict] = []
+        cities: list[dict] = []
+
+        # ── Locations are only computed once the user has typed something ──
         if q:
-            pattern = f"%{q.strip()}%"
-            country_q = country_q.where(Place.country.ilike(pattern))
+            pattern = f"%{q}%"
 
-        country_result = await self.session.execute(country_q)
-        countries = []
-        for row in country_result.all():
-            country_name = (row[0] or "").strip()
-            countries.append({
-                "key": country_name.lower(),
-                "city": None,
-                "country": country_name,
-                "display": country_name,
-                "subtitle": "Country",
-                "type": "country",
-                "count": row[1],
-            })
-
-        # ── Cities (grouped with country) ──────────────────────────────
-        loc_q = (
-            select(
-                Place.city,
-                Place.country,
-                func.count(Place.place_id).label("cnt"),
-            )
-            .where(Place.city.isnot(None))
-            .where(Place.city != "")
-            .where(Place.country.isnot(None))
-            .where(Place.country != "")
-        )
-
-        if q:
-            pattern = f"%{q.strip()}%"
-            loc_q = loc_q.where(
-                or_(
-                    Place.city.ilike(pattern),
-                    Place.country.ilike(pattern),
+            # ── Countries (top-level locations) ─────────────────────────
+            country_q = (
+                select(
+                    Place.country,
+                    func.count(Place.place_id).label("cnt"),
                 )
+                .where(Place.country.isnot(None))
+                .where(Place.country != "")
+                .where(Place.country.ilike(pattern))
+                .group_by(Place.country)
+                .order_by(func.count(Place.place_id).desc())
             )
+            country_result = await self.session.execute(country_q)
+            for row in country_result.all():
+                country_name = (row[0] or "").strip()
+                countries.append({
+                    "key": country_name.lower(),
+                    "city": None,
+                    "country": country_name,
+                    "display": country_name,
+                    "subtitle": "Country",
+                    "type": "country",
+                    "count": row[1],
+                })
 
-        loc_q = loc_q.group_by(Place.city, Place.country)
-        loc_q = loc_q.order_by(func.count(Place.place_id).desc())
-        loc_q = loc_q.limit(20)
+            # ── Cities (grouped with country) ───────────────────────────
+            loc_q = (
+                select(
+                    Place.city,
+                    Place.country,
+                    func.count(Place.place_id).label("cnt"),
+                )
+                .where(Place.city.isnot(None))
+                .where(Place.city != "")
+                .where(Place.country.isnot(None))
+                .where(Place.country != "")
+                .where(
+                    or_(
+                        Place.city.ilike(pattern),
+                        Place.country.ilike(pattern),
+                    )
+                )
+                .group_by(Place.city, Place.country)
+                .order_by(func.count(Place.place_id).desc())
+                .limit(20)
+            )
+            loc_result = await self.session.execute(loc_q)
+            for row in loc_result.all():
+                city_name = (row[0] or "").strip()
+                country_name = (row[1] or "").strip()
+                cities.append({
+                    "key": city_name.lower(),
+                    "city": city_name,
+                    "country": country_name,
+                    "display": f"{city_name}, {country_name}",
+                    "subtitle": f"{city_name}, {country_name}",
+                    "type": "city",
+                    "count": row[2],
+                })
 
-        loc_result = await self.session.execute(loc_q)
-        cities = []
-        for row in loc_result.all():
-            city_name = (row[0] or "").strip()
-            country_name = (row[1] or "").strip()
-            cities.append({
-                "key": city_name.lower(),
-                "city": city_name,
-                "country": country_name,
-                "display": f"{city_name}, {country_name}",
-                "subtitle": f"{city_name}, {country_name}",
-                "type": "city",
-                "count": row[2],
-            })
-
-        # Merge: countries first, then cities (for "Recent locations")
-        #Safety cap: limit countries so a pathological short query can never
+        # Merge: countries first, then cities.
+        # Safety cap: limit countries so a pathological short query can never
         # silently crowd out every city suggestion.
         locations = countries[:5] + cities
 
-        # ── Categories with counts ────────────────────────────────────
+        # ── Categories with counts (always returned, independent of q) ──
         cat_q = (
             select(Place.category, func.count(Place.place_id).label("cnt"))
             .group_by(Place.category)
@@ -382,8 +390,5 @@ class PlaceRepository(BaseRepository):
 
         return {
             "locations": locations,
-            "countries": [{"key": c["key"], "display": c["display"], "count": c["count"]} for c in countries],
-            "categories": categories,
+            "countries": [{"key": c["key"], "display": c["display"], "count": c["count"]} for c in countries]
         }
-        
-        

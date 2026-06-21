@@ -69,9 +69,20 @@ async def get_explore_filters(
 @router.get("/explore", response_model=ExplorePlacesResponse)
 async def explore_places(
     city: Optional[str] = Query(None, description="Filter by city name (e.g. Cairo, Dubai)"),
-    country: Optional[str] = Query("Egypt", description="Filter by country (e.g. Egypt, UAE). Defaults to Egypt."),
-    category: Optional[str] = Query("hotel", description="Filter by category: attractions, restaurant, hotel. Defaults to hotel."),
-    no_defaults: Optional[bool] = Query(None, description="If true, ignore country/category defaults and return all places."),
+    country: Optional[str] = Query(
+        None,
+        description=(
+            "Filter by country (e.g. Egypt, UAE). "
+            "Defaults to Egypt only when neither city nor country is provided "
+            "(the untouched initial state). If you pass city alone, the search "
+            "spans that city across all countries — pass country too if you "
+            "want it scoped to one."
+        ),
+    ),
+    category: Optional[str] = Query(
+        "hotel",
+        description="Filter by category: attractions, restaurant, hotel. Always defaults to hotel if the category tab wasn't picked.",
+    ),
     limit: int = Query(50, ge=1, le=200, description="Max results to return"),
     offset: int = Query(0, ge=0, description="Results offset for pagination"),
     db: AsyncSession = Depends(get_db),
@@ -82,43 +93,67 @@ async def explore_places(
     Queries the database for places matching the given filters.
     Data is expected to be seeded from the curated JSON files in data/.
 
+    Note: city/country here are independent free-text filters — they are
+    NOT required to originate from a /places/explore/filters suggestion.
+    The filters endpoint is purely an autocomplete UX aid; a user typing
+    a value directly and submitting it must work identically to tapping
+    a suggestion, as long as the value matches what's in the DB.
+
     **No auth required** — public browsing endpoint.
 
-    **Defaults:** country=Egypt, category=hotel (matches mobile app initial state).
+    **Defaults:**
+    - country: defaults to Egypt ONLY when both city and country are omitted
+      (the untouched initial state). Pass city alone to search that city
+      across every country in the DB — e.g. a "Cairo" autocomplete pick
+      that matched multiple countries.
+    - category: always defaults to hotel, since the UI always has a
+      category tab selected (there's no "all categories" state).
+
+    Whatever you DO pass for city/country is always respected as-is —
+    there is no flag that erases an explicitly provided value.
 
     **Examples:**
-    - GET /places/explore (returns hotels in Egypt, sorted by popularity)
-    - GET /places/explore?category=attractions
-    - GET /places/explore?city=cairo&category=restaurant
-    - GET /places/explore?country=egypt&category=attractions
+    - GET /places/explore (untouched initial state: Egypt, hotels)
+    - GET /places/explore?category=restaurant (Egypt restaurants — country default still applies)
+    - GET /places/explore?city=cairo&category=restaurant (Cairo restaurants, any country)
+    - GET /places/explore?city=cairo&country=egypt&category=restaurant (Cairo, Egypt restaurants only)
+    - GET /places/explore?country=Egypt (all Egypt hotels — country passed explicitly, category still defaults to hotel)
     """
-    # ── Handle no_defaults: clear both country and category ───────
-    categories = None
-    if no_defaults:
-        country = None
-        categories = None
-    else:
-        # Normalize category for DB query
-        if category:
-            cat_lower = category.lower().strip()
-            cat_map = {
-                "attraction": "attraction", "attractions": "attraction",
-                "restaurant": "restaurant", "restaurants": "restaurant",
-                "hotel": "hotel", "hotels": "hotel",
-            }
-            if cat_lower not in cat_map:
-                raise HTTPException(
-                    status_code=400,
-                    detail=(
-                        f"Invalid category: '{category}'. "
-                        f"Valid options are: attractions, restaurant, hotel"
-                    ),
-                )
-            categories = [cat_map[cat_lower]]
+    # ── country default: only for the untouched initial state ─────────────
+    # If the caller passed a city without a country (e.g. an autocomplete
+    # suggestion for "Cairo" that doesn't pin a single country, or a value
+    # the user typed by hand), do NOT silently scope it to Egypt — search
+    # that city across every country in the DB instead.
+    if city is None and country is None:
+        country = "Egypt"
 
-        # Normalize country (strip whitespace, default to Egypt)
-        if country:
-            country = country.strip()
+    # ── category: always has a default, since the UI always has a tab selected ──
+    categories = None
+    if category:
+        cat_lower = category.lower().strip()
+        cat_map = {
+            "attraction": "attraction", "attractions": "attraction",
+            "restaurant": "restaurant", "restaurants": "restaurant",
+            "hotel": "hotel", "hotels": "hotel",
+        }
+        if cat_lower not in cat_map:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"Invalid category: '{category}'. "
+                    f"Valid options are: attractions, restaurant, hotel"
+                ),
+            )
+        categories = [cat_map[cat_lower]]
+
+    # Normalize country (strip whitespace)
+    if country:
+        country = country.strip()
+
+    # Normalize city (strip whitespace) — without this, a value like
+    # "Cairo " (trailing space from a client) silently matches zero rows.
+    if city:
+        city = city.strip()
 
     service = PlaceSearchService(db)
 
