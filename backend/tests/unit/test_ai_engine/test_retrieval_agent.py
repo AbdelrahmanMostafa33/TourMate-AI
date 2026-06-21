@@ -11,7 +11,7 @@ Tests cover:
 """
 
 import pytest
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch, MagicMock, AsyncMock
 
 from ai_engine.agents.retrieval_agent import (
     _compute_city_center,
@@ -101,32 +101,28 @@ class TestApplyFilters:
         filtered = _apply_filters(places, {"interests_from_conversation": ["history"]}, "Cairo")
         assert len(filtered) == 1
 
-    def test_interest_match_by_category(self):
-        places = [_make_place(category="history")]
-        prefs = {"interests_from_conversation": ["history"]}
-        filtered = _apply_filters(places, prefs, "Cairo")
-        assert len(filtered) == 1
-
-    def test_interest_match_by_tag(self):
-        places = [_make_place(interest_tags=["food", "local"])]
-        prefs = {"interests_from_conversation": ["food"]}
-        filtered = _apply_filters(places, prefs, "Cairo")
-        assert len(filtered) == 1
-
-    def test_interest_match_by_name(self):
-        places = [_make_place(name="History Museum")]
-        prefs = {"interests_from_conversation": ["history"]}
-        filtered = _apply_filters(places, prefs, "Cairo")
-        assert len(filtered) == 1
-
-    def test_no_interest_match_filtered_out(self):
-        places = [_make_place(interest_tags=["sports"])]
+    def test_all_places_pass_rating_filter(self):
+        """Interest filtering is soft — all rated places pass through."""
+        places = [
+            _make_place(id="a1", name="History Museum", interest_tags=["history"]),
+            _make_place(id="a2", name="Sports Bar", interest_tags=["sports"]),
+            _make_place(id="a3", name="Shopping Mall", interest_tags=["shopping"]),
+        ]
         prefs = {"interests_from_conversation": ["history", "art"]}
         filtered = _apply_filters(places, prefs, "Cairo")
+        # All 3 pass — interest matching is handled by Ranking Agent
+        assert len(filtered) == 3
+
+    def test_low_rated_place_still_filtered(self):
+        """Only rating + distance are hard filters, not interests."""
+        places = [_make_place(interest_tags=["sports"], rating=1.0)]
+        prefs = {"interests_from_conversation": ["sports"]}
+        filtered = _apply_filters(places, prefs, "Cairo")
+        # Low rating filtered out even though interest matches
         assert len(filtered) == 0
 
     def test_empty_interests_keeps_all(self):
-        """When no interests specified, all places pass interest filter."""
+        """When no interests specified, all rated places pass."""
         places = [_make_place(interest_tags=["sports"])]
         prefs = {"interests_from_conversation": []}
         filtered = _apply_filters(places, prefs, "Cairo")
@@ -147,8 +143,8 @@ class TestApplyFilters:
         assert "far" not in ids  # far place should be filtered out
         assert len(filtered) == len(close_places)  # all close places kept
 
-    def test_mixed_categories_with_hotel(self):
-        """Hotels pass through, attractions need interest match."""
+    def test_mixed_categories_all_pass(self):
+        """All rated places pass — interest matching is soft, not hard."""
         hotel = _make_hotel()
         museum = _make_place(name="Museum", interest_tags=["history"])
         bar = _make_place(name="Sports Bar", interest_tags=["sports"])
@@ -157,7 +153,7 @@ class TestApplyFilters:
         names = {p["name"] for p in filtered}
         assert "Test Hotel" in names
         assert "Museum" in names
-        assert "Sports Bar" not in names
+        assert "Sports Bar" in names  # now kept — ranking agent scores relevance
 
     def test_hotel_filtered_by_accommodation_type(self):
         """When accommodation_style is set, only matching hotels are kept."""
@@ -277,7 +273,7 @@ class TestRunRetrievalAgent:
     @pytest.mark.asyncio
     async def test_no_places_sets_error(self):
         """When get_places_for_city returns empty, error is set."""
-        with patch("ai_engine.agents.retrieval_agent.get_places_for_city", return_value=[]):
+        with patch("ai_engine.agents.retrieval_agent.get_places_for_city", new_callable=AsyncMock, return_value=[]):
             state = _make_retrieval_state()
             result = await run_retrieval_agent(state)
 
@@ -294,7 +290,7 @@ class TestRunRetrievalAgent:
             _make_restaurant(id="r1"),
             _make_restaurant(id="r2"),
         ]
-        with patch("ai_engine.agents.retrieval_agent.get_places_for_city", return_value=places):
+        with patch("ai_engine.agents.retrieval_agent.get_places_for_city", new_callable=AsyncMock, return_value=places):
             state = _make_retrieval_state()
             result = await run_retrieval_agent(state)
 
@@ -308,7 +304,7 @@ class TestRunRetrievalAgent:
             _make_hotel(id="h1"),
             _make_place(id="a1", interest_tags=["history"]),
         ]
-        with patch("ai_engine.agents.retrieval_agent.get_places_for_city", return_value=places):
+        with patch("ai_engine.agents.retrieval_agent.get_places_for_city", new_callable=AsyncMock, return_value=places):
             state = _make_retrieval_state()
             result = await run_retrieval_agent(state)
 
@@ -316,23 +312,24 @@ class TestRunRetrievalAgent:
         assert "hotel" in categories
 
     @pytest.mark.asyncio
-    async def test_interests_from_profile_used(self):
-        """Profile interests should be passed to get_places_for_city."""
+    async def test_get_places_called_with_city_only(self):
+        """get_places_for_city should be called with city only (no interests)."""
         places = [_make_place(id="a1", interest_tags=["history"])]
         profile = {"interests": ["history", "food"]}
 
-        with patch("ai_engine.agents.retrieval_agent.get_places_for_city", return_value=places) as mock_get:
+        with patch("ai_engine.agents.retrieval_agent.get_places_for_city", new_callable=AsyncMock, return_value=places) as mock_get:
             state = _make_retrieval_state(profile=profile)
             await run_retrieval_agent(state)
 
-        # Verify interests were passed
+        # Verify only city was passed — interests handled downstream
         call_args = mock_get.call_args
-        assert call_args[1]["interests"] == ["history", "food"]
+        assert call_args[0][0] == "Cairo"
+        assert mock_get.call_args.kwargs == {}
 
     @pytest.mark.asyncio
     async def test_agent_message_appended(self):
         places = [_make_place(id="a1")]
-        with patch("ai_engine.agents.retrieval_agent.get_places_for_city", return_value=places):
+        with patch("ai_engine.agents.retrieval_agent.get_places_for_city", new_callable=AsyncMock, return_value=places):
             state = _make_retrieval_state()
             result = await run_retrieval_agent(state)
 
@@ -342,7 +339,7 @@ class TestRunRetrievalAgent:
     @pytest.mark.asyncio
     async def test_destination_city_passed_to_get_places(self):
         places = [_make_place(id="a1")]
-        with patch("ai_engine.agents.retrieval_agent.get_places_for_city", return_value=places) as mock_get:
+        with patch("ai_engine.agents.retrieval_agent.get_places_for_city", new_callable=AsyncMock, return_value=places) as mock_get:
             state = _make_retrieval_state(destination_city="Dubai")
             await run_retrieval_agent(state)
 
@@ -354,7 +351,7 @@ class TestRunRetrievalAgent:
         """Agent works when extracted_preferences has no interests."""
         places = [_make_place(id="a1")]
         prefs = {"interests_from_conversation": []}
-        with patch("ai_engine.agents.retrieval_agent.get_places_for_city", return_value=places):
+        with patch("ai_engine.agents.retrieval_agent.get_places_for_city", new_callable=AsyncMock, return_value=places):
             state = _make_retrieval_state(extracted_preferences=prefs)
             result = await run_retrieval_agent(state)
 
@@ -364,7 +361,7 @@ class TestRunRetrievalAgent:
     async def test_no_profile_still_works(self):
         """Agent works even if profile is None."""
         places = [_make_place(id="a1")]
-        with patch("ai_engine.agents.retrieval_agent.get_places_for_city", return_value=places):
+        with patch("ai_engine.agents.retrieval_agent.get_places_for_city", new_callable=AsyncMock, return_value=places):
             state = _make_retrieval_state(profile=None)
             result = await run_retrieval_agent(state)
 

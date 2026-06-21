@@ -93,7 +93,7 @@ class TestFullPipelineHappyPath:
         state = build_pipeline_state()
         state = await preference_node(state)
 
-        with patch("ai_engine.agents.retrieval_agent.get_places_for_city", return_value=MOCK_PLACES):
+        with patch("ai_engine.agents.retrieval_agent.get_places_for_city", new_callable=AsyncMock, return_value=MOCK_PLACES):
             result = await retrieval_node(state)
 
         filtered = result["filtered_places"]
@@ -113,7 +113,7 @@ class TestFullPipelineHappyPath:
         state = build_pipeline_state()
         state = await preference_node(state)
 
-        with patch("ai_engine.agents.retrieval_agent.get_places_for_city", return_value=MOCK_PLACES):
+        with patch("ai_engine.agents.retrieval_agent.get_places_for_city", new_callable=AsyncMock, return_value=MOCK_PLACES):
             state = await retrieval_node(state)
 
         result = await ranking_node(state)
@@ -132,7 +132,7 @@ class TestFullPipelineHappyPath:
         state = build_pipeline_state()
         state = await preference_node(state)
 
-        with patch("ai_engine.agents.retrieval_agent.get_places_for_city", return_value=MOCK_PLACES):
+        with patch("ai_engine.agents.retrieval_agent.get_places_for_city", new_callable=AsyncMock, return_value=MOCK_PLACES):
             state = await retrieval_node(state)
         state = await ranking_node(state)
 
@@ -159,7 +159,7 @@ class TestFullPipelineHappyPath:
         state = build_pipeline_state(duration_days=1)
         state = await preference_node(state)
 
-        with patch("ai_engine.agents.retrieval_agent.get_places_for_city", return_value=MOCK_PLACES):
+        with patch("ai_engine.agents.retrieval_agent.get_places_for_city", new_callable=AsyncMock, return_value=MOCK_PLACES):
             state = await retrieval_node(state)
         state = await ranking_node(state)
         state = await planning_node(state)
@@ -197,7 +197,7 @@ class TestFullPipelineHappyPath:
         assert state["extracted_preferences"] is not None
 
         # Step 2: Retrieval Agent
-        with patch("ai_engine.agents.retrieval_agent.get_places_for_city", return_value=MOCK_PLACES):
+        with patch("ai_engine.agents.retrieval_agent.get_places_for_city", new_callable=AsyncMock, return_value=MOCK_PLACES):
             state = await retrieval_node(state)
         assert len(state["filtered_places"]) > 0
 
@@ -244,7 +244,7 @@ class TestPreferenceRefinementFlowsDownstream:
         assert "shopping" in interests
 
         # Retrieval should now include shopping-tagged places
-        with patch("ai_engine.agents.retrieval_agent.get_places_for_city", return_value=MOCK_PLACES):
+        with patch("ai_engine.agents.retrieval_agent.get_places_for_city", new_callable=AsyncMock, return_value=MOCK_PLACES):
             state = await retrieval_node(state)
 
         filtered_names = [p["name"] for p in state["filtered_places"]]
@@ -315,7 +315,7 @@ class TestErrorPropagation:
         """No places found → retrieval sets error → pipeline stops."""
         state = build_pipeline_state()
 
-        with patch("ai_engine.agents.retrieval_agent.get_places_for_city", return_value=[]):
+        with patch("ai_engine.agents.retrieval_agent.get_places_for_city", new_callable=AsyncMock, return_value=[]):
             state = await retrieval_node(state)
 
         assert state["error"] is not None
@@ -335,7 +335,7 @@ class TestErrorPropagation:
 
         # Return places that will be filtered out (low rating)
         bad_places = [_make_place(id="bad_001", name="Bad Place", rating=1.0, lat=30.0, lon=31.0)]
-        with patch("ai_engine.agents.retrieval_agent.get_places_for_city", return_value=bad_places):
+        with patch("ai_engine.agents.retrieval_agent.get_places_for_city", new_callable=AsyncMock, return_value=bad_places):
             state = await retrieval_node(state)
 
         # filtered_places might be empty after filtering
@@ -352,7 +352,7 @@ class TestErrorPropagation:
         state = build_pipeline_state()
         state = await preference_node(state)
 
-        with patch("ai_engine.agents.retrieval_agent.get_places_for_city", return_value=[]):
+        with patch("ai_engine.agents.retrieval_agent.get_places_for_city", new_callable=AsyncMock, return_value=[]):
             state = await retrieval_node(state)
 
         # Empty filtered_places → ranking gets nothing
@@ -374,7 +374,7 @@ class TestErrorPropagation:
         state = build_pipeline_state()
         state = await preference_node(state)
 
-        with patch("ai_engine.agents.retrieval_agent.get_places_for_city", return_value=MOCK_PLACES):
+        with patch("ai_engine.agents.retrieval_agent.get_places_for_city", new_callable=AsyncMock, return_value=MOCK_PLACES):
             state = await retrieval_node(state)
         state = await ranking_node(state)
 
@@ -394,7 +394,7 @@ class TestErrorPropagation:
         state = build_pipeline_state()
         state = await preference_node(state)
 
-        with patch("ai_engine.agents.retrieval_agent.get_places_for_city", return_value=MOCK_PLACES):
+        with patch("ai_engine.agents.retrieval_agent.get_places_for_city", new_callable=AsyncMock, return_value=MOCK_PLACES):
             state = await retrieval_node(state)
         state = await ranking_node(state)
 
@@ -502,7 +502,7 @@ class TestValidationRetryFlow:
         # Run through the pipeline
         state = await preference_node(state)
 
-        with patch("ai_engine.agents.retrieval_agent.get_places_for_city", return_value=MOCK_PLACES):
+        with patch("ai_engine.agents.retrieval_agent.get_places_for_city", new_callable=AsyncMock, return_value=MOCK_PLACES):
             state = await retrieval_node(state)
         state = await ranking_node(state)
         state = await planning_node(state)

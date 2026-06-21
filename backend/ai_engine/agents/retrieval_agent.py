@@ -12,10 +12,9 @@ ranking/relevance layer. It answers: "Which places *could* be relevant?"
 The Ranking Agent then answers: "Which places are *most* relevant?"
 """
 
-import math
 from typing import Optional
 from ai_engine.graph.state import TripState
-from ai_engine.tools.places_tool import get_places_for_city
+from ai_engine.tools.places_tool import get_places_for_city  # async
 from ai_engine.tools.haversine import haversine
 
 
@@ -80,14 +79,13 @@ def _apply_filters(
     3. Non-hotel, non-restaurant places must satisfy a minimum rating.
     4. They must be within a maximum distance from the
        computed city/activity center.
-    5. They should match the user's interests through
-       category, tags, or keywords in the place name.
 
-    Note: Restaurant cuisine and attraction subcategory matching
-    are handled by the Ranking Agent as soft scoring signals,
-    not hard filters here. This prevents over-filtering when
-    the user's preferences are narrow (e.g. 'museums' would
-    reject all non-museum attractions).
+    Note: Interest-based relevance is NOT filtered here. All places
+    that pass rating + distance are kept. The Ranking Agent scores
+    preferences as a soft signal (25% weight) so matching places
+    naturally rank higher without eliminating complementary options
+    like restaurants, landmarks, or parks that a history-lover still
+    needs to eat at and visit.
 
     Returns:
         A filtered list of places suitable for itinerary generation.
@@ -96,11 +94,6 @@ def _apply_filters(
     # Compute the geographic center of activity locations.
     # This is later used to eliminate places that are too far away.
     center = _compute_city_center(places)
-
-    # Convert user interests into a set for faster membership checks.
-    # Example:
-    # {"museum", "food", "shopping"}
-    interests = set(preferences.get("interests_from_conversation", []))
 
     # Determine the user's preferred accommodation type.
     # Priority:
@@ -183,65 +176,6 @@ def _apply_filters(
                 continue
 
         # ==========================================================
-        # INTEREST RELEVANCE FILTER
-        # ==========================================================
-        #
-        # Restaurants are ALWAYS kept — every trip needs food options.
-        # The Ranking Agent handles food_preferences vs cuisine_type scoring.
-        #
-        # For other places, keep if:
-        #
-        # 1. User did not specify interests.
-        #    (broad search mode)
-        #
-        # OR
-        #
-        # 2. Place category matches.
-        #    Example:
-        #    interest = "museum"
-        #    category = "museum"
-        #
-        # OR
-        #
-        # 3. At least one interest tag matches.
-        #    Example:
-        #    interest = "history"
-        #    tags = ["history", "culture"]
-        #
-        # OR
-        #
-        # 4. Interest keyword appears in the place name.
-        #    Example:
-        #    interest = "pyramid"
-        #    place name = "Great Pyramid of Giza"
-        #
-        # Restaurants skip this filter entirely.
-        if place.get("category") == "restaurant":
-            filtered.append(place)
-            continue
-
-        if interests:
-
-            # Category-based matching.
-            category_match = place.get("category", "") in interests
-
-            # Tag-based matching.
-            tag_match = any(
-                t in interests
-                for t in place.get("interest_tags", [])
-            )
-
-            # Keyword search in place name.
-            name_match = any(
-                kw in place.get("name", "").lower()
-                for kw in interests
-            )
-
-            # Reject place if none of the matching strategies succeed.
-            if not (category_match or tag_match or name_match):
-                continue
-
-        # ==========================================================
         # PLACE PASSED ALL FILTERS
         # ==========================================================
         filtered.append(place)
@@ -320,23 +254,14 @@ async def run_retrieval_agent(state: TripState) -> TripState:
     # }
     preferences = state.get("extracted_preferences") or {}
 
-    # User profile generated from earlier stages.
-    profile = state.get("profile") or {}
-
-    # Long-term interests stored in the user profile.
-    interests = profile.get("interests", [])
-
     # ==========================================================
     # STAGE 1: Retrieve all available places.
     # ==========================================================
     #
     # Query the place database for the destination city.
-    # Interest information may be used to improve retrieval.
+    # Interest-based filtering is handled downstream by the Ranking Agent.
     #
-    all_places = get_places_for_city(
-        city,
-        interests=interests
-    )
+    all_places = await get_places_for_city(city)
 
     # If no places exist for the destination,
     # terminate early and record an error.

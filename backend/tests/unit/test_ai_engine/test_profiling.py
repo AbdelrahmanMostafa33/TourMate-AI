@@ -166,7 +166,7 @@ def test_graph_runs_with_mock_profile():
          "address": "Dokki", "hours": {}, "photos": [], "maps_link": None},
     ]
 
-    def _mock_get_places(city, interests=None):
+    async def _mock_get_places(city, interests=None):
         return sample_places
 
     import asyncio

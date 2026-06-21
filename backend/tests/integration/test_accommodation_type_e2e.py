@@ -593,6 +593,7 @@ class TestFullPipelineWithAccommodationType:
         # Step 2: Retrieval Agent (mock places, run real filtering)
         with patch(
             "ai_engine.agents.retrieval_agent.get_places_for_city",
+            new_callable=AsyncMock,
             return_value=MIXED_PLACES,
         ):
             from ai_engine.graph.nodes import retrieval_node
