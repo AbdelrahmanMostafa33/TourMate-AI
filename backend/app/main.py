@@ -8,7 +8,7 @@ from contextlib import asynccontextmanager
 from app.core.database import engine, Base
 from app.models import user, profile, trip, chat
 
-from app.api.v1.routes import auth, users
+from app.api.v1.routes import auth, users, health
 from app.api.v1.routes import trips as trips_router
 from app.api.v1.routes import chat  as chat_router
 from app.api.v1.routes import reviews as reviews_router
@@ -53,6 +53,7 @@ app.include_router(saved_places_router.router, prefix="/api/v1/saved-places", ta
 app.include_router(recommendations_router.router, prefix="/api/v1/recommendations", tags=["Recommendations"])
 app.include_router(images_router.router, prefix="/api/v1/images", tags=["Images"])
 app.include_router(places_router.router, prefix="/api/v1/places", tags=["Places"])
+app.include_router(health.router,       tags=["Health"])
 
 
 @app.get("/")

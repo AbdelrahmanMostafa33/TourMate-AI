@@ -32,44 +32,9 @@ depends_on: Union[str, Sequence[str], None] = None
 
 def upgrade() -> None:
     # ── Enums ────────────────────────────────────────────────────────────────
-    trip_status = sa.Enum("planning", "active", "completed", name="trip_status")
-    trip_status.create(op.get_bind(), checkfirst=True)
-
-    itinerary_status = sa.Enum("draft", "active", "archived", name="itinerary_status")
-    itinerary_status.create(op.get_bind(), checkfirst=True)
-
-    stop_status = sa.Enum("planned", "visited", "skipped", "cancelled", name="stop_status")
-    stop_status.create(op.get_bind(), checkfirst=True)
-
-    travel_mode = sa.Enum("walking", "driving", "transit", "cycling", name="travel_mode")
-    travel_mode.create(op.get_bind(), checkfirst=True)
-
-    booking_type = sa.Enum("hotel", "restaurant", "activity", "transport", name="booking_type")
-    booking_type.create(op.get_bind(), checkfirst=True)
-
-    booking_status = sa.Enum("pending", "confirmed", "cancelled", "completed", name="booking_status")
-    booking_status.create(op.get_bind(), checkfirst=True)
-
-    payment_method = sa.Enum("credit_card", "debit_card", "paypal", "cash", name="payment_method")
-    payment_method.create(op.get_bind(), checkfirst=True)
-
-    payment_status = sa.Enum("pending", "completed", "failed", "refunded", name="payment_status")
-    payment_status.create(op.get_bind(), checkfirst=True)
-
-    recommendation_type = sa.Enum("place", "activity", "restaurant", "hotel", name="recommendation_type")
-    recommendation_type.create(op.get_bind(), checkfirst=True)
-
-    recommendation_status = sa.Enum("pending", "accepted", "rejected", "expired", name="recommendation_status")
-    recommendation_status.create(op.get_bind(), checkfirst=True)
-
-    feedback_type = sa.Enum("thumbs_up", "thumbs_down", "rating", "comment", name="feedback_type")
-    feedback_type.create(op.get_bind(), checkfirst=True)
-
-    conversation_status = sa.Enum("active", "archived", "closed", name="conversation_status")
-    conversation_status.create(op.get_bind(), checkfirst=True)
-
-    processing_status = sa.Enum("pending", "processing", "completed", "failed", name="processing_status")
-    processing_status.create(op.get_bind(), checkfirst=True)
+    # Enums are created via sa.Enum() with native_enum=True (the default) so
+    # PostgreSQL CREATE TYPE is emitted by op.create_table automatically.
+    # We define them here as reusable objects for column references.
 
     # ── users ────────────────────────────────────────────────────────────────
     op.create_table(
@@ -182,7 +147,7 @@ def upgrade() -> None:
         sa.Column("number_of_travelers", sa.Integer, server_default=sa.text("1")),
         sa.Column("budget", sa.Float, nullable=True),
         sa.Column("preferences", JSON, nullable=True),
-        sa.Column("status", sa.Enum(name="trip_status"), nullable=False, server_default="planning"),
+        sa.Column("status", sa.Enum("planning", "active", "completed", name="trip_status"), nullable=False, server_default="planning"),
         sa.Column("created_at", sa.DateTime, server_default=sa.func.now()),
     )
     op.create_index("ix_trips_user_id", "trips", ["user_id"])
@@ -196,7 +161,7 @@ def upgrade() -> None:
         sa.Column("title", sa.String, nullable=True),
         sa.Column("description", sa.Text, nullable=True),
         sa.Column("total_estimated_cost", sa.Float, nullable=True),
-        sa.Column("status", sa.Enum(name="itinerary_status"), nullable=False, server_default="draft"),
+        sa.Column("status", sa.Enum("draft", "active", "archived", name="itinerary_status"), nullable=False, server_default="draft"),
         sa.Column("created_at", sa.DateTime, server_default=sa.func.now()),
         sa.Column("updated_at", sa.DateTime, server_default=sa.func.now()),
     )
@@ -226,11 +191,11 @@ def upgrade() -> None:
         sa.Column("duration_minutes", sa.Integer, nullable=True),
         sa.Column("order_in_day", sa.Integer, server_default=sa.text("0")),
         sa.Column("minutes_from_prev_stop", sa.Integer, nullable=True),
-        sa.Column("travel_mode", sa.Enum(name="travel_mode"), nullable=True),
+        sa.Column("travel_mode", sa.Enum("walking", "driving", "transit", "cycling", name="travel_mode"), nullable=True),
         sa.Column("estimated_cost", sa.Float, nullable=True),
         sa.Column("ai_notes", sa.Text, nullable=True),
         sa.Column("user_notes", sa.Text, nullable=True),
-        sa.Column("status", sa.Enum(name="stop_status"), nullable=False, server_default="planned"),
+        sa.Column("status", sa.Enum("planned", "visited", "skipped", "cancelled", name="stop_status"), nullable=False, server_default="planned"),
         sa.Column("created_at", sa.DateTime, server_default=sa.func.now()),
     )
     op.create_index("ix_itinerary_stops_day_id", "itinerary_stops", ["day_id"])
@@ -241,13 +206,13 @@ def upgrade() -> None:
         sa.Column("booking_id", sa.String, primary_key=True),
         sa.Column("trip_id", sa.String, sa.ForeignKey("trips.trip_id", ondelete="CASCADE"), nullable=False),
         sa.Column("place_id", sa.String, sa.ForeignKey("places.place_id"), nullable=True),
-        sa.Column("booking_type", sa.Enum(name="booking_type"), nullable=False),
+        sa.Column("booking_type", sa.Enum("hotel", "restaurant", "activity", "transport", name="booking_type"), nullable=False),
         sa.Column("confirmation_number", sa.String, nullable=True),
         sa.Column("booking_date", sa.DateTime, server_default=sa.func.now()),
         sa.Column("start_datetime", sa.DateTime, nullable=True),
         sa.Column("end_datetime", sa.DateTime, nullable=True),
         sa.Column("total_cost", sa.Float, nullable=True),
-        sa.Column("status", sa.Enum(name="booking_status"), nullable=False, server_default="pending"),
+        sa.Column("status", sa.Enum("pending", "confirmed", "cancelled", "completed", name="booking_status"), nullable=False, server_default="pending"),
         sa.Column("created_at", sa.DateTime, server_default=sa.func.now()),
     )
     op.create_index("ix_bookings_trip_id", "bookings", ["trip_id"])
@@ -258,8 +223,8 @@ def upgrade() -> None:
         sa.Column("payment_id", sa.String, primary_key=True),
         sa.Column("booking_id", sa.String, sa.ForeignKey("bookings.booking_id", ondelete="CASCADE"), nullable=False, unique=True),
         sa.Column("amount", sa.Float, nullable=False),
-        sa.Column("payment_method", sa.Enum(name="payment_method"), nullable=False),
-        sa.Column("status", sa.Enum(name="payment_status"), nullable=False, server_default="pending"),
+        sa.Column("payment_method", sa.Enum("credit_card", "debit_card", "paypal", "cash", name="payment_method"), nullable=False),
+        sa.Column("status", sa.Enum("pending", "completed", "failed", "refunded", name="payment_status"), nullable=False, server_default="pending"),
         sa.Column("transaction_reference", sa.String, nullable=True),
         sa.Column("paid_at", sa.DateTime, server_default=sa.func.now()),
         sa.Column("created_at", sa.DateTime, server_default=sa.func.now()),
@@ -287,8 +252,8 @@ def upgrade() -> None:
         sa.Column("place_id", sa.String, sa.ForeignKey("places.place_id"), nullable=False),
         sa.Column("score", sa.Float, nullable=False),
         sa.Column("reason", sa.Text, nullable=True),
-        sa.Column("recommendation_type", sa.Enum(name="recommendation_type"), nullable=True),
-        sa.Column("status", sa.Enum(name="recommendation_status"), nullable=False, server_default="pending"),
+        sa.Column("recommendation_type", sa.Enum("place", "activity", "restaurant", "hotel", name="recommendation_type"), nullable=True),
+        sa.Column("status", sa.Enum("pending", "accepted", "rejected", "expired", name="recommendation_status"), nullable=False, server_default="pending"),
         sa.Column("created_at", sa.DateTime, server_default=sa.func.now()),
     )
     op.create_index("ix_recommendations_trip_id", "recommendations", ["trip_id"])
@@ -314,7 +279,7 @@ def upgrade() -> None:
         sa.Column("feedback_id", sa.String, primary_key=True),
         sa.Column("user_id", sa.String, sa.ForeignKey("users.user_id"), nullable=False),
         sa.Column("trip_id", sa.String, sa.ForeignKey("trips.trip_id", ondelete="CASCADE"), nullable=True),
-        sa.Column("feedback_type", sa.Enum(name="feedback_type"), nullable=False),
+        sa.Column("feedback_type", sa.Enum("thumbs_up", "thumbs_down", "rating", "comment", name="feedback_type"), nullable=False),
         sa.Column("rating", sa.Integer, nullable=True),
         sa.Column("comment", sa.Text, nullable=True),
         sa.Column("submitted_at", sa.DateTime, server_default=sa.func.now()),
@@ -343,7 +308,7 @@ def upgrade() -> None:
         sa.Column("file_name", sa.String, nullable=False),
         sa.Column("file_url", sa.String, nullable=True),
         sa.Column("uploaded_at", sa.DateTime, server_default=sa.func.now()),
-        sa.Column("analysis_status", sa.Enum(name="processing_status"), nullable=False, server_default="pending"),
+        sa.Column("analysis_status", sa.Enum("pending", "processing", "completed", "failed", name="processing_status"), nullable=False, server_default="pending"),
     )
     op.create_index("ix_images_trip_id", "images", ["trip_id"])
     op.create_index("ix_images_user_id", "images", ["user_id"])
@@ -368,7 +333,7 @@ def upgrade() -> None:
         sa.Column("user_id", sa.String, sa.ForeignKey("users.user_id"), nullable=False),
         sa.Column("trip_id", sa.String, sa.ForeignKey("trips.trip_id", ondelete="CASCADE"), nullable=False),
         sa.Column("started_at", sa.DateTime, server_default=sa.func.now()),
-        sa.Column("status", sa.Enum(name="conversation_status"), nullable=False, server_default="active"),
+        sa.Column("status", sa.Enum("active", "archived", "closed", name="conversation_status"), nullable=False, server_default="active"),
     )
     op.create_index("ix_conversations_user_id", "conversations", ["user_id"])
     op.create_index("ix_conversations_trip_id", "conversations", ["trip_id"])

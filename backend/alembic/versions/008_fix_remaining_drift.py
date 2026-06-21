@@ -24,11 +24,21 @@ branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
 
+def _column_exists(table: str, column: str) -> bool:
+    """Check if a column exists in a table."""
+    from sqlalchemy import inspect
+    bind = op.get_bind()
+    insp = inspect(bind)
+    columns = [c["name"] for c in insp.get_columns(table)]
+    return column in columns
+
+
 def upgrade() -> None:
-    # ── Bookings: rename columns ─────────────────────────────────────────────
-    # Use ALTER TABLE RENAME COLUMN (PostgreSQL 10+)
-    op.execute("ALTER TABLE bookings RENAME COLUMN start_date_time TO start_datetime")
-    op.execute("ALTER TABLE bookings RENAME COLUMN end_date_time TO end_datetime")
+    # ── Bookings: rename columns (only if old names exist) ──────────────────
+    if _column_exists("bookings", "start_date_time"):
+        op.execute("ALTER TABLE bookings RENAME COLUMN start_date_time TO start_datetime")
+    if _column_exists("bookings", "end_date_time"):
+        op.execute("ALTER TABLE bookings RENAME COLUMN end_date_time TO end_datetime")
 
     # ── Days: change day_id from INTEGER to VARCHAR ──────────────────────────
     # First drop any dependent FKs, then alter type
@@ -59,7 +69,8 @@ def upgrade() -> None:
     """)
 
     # ── Users: change traveler_persona from TEXT to VARCHAR ──────────────────
-    op.execute("ALTER TABLE users ALTER COLUMN traveler_persona TYPE VARCHAR")
+    if _column_exists("users", "traveler_persona"):
+        op.execute("ALTER TABLE users ALTER COLUMN traveler_persona TYPE VARCHAR")
 
     # ── Trips: add index on conversation_id ──────────────────────────────────
     op.execute("CREATE INDEX IF NOT EXISTS ix_trips_conversation_id ON trips (conversation_id)")

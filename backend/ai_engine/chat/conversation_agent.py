@@ -9,11 +9,20 @@ The shared routing logic lives in _process_message(), which both the synchronous
 (handle_chat) and streaming (handle_chat_stream) entry points delegate to.
 """
 
+import asyncio
+import logging
+from collections import OrderedDict
 from datetime import datetime, timezone, timedelta
 from typing import Optional
 
-# Timeout for PLAN_GENERATION phase — if exceeded, session is reset to SLOT_FILLING
-PLAN_GENERATION_TIMEOUT_MINUTES = 5
+from ai_engine.constants import PLAN_GENERATION_TIMEOUT_MINUTES
+
+logger = logging.getLogger(__name__)
+
+# Per-user locks to prevent concurrent state mutations on the same session.
+# Bounded LRU dict to avoid unbounded memory growth.
+_MAX_USER_LOCKS = 512
+_user_locks: OrderedDict[str, asyncio.Lock] = OrderedDict()
 
 # Core routing LLM that decides what the user wants (plan, clarify, chat, etc.)
 from ai_engine.chat.unified_router import route_message
@@ -63,7 +72,34 @@ async def _process_message(
     - Decides next action (plan, clarify, modify, chat, etc.)
     - Triggers itinerary generation when needed
     - DOES NOT persist state (caller handles Redis save)
+
+    Returns a response dict.  On unexpected errors, returns a safe
+    fallback response instead of crashing the caller.
     """
+
+    try:
+        return await _process_message_inner(user_id, state, effective_message, image_features, token)
+    except Exception:
+        logger.exception("[ConversationAgent] Unexpected error processing message for user %s", user_id)
+        # NOTE: We intentionally do NOT call state.add_assistant_message() here
+        # because _process_message_inner may have partially modified state before
+        # the error.  The caller (handle_chat) saves whatever state exists.
+        return {
+            "response_type": "chat",
+            "message": "I ran into an unexpected issue. Please try again.",
+            "itinerary": None,
+            "image_features": None,
+        }
+
+
+async def _process_message_inner(
+    user_id: str,
+    state: ConversationState,
+    effective_message: str,
+    image_features: Optional[dict],
+    token: Optional[str],
+) -> dict:
+    """Inner routing logic — wrapped by _process_message for error safety."""
 
     # ─────────────────────────────────────────────────────────────
     # CASE 1: System is currently generating itinerary
@@ -331,7 +367,27 @@ def _parse_image(image_bytes: Optional[bytes]) -> Optional[dict]:
 # ── Public API ─────────────────────────────────────────────────────────────────
 
 
-@traced(name="handle_chat", tags=["conversation", "entry_point"], metadata={"component": "conversation_agent"})
+def _get_user_lock(user_id: str) -> asyncio.Lock:
+    """Return (and lazily create) an asyncio.Lock for *user_id*.
+
+    Prevents concurrent state mutations when multiple requests arrive
+    for the same user (e.g. rapid double-tap on mobile).  Uses an LRU
+    eviction strategy so the dict doesn't grow unbounded.
+    """
+    if user_id in _user_locks:
+        _user_locks.move_to_end(user_id)
+    else:
+        if len(_user_locks) >= _MAX_USER_LOCKS:
+            _user_locks.popitem(last=False)  # evict oldest
+        _user_locks[user_id] = asyncio.Lock()
+    return _user_locks[user_id]
+
+
+@traced(
+    name="handle_chat",
+    tags=["conversation", "entry_point"],
+    metadata={"component": "conversation_agent"},
+)
 async def handle_chat(
     user_id: str,
     user_message: str,
@@ -339,67 +395,87 @@ async def handle_chat(
     token: Optional[str] = None,
     session_id: Optional[str] = None,
 ) -> dict:
-    """Main synchronous chat entry point (stateful, non-streaming)."""
+    """Main synchronous chat entry point (stateful, non-streaming).
 
-    manager = await get_session_manager()
+    Handles a user's message by:
+    1. Loading or creating a conversation session.
+    2. Preparing the incoming text and image data.
+    3. Routing the request through the conversation workflow.
+    4. Persisting the updated session state.
+    5. Returning the response with session metadata.
+    """
+    lock = _get_user_lock(user_id)
+    async with lock:
+        manager = await get_session_manager()
+        state = await manager.resume_or_create(user_id, session_id)
 
-    # Load existing session or create new one
-    state = await manager.resume_or_create(user_id, session_id)
+        effective_message = _prepare_message(user_message)
+        image_features = _parse_image(image_bytes)
 
-    effective_message = _prepare_message(user_message)
-    image_features = _parse_image(image_bytes)
+        response = await _process_message(
+            user_id, state, effective_message, image_features, token
+        )
 
-    # Core routing logic
-    response = await _process_message(
-        user_id, state, effective_message, image_features, token
-    )
+        await manager.save(state)
 
-    # Persist updated conversation state to Redis
-    await manager.save(state)
+        # Extend session TTL on each interaction so active sessions
+        # don't expire while the user is still chatting.
+        await manager.extend_ttl(state.session_id)
 
-    # Attach session metadata to response
-    if response:
-        response["session_id"] = state.session_id
-        response["phase"] = state.phase.value
+        if response:
+            response["session_id"] = state.session_id
+            response["phase"] = state.phase.value
 
-    return response
+        return response
 
 
 async def handle_chat_stream(user_id, user_message, image_bytes=None, token=None, session_id=None):
-    """Streaming entry point (used for WebSocket / token streaming)."""
+    """Streaming entry point (used for WebSocket / token streaming).
 
-    manager = await get_session_manager()
+    The lock is held only during state processing (route + save + TTL).
+    Yielding chunks happens outside the lock so other requests for the
+    same user are not blocked while the client consumes the stream.
+    """
+    lock = _get_user_lock(user_id)
 
-    # Load or create session state
-    state = await manager.resume_or_create(user_id, session_id)
+    # ── Process under lock ────────────────────────────────────────────
+    # State must be loaded inside the lock so concurrent requests for the
+    # same user always see the latest saved state.
+    async with lock:
+        manager = await get_session_manager()
+        state = await manager.resume_or_create(user_id, session_id)
 
-    # Immediately inform client about session context
-    yield {
-        "type": "session",
-        "data": {
-            "session_id": state.session_id,
-            "phase": state.phase.value
+        # Emit session info so the client can update UI.
+        yield {
+            "type": "session",
+            "data": {
+                "session_id": state.session_id,
+                "phase": state.phase.value,
+            }
         }
+
+        effective_message = _prepare_message(user_message)
+        image_features = _parse_image(image_bytes)
+
+        response = await _process_message(
+            user_id, state, effective_message, image_features, token
+        )
+
+        await manager.save(state)
+        await manager.extend_ttl(state.session_id)
+
+        phase_value = state.phase.value
+
+    # ── Yield outside lock ────────────────────────────────────────────
+    yield {
+        "type": "phase",
+        "data": {"phase": phase_value}
     }
 
-    effective_message = _prepare_message(user_message)
-    image_features = _parse_image(image_bytes)
-
-    # Run same core logic as non-streaming version
-    response = await _process_message(
-        user_id, state, effective_message, image_features, token
-    )
-
-    await manager.save(state)
-
-    # Extract assistant message or fallback
     message = response.get("message", "I'm here to help!") if response else "I'm here to help!"
-
-    # Stream message word-by-word
     async for chunk in _stream_text(message):
         yield chunk
 
-    # Signal stream completion
     yield {"type": "done", "data": None}
 
 
@@ -478,16 +554,16 @@ async def _handle_plan_trip(user_id, user_message, extracted, image_features, to
     if state and state.slots.is_complete():
         profile = _build_profile_from_slots(state.slots, trip_id)
 
-        print(f"[ChatHandler] Built profile from slots: "
-              f"budget={profile.get('budget_level')}, "
-              f"style={profile.get('travel_style')}, "
-              f"pace={profile.get('pace')}")
+        logger.info(
+            "[ChatHandler] Built profile from slots: budget=%s, style=%s, pace=%s",
+            profile.get('budget_level'), profile.get('travel_style'), profile.get('pace'),
+        )
 
     elif token:
         try:
             profile = await load_trip_profile(trip_id=trip_id, token=token)
         except Exception as e:
-            print(f"[ChatHandler] Failed to load real profile ({e}), falling back to mock")
+            logger.warning("[ChatHandler] Failed to load real profile (%s), falling back to mock", e)
             profile = load_mock_profile(trip_id=trip_id)
     else:
         profile = load_mock_profile(trip_id=trip_id)

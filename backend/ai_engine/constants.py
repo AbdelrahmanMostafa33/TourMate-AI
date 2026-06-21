@@ -18,6 +18,10 @@ GROQ_REASONING_MODEL = "llama-3.3-70b-versatile"  # General chat, itinerary revi
 GROQ_TEMPERATURE     = 0.2
 GROQ_MAX_TOKENS      = 2048
 
+# === Conversation Agent ===
+# Timeout for PLAN_GENERATION phase — if exceeded, session resets to SLOT_FILLING
+PLAN_GENERATION_TIMEOUT_MINUTES = 5
+
 # === Session Management (Redis) ===
 # How long a conversation session lives in Redis (1 hour)
 SESSION_TTL_SECONDS  = 3600

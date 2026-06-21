@@ -1,7 +1,7 @@
 """Place repository with complex search queries for AI Engine integration."""
 
 from typing import List, Optional, Tuple
-from sqlalchemy import select, and_, or_, func
+from sqlalchemy import select, and_, or_, func, cast, String as SAString
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -57,19 +57,12 @@ class PlaceRepository(BaseRepository):
         if country:
             filters.append(func.lower(Place.country) == country.lower())
 
-        # Category filter (convert strings to enum values)
+        # Category filter (case-insensitive string comparison)
         if categories:
-            enum_categories = []
-            for cat in categories:
-                if isinstance(cat, str):
-                    try:
-                        enum_categories.append(PlaceCategory(cat))
-                    except ValueError:
-                        continue  # skip invalid categories
-                else:
-                    enum_categories.append(cat)
-            if enum_categories:
-                filters.append(Place.category.in_(enum_categories))
+            valid = {c.value for c in PlaceCategory}
+            cat_values = [c.lower().strip() for c in categories if c.lower().strip() in valid]
+            if cat_values:
+                filters.append(func.lower(Place.category).in_(cat_values))
 
         # Rating filter
         if min_rating is not None:
@@ -82,13 +75,14 @@ class PlaceRepository(BaseRepository):
             filters.append(Place.price_level <= max_price_level)
 
         # Accommodation type filter (requires HotelDetails join)
+        # Cast enum to text for safe comparison with asyncpg
         if accommodation_type:
             query = query.outerjoin(
                 HotelDetails,
                 Place.place_id == HotelDetails.place_id,
             )
             filters.append(
-                func.lower(HotelDetails.accommodation_type) == accommodation_type.lower()
+                func.lower(cast(HotelDetails.accommodation_type, SAString)) == accommodation_type.lower()
             )
 
         # Interest/Tag filter (broad search across multiple sources)
@@ -239,6 +233,8 @@ class PlaceRepository(BaseRepository):
         if hasattr(place, "hotel_details") and place.hotel_details:
             amenities = place.hotel_details.amenities or []
             accommodation_type = place.hotel_details.accommodation_type or ""
+            if hasattr(accommodation_type, "value"):
+                accommodation_type = accommodation_type.value
             for amenity in amenities:
                 _add_tag(amenity)
 
@@ -252,7 +248,7 @@ class PlaceRepository(BaseRepository):
         return {
             "id": place.place_id,
             "name": place.name,
-            "category": place.category.value if place.category else "",
+            "category": place.category or "",
             "sub_category": sub_category,
             "lat": place.lat or 0,
             "lon": place.lng or 0,

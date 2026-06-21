@@ -11,7 +11,7 @@ from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 
 from app.core.database import Base
-from app.models.enums import PlaceCategory, AccommodationType
+from app.models.enums import AccommodationType
 
 
 
@@ -24,7 +24,7 @@ class Place(Base):
     name              = Column(String, nullable=False)
     description       = Column(Text, nullable=True)
     category          = Column(
-        SAEnum(PlaceCategory, name="place_category"),
+        String,
         nullable=False,
     )
     rating            = Column(Float, nullable=True)
@@ -66,7 +66,7 @@ class HotelDetails(Base):
     amenities          = Column(JSON, nullable=True)          # List[str]
     booking_platforms   = Column(JSON, nullable=True)         # List[str]
     accommodation_type = Column(
-        SAEnum(AccommodationType, name="accommodation_type"),
+        String,
         nullable=True,
     )
 

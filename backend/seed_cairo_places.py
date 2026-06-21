@@ -42,8 +42,8 @@ def parse_nightly_rate(raw: str | None) -> float | None:
 
 
 def normalize_category(raw: str) -> str:
-    """Uppercase the category to match the DB place_category enum (HOTEL, RESTAURANT, ATTRACTION)."""
-    return raw.strip().upper() if raw else "ATTRACTION"
+    """Lowercase the category to match the DB column values (hotel, restaurant, attraction)."""
+    return raw.strip().lower() if raw else "attraction"
 
 
 
