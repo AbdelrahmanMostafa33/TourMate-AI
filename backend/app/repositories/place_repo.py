@@ -192,30 +192,33 @@ class PlaceRepository(BaseRepository):
     async def get_places_by_city_diverse(
         self, city: str,
         per_subcategory: int = 20,
-        max_restaurants: int = 15,
-        max_hotels: int = 10,
+        per_cuisine: int = 10,
+        per_accommodation: int = 10,
     ) -> List[dict]:
         """
-        Get places for a city with SQL-level stratified sampling.
+        Get places for a city with SQL-level stratified sampling across ALL types.
 
         Instead of taking the top N places by popularity (which could all be
-        from the same subcategory), this method queries the top K places from
-        EACH attraction subcategory. This guarantees diverse representation:
-        parks, museums, history, shopping, etc. all get equal opportunity
-        regardless of their aggregate popularity scores.
+        from the same category), this queries the top K places from EACH:
+        - Attraction subcategory (parks, museums, history, shopping, ...)
+        - Restaurant cuisine type (Restaurant, Cafe, Street Food, ...)
+        - Hotel accommodation type (hotel, hostel, resort, luxury)
+
+        This guarantees diverse representation regardless of popularity scores.
 
         Args:
             city: Destination city name.
-            per_subcategory: Top N places to fetch per attraction subcategory.
-            max_restaurants: Max restaurant candidates to fetch.
-            max_hotels: Max hotel candidates to fetch.
+            per_subcategory: Top N places per attraction subcategory.
+            per_cuisine: Top N restaurants per cuisine type.
+            per_accommodation: Top N hotels per accommodation type.
 
         Returns:
-            List of place dicts with balanced subcategory representation.
+            List of place dicts with balanced representation across all types.
         """
         city_key = city.lower().strip()
+        all_places = []
 
-        # Step 1: Get all unique subcategories for this city's attractions
+        # ── 1. ATTRACTIONS: top K per subcategory ──────────────────────────
         subcat_query = (
             select(func.distinct(AttractionDetails.subcategory))
             .join(Place, Place.place_id == AttractionDetails.place_id)
@@ -226,9 +229,6 @@ class PlaceRepository(BaseRepository):
         subcat_result = await self.session.execute(subcat_query)
         subcategories = [row[0] for row in subcat_result.all()]
 
-        all_places = []
-
-        # Step 2: For each subcategory, get top N places (with ORM eager loading)
         for sub in subcategories:
             q = (
                 select(Place)
@@ -244,40 +244,67 @@ class PlaceRepository(BaseRepository):
                 .limit(per_subcategory)
             )
             result = await self.session.execute(q)
-            places = result.scalars().unique().all()
-            all_places.extend(places)
+            all_places.extend(result.scalars().unique().all())
 
-        # Step 3: Get top restaurants
-        rest_q = (
-            select(Place)
-            .options(
-                selectinload(Place.attraction_details),
-                selectinload(Place.restaurant_details),
-                selectinload(Place.hotel_details),
-            )
+        # ── 2. RESTAURANTS: top K per cuisine type ────────────────────────
+        cuisine_query = (
+            select(func.distinct(RestaurantDetails.cuisine_type))
+            .join(Place, Place.place_id == RestaurantDetails.place_id)
             .where(func.lower(Place.city) == city_key)
-            .where(cast(Place.category, SAString) == "restaurant")
-            .order_by(Place.popularity_score.desc().nullslast())
-            .limit(max_restaurants)
+            .where(RestaurantDetails.cuisine_type.isnot(None))
+            .where(RestaurantDetails.cuisine_type != "")
         )
-        rest_result = await self.session.execute(rest_q)
-        all_places.extend(rest_result.scalars().unique().all())
+        cuisine_result = await self.session.execute(cuisine_query)
+        cuisine_types = [row[0] for row in cuisine_result.all()]
 
-        # Step 4: Get top hotels
-        hotel_q = (
-            select(Place)
-            .options(
-                selectinload(Place.attraction_details),
-                selectinload(Place.restaurant_details),
-                selectinload(Place.hotel_details),
+        for cuisine in cuisine_types:
+            q = (
+                select(Place)
+                .options(
+                    selectinload(Place.attraction_details),
+                    selectinload(Place.restaurant_details),
+                    selectinload(Place.hotel_details),
+                )
+                .join(RestaurantDetails, Place.place_id == RestaurantDetails.place_id)
+                .where(func.lower(Place.city) == city_key)
+                .where(RestaurantDetails.cuisine_type == cuisine)
+                .order_by(Place.popularity_score.desc().nullslast())
+                .limit(per_cuisine)
             )
+            result = await self.session.execute(q)
+            all_places.extend(result.scalars().unique().all())
+
+        # ── 3. HOTELS: top K per accommodation type ────────────────────────
+        # Cast enum to text for comparison
+        acc_query = (
+            select(func.distinct(HotelDetails.accommodation_type))
+            .join(Place, Place.place_id == HotelDetails.place_id)
             .where(func.lower(Place.city) == city_key)
-            .where(cast(Place.category, SAString) == "hotel")
-            .order_by(Place.popularity_score.desc().nullslast())
-            .limit(max_hotels)
+            .where(HotelDetails.accommodation_type.isnot(None))
         )
-        hotel_result = await self.session.execute(hotel_q)
-        all_places.extend(hotel_result.scalars().unique().all())
+        acc_result = await self.session.execute(acc_query)
+        acc_types = [row[0] for row in acc_result.all() if row[0]]
+
+        for acc_type in acc_types:
+            # acc_type might be an enum object — convert to string for comparison
+            acc_val = acc_type.value if hasattr(acc_type, "value") else str(acc_type)
+            q = (
+                select(Place)
+                .options(
+                    selectinload(Place.attraction_details),
+                    selectinload(Place.restaurant_details),
+                    selectinload(Place.hotel_details),
+                )
+                .join(HotelDetails, Place.place_id == HotelDetails.place_id)
+                .where(func.lower(Place.city) == city_key)
+                .where(
+                    func.lower(cast(HotelDetails.accommodation_type, SAString)) == acc_val.lower()
+                )
+                .order_by(Place.popularity_score.desc().nullslast())
+                .limit(per_accommodation)
+            )
+            result = await self.session.execute(q)
+            all_places.extend(result.scalars().unique().all())
 
         return [self._place_to_dict(p) for p in all_places]
 

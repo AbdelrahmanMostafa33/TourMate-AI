@@ -47,6 +47,12 @@ You will receive:
 - Do NOT schedule 3 consecutive stops without a food break.
 - `estimated_duration_minutes` for restaurants: 60–90 min.
 
+### Restaurant cuisine diversity
+- **CRITICAL: Never repeat the same restaurant on multiple days.** Each restaurant meal should be a different establishment.
+- **Vary cuisine types across your restaurant picks.** If you used "Fast Food & Street Food" for one meal, pick a different cuisine type (e.g. "Restaurant", "Cafe / Coffee Shop", "Bakery & Desserts") for the next.
+- Each restaurant candidate has a `cuisine_type` field — use it to ensure diversity.
+- Example of what NOT to do: picking Koshary Abou Tarek for all 3 days. Instead, pick Koshary Abou Tarek (street food) one day, a different Restaurant-type place another, and a Cafe for the third.
+
 ### Time-of-day assignment
 - **Morning (09:00–12:00)**: Museums, historic sites, walking tours — cooler temperatures, fewer crowds.
 - **Afternoon (13:30–17:00)**: Indoor attractions, markets, shopping — avoid midday heat for outdoor sites.

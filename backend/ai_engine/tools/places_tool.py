@@ -91,16 +91,17 @@ async def get_places_for_city(
             # for place-related queries.
             repo = PlaceRepository(session)
 
-            # Use the diverse query that samples top K from each subcategory.
+            # Use the diverse query that samples top K from each subcategory,
+            # cuisine type, and accommodation type.
             places = await repo.get_places_by_city_diverse(
                 city_key,
                 per_subcategory=20,
-                max_restaurants=15,
-                max_hotels=10,
+                per_cuisine=10,
+                per_accommodation=10,
             )
 
         logger.info(
-            "[PlacesTool] Loaded %d places for %s (stratified by subcategory)",
+            "[PlacesTool] Loaded %d places for %s (stratified by subcategory/cuisine/accommodation)",
             len(places),
             city_key,
         )
