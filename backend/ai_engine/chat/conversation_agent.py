@@ -494,13 +494,16 @@ async def handle_chat_stream(user_id, user_message, image_bytes=None, token=None
     # The route code (websocket_new_chat / process_message_stream) needs
     # this event to extract the itinerary data and persist it to the DB.
     if response and response.get("response_type") == "itinerary" and response.get("itinerary"):
+        result_data = {
+            "message": response.get("message", ""),
+            "itinerary": response["itinerary"],
+            "phase": phase_value,
+        }
+        if response.get("profile"):
+            result_data["profile"] = response["profile"]
         yield {
             "type": "result",
-            "data": {
-                "message": response.get("message", ""),
-                "itinerary": response["itinerary"],
-                "phase": phase_value,
-            }
+            "data": result_data,
         }
 
     yield {"type": "done", "data": None}
@@ -1015,10 +1018,19 @@ async def _handle_plan_trip(user_id, user_message, extracted, image_features, to
         state.transition_to(ConversationPhase.SLOT_FILLING)
         state.plan_started_at = None
 
+    # ── Build profile data for DB persistence ───────────────────────────
+    # The profile is built from conversation slots and should be persisted
+    # to the trip_profiles table when the trip is created.
+    profile_dict = None
+    if state and state.slots.is_complete():
+        p = _build_profile_from_slots(state.slots, trip_id)
+        profile_dict = dict(p)
+
     return {
         "response_type": "itinerary",
         "message": message,
         "itinerary": optimized,
+        "profile": profile_dict,
         "image_features": image_features,
         "agent_messages": result_state.get("agent_messages", []),
         "validation": result_state.get("validation"),
