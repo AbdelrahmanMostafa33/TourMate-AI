@@ -1,6 +1,6 @@
 """Review schema."""
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import Optional
 from datetime import datetime
 
@@ -8,8 +8,14 @@ from datetime import datetime
 class ReviewCreate(BaseModel):
     """Create schema for Review – aligns with model fields."""
     place_id:  str
-    rating:    int
+    rating:    int = Field(ge=1, le=5)
     comment:   Optional[str] = None
+
+
+class ReviewUpdate(BaseModel):
+    """Update schema for Review – all fields optional."""
+    rating:   Optional[int] = Field(default=None, ge=1, le=5)
+    comment:  Optional[str] = None
 
 
 class ReviewResponse(BaseModel):
