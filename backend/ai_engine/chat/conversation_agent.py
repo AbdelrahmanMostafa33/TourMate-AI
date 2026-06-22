@@ -449,6 +449,10 @@ async def handle_chat_stream(user_id, user_message, image_bytes=None, token=None
     The lock is held only during state processing (route + save + TTL).
     Yielding chunks happens outside the lock so other requests for the
     same user are not blocked while the client consumes the stream.
+
+    During the pipeline execution (which can take 60-90 s), progress
+    events are yielded concurrently so the Flutter client can show the
+    user what's happening.
     """
     lock = _get_user_lock(user_id)
 
@@ -471,9 +475,48 @@ async def handle_chat_stream(user_id, user_message, image_bytes=None, token=None
         effective_message = _prepare_message(user_message)
         image_features = _parse_image(image_bytes)
 
-        response = await _process_message(
-            user_id, state, effective_message, image_features, token
+        # ── Progress queue + concurrent pipeline ────────────────────
+        from ai_engine.graph.progress import get_progress_queue, remove_progress_queue
+
+        progress_queue = get_progress_queue(state.session_id)
+
+        # Run the pipeline as a background task so we can yield progress
+        # events from the queue while it executes.
+        pipeline_task = asyncio.create_task(
+            _process_message(user_id, state, effective_message, image_features, token)
         )
+
+        # If this is a plan_trip action (itinerary generation), yield
+        # progress events during execution.  For other actions
+        # (clarification, chat), just wait for the result.
+        is_planning = state.phase == ConversationPhase.PLAN_GENERATION
+
+        if is_planning:
+            # Yield progress events while pipeline runs
+            try:
+                while not pipeline_task.done():
+                    try:
+                        progress = await asyncio.wait_for(
+                            progress_queue.get(), timeout=0.1
+                        )
+                        yield {"type": "progress", "data": progress}
+                    except asyncio.TimeoutError:
+                        continue
+
+                # Drain remaining progress events so the client doesn't
+                # miss the last agent's "done" event.
+                while True:
+                    try:
+                        progress = await asyncio.wait_for(
+                            progress_queue.get(), timeout=0.1
+                        )
+                        yield {"type": "progress", "data": progress}
+                    except asyncio.TimeoutError:
+                        break
+            finally:
+                remove_progress_queue(state.session_id)
+
+        response = await pipeline_task
 
         await manager.save(state)
         await manager.extend_ttl(state.session_id)
@@ -968,6 +1011,9 @@ async def _handle_plan_trip(user_id, user_message, extracted, image_features, to
         "next_agent": None,
         "error": None,
         "intent_type": "plan_trip",
+
+        # Progress reporting key (used by graph nodes to push progress)
+        "progress_queue_key": state.session_id if state else None,
 
         # Core trip parameters (from slots or latest extraction)
         "destination_city": (s.destination_city if s else None) or extracted.get("destination_city"),

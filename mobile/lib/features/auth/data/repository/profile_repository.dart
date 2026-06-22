@@ -16,4 +16,21 @@ class ProfileRepository {
     }
   }
 
+  Future<ApiResult<FullProfileResponse>> updateProfile({
+    String? fullName,
+    String? phoneNumber,
+    String? homeCity,
+  }) async {
+    try {
+      final body = <String, dynamic>{};
+      if (fullName != null) body['full_name'] = fullName;
+      if (phoneNumber != null) body['phone_number'] = phoneNumber;
+      if (homeCity != null) body['home_city'] = homeCity;
+
+      final res = await api.updateProfile(body);
+      return ApiResult.success(res);
+    } catch (e) {
+      return ApiResult.failure(e.toString());
+    }
+  }
 }

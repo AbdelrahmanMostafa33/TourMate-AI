@@ -20,7 +20,7 @@ class _TripsScreenState extends State<TripsScreen> {
 
     /// 👇 Initial load
     Future.microtask(() {
-      context.read<TripsCubit>().getTrips();
+      if (mounted) context.read<TripsCubit>().getTrips();
     });
   }
 
@@ -34,10 +34,11 @@ class _TripsScreenState extends State<TripsScreen> {
             padding: const EdgeInsets.only(right: 16, top: 8, bottom: 8),
             child: ElevatedButton(
               onPressed: () async {
+                final cubit = context.read<TripsCubit>();
                 await Navigator.pushNamed(context, "/create-trip");
 
                 /// 🔥 Refresh after creating trip
-                context.read<TripsCubit>().getTrips();
+                cubit.getTrips();
               },
               style: ElevatedButton.styleFrom(
                 backgroundColor: Colors.black,
@@ -95,7 +96,7 @@ class _TripsScreenState extends State<TripsScreen> {
                         itemCount: trips.length,
                         itemBuilder: (context, index) {
                           final trip = trips[index];
-                          return _tripCard(trip);
+                          return _tripCard(trip, context);
                         },
                       ),
                     );
@@ -109,8 +110,8 @@ class _TripsScreenState extends State<TripsScreen> {
     );
   }
 
-  Widget _tripCard(TripSummaryModel trip) {
-    return Container(
+  Widget _tripCard(TripSummaryModel trip, BuildContext context) {
+    final card = Container(
       margin: const EdgeInsets.only(bottom: 16),
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -168,6 +169,13 @@ class _TripsScreenState extends State<TripsScreen> {
           const Icon(Icons.arrow_forward_ios, size: 16),
         ],
       ),
+    );
+
+    return GestureDetector(
+      onTap: () {
+        Navigator.pushNamed(context, '/trip-detail', arguments: trip.tripId);
+      },
+      child: card,
     );
   }
 }

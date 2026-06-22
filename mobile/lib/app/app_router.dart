@@ -9,6 +9,7 @@ import '../features/places/presentation/screens/place_detail_screen.dart';
 import '../features/quiz/presentation/screens/onboarding_flow.dart';
 import '../features/splash/splash_screen.dart';
 import '../features/trips/presentation/screens/create_trip_screen.dart';
+import '../features/trips/presentation/screens/trip_detail_screen.dart';
 import '../features/trips/presentation/screens/trips_screen.dart';
 
 class AppRouter {
@@ -41,6 +42,12 @@ class AppRouter {
 
       case "/trips":
         return MaterialPageRoute(builder: (_) => const TripsScreen());
+
+      case "/trip-detail":
+        final tripId = settings.arguments as String;
+        return MaterialPageRoute(
+          builder: (_) => TripDetailScreen(tripId: tripId),
+        );
 
       case "/create-trip":
         return MaterialPageRoute(builder: (_) => const CreateTripScreen());

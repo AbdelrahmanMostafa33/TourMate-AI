@@ -25,17 +25,17 @@ class _MainShellState extends State<MainShell> {
 
   @override
   Widget build(BuildContext context) {
-    return BlocProvider(
-      create: (_) => TripsCubit(locator<TripsRepository>()),
+    return MultiBlocProvider(
+      providers: [
+        BlocProvider(create: (_) => TripsCubit(locator<TripsRepository>())),
+        BlocProvider(create: (_) => ExploreCubit(locator<ExploreRepository>())),
+      ],
       child: Builder(
         builder: (context) {
           final pages = [
             const ChatScreen(),
             const TripsScreen(),
-            BlocProvider(
-              create: (_) => ExploreCubit(locator<ExploreRepository>()),
-              child: const ExploreScreen(),
-            ),
+            const ExploreScreen(),
             SavedScreen(key: ValueKey(_savedTabCounter)),
             const ProfileScreen(),
           ];

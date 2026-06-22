@@ -20,15 +20,15 @@ class TripProfile(Base):
 
     # --- Preference ENUMs ---
     budget_level         = Column(
-        SAEnum(BudgetLevel, name="budget_level"),
+        SAEnum(BudgetLevel, name="budget_level", values_callable=lambda obj: [e.value for e in obj]),
         nullable=True,
     )
     travel_style         = Column(
-        SAEnum(TravelStyle, name="travel_style"),
+        SAEnum(TravelStyle, name="travel_style", values_callable=lambda obj: [e.value for e in obj]),
         nullable=True,
     )
     pace                 = Column(
-        SAEnum(TripPace, name="trip_pace"),
+        SAEnum(TripPace, name="trip_pace", values_callable=lambda obj: [e.value for e in obj]),
         nullable=True,
     )
 

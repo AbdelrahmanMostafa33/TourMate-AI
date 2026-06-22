@@ -5,6 +5,7 @@ import '../../data/repository/chat_repository.dart';
 import '../../logic/chat_cubit.dart';
 import '../../logic/chat_state.dart';
 import '../widgets/message_bubble.dart';
+import '../widgets/pipeline_progress_widget.dart';
 
 class ChatScreen extends StatelessWidget {
   const ChatScreen({super.key});
@@ -75,10 +76,17 @@ class _ChatViewState extends State<_ChatView> {
                         return _buildEmptyState();
                       }
 
+                      final steps = cubit.pipelineSteps;
+
                       return ListView.builder(
                         padding: const EdgeInsets.all(12),
-                        itemCount: messages.length,
+                        itemCount: messages.length + (isTyping && steps.isNotEmpty ? 1 : 0),
                         itemBuilder: (_, i) {
+                          // If this is the last item and we have pipeline progress,
+                          // show the progress widget instead of a message bubble
+                          if (i == messages.length && steps.isNotEmpty && isTyping) {
+                            return PipelineProgressWidget(steps: steps);
+                          }
                           return MessageBubble(msg: messages[i]);
                         },
                       );

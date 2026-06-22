@@ -27,6 +27,12 @@ abstract class ApiServices {
   @GET("/v1/users/profile/full")
   Future<FullProfileResponse> getProfile();
 
+  /// UPDATE PROFILE
+  @PUT("/v1/users/profile")
+  Future<FullProfileResponse> updateProfile(
+      @Body() Map<String, dynamic> body,
+      );
+
   /// GET ALL TRIPS
   @GET("/v1/trips/")
   Future<List<TripSummaryModel>> getTrips();
@@ -35,6 +41,12 @@ abstract class ApiServices {
   @POST("/v1/trips/")
   Future<void> createTrip(
       @Body() Map<String, dynamic> body,
+      );
+
+  /// GET TRIP DETAIL (includes itineraries, days, stops)
+  @GET("/v1/trips/{trip_id}")
+  Future<Map<String, dynamic>> getTripDetail(
+      @Path('trip_id') String tripId,
       );
 
   /// EXPLORE PLACES
@@ -75,4 +87,29 @@ abstract class ApiServices {
   /// GET ALL SAVED PLACES (includes full place data)
   @GET("/v1/saved-places/")
   Future<dynamic> getSavedPlaces();
+
+  /// GET REVIEWS FOR A PLACE
+  @GET("/v1/reviews/place/{place_id}")
+  Future<Map<String, dynamic>> getPlaceReviews(
+      @Path('place_id') String placeId,
+      );
+
+  /// CREATE A REVIEW
+  @POST("/v1/reviews/")
+  Future<Map<String, dynamic>> createReview(
+      @Body() Map<String, dynamic> body,
+      );
+
+  /// UPDATE A REVIEW
+  @PUT("/v1/reviews/{review_id}")
+  Future<Map<String, dynamic>> updateReview(
+      @Path('review_id') String reviewId,
+      @Body() Map<String, dynamic> body,
+      );
+
+  /// DELETE A REVIEW
+  @DELETE("/v1/reviews/{review_id}")
+  Future<Map<String, dynamic>> deleteReview(
+      @Path('review_id') String reviewId,
+      );
 }

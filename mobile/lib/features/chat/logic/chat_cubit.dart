@@ -6,14 +6,31 @@ import '../data/models/chat_message.dart';
 import '../data/models/itinerary_data.dart';
 import 'chat_state.dart';
 
+/// A single step in the AI pipeline progress (visible to the UI).
+class PipelineStep {
+  final String agent;
+  final String status; // "running", "done", "error"
+  final String message;
+
+  const PipelineStep({
+    required this.agent,
+    required this.status,
+    this.message = '',
+  });
+}
+
 class ChatCubit extends Cubit<ChatState> {
   final ChatRepository _repo;
 
   final List<ChatMessage> _messages = [];
+  final List<PipelineStep> _pipelineSteps = [];
   String _buffer = "";
   StreamSubscription<dynamic>? _subscription;
 
   ChatCubit(this._repo) : super(const ChatState.initial());
+
+  /// Current pipeline steps exposed for the UI to read.
+  List<PipelineStep> get pipelineSteps => List.unmodifiable(_pipelineSteps);
 
   Future<void> connect() async {
     emit(const ChatState.loading());
@@ -43,6 +60,7 @@ class ChatCubit extends Cubit<ChatState> {
     if (message.trim().isEmpty) return;
 
     _messages.add(ChatMessage(text: message, isUser: true));
+    _resetPipeline();
     emit(ChatState.connected(messages: List.from(_messages), isTyping: true));
     _buffer = "";
     _repo.sendMessage(message);
@@ -63,10 +81,47 @@ class ChatCubit extends Cubit<ChatState> {
     });
   }
 
+  /// Reset pipeline steps (called on new message send).
+  void _resetPipeline() {
+    _pipelineSteps.clear();
+  }
+
   Future<void> _handleEvent(dynamic event) async {
-    final data = jsonDecode(event);
+    final data = jsonDecode(event) as Map<String, dynamic>;
 
     switch (data["type"]) {
+
+      case "progress":
+        final progressData = data["data"] as Map<String, dynamic>?;
+        if (progressData != null) {
+          final agent = progressData["agent"] as String? ?? '';
+          final status = progressData["status"] as String? ?? 'running';
+          final message = progressData["message"] as String? ?? '';
+
+          if (status == 'running') {
+            // Remove any previous entry for this agent, then add new running entry
+            _pipelineSteps.removeWhere((s) => s.agent == agent);
+            _pipelineSteps.add(PipelineStep(
+              agent: agent,
+              status: 'running',
+              message: message,
+            ));
+          } else {
+            // Update existing entry or add completed one
+            _pipelineSteps.removeWhere((s) => s.agent == agent);
+            _pipelineSteps.add(PipelineStep(
+              agent: agent,
+              status: status == 'done' ? 'done' : 'error',
+              message: message,
+            ));
+          }
+
+          emit(ChatState.connected(
+            messages: List.from(_messages),
+            isTyping: true,
+          ));
+        }
+        break;
 
       case "typing":
         emit(ChatState.connected(

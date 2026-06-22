@@ -46,7 +46,7 @@ class ExploreCubit extends Cubit<ExploreState> {
     String? cat;
     Set<String> saved = {};
     state.maybeWhen(
-      loaded: (_, __, ___, ____, c, s) { cat = c; saved = s; },
+      loaded: (_, _, _, _, c, s) { cat = c; saved = s; },
       orElse: () {},
     );
     emit(const ExploreState.loading());
@@ -70,7 +70,7 @@ class ExploreCubit extends Cubit<ExploreState> {
     String? city;
     Set<String> saved = {};
     state.maybeWhen(
-      loaded: (_, __, ___, c, ____, s) { city = c; saved = s; },
+      loaded: (_, _, _, c, _, s) { city = c; saved = s; },
       orElse: () {},
     );
     emit(const ExploreState.loading());

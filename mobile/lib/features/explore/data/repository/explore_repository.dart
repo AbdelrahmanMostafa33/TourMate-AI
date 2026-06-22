@@ -39,7 +39,7 @@ class ExploreRepository {
   /// Fetch available cities from the explore/filters endpoint.
   Future<List<String>> getExploreFilters() async {
     try {
-      final response = await api.getExploreFilters(null, 200);
+      final response = await api.getExploreFilters(null, 50);
       final locations = response['locations'] as List<dynamic>? ?? [];
       final cities = <String>{};
       for (final loc in locations) {

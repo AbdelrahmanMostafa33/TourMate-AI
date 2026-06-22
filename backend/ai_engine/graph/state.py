@@ -118,6 +118,11 @@ class TripState(TypedDict):
     traveler_group_type: Optional[str]
     missing_fields:      list[str]     # fields the user hasn't provided yet
 
+    # ── Progress Reporting ────────────────────────────────────────────
+    progress_queue_key: Optional[str]
+    # Session ID used to push progress events to the Flutter client
+    # via the module-level async queue in ai_engine/graph/progress.py.
+
     # ── Agent Trace / Debugging ─────────────────────────────────────
     agent_messages: Annotated[List[str], operator.add]
     """

@@ -23,7 +23,7 @@ class Trip(Base):
     start_date           = Column(Date, nullable=True)
     end_date             = Column(Date, nullable=True)
     number_of_travelers  = Column(Integer, default=1)
-    traveler_group_type  = Column(SAEnum(TravelerGroupType, name="traveler_group_type"), nullable=True)
+    traveler_group_type  = Column(SAEnum(TravelerGroupType, name="traveler_group_type", values_callable=lambda obj: [e.value for e in obj]), nullable=True)
     conversation_id      = Column(String, ForeignKey("conversations.conversation_id"), nullable=True, index=True)
     budget               = Column(Float, nullable=True)
     status               = Column(

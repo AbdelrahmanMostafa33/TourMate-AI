@@ -26,7 +26,7 @@ class QuizScaffold extends StatelessWidget {
                     child: Image.asset(
                       heroImageUrl!,
                       fit: BoxFit.cover,
-                      errorBuilder: (_, __, ___) => Container(
+                      errorBuilder: (_, _, _) => Container(
                         color: const Color(0xFF2C3E50),
                         child: const Icon(Icons.landscape, size: 60, color: Colors.white54),
                       ),

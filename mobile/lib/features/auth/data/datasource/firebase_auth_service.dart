@@ -46,4 +46,10 @@ class FirebaseAuthService {
   Future<String?> getToken() async {
     return await _auth.currentUser?.getIdToken(true);
   }
+
+  /// Sign out
+  Future<void> signOut() async {
+    await GoogleSignIn().signOut();
+    await _auth.signOut();
+  }
 }

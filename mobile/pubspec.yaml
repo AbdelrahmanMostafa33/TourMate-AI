@@ -43,7 +43,8 @@ dependencies:
   firebase_auth: ^6.2.0
   google_sign_in: ^6.2.1
   web_socket_channel: ^3.0.3
-
+  flutter_map: ^7.0.2
+  latlong2: ^0.9.1
 
 
 
