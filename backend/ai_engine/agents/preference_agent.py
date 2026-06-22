@@ -1,10 +1,11 @@
+
 """
 Preference Agent — Stage 1 of the multi-agent pipeline.
 
 The Conversation Agent collects all profile fields from the user before the
 pipeline runs. The Preference Agent's job is to:
 
-1. Derive dimension scores (luxury, culture, adventure, shopping, family)
+1. Derive dimension scores (luxury, culture, adventure)
 2. Calculate confidence based on profile completeness
 3. Build extracted_preferences for downstream agents
 4. Write back the enriched profile
@@ -78,15 +79,12 @@ def _derive_scores(profile: TripProfile) -> dict:
     These scores are used by downstream agents (ranking, planning) for
     filtering and scoring places.
 
-    Returns a dict with: luxury_score, culture_score, adventure_score,
-    shopping_score, family_score.
+    Returns a dict with: luxury_score, culture_score, adventure_score.
     """
     scores = {
         "luxury_score": 0.5,
         "culture_score": 0.5,
         "adventure_score": 0.5,
-        "shopping_score": 0.3,
-        "family_score": 0.3,
     }
 
     # ── Luxury Score ──────────────────────────────────────────────
@@ -127,19 +125,6 @@ def _derive_scores(profile: TripProfile) -> dict:
         scores["adventure_score"] = min(1.0, scores["adventure_score"] + 0.1)
     elif pace == "relaxed":
         scores["adventure_score"] = max(0.0, scores["adventure_score"] - 0.15)
-
-    # ── Shopping Score ────────────────────────────────────────────
-    shopping_keywords = {"shopping", "markets", "fashion", "souvenirs", "bazaar"}
-    shopping_hits = len(interests_lower & shopping_keywords)
-    scores["shopping_score"] = min(1.0, 0.15 + (shopping_hits * 0.2))
-
-    # ── Family Score ──────────────────────────────────────────────
-    if style == "family":
-        scores["family_score"] = 0.85
-    else:
-        family_keywords = {"kids", "family", "playground", "zoo", "aquarium"}
-        family_hits = len(interests_lower & family_keywords)
-        scores["family_score"] = min(1.0, 0.2 + (family_hits * 0.25))
 
     return scores
 
@@ -185,8 +170,7 @@ async def run_preference_agent(state: TripState) -> TripState:
     enriched["luxury_score"] = scores["luxury_score"]
     enriched["culture_score"] = scores["culture_score"]
     enriched["adventure_score"] = scores["adventure_score"]
-    enriched["shopping_score"] = scores["shopping_score"]
-    enriched["family_score"] = scores["family_score"]
+
 
     # Step 2: Calculate confidence
     enriched["confidence"] = _calculate_confidence(enriched)

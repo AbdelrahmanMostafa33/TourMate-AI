@@ -184,8 +184,7 @@ async def get_profile_data(user_id: str, trip_id: str, db: AsyncSession) -> dict
         "luxury_score":              profile.luxury_score,
         "culture_score":             profile.culture_score,
         "adventure_score":           profile.adventure_score,
-        "shopping_score":            profile.shopping_score,
-        "family_score":              profile.family_score,
+
         "confidence":                profile.confidence,
     }
 

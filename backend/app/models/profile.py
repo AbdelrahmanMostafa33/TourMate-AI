@@ -41,8 +41,6 @@ class TripProfile(Base):
     luxury_score         = Column(Float, nullable=True)
     culture_score        = Column(Float, nullable=True)
     adventure_score      = Column(Float, nullable=True)
-    shopping_score       = Column(Float, nullable=True)
-    family_score         = Column(Float, nullable=True)
     confidence           = Column(Float, nullable=True)
 
     # --- Timestamps ---
