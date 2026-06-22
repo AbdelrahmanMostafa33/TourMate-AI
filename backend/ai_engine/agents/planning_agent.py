@@ -17,6 +17,7 @@ from langchain_core.messages import SystemMessage, HumanMessage
 from ai_engine.llm_config import invoke_with_fallback
 from ai_engine.graph.state import TripState
 from ai_engine.schemas.planning_schema import ItineraryPlan
+from ai_engine.utils.json_utils import repair_missing_commas as _repair_missing_commas
 
 logger = logging.getLogger(__name__)
 

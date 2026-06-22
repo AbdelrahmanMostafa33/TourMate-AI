@@ -25,7 +25,6 @@ def make_trip_create_data():
         "start_date": "2026-07-01",
         "end_date": "2026-07-03",
         "number_of_travelers": 2,
-        "budget": 1500.0,
     }
 
 
@@ -39,10 +38,12 @@ def make_mock_trip(trip_id="trip_001", user_id="user_001"):
     trip.start_date = date(2026, 7, 1)
     trip.end_date = date(2026, 7, 3)
     trip.number_of_travelers = 2
-    trip.budget = 1500.0
     trip.status = TripStatus.planning
     trip.created_at = datetime.utcnow()
+    trip.conversation_id = None
     trip.itineraries = []
+    trip.updated_at = None
+    trip.approved_at = None
     return trip
 
 
@@ -51,11 +52,11 @@ def make_mock_itinerary(trip_id="trip_001"):
     itinerary_id = "itin_001"
 
     stop = MagicMock(spec=ItineraryStop)
-    stop.stop_id = 1
-    stop.day_id = 1
+    stop.stop_id = "stop_001"
+    stop.day_id = "day_001"
     stop.place_id = "place_1"
     stop.place_snapshot = {}
-    stop.scheduled_time = None
+    stop.time_of_day = None
     stop.duration_minutes = 60
     stop.order_in_day = 1
     stop.minutes_from_prev_stop = None
@@ -67,7 +68,7 @@ def make_mock_itinerary(trip_id="trip_001"):
     stop.created_at = datetime.utcnow()
 
     day = MagicMock(spec=Day)
-    day.day_id = 1
+    day.day_id = "day_001"
     day.itinerary_id = itinerary_id
     day.day_number = 1
     day.date = date(2026, 7, 1)
@@ -171,8 +172,6 @@ async def test_create_trip_builds_correct_auto_message(mock_auth):
     msg = response["auto_message"]
     assert "Cairo" in msg
     assert "2 travelers" in msg
-    assert "$1500" in msg
-    assert "culture" in msg
 
 
 @pytest.mark.asyncio
@@ -329,7 +328,6 @@ def test_build_auto_message_includes_budget():
     )
     msg = build_auto_message(data, delta=2)
     assert "Paris" in msg
-    assert "$2000" in msg
 
 
 def test_build_auto_message_no_budget():

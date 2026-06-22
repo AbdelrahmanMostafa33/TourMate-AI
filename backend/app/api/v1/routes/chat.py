@@ -16,24 +16,8 @@ from app.models.chat import Conversation, Message
 from app.models.profile import TripProfile
 from app.services.chat_service import ChatService
 from app.ws.manager import manager
-from datetime import time as dt_time
 
 router = APIRouter()
-
-
-def parse_time(raw_time) -> dt_time | None:
-    """حوّل أي شكل time لـ datetime.time object"""
-    if raw_time is None:
-        return None
-    if isinstance(raw_time, dt_time):
-        return raw_time
-    if isinstance(raw_time, str):
-        try:
-            parts = raw_time.strip().split(":")
-            return dt_time(int(parts[0]), int(parts[1]))
-        except (ValueError, IndexError):
-            return None
-    return None
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -83,7 +67,6 @@ async def execute_actions(actions: list, trip: Trip, db: AsyncSession) -> list:
                 db.add(day)
                 await db.flush()
 
-            scheduled_time = parse_time(data.get("time"))
             new_stop = ItineraryStop(
                 day_id=day.day_id,
                 place_snapshot={
@@ -93,7 +76,6 @@ async def execute_actions(actions: list, trip: Trip, db: AsyncSession) -> list:
                     "lat":           data.get("lat"),
                     "lng":           data.get("lng"),
                 },
-                scheduled_time=scheduled_time,
                 duration_minutes=int(data["duration_hours"] * 60) if data.get("duration_hours") else None,
                 order_in_day=data.get("order_in_day", 0),
                 ai_notes=data.get("notes"),
@@ -116,8 +98,6 @@ async def execute_actions(actions: list, trip: Trip, db: AsyncSession) -> list:
                         if data.get("name"):  snapshot["name"] = data["name"]
                         if data.get("notes"): stop.ai_notes = data["notes"]
                         stop.place_snapshot = snapshot
-                    if data.get("time"):
-                        stop.scheduled_time = parse_time(data["time"])
                     if data.get("duration_hours"):
                         stop.duration_minutes = int(data["duration_hours"] * 60)
                     if data.get("order_in_day") is not None:
@@ -136,8 +116,6 @@ async def execute_actions(actions: list, trip: Trip, db: AsyncSession) -> list:
         elif action_type == "UPDATE_TRIP":
             if data.get("destination"):
                 trip.destination = data["destination"]
-            if data.get("budget"):
-                trip.budget = data["budget"]
             await db.flush()
 
         updated_actions.append(action)
@@ -181,11 +159,6 @@ async def get_profile_data(user_id: str, trip_id: str, db: AsyncSession) -> dict
         "interests":                 profile.interests or [],
         "food_preferences":          profile.food_preferences or [],
         "accommodation_preferences": profile.accommodation_preferences or [],
-        "luxury_score":              profile.luxury_score,
-        "culture_score":             profile.culture_score,
-        "adventure_score":           profile.adventure_score,
-
-        "confidence":                profile.confidence,
     }
 
 

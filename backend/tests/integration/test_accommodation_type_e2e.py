@@ -9,19 +9,20 @@ through to retrieval filtering:
   user message → preference agent → map_accommodation_to_enum →
   extracted_preferences.accommodation_type → retrieval filtering
 
-All LLM calls are mocked, but agent logic (enum mapping, scoring,
-filtering, diversity) runs for real.
+Agent logic (enum mapping, scoring, filtering) runs for real.
+Note: The preference agent no longer makes LLM calls (LLM refinement
+was removed in favor of the conversation agent doing all extraction),
+so no LLM mocking is needed.
 """
 
 import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 from ai_engine.agents.preference_agent import (
     map_accommodation_to_enum,
     _derive_scores,
 )
-from ai_engine.agents.retrieval_agent import _apply_filters, _ensure_diversity
-from tests.integration.conftest import build_preference_llm_response
+from ai_engine.agents.retrieval_agent import _apply_filters
 from tests.unit.test_ai_engine.conftest import _make_profile, _make_hotel, _make_place
 
 
@@ -125,11 +126,8 @@ class TestAccommodationTypeEndToEnd:
     """Full flow: preference extraction → enum mapping → retrieval filtering."""
 
     @pytest.mark.asyncio
-    @patch("ai_engine.agents.preference_agent.invoke_with_fallback")
-    async def test_luxury_preference_filters_to_luxury_hotels(self, mock_llm):
+    async def test_luxury_preference_filters_to_luxury_hotels(self):
         """User says 'fancy resort' → enum maps to 'resort' → only resort hotels pass."""
-        mock_llm.return_value = build_preference_llm_response({})
-
         state = {
             "destination_city": "Cairo",
             "duration_days": 2,
@@ -164,10 +162,8 @@ class TestAccommodationTypeEndToEnd:
         assert "hotel_003" not in hotel_ids  # Hostel
 
     @pytest.mark.asyncio
-    @patch("ai_engine.agents.preference_agent.invoke_with_fallback")
-    async def test_hostel_preference_filters_to_hostels_only(self, mock_llm):
+    async def test_hostel_preference_filters_to_hostels_only(self):
         """User says 'hostel' → enum maps to 'hostel' → only hostels pass."""
-        mock_llm.return_value = build_preference_llm_response({})
 
         state = {
             "destination_city": "Cairo",
@@ -199,10 +195,8 @@ class TestAccommodationTypeEndToEnd:
         assert "hotel_004" not in hotel_ids  # Resort
 
     @pytest.mark.asyncio
-    @patch("ai_engine.agents.preference_agent.invoke_with_fallback")
-    async def test_luxury_hotel_preference_filters_to_luxury_only(self, mock_llm):
+    async def test_luxury_hotel_preference_filters_to_luxury_only(self):
         """User says 'five star hotel' → enum maps to 'luxury' → only luxury hotels pass."""
-        mock_llm.return_value = build_preference_llm_response({})
 
         state = {
             "destination_city": "Cairo",
@@ -234,10 +228,8 @@ class TestAccommodationTypeEndToEnd:
         assert "hotel_004" not in hotel_ids  # Resort
 
     @pytest.mark.asyncio
-    @patch("ai_engine.agents.preference_agent.invoke_with_fallback")
-    async def test_standard_hotel_preference_keeps_all_non_luxury(self, mock_llm):
+    async def test_standard_hotel_preference_keeps_all_non_luxury(self):
         """User says 'hotel' → enum maps to 'hotel' → hotels of type 'hotel' pass."""
-        mock_llm.return_value = build_preference_llm_response({})
 
         state = {
             "destination_city": "Cairo",
@@ -263,18 +255,14 @@ class TestAccommodationTypeEndToEnd:
         )
 
         hotel_ids = [p["id"] for p in filtered if p["category"] == "hotel"]
-        # "hotel" matches places where place_acc contains "hotel" —
-        # "luxury" doesn't contain "hotel", but "hotel" doesn't contain "resort"
         assert "hotel_002" in hotel_ids  # Steigenberger (hotel)
-        assert "hotel_001" not in hotel_ids  # Marriott (luxury — "hotel" not in "luxury")
-        assert "hotel_003" not in hotel_ids  # Hostel — "hotel" not in "hostel"
-        assert "hotel_004" not in hotel_ids  # Resort — "hotel" not in "resort"
+        assert "hotel_001" not in hotel_ids  # Marriott (luxury)
+        assert "hotel_003" not in hotel_ids  # Hostel
+        assert "hotel_004" not in hotel_ids  # Resort
 
     @pytest.mark.asyncio
-    @patch("ai_engine.agents.preference_agent.invoke_with_fallback")
-    async def test_no_accommodation_pref_keeps_all_hotels(self, mock_llm):
+    async def test_no_accommodation_pref_keeps_all_hotels(self):
         """No accommodation preference → all hotels pass through."""
-        mock_llm.return_value = build_preference_llm_response({})
 
         state = {
             "destination_city": "Cairo",
@@ -300,82 +288,16 @@ class TestAccommodationTypeEndToEnd:
         )
 
         hotel_ids = [p["id"] for p in filtered if p["category"] == "hotel"]
-        # All hotels should pass when no preference specified
         assert len(hotel_ids) == 4
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-# 2. Preference Refinement Changes Accommodation Type
+# 2. Score Derivation Reflects Accommodation Type
 # ═══════════════════════════════════════════════════════════════════════════
 
 
-class TestPreferenceRefinementChangesAccommodationType:
-    """LLM refinement can change accommodation preferences, affecting filtering."""
-
-    @pytest.mark.asyncio
-    @patch("ai_engine.agents.preference_agent.invoke_with_fallback")
-    async def test_refinement_adds_resort_changes_filtering(self, mock_llm):
-        """LLM adds 'resort' to accommodation_preferences → filtering changes."""
-        mock_llm.return_value = build_preference_llm_response({
-            "accommodation_preferences_add": ["resort"],
-        })
-
-        state = {
-            "destination_city": "Cairo",
-            "duration_days": 2,
-            "user_message": "Actually, make it a resort this time",
-            "profile": _make_profile(
-                accommodation_preferences=["hotel"],
-                interests=["history"],
-            ),
-            "extracted_preferences": None,
-            "filtered_places": None,
-        }
-
-        from ai_engine.graph.nodes import preference_node
-
-        state = await preference_node(state)
-
-        # Preference agent should have added "resort" and mapped to resort enum
-        acc_prefs = state["profile"]["accommodation_preferences"]
-        assert "resort" in acc_prefs
-
-        acc_type = state["extracted_preferences"]["accommodation_type"]
-        # map_accommodation_to_enum checks in order: "resort" keyword should match first
-        assert acc_type == "resort"
-
-    @pytest.mark.asyncio
-    @patch("ai_engine.agents.preference_agent.invoke_with_fallback")
-    async def test_refinement_removes_hostel_changes_filtering(self, mock_llm):
-        """LLM removes 'hostel' from accommodation_preferences → filtering changes."""
-        mock_llm.return_value = build_preference_llm_response({
-            "accommodation_preferences_remove": ["hostel"],
-        })
-
-        state = {
-            "destination_city": "Cairo",
-            "duration_days": 2,
-            "user_message": "Actually skip the hostel, I want something nicer",
-            "profile": _make_profile(
-                accommodation_preferences=["hostel"],
-                interests=["history"],
-            ),
-            "extracted_preferences": None,
-            "filtered_places": None,
-        }
-
-        from ai_engine.graph.nodes import preference_node
-
-        state = await preference_node(state)
-
-        acc_prefs = state["profile"]["accommodation_preferences"]
-        assert "hostel" not in acc_prefs
-        assert state["extracted_preferences"]["accommodation_type"] is None
-
-
-# ═══════════════════════════════════════════════════════════════════════════
-# 3. Score Derivation Reflects Accommodation Type
-# ═══════════════════════════════════════════════════════════════════════════
+class TestScoreDerivationReflectsAccommodationType:
+    """Dimension scores correctly reflect accommodation preferences."""
 
 
 class TestScoreDerivationReflectsAccommodationType:
@@ -387,7 +309,6 @@ class TestScoreDerivationReflectsAccommodationType:
             accommodation_preferences=["resort"],
         )
         scores = _derive_scores(profile)
-        # Resort should boost luxury score above default 0.5
         assert scores["luxury_score"] > 0.5
 
     def test_hostel_reduces_luxury_score(self):
@@ -396,7 +317,6 @@ class TestScoreDerivationReflectsAccommodationType:
             accommodation_preferences=["hostel"],
         )
         scores = _derive_scores(profile)
-        # Hostel should reduce luxury score below default 0.5
         assert scores["luxury_score"] < 0.5
 
     def test_boutique_hotel_boosts_luxury_score(self):
@@ -417,12 +337,7 @@ class TestScoreDerivationReflectsAccommodationType:
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-# 4. Full Pipeline with Accommodation Type
-# ═══════════════════════════════════════════════════════════════════════════
-
-
-# ═══════════════════════════════════════════════════════════════════════════
-# 5. Router Extraction → Preference Mapping
+# 4. Router Extraction → Preference Mapping
 # ═══════════════════════════════════════════════════════════════════════════
 
 
@@ -430,12 +345,9 @@ class TestRouterExtractionToPreferenceMapping:
     """Router extracts accommodation_preferences, preference agent maps to enum."""
 
     @pytest.mark.asyncio
-    @patch("ai_engine.agents.preference_agent.invoke_with_fallback")
-    async def test_router_extracted_boutique_maps_to_luxury(self, mock_llm):
+    async def test_router_extracted_boutique_maps_to_luxury(self):
         """Router extracts 'boutique hotel' → preference agent maps to 'luxury'."""
-        mock_llm.return_value = build_preference_llm_response({})
 
-        # Simulate what the router would extract from 'I want a boutique hotel'
         state = {
             "destination_city": "Cairo",
             "duration_days": 2,
@@ -452,11 +364,9 @@ class TestRouterExtractionToPreferenceMapping:
 
         state = await preference_node(state)
 
-        # verify enum mapping
         acc_type = state["extracted_preferences"]["accommodation_type"]
         assert acc_type == "luxury"
 
-        # verify downstream filtering uses it correctly
         filtered = _apply_filters(
             MIXED_PLACES, state["extracted_preferences"], "Cairo"
         )
@@ -467,10 +377,8 @@ class TestRouterExtractionToPreferenceMapping:
         assert "hotel_004" not in hotel_ids  # Resort
 
     @pytest.mark.asyncio
-    @patch("ai_engine.agents.preference_agent.invoke_with_fallback")
-    async def test_router_extracted_all_inclusive_maps_to_resort(self, mock_llm):
+    async def test_router_extracted_all_inclusive_maps_to_resort(self):
         """Router extracts 'all-inclusive' → preference agent maps to 'resort'."""
-        mock_llm.return_value = build_preference_llm_response({})
 
         state = {
             "destination_city": "Cairo",
@@ -499,10 +407,8 @@ class TestRouterExtractionToPreferenceMapping:
         assert "hotel_001" not in hotel_ids  # Luxury
 
     @pytest.mark.asyncio
-    @patch("ai_engine.agents.preference_agent.invoke_with_fallback")
-    async def test_router_extracted_backpacker_maps_to_hostel(self, mock_llm):
+    async def test_router_extracted_backpacker_maps_to_hostel(self):
         """Router extracts 'backpacker' → preference agent maps to 'hostel'."""
-        mock_llm.return_value = build_preference_llm_response({})
 
         state = {
             "destination_city": "Cairo",
@@ -533,10 +439,8 @@ class TestRouterExtractionToPreferenceMapping:
         assert "hotel_004" not in hotel_ids  # Resort
 
     @pytest.mark.asyncio
-    @patch("ai_engine.agents.preference_agent.invoke_with_fallback")
-    async def test_router_extracted_premium_maps_to_luxury(self, mock_llm):
+    async def test_router_extracted_premium_maps_to_luxury(self):
         """Router extracts 'premium' → preference agent maps to 'luxury'."""
-        mock_llm.return_value = build_preference_llm_response({})
 
         state = {
             "destination_city": "Cairo",
@@ -559,7 +463,7 @@ class TestRouterExtractionToPreferenceMapping:
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-# 6. Full Pipeline with Accommodation Type
+# 5. Full Pipeline with Accommodation Type
 # ═══════════════════════════════════════════════════════════════════════════
 
 
@@ -567,10 +471,8 @@ class TestFullPipelineWithAccommodationType:
     """Full pipeline runs with accommodation_type filtering at each stage."""
 
     @pytest.mark.asyncio
-    @patch("ai_engine.agents.preference_agent.invoke_with_fallback")
-    async def test_preference_to_retrieval_pipeline_reserves_resort(self, mock_llm):
+    async def test_preference_to_retrieval_pipeline_reserves_resort(self):
         """Full preference → retrieval pipeline filters hotels by resort type."""
-        mock_llm.return_value = build_preference_llm_response({})
 
         state = {
             "destination_city": "Cairo",
@@ -604,12 +506,10 @@ class TestFullPipelineWithAccommodationType:
         filtered = state["filtered_places"]
         hotel_ids = [p["id"] for p in filtered if p["category"] == "hotel"]
 
-        # Only the resort hotel should survive
         assert "hotel_004" in hotel_ids  # Soma Bay Resort
         assert "hotel_001" not in hotel_ids  # Luxury Marriott
         assert "hotel_003" not in hotel_ids  # Hostel
 
-        # Attractions should still be present
         attraction_ids = [
             p["id"] for p in filtered if p["category"] == "attractions"
         ]
