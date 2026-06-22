@@ -248,7 +248,6 @@ class ChatService:
                 "number_of_travelers",
                 itinerary_data.get("traveler_count", 1),
             ),
-            budget=itinerary_data.get("budget", itinerary_data.get("budget_total")),
         )
         self.db.add(trip)
 

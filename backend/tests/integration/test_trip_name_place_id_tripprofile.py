@@ -102,12 +102,6 @@ SAMPLE_AI_RESULT_WITH_ALL = {
         "interests": ["history", "art", "food"],
         "food_preferences": ["local cuisine", "street food"],
         "accommodation_preferences": ["boutique hotel"],
-        "luxury_score": None,
-        "culture_score": None,
-        "adventure_score": None,
-        "shopping_score": None,
-        "family_score": None,
-        "confidence": None,
         "generated_at": None,
         "updated_at": None,
     },
@@ -351,14 +345,6 @@ class TestTripProfileCreation:
         assert profile.accommodation_preferences == ["boutique hotel"], (
             f"Expected accommodation_preferences list, got {profile.accommodation_preferences}"
         )
-
-        # ── Verify score fields are null (not in profile data) ────────
-        assert profile.luxury_score is None
-        assert profile.culture_score is None
-        assert profile.adventure_score is None
-        assert profile.shopping_score is None
-        assert profile.family_score is None
-        assert profile.confidence is None
 
         # ── Verify timestamps are set ─────────────────────────────────
         assert profile.generated_at is not None

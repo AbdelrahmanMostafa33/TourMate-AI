@@ -347,5 +347,6 @@ class TestAgentMessages:
         state = _make_opt_state(draft_itinerary=_make_draft(_make_day(stops)))
         result = await run_optimization_agent(state)
 
-        # Optimization agent doesn't append to agent_messages
-        assert result["agent_messages"] == []
+        # Optimization agent appends a progress log message
+        assert len(result["agent_messages"]) == 1
+        assert "[Optimizer]" in result["agent_messages"][0]

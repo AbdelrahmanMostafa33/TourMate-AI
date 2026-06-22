@@ -23,15 +23,12 @@ def test_load_mock_profile():
     assert profile["profile_id"] is not None
     assert profile["trip_id"] is not None
     assert profile["budget_level"] is not None
-    assert profile["travel_pace"] is not None
+    assert profile["pace"] is not None
     assert isinstance(profile["interests"], list)
     assert len(profile["interests"]) > 0
     assert isinstance(profile["food_preferences"], list)
     assert isinstance(profile["accommodation_preferences"], list)
-    assert profile["profile_summary"] is not None
-    assert profile["confidence_score"] > 0
-
-    print(f"\nMock profile loaded: {profile['profile_summary'][:50]}...")
+    assert profile["confidence"] > 0
 
 
 def test_profile_to_text():
@@ -46,7 +43,7 @@ def test_profile_to_text():
     assert "Interests:" in text
     assert "Food:" in text
     assert "Accommodation:" in text
-    assert "Summary:" in text
+    assert "Luxury score:" in text
 
     print(f"\nProfile text:\n{text}")
 
@@ -61,7 +58,7 @@ def test_is_profile_complete():
 
     # Incomplete: no confidence
     incomplete_no_confidence = load_mock_profile()
-    incomplete_no_confidence["confidence_score"] = 0.0
+    incomplete_no_confidence["confidence"] = 0.0
     assert is_profile_complete(incomplete_no_confidence) is False
 
     # Incomplete: no interests

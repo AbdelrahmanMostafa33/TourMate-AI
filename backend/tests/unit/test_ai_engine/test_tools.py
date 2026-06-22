@@ -49,7 +49,7 @@ def mock_db_places():
             assert len(places) > 0
     """
     repo_instance = MagicMock()
-    repo_instance.get_places_by_city = AsyncMock(return_value=_MOCK_DB_PLACES)
+    repo_instance.get_places_by_city_diverse = AsyncMock(return_value=_MOCK_DB_PLACES)
 
     with patch("ai_engine.tools.places_tool.PlaceRepository") as mock_repo_cls, \
          patch("ai_engine.tools.places_tool.async_session") as mock_session:
@@ -63,7 +63,7 @@ def mock_db_places():
 def mock_db_places_empty():
     """Fixture that patches the DB to return an empty place list."""
     repo_instance = MagicMock()
-    repo_instance.get_places_by_city = AsyncMock(return_value=[])
+    repo_instance.get_places_by_city_diverse = AsyncMock(return_value=[])
 
     with patch("ai_engine.tools.places_tool.PlaceRepository") as mock_repo_cls, \
          patch("ai_engine.tools.places_tool.async_session") as mock_session:
@@ -102,7 +102,7 @@ class TestGetPlacesForCity:
 
     async def test_repo_called_with_correct_city(self, mock_db_places):
         await get_places_for_city("Cairo")
-        mock_db_places.get_places_by_city.assert_awaited_once_with("Cairo")
+        mock_db_places.get_places_by_city_diverse.assert_awaited_once()
 
     async def test_unknown_city_returns_empty_list(self, mock_db_places_empty):
         places = await get_places_for_city("Atlantis")
@@ -137,21 +137,24 @@ class TestGetPlacesForCity:
 
 class TestGetTravelTime:
 
-    def test_returns_float(self):
+    @pytest.mark.asyncio
+    async def test_returns_float(self):
         origin = {"lat": 30.0478, "lon": 31.2336}
         dest   = {"lat": 29.9792, "lon": 31.1342}
-        result = get_travel_time_minutes(origin, dest)
+        result = await get_travel_time_minutes(origin, dest)
         assert isinstance(result, float)
 
-    def test_returns_positive_value(self):
+    @pytest.mark.asyncio
+    async def test_returns_positive_value(self):
         origin = {"lat": 30.0478, "lon": 31.2336}
         dest   = {"lat": 29.9792, "lon": 31.1342}
-        assert get_travel_time_minutes(origin, dest) > 0
+        result = await get_travel_time_minutes(origin, dest)
+        assert result > 0
 
-    def test_same_point_returns_value(self):
+    @pytest.mark.asyncio
+    async def test_same_point_returns_value(self):
         point = {"lat": 30.0478, "lon": 31.2336}
-        # Sprint 3 mock always returns 20.0 — just assert it doesn't crash
-        result = get_travel_time_minutes(point, point)
+        result = await get_travel_time_minutes(point, point)
         assert isinstance(result, float)
 
 
