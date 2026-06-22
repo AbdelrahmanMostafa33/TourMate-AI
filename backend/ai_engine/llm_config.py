@@ -393,7 +393,9 @@ def get_config_for_agent(agent_role: str) -> LLMConfig:
 # ══════════════════════════════════════════════════════════════════════════════
 
 # Maximum exponential backoff wall-clock delay for transient errors (503 etc.)
-_MAX_TRANSIENT_BACKOFF = 30.0  # seconds
+# Reduced from 30s to 5s so the pipeline doesn't stall when all keys
+# are under temporary load — keys cycle through faster.
+_MAX_TRANSIENT_BACKOFF = 5.0  # seconds
 # Base backoff before exponential growth
 _BASE_TRANSIENT_BACKOFF = 1.0  # seconds
 
@@ -481,9 +483,11 @@ async def invoke_with_fallback(
     provider = config.provider
     total_keys = key_manager.get_total_count(provider)
 
-    # Default: at least 2 full passes through all keys, minimum 4 attempts
+    # Default: one full pass through all keys (minimum 4 attempts) —
+    # avoids wasting time on excessive retry cycles when all keys are
+    # rate-limited.  Each attempt immediately tries the next key on 429.
     if max_retries is None:
-        max_retries = max(total_keys * 2, 4)
+        max_retries = max(total_keys, 4)
 
     last_error: Exception | None = None
     # Local set of keys already tried in THIS pass.
@@ -591,9 +595,10 @@ def invoke_with_fallback_sync(
     provider = config.provider
     total_keys = key_manager.get_total_count(provider)
 
-    # Default: at least 2 full passes through all keys, minimum 4 attempts
+    # Default: one full pass through all keys (minimum 4 attempts) —
+    # avoids wasting time on excessive retry cycles.
     if max_retries is None:
-        max_retries = max(total_keys * 2, 4)
+        max_retries = max(total_keys, 4)
 
     last_error: Exception | None = None
     # Local set of keys already tried in THIS pass.

@@ -122,6 +122,83 @@ def _trim_for_modifier(place: dict) -> dict:
     return trimmed
 
 
+def _trim_itinerary(itinerary: dict) -> dict:
+    """Strip bloat from the itinerary before sending it to the LLM.
+
+    Removes large fields (photos, maps_link, address, phone, website,
+    opening_hours, review_count, price_level) that the modifier doesn't
+    need for decision-making.  Keeps structural fields (lat/lon, duration,
+    transport, why_recommended) so the LLM can still make good edits.
+    """
+    trimmed = {
+        "destination": itinerary.get("destination", ""),
+        "duration_days": itinerary.get("duration_days", 0),
+    }
+
+    # Trim accommodation suggestions
+    hotels = []
+    for hotel in itinerary.get("accommodation_suggestions", []):
+        h = {
+            "id": hotel.get("id", ""),
+            "name": hotel.get("name", ""),
+            "sub_category": hotel.get("sub_category", ""),
+            "accommodation_type": hotel.get("accommodation_type", ""),
+            "lat": hotel.get("lat", 0),
+            "lon": hotel.get("lon", 0),
+            "rating": hotel.get("rating", 0),
+            "category": hotel.get("category", ""),
+            "why_recommended": hotel.get("why_recommended", ""),
+        }
+        amenities = hotel.get("amenities", [])
+        if amenities:
+            h["amenities"] = amenities[:3] if len(amenities) > 3 else amenities
+        hotels.append(h)
+    if hotels:
+        trimmed["accommodation_suggestions"] = hotels
+
+    # Trim days and stops
+    trimmed_days = []
+    for day in itinerary.get("days", []):
+        trimmed_stops = []
+        for stop in day.get("stops", []):
+            s = {
+                "id": stop.get("id", ""),
+                "name": stop.get("name", ""),
+                "category": stop.get("category", ""),
+                "sub_category": stop.get("sub_category", ""),
+                "lat": stop.get("lat", 0),
+                "lon": stop.get("lon", 0),
+                "why_recommended": stop.get("why_recommended", ""),
+                "estimated_duration_minutes": stop.get("estimated_duration_minutes", 0),
+                "suggested_time_of_day": stop.get("suggested_time_of_day", ""),
+            }
+            # Keep cuisine_type for restaurants
+            if stop.get("cuisine_type"):
+                s["cuisine_type"] = stop["cuisine_type"]
+            # Keep transport fields
+            travel_time = stop.get("travel_time_to_next_minutes")
+            if travel_time is not None:
+                s["travel_time_to_next_minutes"] = travel_time
+                s["transport_mode"] = stop.get("transport_mode", "")
+            trimmed_stops.append(s)
+
+        trimmed_day = {
+            "day_number": day.get("day_number", 0),
+            "theme": day.get("theme", ""),
+            "stops": trimmed_stops,
+        }
+        # Include total_travel_time_minutes if present (useful context for the LLM)
+        total_travel = day.get("total_travel_time_minutes")
+        if total_travel is not None:
+            trimmed_day["total_travel_time_minutes"] = total_travel
+        trimmed_days.append(trimmed_day)
+
+    if trimmed_days:
+        trimmed["days"] = trimmed_days
+
+    return trimmed
+
+
 # ── Main entry point ─────────────────────────────────────────────────────────
 
 
@@ -181,16 +258,40 @@ async def run_itinerary_modifier(
         if parts:
             pref_text = "User preferences:\n" + "\n".join(parts)
 
+    # Trim both the itinerary and the pool to stay within token limits
+    trimmed_itinerary = _trim_itinerary(current_itinerary)
+
+    # Rough token estimate: ~4 chars per token.  Include the system prompt
+    # and template wrapper overhead so we don't blow past Groq's 12k TPM.
+    overhead = len(MODIFIER_SYSTEM_PROMPT) + len(pref_text) + 400  # 400 for template text
+    pool_json = json.dumps(fresh_pool, indent=2, ensure_ascii=False)
+    itinerary_json = json.dumps(trimmed_itinerary, indent=2, ensure_ascii=False)
+    combined_estimate = len(pool_json) + len(itinerary_json) + len(modification_request) + overhead
+
+    # If the combined payload is too large (~35k chars ≈ 8.75k tokens, leaving
+    # headroom under 12k TPM), cap the pool further to squeeze under the limit.
+    if combined_estimate > 35000:
+        # Aim for ~28k chars total (~7k tokens, well under 12k TPM)
+        target_total_chars = 28000
+        max_pool_chars = max(5000, target_total_chars - len(itinerary_json) - len(modification_request) - overhead)
+        while len(pool_json) > max_pool_chars and len(fresh_pool) > 3:
+            fresh_pool = fresh_pool[:len(fresh_pool) // 2]
+            pool_json = json.dumps(fresh_pool, indent=2, ensure_ascii=False)
+        logger.info(
+            "[ModifierAgent] Payload large (%d chars) — capped pool to %d places",
+            combined_estimate, len(fresh_pool),
+        )
+
     prompt = f"""\
 Modification Request: {modification_request}
 
 {pref_text}
 
 Current Itinerary:
-{json.dumps(current_itinerary, indent=2, ensure_ascii=False)}
+{itinerary_json}
 
 Available Places Pool ({len(fresh_pool)} places to choose from):
-{json.dumps(fresh_pool, indent=2, ensure_ascii=False)}
+{pool_json}
 
 Apply the modification now. Return the FULL modified itinerary JSON."""
 

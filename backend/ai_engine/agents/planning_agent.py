@@ -220,29 +220,71 @@ Generate the itinerary now.
         HumanMessage(content=prompt),
     ]
 
-    # ── LLM call with structured output ───────────────────────────
+    # ── LLM call with structured output + retry ───────────────────
     # Uses Pydantic-based ``.with_structured_output(ItineraryPlan)`` to
     # guarantee valid JSON with all required keys (including ``days``).
     # ``invoke_with_fallback`` handles key rotation and retry on both
     # rate-limit (429) and transient (503) errors internally.
+    #
+    # If the LLM returns an itinerary with empty days (e.g. under load),
+    # we retry up to 2 additional times with error feedback so it can
+    # correct itself — this mirrors the old retry logic that was removed
+    # during the structured-output refactor.
     # ----------------------------------------------------------------
-    try:
-        response: ItineraryPlan = await invoke_with_fallback(
-            "planner", messages, structured_output=ItineraryPlan,
-        )
-    except Exception as e:
-        logger.error("[Planner] Failed after all retries: %s", e)
-        state["error"] = f"Planning Agent failed: {e}"
-        return state
+    max_planner_attempts = 3
+    last_planner_error = None
+    itinerary = None
 
-    # Convert Pydantic model to plain dict for downstream processing.
-    itinerary = response.model_dump()
+    for attempt in range(1, max_planner_attempts + 1):
+        try:
+            attempt_messages = list(messages)
+            if attempt > 1 and last_planner_error:
+                retry_note = (
+                    f"\n\nIMPORTANT: Your previous itinerary was invalid — "
+                    f"it had no day-by-day stops. "
+                    f"Error: {last_planner_error}. "
+                    f"You MUST create a complete itinerary with actual stops "
+                    f"for each day.  Fill the `days` array with real stops "
+                    f"using the candidate places provided."
+                )
+                attempt_messages.append(HumanMessage(content=retry_note))
 
-    # Validate non-empty days (the schema guarantees "days" key exists).
-    if not itinerary.get("days"):
-        logger.warning("[Planner] Itinerary has empty days array — returning error")
-        state["error"] = "Planning Agent produced an itinerary with no days"
-        return state
+            response: ItineraryPlan = await invoke_with_fallback(
+                "planner", attempt_messages, structured_output=ItineraryPlan,
+            )
+
+            # Convert Pydantic model to plain dict for downstream processing.
+            parsed = response.model_dump()
+
+            # Validate non-empty days.
+            if not parsed.get("days"):
+                raise ValueError("Itinerary has empty 'days' array")
+
+            itinerary = parsed
+            logger.info(
+                "[Planner] Success on attempt %d/%d — %d days, %d stops",
+                attempt, max_planner_attempts,
+                len(itinerary.get("days", [])),
+                sum(len(d.get("stops", [])) for d in itinerary.get("days", [])),
+            )
+            break  # Success — exit retry loop
+
+        except Exception as e:
+            last_planner_error = str(e)
+            logger.warning(
+                "[Planner] Attempt %d/%d failed: %s",
+                attempt, max_planner_attempts, last_planner_error,
+            )
+            if attempt == max_planner_attempts:
+                logger.error(
+                    "[Planner] All %d attempts exhausted: %s",
+                    max_planner_attempts, last_planner_error,
+                )
+                state["error"] = (
+                    f"Planning Agent failed after {max_planner_attempts} "
+                    f"attempts: {last_planner_error}"
+                )
+                return state
 
     # ---------------------------------------------------------
     # Hydration: reattach full metadata for selected places.
