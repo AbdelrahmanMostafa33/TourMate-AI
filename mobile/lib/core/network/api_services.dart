@@ -36,4 +36,43 @@ abstract class ApiServices {
   Future<void> createTrip(
       @Body() Map<String, dynamic> body,
       );
+
+  /// EXPLORE PLACES
+  @GET("/v1/places/explore")
+  Future<dynamic> explorePlaces(
+      @Query('city') String? city,
+      @Query('country') String? country,
+      @Query('category') String? category,
+      @Query('limit') int? limit,
+      @Query('offset') int? offset,
+      );
+
+  /// GET PLACE DETAIL
+  @GET("/v1/places/{place_id}")
+  Future<Map<String, dynamic>> getPlaceDetail(
+      @Path('place_id') String placeId,
+      );
+
+  /// GET EXPLORE FILTERS (cities + categories)
+  @GET("/v1/places/explore/filters")
+  Future<Map<String, dynamic>> getExploreFilters(
+      @Query('q') String? q,
+      @Query('limit') int? limit,
+      );
+
+  /// SAVE A PLACE
+  @POST("/v1/saved-places/")
+  Future<Map<String, dynamic>> savePlace(
+      @Body() Map<String, dynamic> body,
+      );
+
+  /// UN-SAVE A PLACE BY SAVED PLACE ID
+  @DELETE("/v1/saved-places/{saved_place_id}")
+  Future<Map<String, dynamic>> unsavePlace(
+      @Path('saved_place_id') String savedPlaceId,
+      );
+
+  /// GET ALL SAVED PLACES (includes full place data)
+  @GET("/v1/saved-places/")
+  Future<dynamic> getSavedPlaces();
 }

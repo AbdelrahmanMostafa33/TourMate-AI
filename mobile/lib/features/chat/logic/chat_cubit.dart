@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import '../data/repository/chat_repository.dart';
 import '../data/models/chat_message.dart';
+import '../data/models/itinerary_data.dart';
 import 'chat_state.dart';
 
 class ChatCubit extends Cubit<ChatState> {
@@ -49,7 +50,7 @@ class ChatCubit extends Cubit<ChatState> {
     // ✅ Safety net: force-stop loading after 30s if "done" never arrives
     Future.delayed(const Duration(seconds: 30), () {
       final isStillTyping = state.maybeWhen(
-        connected: (messages, isTyping) => isTyping,
+        connected: (messages, isTyping, refreshToken) => isTyping,
         orElse: () => false,
       );
 
@@ -109,26 +110,81 @@ class ChatCubit extends Cubit<ChatState> {
       case "trip_created":
         final tripId = data["trip_id"] as String?;
         if (tripId != null) {
-          _repo.disconnect();
-          _buffer = "";
-          try {
-            await _repo.connectToTrip(tripId);
-            _listenToStream();
-          } catch (e) {
-            if (!isClosed) {
-              emit(ChatState.error("Failed to reconnect: $e"));
+          // ✅ Keep the SAME WebSocket open — the backend already remapped
+          //    this connection from "new_userid" to the trip_id internally.
+          //    Disconnecting and reconnecting would cause the backend's
+          //    websocket_new_chat handler to exit (WebSocketDisconnect)
+          //    and the new connection to /ws/chat/{trip_id} would have
+          //    no auto_msg → both sides waiting forever → deadlock.
+        }
+        break;
+
+      case "actions":
+        final actionsList = data["data"] as List<dynamic>?;
+        if (actionsList != null) {
+          for (final action in actionsList) {
+            if (action is Map && action["type"] == "CREATE_TRIP") {
+              final rawData = action["data"];
+              if (rawData is Map<String, dynamic>) {
+                final itineraryData = ItineraryData.fromJson(rawData);
+                // Update the last assistant message with structured itinerary
+                if (_messages.isNotEmpty && !_messages.last.isUser) {
+                  _messages[_messages.length - 1] = _messages.last.copyWith(
+                    itinerary: itineraryData,
+                  );
+                  if (!isClosed) {
+                    emit(ChatState.connected(
+                      messages: List.from(_messages),
+                      isTyping: false,
+                    ));
+                  }
+                }
+              }
             }
           }
         }
         break;
 
-      case "actions":
-        // Actions from AI (ADD_ACTIVITY, UPDATE_ACTIVITY, etc.)
-        // Could be used to update a local itinerary state
+      case "itinerary_data":
+        // Full structured itinerary JSON arrived from the backend.
+        // Parse it and attach to the last assistant message.
+        final rawItinerary = data["data"];
+        if (rawItinerary is Map<String, dynamic>) {
+          try {
+            final itineraryData = ItineraryData.fromJson(rawItinerary);
+            if (_messages.isNotEmpty && !_messages.last.isUser) {
+              _messages[_messages.length - 1] = _messages.last.copyWith(
+                itinerary: itineraryData,
+              );
+              if (!isClosed) {
+                emit(ChatState.connected(
+                  messages: List.from(_messages),
+                  isTyping: false,
+                ));
+              }
+            }
+          } catch (e) {
+            // Silently ignore malformed itinerary data
+          }
+        }
         break;
 
       case "itinerary_updated":
-        // Itinerary was modified by the backend
+        // The card already has the latest data from the 'itinerary_data'
+        // event that preceded this.  Force a UI refresh by bumping the
+        // refreshToken so BlocBuilder sees a different state object.
+        state.maybeWhen(
+          connected: (messages, isTyping, refreshToken) {
+            if (!isClosed) {
+              emit(ChatState.connected(
+                messages: List.from(messages),
+                isTyping: isTyping,
+                refreshToken: refreshToken + 1,
+              ));
+            }
+          },
+          orElse: () {},
+        );
         break;
 
       case "error":

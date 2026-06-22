@@ -12,6 +12,7 @@ class ChatState with _$ChatState {
   const factory ChatState.connected({
     required List<ChatMessage> messages,
     required bool isTyping,
+    @Default(0) int refreshToken,
   }) = _Connected;
 
   const factory ChatState.error(String message) = _Error;

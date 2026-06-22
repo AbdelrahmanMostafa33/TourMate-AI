@@ -6,6 +6,10 @@ import '../../features/chat/presentation/screens/chat_screen.dart';
 import '../../features/trips/presentation/screens/trips_screen.dart';
 import '../../features/trips/data/repository/trips_repository.dart';
 import '../../features/trips/logic/trips_cubit.dart';
+import '../../features/explore/presentation/screens/explore_screen.dart';
+import '../../features/explore/data/repository/explore_repository.dart';
+import '../../features/explore/logic/explore_cubit.dart';
+import '../../features/saved/presentation/screens/saved_screen.dart';
 import '../../features/auth/presentation/screens/profile_screen.dart';
 
 class MainShell extends StatefulWidget {
@@ -17,6 +21,7 @@ class MainShell extends StatefulWidget {
 
 class _MainShellState extends State<MainShell> {
   int currentIndex = 0;
+  int _savedTabCounter = 0;
 
   @override
   Widget build(BuildContext context) {
@@ -27,8 +32,11 @@ class _MainShellState extends State<MainShell> {
           final pages = [
             const ChatScreen(),
             const TripsScreen(),
-            const Placeholder(),
-            const Placeholder(),
+            BlocProvider(
+              create: (_) => ExploreCubit(locator<ExploreRepository>()),
+              child: const ExploreScreen(),
+            ),
+            SavedScreen(key: ValueKey(_savedTabCounter)),
             const ProfileScreen(),
           ];
 
@@ -75,6 +83,14 @@ class _MainShellState extends State<MainShell> {
             /// 🔥 Refresh trips when opening Trips tab
             if (index == 1) {
               context.read<TripsCubit>().getTrips();
+            }
+            /// 🔥 Refresh explore when opening Explore tab
+            if (index == 2) {
+              context.read<ExploreCubit>().init();
+            }
+            /// 🔥 Refresh saved places when opening Saved tab
+            if (index == 3) {
+              _savedTabCounter++;
             }
           },
           child: Column(

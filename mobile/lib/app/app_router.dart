@@ -5,6 +5,7 @@ import '../features/auth/presentation/screens/signin_screen.dart';
 import '../features/auth/presentation/screens/signup_screen.dart';
 import '../features/auth/presentation/screens/profile_screen.dart';
 import '../features/chat/presentation/screens/chat_screen.dart';
+import '../features/places/presentation/screens/place_detail_screen.dart';
 import '../features/quiz/presentation/screens/onboarding_flow.dart';
 import '../features/splash/splash_screen.dart';
 import '../features/trips/presentation/screens/create_trip_screen.dart';
@@ -43,6 +44,12 @@ class AppRouter {
 
       case "/create-trip":
         return MaterialPageRoute(builder: (_) => const CreateTripScreen());
+
+      case "/place-detail":
+        final placeId = settings.arguments as String;
+        return MaterialPageRoute(
+          builder: (_) => PlaceDetailScreen(placeId: placeId),
+        );
 
       default:
         return MaterialPageRoute(

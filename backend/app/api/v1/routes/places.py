@@ -2,10 +2,14 @@
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
+from sqlalchemy.orm import selectinload
 from typing import List, Optional
 
 from app.core.database import get_db
 from app.core.security import get_current_user
+from app.models.place import Place, HotelDetails, RestaurantDetails, AttractionDetails
+from app.repositories.place_repo import PlaceRepository
 from app.schemas.place_search import (
     PlaceSearchRequest,
     PlaceSearchResponse,
@@ -80,8 +84,8 @@ async def explore_places(
         ),
     ),
     category: Optional[str] = Query(
-        "hotel",
-        description="Filter by category: attractions, restaurant, hotel. Always defaults to hotel if the category tab wasn't picked.",
+        None,
+        description="Filter by category: attractions, restaurant, hotel. Defaults to all categories when not provided.",
     ),
     limit: int = Query(50, ge=1, le=200, description="Max results to return"),
     offset: int = Query(0, ge=0, description="Results offset for pagination"),
@@ -106,18 +110,18 @@ async def explore_places(
       (the untouched initial state). Pass city alone to search that city
       across every country in the DB — e.g. a "Cairo" autocomplete pick
       that matched multiple countries.
-    - category: always defaults to hotel, since the UI always has a
-      category tab selected (there's no "all categories" state).
+    - category: defaults to None (all categories).
+      Pass attraction, restaurant, or hotel to filter.
 
     Whatever you DO pass for city/country is always respected as-is —
     there is no flag that erases an explicitly provided value.
 
     **Examples:**
-    - GET /places/explore (untouched initial state: Egypt, hotels)
-    - GET /places/explore?category=restaurant (Egypt restaurants — country default still applies)
+    - GET /places/explore (Egypt, all categories)
+    - GET /places/explore?category=restaurant (Egypt restaurants)
     - GET /places/explore?city=cairo&category=restaurant (Cairo restaurants, any country)
     - GET /places/explore?city=cairo&country=egypt&category=restaurant (Cairo, Egypt restaurants only)
-    - GET /places/explore?country=Egypt (all Egypt hotels — country passed explicitly, category still defaults to hotel)
+    - GET /places/explore?country=Egypt (all Egypt, all categories)
     """
     # ── country default: only for the untouched initial state ─────────────
     # If the caller passed a city without a country (e.g. an autocomplete
@@ -127,7 +131,7 @@ async def explore_places(
     if city is None and country is None:
         country = "Egypt"
 
-    # ── category: always has a default, since the UI always has a tab selected ──
+    # ── category filter: null means no filter (all categories) ──
     categories = None
     if category:
         cat_lower = category.lower().strip()
@@ -248,6 +252,55 @@ async def search_places(
     )
 
     return PlaceSearchResponse(**result)
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# GET /places/city/{city}
+# Simple city retrieval (backward compatible)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# GET /places/{place_id}
+# Returns full details for a single place
+# ═══════════════════════════════════════════════════════════════════════════════
+
+
+@router.get("/{place_id}")
+async def get_place_detail(
+    place_id: str,
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Get full details for a single place by its ID.
+
+    Returns the complete place record with all category-specific
+    details (hotel_details, restaurant_details, attraction_details),
+    photos, address, coordinates, and pricing info.
+
+    Used by the mobile app's PlaceDetailScreen.
+
+    **No auth required** — public browsing endpoint.
+
+    **Errors:**
+    - 404: Place not found
+    """
+    result = await db.execute(
+        select(Place)
+        .options(
+            selectinload(Place.attraction_details),
+            selectinload(Place.restaurant_details),
+            selectinload(Place.hotel_details),
+        )
+        .where(Place.place_id == place_id)
+    )
+    place = result.scalar_one_or_none()
+
+    if not place:
+        raise HTTPException(status_code=404, detail="Place not found")
+
+    repo = PlaceRepository(db)
+    return repo._place_to_dict(place)
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

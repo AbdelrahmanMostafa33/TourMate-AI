@@ -66,8 +66,11 @@ class _ChatViewState extends State<_ChatView> {
             Expanded(
               child: BlocBuilder<ChatCubit, ChatState>(
                 builder: (context, state) {
-                  return state.maybeWhen(
-                    connected: (messages, isTyping) {
+                  return state.when(
+                    initial: () => const SizedBox(),
+                    loading: () =>
+                        const Center(child: CircularProgressIndicator()),
+                    connected: (messages, isTyping, refreshToken) {
                       if (messages.isEmpty) {
                         return _buildEmptyState();
                       }
@@ -80,8 +83,43 @@ class _ChatViewState extends State<_ChatView> {
                         },
                       );
                     },
-                    orElse: () =>
-                    const Center(child: CircularProgressIndicator()),
+                    error: (msg) => Center(
+                      child: Padding(
+                        padding: const EdgeInsets.all(24),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(Icons.wifi_off,
+                                size: 48, color: Colors.grey),
+                            const SizedBox(height: 16),
+                            const Text(
+                              "Connection lost",
+                              style: TextStyle(
+                                fontSize: 18,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              msg,
+                              textAlign: TextAlign.center,
+                              style: TextStyle(color: Colors.grey[600]),
+                            ),
+                            const SizedBox(height: 24),
+                            ElevatedButton(
+                              onPressed: () => context
+                                  .read<ChatCubit>()
+                                  .connect(),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: Colors.black,
+                                foregroundColor: Colors.white,
+                              ),
+                              child: const Text("Reconnect"),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
                   );
                 },
               ),
