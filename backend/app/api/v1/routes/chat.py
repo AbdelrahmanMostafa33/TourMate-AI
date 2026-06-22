@@ -261,11 +261,59 @@ async def process_message_stream(
         await manager.send(ws_key, {"type": "token", "data": full_response})
         await manager.send(ws_key, {"type": "done", "data": None})
 
-    # ── Execute actions (ADD_ACTIVITY, etc.) ─────────────────────────────
+    # ── Execute actions ─────────────────────────────────────────────────
     updated_actions = []
+    stops_created = 0
     if actions:
         await db.refresh(trip, ["itineraries"])
-        updated_actions = await execute_actions(actions, trip, db)
+
+        # Handle CREATE_TRIP for existing trips — update the itinerary
+        # with new stops from the AI result instead of creating a new trip.
+        create_action = next((a for a in actions if a.get("type") == "CREATE_TRIP"), None)
+        if create_action:
+            itinerary_data = create_action.get("data", {})
+            days_data = itinerary_data.get("days", [])
+            if days_data and trip.itineraries:
+                itinerary = trip.itineraries[0]
+                from app.services.itinerary_service import ItineraryService
+                itin_svc = ItineraryService(db)
+
+                # Delete existing stops so we can replace with new ones
+                for day_obj in itinerary.days:
+                    await db.execute(
+                        delete(ItineraryStop).where(ItineraryStop.day_id == day_obj.day_id)
+                    )
+                await db.flush()
+
+                # Create fresh stops from the AI result
+                start_date_raw = itinerary_data.get("start_date")
+                start_date = None
+                if start_date_raw:
+                    try:
+                        from datetime import date
+                        start_date = date.fromisoformat(start_date_raw)
+                    except (ValueError, TypeError):
+                        pass
+
+                stops_created = await itin_svc.create_stops_from_ai_days(
+                    itinerary_id=itinerary.itinerary_id,
+                    days_data=days_data,
+                    accommodation_suggestions=itinerary_data.get("accommodation_suggestions"),
+                    start_date=start_date,
+                )
+                await db.flush()
+
+        # Execute remaining non-CREATE_TRIP actions (ADD_ACTIVITY, etc.)
+        remaining_actions = [a for a in actions if a.get("type") != "CREATE_TRIP"]
+        if remaining_actions:
+            updated_actions = await execute_actions(remaining_actions, trip, db)
+
+    if stops_created > 0:
+        logger.info(
+            "[ChatRoutes] Updated itinerary %s with %d stops from AI result",
+            trip.itineraries[0].itinerary_id if trip.itineraries else "?",
+            stops_created,
+        )
 
     # ── Save AI response to DB ───────────────────────────────────────────
     if full_response:

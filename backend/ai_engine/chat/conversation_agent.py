@@ -475,6 +475,19 @@ async def handle_chat_stream(user_id, user_message, image_bytes=None, token=None
     async for chunk in _stream_text(message):
         yield chunk
 
+    # ── Yield structured result if this is an itinerary response ──────
+    # The route code (websocket_new_chat / process_message_stream) needs
+    # this event to extract the itinerary data and persist it to the DB.
+    if response and response.get("response_type") == "itinerary" and response.get("itinerary"):
+        yield {
+            "type": "result",
+            "data": {
+                "message": response.get("message", ""),
+                "itinerary": response["itinerary"],
+                "phase": phase_value,
+            }
+        }
+
     yield {"type": "done", "data": None}
 
 

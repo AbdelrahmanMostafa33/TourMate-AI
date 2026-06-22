@@ -204,4 +204,143 @@ class TestItineraryReviewPhase:
         result2 = await handle_chat("user1", "Looks good, approve!")
 
         assert result2["response_type"] == "chat"
-        
+
+
+# ── handle_chat_stream Tests ──────────────────────────────────────────────────
+
+class TestHandleChatStream:
+    """Tests for the handle_chat_stream() async generator."""
+
+    @pytest.mark.asyncio
+    @patch("ai_engine.chat.conversation_agent.get_session_manager")
+    @patch("ai_engine.chat.conversation_agent.route_message")
+    @patch("ai_engine.chat.conversation_agent.trip_graph", new_callable=AsyncMock)
+    @patch("ai_engine.chat.conversation_agent.load_mock_profile")
+    async def test_yields_result_event_when_itinerary_is_generated(
+        self, mock_profile, mock_graph, mock_route, mock_get_manager, mock_manager
+    ):
+        # Given: a valid itinerary is generated
+        mock_get_manager.return_value = mock_manager
+        mock_route.return_value = _make_plan_result("Cairo", 2)
+        mock_profile.return_value = {"user_id": "user1"}
+        mock_graph.ainvoke.return_value = _make_mock_graph_result(is_valid=True)
+
+        from ai_engine.chat.conversation_agent import handle_chat_stream
+
+        # When: we iterate over the stream
+        events = []
+        async for chunk in handle_chat_stream(
+            user_id="stream_user_1",
+            user_message="Plan me a 2-day trip to Cairo",
+        ):
+            events.append(chunk)
+
+        # Then: events should be in correct order:
+        #   session → phase → text... → result → done
+        event_types = [e["type"] for e in events]
+        assert event_types[0] == "session", f"First event should be 'session', got {event_types[0]}"
+        assert event_types[1] == "phase", f"Second event should be 'phase', got {event_types[1]}"
+        # All events between phase and result should be "text" tokens
+        text_events = event_types[2:-2]
+        assert all(t == "text" for t in text_events), (
+            f"Expected only 'text' events between phase and result, got {event_types[2:-2]}"
+        )
+        assert event_types[-2] == "result", f"Second-to-last should be 'result', got {event_types[-2]}"
+        assert event_types[-1] == "done", f"Last event should be 'done', got {event_types[-1]}"
+
+        # And: the "result" event has the itinerary data
+        result_event = next(e for e in events if e["type"] == "result")
+        result_data = result_event["data"]
+        assert result_data["message"] != ""
+        assert result_data["itinerary"] is not None
+        assert "days" in result_data["itinerary"]
+        assert len(result_data["itinerary"]["days"]) == 1
+        assert result_data["itinerary"]["days"][0]["stops"][0]["name"] == "Pyramids of Giza"
+
+    @pytest.mark.asyncio
+    @patch("ai_engine.chat.conversation_agent.get_session_manager")
+    @patch("ai_engine.chat.conversation_agent.route_message")
+    async def test_does_not_yield_result_event_when_no_itinerary(
+        self, mock_route, mock_get_manager, mock_manager
+    ):
+        # Given: the router asks a clarification question (no itinerary)
+        mock_get_manager.return_value = mock_manager
+        mock_route.return_value = _make_router_result(
+            "ask_clarification", "Where would you like to go?",
+            destination_city="Cairo",
+        )
+
+        from ai_engine.chat.conversation_agent import handle_chat_stream
+
+        # When: we iterate over the stream
+        events = []
+        async for chunk in handle_chat_stream(
+            user_id="stream_user_2",
+            user_message="I want to visit Cairo",
+        ):
+            events.append(chunk)
+
+        # Then: no "result" event should be present
+        event_types = [e["type"] for e in events]
+        assert "result" not in event_types, (
+            f"Unexpected 'result' event in clarification response: {event_types}"
+        )
+
+        # And: the last event should be "done"
+        assert event_types[-1] == "done"
+
+    @pytest.mark.asyncio
+    @patch("ai_engine.chat.conversation_agent.get_session_manager")
+    @patch("ai_engine.chat.conversation_agent.route_message")
+    async def test_yields_session_event_first(
+        self, mock_route, mock_get_manager, mock_manager
+    ):
+        # Given: any response
+        mock_get_manager.return_value = mock_manager
+        mock_route.return_value = _make_router_result(
+            "answer_question", "I'm here to help!"
+        )
+
+        from ai_engine.chat.conversation_agent import handle_chat_stream
+
+        # When: we iterate over the stream
+        events = []
+        async for chunk in handle_chat_stream(
+            user_id="stream_user_3",
+            user_message="Hello",
+        ):
+            events.append(chunk)
+
+        # Then: the first event is always "session" with session_id
+        first = events[0]
+        assert first["type"] == "session"
+        assert "session_id" in first["data"]
+        assert first["data"]["phase"] is not None
+
+    @pytest.mark.asyncio
+    @patch("ai_engine.chat.conversation_agent.get_session_manager")
+    @patch("ai_engine.chat.conversation_agent.route_message")
+    @patch("ai_engine.chat.conversation_agent.trip_graph", new_callable=AsyncMock)
+    @patch("ai_engine.chat.conversation_agent.load_mock_profile")
+    async def test_result_event_contains_correct_phase(
+        self, mock_profile, mock_graph, mock_route, mock_get_manager, mock_manager
+    ):
+        # Given: a valid itinerary is generated
+        mock_get_manager.return_value = mock_manager
+        mock_route.return_value = _make_plan_result("Paris", 3)
+        mock_profile.return_value = {"user_id": "user1"}
+        mock_graph.ainvoke.return_value = _make_mock_graph_result(is_valid=True)
+
+        from ai_engine.chat.conversation_agent import handle_chat_stream
+
+        # When: we iterate over the stream
+        events = []
+        async for chunk in handle_chat_stream(
+            user_id="stream_user_4",
+            user_message="Plan me a 3-day trip to Paris",
+        ):
+            events.append(chunk)
+
+        # Then: the result event has phase == "itinerary_review"
+        result_event = next(e for e in events if e["type"] == "result")
+        assert result_event["data"]["phase"] == "itinerary_review"
