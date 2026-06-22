@@ -19,20 +19,6 @@ class ProfileRepo:
         )
         return result.scalar_one_or_none()
 
-    async def create(self, trip_id: str, data: dict) -> TripProfile:
-        """Create a new trip profile."""
-        import uuid
-
-        profile = TripProfile(
-            profile_id=str(uuid.uuid4()),
-            trip_id=trip_id,
-            **data,
-        )
-        self.db.add(profile)
-        await self.db.commit()
-        await self.db.refresh(profile)
-        return profile
-
     async def update(self, trip_id: str, data: dict) -> TripProfile | None:
         """Update an existing trip profile."""
         profile = await self.get_by_trip_id(trip_id)
