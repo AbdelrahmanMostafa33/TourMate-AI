@@ -107,6 +107,7 @@ class ItineraryService:
 
                 await self.repo.create_stop(
                     day_id=day.day_id,
+                    place_id=stop_data.get("id"),
                     place_snapshot=_build_place_snapshot(stop_data),
                     duration_minutes=stop_data.get("estimated_duration_minutes"),
                     order_in_day=order + 1,
@@ -137,6 +138,7 @@ class ItineraryService:
                 for hotel in accommodation_suggestions:
                     await self.repo.create_stop(
                         day_id=last_day.day_id,
+                        place_id=hotel.get("id"),
                         place_snapshot={
                             "name": hotel.get("name", ""),
                             "category": "hotel",

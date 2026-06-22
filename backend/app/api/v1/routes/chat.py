@@ -217,11 +217,7 @@ async def process_message_stream(
     # ── Stream AI response ───────────────────────────────────────────────
     full_response = ""
     actions       = []
-<<<<<<< Updated upstream
     ai_session_id = None
-=======
-    itinerary_for_flutter = None
->>>>>>> Stashed changes
 
     try:
         from ai_engine.chat.conversation_agent import handle_chat_stream
@@ -230,20 +226,8 @@ async def process_message_stream(
             user_id=user_id,
             user_message=user_text,
             token=token,
-<<<<<<< Updated upstream
         ):
             event_type = chunk.get("type")
-=======
-        )
-        full_response = result.get("message", "")
-        if result.get("itinerary"):
-            actions = [{"type": "CREATE_TRIP", "data": result["itinerary"]}]
-            itinerary_for_flutter = result["itinerary"]
-        await manager.send(ws_key, {
-            "type": "token",
-            "data": full_response,
-        })
->>>>>>> Stashed changes
 
             if event_type == "session":
                 session_data  = chunk.get("data", {})
@@ -265,7 +249,6 @@ async def process_message_stream(
                 if result.get("itinerary"):
                     actions = [{"type": "CREATE_TRIP", "data": result["itinerary"]}]
 
-<<<<<<< Updated upstream
             elif event_type == "done":
                 await manager.send(ws_key, {"type": "done", "data": None})
 
@@ -278,20 +261,7 @@ async def process_message_stream(
         await manager.send(ws_key, {"type": "token", "data": full_response})
         await manager.send(ws_key, {"type": "done", "data": None})
 
-    # ── Execute actions ─────────────────────────────────────────────────
-=======
-    # ── Send structured itinerary data to Flutter ────────────────────────
-    # This is the key fix: the full itinerary JSON (days, stops, etc.)
-    # was never forwarded to Flutter because execute_actions() doesn't
-    # handle CREATE_TRIP, so it gets dropped. Instead, send it directly.
-    if itinerary_for_flutter:
-        await manager.send(ws_key, {
-            "type": "itinerary_data",
-            "data": itinerary_for_flutter,
-        })
-
-    # ── نفذ الـ actions ──────────────────────────────────────────────────
->>>>>>> Stashed changes
+    # ── Execute actions ──────────────────────────────────────────────────
     updated_actions = []
     stops_created = 0
     if actions:
@@ -441,6 +411,7 @@ async def websocket_new_chat(
 
             full_response = ""
             actions       = []
+            profile_data_from_ai = None
 
             try:
                 from ai_engine.chat.conversation_agent import handle_chat_stream
@@ -467,6 +438,8 @@ async def websocket_new_chat(
                             full_response = result_message
                         if result.get("itinerary"):
                             actions = [{"type": "CREATE_TRIP", "data": result["itinerary"]}]
+                        if result.get("profile"):
+                            profile_data_from_ai = result["profile"]
 
                     elif event_type == "done":
                         await manager.send(ws_key, {"type": "done"})
@@ -480,47 +453,16 @@ async def websocket_new_chat(
                 await manager.send(ws_key, {"type": "done"})
 
             # ══════════════════════════════════════════════════════════════
-            # استعد لإرسال الـ itinerary data لو موجود
-            # ══════════════════════════════════════════════════════════════
-            itinerary_for_flutter = None
-
-            # ══════════════════════════════════════════════════════════════
             # شوف لو فيه CREATE_TRIP
             # ══════════════════════════════════════════════════════════════
             for action in actions:
                 if action.get("type") == "CREATE_TRIP" and not trip:
-<<<<<<< Updated upstream
+                    ai_result = {"itinerary": action.get("data", {})}
+                    if profile_data_from_ai:
+                        ai_result["profile"] = profile_data_from_ai
                     created = await svc.create_trip_from_ai_result(
                         user_id,
-                        {"itinerary": action.get("data", {})},
-=======
-                    action_data = action.get("data", {})
-
-                    # Capture structured itinerary data for Flutter card
-                    if "days" in action_data:
-                        itinerary_for_flutter = action_data
-
-                    start_date_raw = action_data.get("start_date")
-                    end_date_raw = action_data.get("end_date")
-                    delta = action_data.get("duration_days", 1)  # fallback for backward compat
-
-                    # ✅ Convert strings → date objects RIGHT HERE, once
-                    start_date = date.fromisoformat(start_date_raw) if start_date_raw else None
-                    end_date = date.fromisoformat(end_date_raw) if end_date_raw else None
-
-                    if start_date and end_date:
-                        delta = (end_date - start_date).days + 1
-
-                    # ── أنشئ Trip ─────────────────────────────────────────
-                    trip = Trip(
-                        trip_id             = str(uuid.uuid4()),
-                        user_id             = user_id,
-                        destination         = action_data.get("destination", action_data.get("destination_city", "") + ", " + action_data.get("destination_country", "")),
-                        start_date          = start_date,
-                        end_date            = end_date,
-                        number_of_travelers  = action_data.get("traveler_count", action_data.get("number_of_travelers", 1)),
-                        budget              = action_data.get("budget", action_data.get("budget_total")),
->>>>>>> Stashed changes
+                        ai_result,
                     )
 
                     trip         = created["trip"]
@@ -552,15 +494,6 @@ async def websocket_new_chat(
                     await manager.connect_existing(ws_key, websocket)
 
                     break
-
-            # ── Send structured itinerary data to Flutter ────────────────
-            # The itinerary_data carries the full JSON (days, stops, etc.)
-            # so Flutter can render the rich card. ws_key is now trip_id.
-            if itinerary_for_flutter:
-                await manager.send(ws_key, {
-                    "type": "itinerary_data",
-                    "data": itinerary_for_flutter,
-                })
 
             # ══════════════════════════════════════════════════════════════
             # نفذ باقي الـ Actions (ADD_ACTIVITY, etc.)

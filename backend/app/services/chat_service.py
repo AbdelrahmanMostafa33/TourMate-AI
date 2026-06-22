@@ -29,7 +29,8 @@ from sqlalchemy.orm import selectinload
 from app.models.chat import Conversation, Message
 from app.models.trip import Trip
 from app.models.itinerary import Itinerary, Day
-from app.models.enums import ConversationStatus
+from app.models.profile import TripProfile
+from app.models.enums import ConversationStatus, BudgetLevel, TravelStyle, TripPace
 from app.services.itinerary_service import ItineraryService
 
 logger = logging.getLogger(__name__)
@@ -228,9 +229,18 @@ class ChatService:
         if country and country not in destination:
             destination = f"{destination}, {country}".strip(", ")
 
+        # ── Determine trip_name ───────────────────────────────────────
+        trip_name = (
+            itinerary_data.get("trip_name")
+            or itinerary_data.get("name")
+            or itinerary_data.get("title")
+            or f"Trip to {destination}"
+        )
+
         trip = Trip(
             trip_id=str(uuid.uuid4()),
             user_id=user_id,
+            trip_name=trip_name,
             destination=destination,
             start_date=start_date,
             end_date=end_date,
@@ -299,6 +309,49 @@ class ChatService:
                     date=start_date + timedelta(days=i),
                 )
                 self.db.add(day)
+
+        # ── 4. Create TripProfile from AI profile data ────────────────────────
+        profile_data = ai_result.get("profile", {})
+        if profile_data:
+            profile = TripProfile(
+                profile_id=str(uuid.uuid4()),
+                trip_id=trip.trip_id,
+            )
+            # ── Map string values → Enum instances ─────────────────────
+            budget_val = profile_data.get("budget_level")
+            if budget_val:
+                try:
+                    profile.budget_level = BudgetLevel(budget_val)
+                except (ValueError, TypeError):
+                    pass
+
+            style_val = profile_data.get("travel_style")
+            if style_val:
+                try:
+                    profile.travel_style = TravelStyle(style_val)
+                except (ValueError, TypeError):
+                    pass
+
+            pace_val = profile_data.get("pace")
+            if pace_val:
+                try:
+                    profile.pace = TripPace(pace_val)
+                except (ValueError, TypeError):
+                    pass
+
+            # ── Map list fields ────────────────────────────────────────
+            if profile_data.get("interests"):
+                profile.interests = profile_data["interests"]
+            if profile_data.get("food_preferences"):
+                profile.food_preferences = profile_data["food_preferences"]
+            if profile_data.get("accommodation_preferences"):
+                profile.accommodation_preferences = profile_data["accommodation_preferences"]
+
+            self.db.add(profile)
+            logger.info(
+                "[ChatService] Created TripProfile %s for trip %s",
+                profile.profile_id, trip.trip_id,
+            )
 
         logger.info(
             "[ChatService] Created trip %s / conversation %s for user %s",
