@@ -124,7 +124,7 @@ Determine the preference adjustments needed and return them as JSON."""
                 )
                 attempt_messages.append(HumanMessage(content=retry_note))
 
-            response = await invoke_with_fallback("preference", attempt_messages)
+            response = await invoke_with_fallback("preference_reranker", attempt_messages)
             extracted = extract_json_from_llm_output(response.content)
             result = json.loads(extracted)
             logger.info(

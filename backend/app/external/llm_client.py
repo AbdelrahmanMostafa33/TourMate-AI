@@ -28,7 +28,7 @@ def get_vision_llm() -> BaseChatModel:
 
 def get_fast_llm() -> BaseChatModel:
     """Groq Llama 3.1 8B for preference extraction and validation."""
-    return get_llm_for_agent("preference")
+    return get_llm_for_agent("preference_reranker")
 
 
 def get_reasoning_llm() -> BaseChatModel:
