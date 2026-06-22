@@ -10,6 +10,14 @@ class RegisterRequest(BaseModel):
     home_city: Optional[str] = None
 
 
+class UserUpdate(BaseModel):
+    """Update schema for User – all fields optional for partial updates."""
+    full_name:        Optional[str] = None
+    phone_number:     Optional[str] = None
+    home_city:        Optional[str] = None
+    traveler_persona: Optional[str] = None
+
+
 class UserResponse(BaseModel):
     """Response schema for User – aligns with ERD model fields."""
     user_id:           str

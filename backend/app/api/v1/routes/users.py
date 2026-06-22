@@ -7,6 +7,7 @@ from sqlalchemy import select
 from app.core.database import get_db
 from app.core.security import get_current_user
 from app.schemas.profile import TripProfileCreate, TripProfileResponse, UserProfileResponse
+from app.schemas.user import UserUpdate
 
 router = APIRouter()
 
@@ -56,6 +57,43 @@ async def get_full_profile(
     user = result.scalar_one_or_none()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
+
+    return UserProfileResponse(
+        user_id=user.user_id,
+        full_name=user.full_name,
+        email=user.email,
+        phone_number=user.phone_number,
+        home_city=user.home_city,
+        registration_date=user.registration_date,
+        traveler_persona=user.traveler_persona,
+    )
+
+
+@router.put("/profile", response_model=UserProfileResponse)
+async def update_user_profile(
+    body: UserUpdate,
+    current_user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Update user profile fields."""
+    user_id = current_user["uid"]
+
+    result = await db.execute(select(User).where(User.user_id == user_id))
+    user = result.scalar_one_or_none()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    if body.full_name is not None:
+        user.full_name = body.full_name
+    if body.phone_number is not None:
+        user.phone_number = body.phone_number
+    if body.home_city is not None:
+        user.home_city = body.home_city
+    if body.traveler_persona is not None:
+        user.traveler_persona = body.traveler_persona
+
+    await db.commit()
+    await db.refresh(user)
 
     return UserProfileResponse(
         user_id=user.user_id,
