@@ -1,22 +1,24 @@
 # backend/tests/unit/test_ai_engine/test_ranking_agent.py
 
 """
-Unit tests for the Ranking Agent.
+Unit tests for the Ranking Agent (embedding-based scoring).
 
 Tests cover:
     - _score_popularity(): normalizes popularity to 0-1
-    - _score_preference(): matches place tags/categories to user preferences
+    - _score_preference_embedding(): cosine-similarity scoring with fallback
     - _score_proximity(): distance-based scoring with hotel exemption
     - _score_rating(): normalizes 1-5 rating to 0-1
-    - _compute_composite_score(): weighted multi-signal formula
+    - _compute_composite_score(): weighted multi-signal formula (embedding path)
     - _diversity_optimize(): per-category caps and total candidate limit
-    - run_ranking_agent(): full agent run (no LLM needed)
+    - run_ranking_agent(): full agent run (DB + embedding calls mocked)
 """
 
 import pytest
+from unittest.mock import AsyncMock, patch
+
 from ai_engine.agents.ranking_agent import (
     _score_popularity,
-    _score_preference,
+    _score_preference_embedding,
     _score_proximity,
     _score_rating,
     _compute_composite_score,
@@ -28,36 +30,23 @@ from ai_engine.agents.ranking_agent import (
     WEIGHT_RATING,
     WEIGHT_DIVERSITY,
     MAX_TOTAL_CANDIDATES,
+    FALLBACK_EMBEDDING_SCORE,
 )
 
 from tests.unit.test_ai_engine.conftest import _make_state, _make_place
 
 
-# ── Default extracted_preferences for ranking tests ──────────────────────────
-
-_DEFAULT_RANKING_PREFS = {
-    "budget_level": "moderate",
-    "travel_style": "cultural",
-    "walking_tolerance": "medium",
-    "food_preferences": ["local cuisine"],
-    "accommodation_style": "hotel",
-    "nightlife": "low",
-    "interests_from_conversation": ["history", "art"],
-    "pace": "balanced",
-    "special_focus": None,
-}
+# ── Helpers ──────────────────────────────────────────────────────────────────
 
 
-def _make_ranking_state(**overrides) -> dict:
-    """State with extracted_preferences pre-populated for ranking tests."""
-    defaults = {
-        "profile": None,
-        "extracted_preferences": dict(_DEFAULT_RANKING_PREFS),
-        "filtered_places": [],
-        "destination_city": "Cairo",
-    }
-    defaults.update(overrides)
-    return _make_state(**defaults)
+def _make_dummy_query_vector() -> list[float]:
+    """A dummy 768-dim query vector (all 0.5 for neutral similarity)."""
+    return [0.5] * 768
+
+
+def _make_dummy_place_vectors(place_ids: list[str]) -> dict[str, list[float]]:
+    """Create dummy place vectors for a list of place IDs."""
+    return {pid: [0.5] * 768 for pid in place_ids}
 
 
 # ── _score_popularity Tests ───────────────────────────────────────────────────
@@ -83,106 +72,53 @@ class TestScorePopularity:
         assert _score_popularity({"popularity_score": 100}) == 1.0
 
 
-# ── _score_preference Tests ───────────────────────────────────────────────────
+# ── _score_preference_embedding Tests ─────────────────────────────────────────
 
-class TestScorePreference:
+class TestScorePreferenceEmbedding:
 
-    def test_interest_tag_match(self):
-        place = _make_place(interest_tags=["history", "museums"])
-        prefs = {"interests_from_conversation": ["history"]}
-        score = _score_preference(place, prefs)
-        assert score > 0
+    def test_high_similarity_scores_high(self):
+        """Place with identical direction to query scores ~1.0."""
+        query_vec = [1.0, 0.0, 0.0]
+        place_vecs = {"place_001": [1.0, 0.0, 0.0]}
+        place = {"id": "place_001"}
+        score = _score_preference_embedding(place, query_vec, place_vecs)
+        assert score == pytest.approx(1.0, abs=0.01)
 
-    def test_interest_category_match(self):
-        """Category name matches an interest directly."""
-        place = _make_place(category="museum", interest_tags=[])
-        prefs = {"interests_from_conversation": ["museum"]}
-        score = _score_preference(place, prefs)
-        assert score > 0
+    def test_orthogonal_similarity_scores_mid(self):
+        """Orthogonal vectors (cosine=0) map to 0.5."""
+        query_vec = [1.0, 0.0, 0.0]
+        place_vecs = {"place_001": [0.0, 1.0, 0.0]}
+        place = {"id": "place_001"}
+        score = _score_preference_embedding(place, query_vec, place_vecs)
+        assert score == pytest.approx(0.5, abs=0.01)
 
-    def test_no_interest_match(self):
-        place = _make_place(interest_tags=["sports"])
-        prefs = {"interests_from_conversation": ["history", "art"]}
-        score = _score_preference(place, prefs)
-        assert score == 0.0
+    def test_opposite_similarity_scores_zero(self):
+        """Opposite direction (cosine=-1) maps to 0.0."""
+        query_vec = [1.0, 0.0, 0.0]
+        place_vecs = {"place_001": [-1.0, 0.0, 0.0]}
+        place = {"id": "place_001"}
+        score = _score_preference_embedding(place, query_vec, place_vecs)
+        assert score == pytest.approx(0.0, abs=0.01)
 
-    def test_romantic_style_match(self):
-        place = _make_place(sub_category="romantic riverside cafe")
-        prefs = {"travel_style": "romantic"}
-        score = _score_preference(place, prefs)
-        assert score > 0
+    def test_no_query_vector_uses_fallback(self):
+        """When query embedding failed, all places get fallback score."""
+        place = {"id": "place_001"}
+        score = _score_preference_embedding(place, None, {})
+        assert score == FALLBACK_EMBEDDING_SCORE
 
-    def test_cultural_style_match_museum(self):
-        place = _make_place(sub_category="museum exhibit")
-        prefs = {"travel_style": "cultural"}
-        score = _score_preference(place, prefs)
-        assert score > 0
+    def test_missing_place_embedding_uses_fallback(self):
+        """Place without a stored embedding gets fallback score."""
+        query_vec = [0.5] * 768
+        place = {"id": "place_001"}
+        score = _score_preference_embedding(place, query_vec, {})
+        assert score == FALLBACK_EMBEDDING_SCORE
 
-    def test_no_style_match(self):
-        place = _make_place(sub_category="sports bar")
-        prefs = {"travel_style": "romantic"}
-        score = _score_preference(place, prefs)
-        assert score == 0.0
-
-    def test_food_preference_match(self):
-        place = _make_place(category="restaurant", cuisine_type="local cuisine")
-        prefs = {"food_preferences": ["local cuisine"]}
-        score = _score_preference(place, prefs)
-        assert score > 0
-
-    def test_food_preference_no_match(self):
-        place = _make_place(category="restaurant", cuisine_type="sushi")
-        prefs = {"food_preferences": ["local cuisine"]}
-        score = _score_preference(place, prefs)
-        assert score == 0.0
-
-    def test_food_check_only_for_restaurants(self):
-        """Non-restaurant places skip food preference check."""
-        place = _make_place(category="attractions", cuisine_type="")
-        prefs = {"food_preferences": ["local cuisine"]}
-        score = _score_preference(place, prefs)
-        # Only interest check happened (0 since no tag match)
-        assert score == 0.0
-
-    def test_accommodation_type_match(self):
-        """Hotel with matching accommodation_type should score higher."""
-        place = _make_place(category="hotel", accommodation_type="resort")
-        prefs = {"accommodation_style": "resort", "interests_from_conversation": ["history"]}
-        score = _score_preference(place, prefs)
-        assert score > 0.5  # Interest + accommodation match
-
-    def test_accommodation_type_no_match(self):
-        """Hotel with non-matching accommodation_type should not get the bonus."""
-        place = _make_place(category="hotel", accommodation_type="hostel")
-        prefs = {"accommodation_style": "resort", "interests_from_conversation": ["history"]}
-        score_match = _score_preference(place, prefs)
-
-        # Same place but matching
-        place_match = _make_place(category="hotel", accommodation_type="resort")
-        score_with = _score_preference(place_match, prefs)
-
-        assert score_with > score_match
-
-    def test_accommodation_check_only_for_hotels(self):
-        """Non-hotel places skip accommodation preference check."""
-        place = _make_place(category="attractions")
-        prefs = {"accommodation_style": "resort", "interests_from_conversation": ["history"]}
-        score = _score_preference(place, prefs)
-        # Only interest check happened
-        assert score >= 0.0
-
-    def test_accommodation_partial_word_match(self):
-        """'boutique hotel' preference should match 'hotel' type."""
-        place = _make_place(category="hotel", accommodation_type="hotel")
-        prefs = {"accommodation_style": "boutique hotel"}
-        score = _score_preference(place, prefs)
-        assert score == 1.0  # Word 'hotel' in both
-
-    def test_empty_preferences_returns_zero(self):
-        place = _make_place()
-        prefs = {}
-        score = _score_preference(place, prefs)
-        assert score == 0.0
+    def test_empty_place_id_uses_fallback(self):
+        """Place with empty ID cannot look up embedding → fallback."""
+        query_vec = [0.5] * 768
+        place = {"id": ""}
+        score = _score_preference_embedding(place, query_vec, {"other": [0.5] * 768})
+        assert score == FALLBACK_EMBEDDING_SCORE
 
 
 # ── _score_proximity Tests ────────────────────────────────────────────────────
@@ -190,7 +126,6 @@ class TestScorePreference:
 class TestScoreProximity:
 
     def test_same_location_returns_1(self):
-        """Place at the center should score 1.0."""
         score = _score_proximity(
             _make_place(lat=30.0, lon=31.0),
             center_lat=30.0,
@@ -199,7 +134,6 @@ class TestScoreProximity:
         assert score == 1.0
 
     def test_hotel_gets_neutral_score(self):
-        """Hotels are exempt from proximity scoring."""
         score = _score_proximity(
             _make_place(category="hotel", lat=35.0, lon=36.0),
             center_lat=30.0,
@@ -208,7 +142,6 @@ class TestScoreProximity:
         assert score == 0.5
 
     def test_close_place_scores_high(self):
-        """Place ~3km away should score high."""
         score = _score_proximity(
             _make_place(lat=30.03, lon=31.23),
             center_lat=30.0,
@@ -217,7 +150,6 @@ class TestScoreProximity:
         assert score >= 0.8
 
     def test_far_place_scores_low(self):
-        """Place ~45km away should score low."""
         score = _score_proximity(
             _make_place(lat=30.5, lon=31.5),
             center_lat=30.0,
@@ -226,7 +158,6 @@ class TestScoreProximity:
         assert score < 0.3
 
     def test_very_far_place_scores_near_zero(self):
-        """Place ~100km away should score near 0."""
         score = _score_proximity(
             _make_place(lat=31.0, lon=32.0),
             center_lat=30.0,
@@ -262,8 +193,7 @@ class TestScoreRating:
         assert _score_rating({"rating": 6.0}) == 1.0
 
     def test_rating_zero_uses_default(self):
-        """rating=0.0 is falsy in Python, so `or 3.0` kicks in → treated as unrated."""
-        assert _score_rating({"rating": 0.0}) == 0.5  # default 3.0
+        assert _score_rating({"rating": 0.0}) == 0.5
 
 
 # ── _compute_composite_score Tests ────────────────────────────────────────────
@@ -271,60 +201,76 @@ class TestScoreRating:
 class TestComputeCompositeScore:
 
     def test_perfect_place_scores_high(self):
-        """A place with max popularity, rating, and preference match."""
+        """A place with max popularity, rating, and embedding match."""
         place = _make_place(
             popularity_score=100,
             rating=5.0,
-            interest_tags=["history"],
             lat=30.0,
             lon=31.0,
         )
-        prefs = {"interests_from_conversation": ["history"], "travel_style": "cultural"}
+        qv = _make_dummy_query_vector()
+        pv = _make_dummy_place_vectors(["place_001"])
         cat_counts = {}
         targets = {"attractions": 6}
 
-        score = _compute_composite_score(place, prefs, 30.0, 31.0, cat_counts, targets)
-        assert score > 0.6  # Should be high
+        score = _compute_composite_score(place, qv, pv, 30.0, 31.0, cat_counts, targets)
+        assert score > 0.6
 
     def test_zero_popularity_low_rating_scores_low(self):
         place = _make_place(
             popularity_score=0,
             rating=1.0,
-            interest_tags=[],
             lat=35.0,
             lon=36.0,
         )
-        prefs = {"interests_from_conversation": ["history"]}
+        qv = _make_dummy_query_vector()
+        pv = _make_dummy_place_vectors(["place_001"])
         cat_counts = {"attractions": 10}
         targets = {"attractions": 6}
 
-        score = _compute_composite_score(place, prefs, 30.0, 31.0, cat_counts, targets)
+        score = _compute_composite_score(place, qv, pv, 30.0, 31.0, cat_counts, targets)
         assert score < 0.4
 
+    def test_fallback_embedding_when_query_missing(self):
+        """When query_vector is None, composite should still work via fallback."""
+        place = _make_place(popularity_score=50, rating=3.0)
+        cat_counts = {}
+        targets = {"attractions": 3}
+
+        score = _compute_composite_score(place, None, {}, 30.0, 31.0, cat_counts, targets)
+        # Should still compute a positive score from popularity + proximity + rating
+        assert score > 0.0
+
     def test_diversity_bonus_for_underrepresented_category(self):
-        """Category at 0 count should get full diversity bonus."""
         place = _make_place(category="restaurant")
-        prefs = {}
-        cat_counts = {}  # restaurant not seen yet
+        qv = _make_dummy_query_vector()
+        pv = _make_dummy_place_vectors(["place_001"])
+        cat_counts = {}
         targets = {"restaurant": 3}
 
-        score = _compute_composite_score(place, prefs, 30.0, 31.0, cat_counts, targets)
-        # Diversity bonus should contribute positively
+        score = _compute_composite_score(place, qv, pv, 30.0, 31.0, cat_counts, targets)
         assert score > 0
 
     def test_no_diversity_bonus_for_overrepresented_category(self):
-        """Category already at target should get no diversity bonus."""
-        place = _make_place(category="restaurant", popularity_score=0, rating=1.0, interest_tags=[])
-        prefs = {}
-        cat_counts = {"restaurant": 5}  # already at target
+        place = _make_place(
+            category="restaurant",
+            popularity_score=0,
+            rating=1.0,
+        )
+        qv = _make_dummy_query_vector()
+        pv = _make_dummy_place_vectors(["place_001"])
+        cat_counts = {"restaurant": 5}
         targets = {"restaurant": 3}
 
-        score_over = _compute_composite_score(place, prefs, 30.0, 31.0, cat_counts, targets)
-
+        score_over = _compute_composite_score(
+            place, qv, pv, 30.0, 31.0, cat_counts, targets
+        )
         cat_counts_under = {}
-        score_under = _compute_composite_score(place, prefs, 30.0, 31.0, cat_counts_under, targets)
+        score_under = _compute_composite_score(
+            place, qv, pv, 30.0, 31.0, cat_counts_under, targets
+        )
 
-        assert score_under >= score_over  # Underrepresented gets higher score
+        assert score_under >= score_over
 
     def test_weights_sum_to_one(self):
         total = WEIGHT_POPULARITY + WEIGHT_PREFERENCE + WEIGHT_PROXIMITY + WEIGHT_RATING + WEIGHT_DIVERSITY
@@ -336,8 +282,6 @@ class TestComputeCompositeScore:
 class TestDiversityOptimize:
 
     def test_caps_total_candidates(self):
-        """Result should not exceed MAX_TOTAL_CANDIDATES."""
-        # Create places across multiple categories to hit the 30 cap
         places = []
         for i in range(15):
             places.append((_make_place(id=f"attr_{i}", category="attractions"), 0.9))
@@ -351,7 +295,6 @@ class TestDiversityOptimize:
         assert len(result) <= MAX_TOTAL_CANDIDATES
 
     def test_preserves_highest_scored(self):
-        """Top-scored places should be preferred."""
         high = _make_place(id="high", popularity_score=100, rating=5.0)
         low = _make_place(id="low", popularity_score=10, rating=2.0)
         scored = [(high, 0.95), (low, 0.1)]
@@ -369,7 +312,6 @@ class TestDiversityOptimize:
         assert len(result) == 1
 
     def test_multiple_categories_represented(self):
-        """With enough places, multiple categories should appear."""
         places = []
         for i in range(5):
             places.append((_make_place(id=f"attr_{i}", category="attractions"), 0.9 - i * 0.05))
@@ -377,13 +319,11 @@ class TestDiversityOptimize:
             places.append((_make_place(id=f"rest_{i}", category="restaurant"), 0.8 - i * 0.05))
         for i in range(3):
             places.append((_make_place(id=f"hotel_{i}", category="hotel"), 0.7 - i * 0.05))
-
         result = _diversity_optimize(places, duration_days=3)
         categories = set(p["category"] for p in result)
         assert len(categories) >= 2
 
     def test_longer_trip_allows_more_candidates(self):
-        """A 7-day trip should allow more attractions than a 2-day trip."""
         places_2d = [
             (_make_place(id=f"a2d_{i}", category="attractions"), 0.9)
             for i in range(20)
@@ -392,7 +332,6 @@ class TestDiversityOptimize:
             (_make_place(id=f"a7d_{i}", category="attractions"), 0.9)
             for i in range(20)
         ]
-
         result_2d = _diversity_optimize(places_2d, duration_days=2)
         result_7d = _diversity_optimize(places_7d, duration_days=7)
 
@@ -406,36 +345,59 @@ class TestDiversityOptimize:
 class TestRunRankingAgent:
 
     @pytest.mark.asyncio
-    async def test_empty_filtered_places_sets_error(self):
+    @patch("ai_engine.agents.ranking_agent.load_place_embeddings", new_callable=AsyncMock)
+    @patch("ai_engine.agents.ranking_agent.embed_query")
+    async def test_empty_filtered_places_sets_error(self, mock_embed, mock_load):
         state = _make_ranking_state(filtered_places=[])
         result = await run_ranking_agent(state)
 
         assert result["candidate_places"] == []
         assert result["error"] is not None
+        mock_embed.assert_not_called()
+        mock_load.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_none_filtered_places_sets_error(self):
+    @patch("ai_engine.agents.ranking_agent.load_place_embeddings", new_callable=AsyncMock)
+    @patch("ai_engine.agents.ranking_agent.embed_query")
+    async def test_none_filtered_places_sets_error(self, mock_embed, mock_load):
         state = _make_ranking_state(filtered_places=None)
         result = await run_ranking_agent(state)
 
         assert result["candidate_places"] == []
+        mock_embed.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_single_place_returns_it(self):
+    @patch("ai_engine.agents.ranking_agent.load_place_embeddings", new_callable=AsyncMock)
+    @patch("ai_engine.agents.ranking_agent.embed_query")
+    async def test_single_place_returns_it(self, mock_embed, mock_load):
         place = _make_place()
+        mock_load.return_value = {"place_001": [0.5] * 768}
+        mock_embed.return_value = [0.5] * 768
+
         state = _make_ranking_state(filtered_places=[place])
         result = await run_ranking_agent(state)
 
         assert len(result["candidate_places"]) == 1
         assert result["candidate_places"][0]["id"] == "place_001"
+        mock_embed.assert_called_once()
+        mock_load.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_multiple_places_ranked(self):
+    @patch("ai_engine.agents.ranking_agent.load_place_embeddings", new_callable=AsyncMock)
+    @patch("ai_engine.agents.ranking_agent.embed_query")
+    async def test_multiple_places_ranked(self, mock_embed, mock_load):
         places = [
             _make_place(id="p_high", popularity_score=95, rating=4.8),
             _make_place(id="p_low", popularity_score=20, rating=3.0),
             _make_place(id="p_mid", popularity_score=60, rating=4.0),
         ]
+        mock_load.return_value = {
+            "p_high": [0.6] * 768,
+            "p_low": [0.3] * 768,
+            "p_mid": [0.5] * 768,
+        }
+        mock_embed.return_value = [0.5] * 768
+
         state = _make_ranking_state(filtered_places=places)
         result = await run_ranking_agent(state)
 
@@ -445,20 +407,29 @@ class TestRunRankingAgent:
         assert candidates[0]["id"] == "p_high"
 
     @pytest.mark.asyncio
-    async def test_candidate_places_capped(self):
-        """With many places, result should not exceed MAX_TOTAL_CANDIDATES."""
+    @patch("ai_engine.agents.ranking_agent.load_place_embeddings", new_callable=AsyncMock)
+    @patch("ai_engine.agents.ranking_agent.embed_query")
+    async def test_candidate_places_capped(self, mock_embed, mock_load):
         places = [
             _make_place(id=f"place_{i}", popularity_score=80, category="attractions")
             for i in range(50)
         ]
+        mock_load.return_value = {f"place_{i}": [0.5] * 768 for i in range(50)}
+        mock_embed.return_value = [0.5] * 768
+
         state = _make_ranking_state(filtered_places=places, duration_days=7)
         result = await run_ranking_agent(state)
 
         assert len(result["candidate_places"]) <= MAX_TOTAL_CANDIDATES
 
     @pytest.mark.asyncio
-    async def test_agent_message_appended(self):
+    @patch("ai_engine.agents.ranking_agent.load_place_embeddings", new_callable=AsyncMock)
+    @patch("ai_engine.agents.ranking_agent.embed_query")
+    async def test_agent_message_appended(self, mock_embed, mock_load):
         place = _make_place()
+        mock_load.return_value = {"place_001": [0.5] * 768}
+        mock_embed.return_value = [0.5] * 768
+
         state = _make_ranking_state(filtered_places=[place])
         result = await run_ranking_agent(state)
 
@@ -466,13 +437,74 @@ class TestRunRankingAgent:
         assert any("[RankingAgent]" in m for m in messages)
 
     @pytest.mark.asyncio
-    async def test_city_center_computed_from_non_hotel_places(self):
-        """City center should be the average lat/lon of non-hotel places."""
+    @patch("ai_engine.agents.ranking_agent.load_place_embeddings", new_callable=AsyncMock)
+    @patch("ai_engine.agents.ranking_agent.embed_query")
+    async def test_city_center_computed_from_non_hotel_places(self, mock_embed, mock_load):
         hotel = _make_place(id="h1", category="hotel", lat=35.0, lon=36.0)
         attraction = _make_place(id="a1", category="attractions", lat=30.0, lon=31.0)
+
+        mock_load.return_value = {"h1": [0.5] * 768, "a1": [0.5] * 768}
+        mock_embed.return_value = [0.5] * 768
+
         state = _make_ranking_state(filtered_places=[hotel, attraction])
         result = await run_ranking_agent(state)
 
-        # Should succeed without error
         assert result["error"] is None
         assert len(result["candidate_places"]) >= 1
+
+    @pytest.mark.asyncio
+    @patch("ai_engine.agents.ranking_agent.load_place_embeddings", new_callable=AsyncMock)
+    @patch("ai_engine.agents.ranking_agent.embed_query")
+    async def test_embedding_failure_fallback(self, mock_embed, mock_load):
+        """When embed_query returns None, ranking should still work with fallback."""
+        place = _make_place()
+        mock_load.return_value = {"place_001": [0.5] * 768}
+        mock_embed.return_value = None  # embedding failed
+
+        state = _make_ranking_state(filtered_places=[place])
+        result = await run_ranking_agent(state)
+
+        assert len(result["candidate_places"]) == 1
+        assert result["error"] is None
+
+    @pytest.mark.asyncio
+    @patch("ai_engine.agents.ranking_agent.load_place_embeddings", new_callable=AsyncMock)
+    @patch("ai_engine.agents.ranking_agent.embed_query")
+    async def test_missing_place_embeddings_fallback(self, mock_embed, mock_load):
+        """When DB has no embeddings (empty dict), ranking uses fallback."""
+        place = _make_place()
+        mock_load.return_value = {}  # no embeddings in DB
+        mock_embed.return_value = [0.5] * 768
+
+        state = _make_ranking_state(filtered_places=[place])
+        result = await run_ranking_agent(state)
+
+        assert result["candidate_places"]
+        assert result["error"] is None
+
+
+# ── Helpers for ranking agent tests ───────────────────────────────────────────
+
+_DEFAULT_RANKING_PREFS = {
+    "budget_level": "moderate",
+    "travel_style": "cultural",
+    "walking_tolerance": "medium",
+    "food_preferences": ["local cuisine"],
+    "accommodation_style": "hotel",
+    "nightlife": "low",
+    "interests_from_conversation": ["history", "art"],
+    "pace": "balanced",
+    "special_focus": None,
+}
+
+
+def _make_ranking_state(**overrides) -> dict:
+    """State with extracted_preferences pre-populated for ranking tests."""
+    defaults = {
+        "profile": None,
+        "extracted_preferences": dict(_DEFAULT_RANKING_PREFS),
+        "filtered_places": [],
+        "destination_city": "Cairo",
+    }
+    defaults.update(overrides)
+    return _make_state(**defaults)

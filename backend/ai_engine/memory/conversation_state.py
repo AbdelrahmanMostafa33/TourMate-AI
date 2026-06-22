@@ -88,36 +88,75 @@ class TripSlots:
     food_preferences:               Optional[List[str]] = None
     accommodation_preferences:      Optional[List[str]] = None
 
+    # ── Smart defaults ────────────────────────────────────────────────
+    # Applied automatically when destination + duration are known.
+    SMART_DEFAULTS = {
+        "group_size": 2,                          # Most common
+        "traveler_group_type": "couple",          # Inferred from 2 travelers
+        "budget_level": "moderate",               # Safe middle ground
+        "travel_style": "cultural",               # Fits most city destinations
+        "pace": "moderate",                       # Most flexible
+        "interests": [],                           # Top-rated places fill the day
+        "food_preferences": ["local cuisine"],    # Works everywhere
+        "accommodation_preferences": ["hotel"],   # Most general
+        "travel_dates": "",                       # Handled as optional in pipeline
+    }
+
     def missing_required(self) -> List[str]:
-        """Return the list of required fields that are still None."""
+        """Return the list of REQUIRED fields that are still None.
+
+        Only destination + duration are truly mandatory.
+        Everything else gets smart defaults via ``fill_defaults()``.
+        """
         missing: List[str] = []
         if not self.destination_city:
             missing.append("destination")
         if self.duration_days is None:
             missing.append("duration")
-        if not self.travel_dates:
-            missing.append("dates")
-        if self.group_size is None:
-            missing.append("travelers")
-        if not self.traveler_group_type:
-            missing.append("traveler_group_type")
-        if not self.budget_level:
-            missing.append("budget_level")
-        if not self.travel_style:
-            missing.append("travel_style")
-        if not self.pace:
-            missing.append("pace")
-        if not self.interests:
-            missing.append("interests")
-        if not self.food_preferences:
-            missing.append("food_preferences")
-        if not self.accommodation_preferences:
-            missing.append("accommodation_preferences")
         return missing
 
     def is_complete(self) -> bool:
-        """True when all required slots are filled."""
+        """True when all required slots are filled.
+
+        Only checks destination + duration (the true minimum).
+        Non-mandatory fields get smart defaults via ``fill_defaults()``.
+        """
         return len(self.missing_required()) == 0
+
+    def fill_defaults(self) -> None:
+        """Fill any unset non-mandatory fields with smart defaults.
+
+        Call this right before triggering itinerary generation
+        when only destination + duration have been collected.
+        """
+        # Infer traveler group type from group_size
+        if self.group_size is None:
+            self.group_size = self.SMART_DEFAULTS["group_size"]
+        if not self.traveler_group_type:
+            if self.group_size == 1:
+                self.traveler_group_type = "solo"
+            elif self.group_size == 2:
+                self.traveler_group_type = "couple"
+            elif self.group_size >= 3:
+                self.traveler_group_type = "friends"
+            else:
+                self.traveler_group_type = self.SMART_DEFAULTS["traveler_group_type"]
+
+        # Fill remaining defaults
+        if not self.budget_level:
+            self.budget_level = self.SMART_DEFAULTS["budget_level"]
+        if not self.travel_style:
+            self.travel_style = self.SMART_DEFAULTS["travel_style"]
+        if not self.pace:
+            self.pace = self.SMART_DEFAULTS["pace"]
+        if not self.interests:
+            self.interests = list(self.SMART_DEFAULTS["interests"])
+        if not self.food_preferences:
+            self.food_preferences = list(self.SMART_DEFAULTS["food_preferences"])
+        if not self.accommodation_preferences:
+            self.accommodation_preferences = list(self.SMART_DEFAULTS["accommodation_preferences"])
+        if not self.travel_dates:
+            self.travel_dates = self.SMART_DEFAULTS["travel_dates"]
 
     def to_dict(self) -> Dict[str, Any]:
         """Serialize to a plain dict (JSON-safe)."""
@@ -246,6 +285,7 @@ class ConversationState:
     history:      List[ChatMessage] = field(default_factory=list)
     itinerary:    Optional[Dict[str, Any]] = None
     itinerary_id: Optional[str] = None
+    candidate_places: Optional[List[Dict[str, Any]]] = None  # places from last pipeline run, for modifier agent
     created_at:   str = ""
     updated_at:   str = ""
     turn_count:   int = 0
@@ -272,6 +312,7 @@ class ConversationState:
             "history":      [m.to_dict() for m in self.history],
             "itinerary":    self.itinerary,
             "itinerary_id": self.itinerary_id,
+            "candidate_places": self.candidate_places,
             "created_at":   self.created_at,
             "updated_at":   self.updated_at,
             "turn_count":   self.turn_count,
@@ -291,6 +332,7 @@ class ConversationState:
             history      = [ChatMessage.from_dict(m) for m in data.get("history", [])],
             itinerary    = data.get("itinerary"),
             itinerary_id = data.get("itinerary_id"),
+            candidate_places = data.get("candidate_places"),
             created_at   = data.get("created_at", ""),
             updated_at   = data.get("updated_at", ""),
             turn_count   = data.get("turn_count", 0),
@@ -325,10 +367,12 @@ class ConversationState:
         self.phase = new_phase
         self._touch()
 
-    def set_itinerary(self, itinerary: Dict[str, Any]) -> None:
+    def set_itinerary(self, itinerary: Dict[str, Any], candidate_places: Optional[List[Dict[str, Any]]] = None) -> None:
         """Store the generated itinerary and move to ITINERARY_REVIEW."""
         self.itinerary = itinerary
         self.plan_started_at = None
+        if candidate_places is not None:
+            self.candidate_places = candidate_places
         self.transition_to(ConversationPhase.ITINERARY_REVIEW)
 
     def approve_itinerary(self, itinerary_id: str) -> None:
@@ -342,6 +386,7 @@ class ConversationState:
         self.slots = TripSlots()
         self.itinerary = None
         self.itinerary_id = None
+        self.candidate_places = None
         self.turn_count = 0
         self.last_question_field = None
         self.plan_started_at = None

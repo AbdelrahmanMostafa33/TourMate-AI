@@ -27,6 +27,7 @@ Usage::
 
 from __future__ import annotations
 
+import asyncio
 import time
 import logging
 from dataclasses import dataclass
@@ -295,6 +296,7 @@ AGENT_LLM_REGISTRY: Dict[str, LLMConfig] = {
     "preference":     LLMConfig(Provider.GROQ, "llama-3.1-8b-instant",  temperature=0.2, max_tokens=2048),
     "validator":      LLMConfig(Provider.GROQ, "llama-3.3-70b-versatile", temperature=0.2, max_tokens=2048),
     "review_qa":      LLMConfig(Provider.GROQ, "llama-3.3-70b-versatile", temperature=0.7, max_tokens=8192),
+    "modifier":       LLMConfig(Provider.GROQ, "llama-3.3-70b-versatile", temperature=0.3, max_tokens=8192),
 
     # ── Gemini — planning (reasoning) and vision (multimodal) — 20 RPD ───────
     "planner":        LLMConfig(Provider.GEMINI, "gemini-2.5-flash", temperature=0.7, max_tokens=8192),
@@ -387,8 +389,14 @@ def get_config_for_agent(agent_role: str) -> LLMConfig:
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# invoke_with_fallback — automatic retry across keys on rate-limit errors
+# invoke_with_fallback — automatic retry across keys with backoff
 # ══════════════════════════════════════════════════════════════════════════════
+
+# Maximum exponential backoff wall-clock delay for transient errors (503 etc.)
+_MAX_TRANSIENT_BACKOFF = 30.0  # seconds
+# Base backoff before exponential growth
+_BASE_TRANSIENT_BACKOFF = 1.0  # seconds
+
 
 def _is_rate_limit_error(exc: Exception) -> bool:
     """Check whether an exception is a rate-limit (429) error."""
@@ -403,6 +411,30 @@ def _is_rate_limit_error(exc: Exception) -> bool:
     )
 
 
+def _is_transient_error(exc: Exception) -> bool:
+    """Check whether an exception is a transient server error (503, unavailable).
+
+    Unlike 429 rate limits (key-specific), transient errors affect all keys
+    on a provider and are likely to resolve with a short wait.
+    """
+    msg = str(exc).lower()
+    return any(
+        kw in msg
+        for kw in (
+            "503",
+            "unavailable",
+            "service unavailable",
+            "high demand",
+            "temporarily unavailable",
+            "server error",
+            "internal server error",
+            "overloaded",
+            "try again later",
+        )
+    )
+
+
+
 async def invoke_with_fallback(
     agent_role: str,
     messages: list[BaseMessage],
@@ -410,21 +442,24 @@ async def invoke_with_fallback(
     structured_output: type | None = None,
 ) -> Any:
     """
-    Invoke the LLM for *agent_role* with automatic key rotation on 429 errors.
+    Invoke the LLM for *agent_role* with automatic key rotation and retry.
 
     Algorithm:
         1. Get next available key from KeyManager.
         2. Build LLM instance with that key.
         3. Call ``llm.ainvoke(messages)``.
         4. On success → return response.
-        5. On rate-limit error → mark key exhausted, go to step 1.
-        6. If no keys left → raise the last error.
+        5. On rate-limit error (429) → mark key exhausted, try next key.
+        6. On transient error (503/unavailable) → apply exponential backoff,
+           then cycle through all available keys again.
+        7. On any other error → raise immediately.
+        8. If all retries exhausted → raise the last error.
 
     Args:
         agent_role:   Role name from ``AGENT_LLM_REGISTRY``.
         messages:     LangChain message list.
-        max_retries:  Maximum number of retries.  Defaults to the total
-                      number of registered keys for the provider.
+        max_retries:  Maximum number of attempts.  Defaults to ``total_keys * 2``
+                      so transient errors get at least two full passes.
         structured_output: Optional Pydantic model class for structured output.
                            When provided, the LLM is bound with
                            .with_structured_output(schema) for guaranteed valid JSON.
@@ -433,8 +468,7 @@ async def invoke_with_fallback(
         The LLM response object (same as ``BaseChatModel.ainvoke``).
 
     Raises:
-        The last rate-limit error if all keys are exhausted, or any
-        non-rate-limit error immediately.
+        The last error if all retries are exhausted.
     """
     config = AGENT_LLM_REGISTRY.get(agent_role)
     if config is None:
@@ -447,14 +481,18 @@ async def invoke_with_fallback(
     provider = config.provider
     total_keys = key_manager.get_total_count(provider)
 
+    # Default: at least 2 full passes through all keys, minimum 4 attempts
     if max_retries is None:
-        max_retries = max(total_keys, 1)
+        max_retries = max(total_keys * 2, 4)
 
     last_error: Exception | None = None
-    # Local set of keys already tried in THIS retry sequence.
-    # Keys are NOT marked globally exhausted — the next key is tried immediately
-    # and keys remain available for subsequent calls.
+    # Local set of keys already tried in THIS pass.
+    # Keys are NOT marked globally exhausted — they remain available for
+    # subsequent calls.
     tried_keys: set[str] = set()
+
+    # Track consecutive transient errors for backoff calculation
+    transient_error_count = 0
 
     for attempt in range(max_retries):
         api_key = key_manager.get_key(provider)
@@ -467,13 +505,31 @@ async def invoke_with_fallback(
 
         # Skip keys already tried in this retry sequence
         if api_key in tried_keys:
-            # All keys exhausted — stop spinning
+            # All keys exhausted in this pass
             if len(tried_keys) >= total_keys:
-                logger.warning(
-                    "[Fallback] All %d key(s) tried on %s for role '%s' — stopping",
-                    total_keys, provider.value, agent_role,
-                )
-                break
+                # If the last error was a transient error (503), reset and retry
+                # with exponential backoff instead of giving up.
+                if last_error is not None and _is_transient_error(last_error):
+                    transient_error_count += 1
+                    backoff = min(
+                        _BASE_TRANSIENT_BACKOFF * (2 ** (transient_error_count - 1)),
+                        _MAX_TRANSIENT_BACKOFF,
+                    )
+                    logger.warning(
+                        "[Fallback] All %d key(s) on %s for role '%s' returned transient "
+                        "errors — waiting %.1fs before retry cycle (transient #%d)",
+                        total_keys, provider.value, agent_role,
+                        backoff, transient_error_count,
+                    )
+                    await asyncio.sleep(backoff)
+                    tried_keys.clear()  # Allow another pass through all keys
+                    continue
+                else:
+                    logger.warning(
+                        "[Fallback] All %d key(s) tried on %s for role '%s' — stopping",
+                        total_keys, provider.value, agent_role,
+                    )
+                    break
             continue
 
         try:
@@ -481,7 +537,9 @@ async def invoke_with_fallback(
             llm = builder(config, api_key=api_key)
             if structured_output is not None:
                 llm = llm.with_structured_output(structured_output)
-            response = await llm.ainvoke(messages, config={"callbacks": [_TokenTrackingCallback(agent_role)]})
+            response = await llm.ainvoke(
+                messages, config={"callbacks": [_TokenTrackingCallback(agent_role)]}
+            )
             return response
 
         except Exception as exc:
@@ -493,7 +551,17 @@ async def invoke_with_fallback(
                     api_key[-4:], agent_role, attempt + 1, max_retries,
                 )
                 continue
-            # Non-rate-limit error — raise immediately
+
+            if _is_transient_error(exc):
+                tried_keys.add(api_key)
+                transient_error_count += 1
+                logger.warning(
+                    "[Fallback] Key …%s transient-error on '%s' (attempt %d/%d, trying next key)",
+                    api_key[-4:], agent_role, attempt + 1, max_retries,
+                )
+                continue
+
+            # Non-retryable error — raise immediately
             raise
 
     # All retries exhausted
@@ -523,12 +591,14 @@ def invoke_with_fallback_sync(
     provider = config.provider
     total_keys = key_manager.get_total_count(provider)
 
+    # Default: at least 2 full passes through all keys, minimum 4 attempts
     if max_retries is None:
-        max_retries = max(total_keys, 1)
+        max_retries = max(total_keys * 2, 4)
 
     last_error: Exception | None = None
-    # Local set of keys already tried in THIS retry sequence — no persistent TTL
+    # Local set of keys already tried in THIS pass.
     tried_keys: set[str] = set()
+    transient_error_count = 0
 
     for attempt in range(max_retries):
         api_key = key_manager.get_key(provider)
@@ -537,19 +607,40 @@ def invoke_with_fallback_sync(
 
         if api_key in tried_keys:
             if len(tried_keys) >= total_keys:
+                if last_error is not None and _is_transient_error(last_error):
+                    transient_error_count += 1
+                    backoff = min(
+                        _BASE_TRANSIENT_BACKOFF * (2 ** (transient_error_count - 1)),
+                        _MAX_TRANSIENT_BACKOFF,
+                    )
+                    logger.warning(
+                        "[Fallback] All %d key(s) on %s for role '%s' returned transient "
+                        "errors — waiting %.1fs before retry cycle (transient #%d)",
+                        total_keys, provider.value, agent_role,
+                        backoff, transient_error_count,
+                    )
+                    time.sleep(backoff)
+                    tried_keys.clear()
+                    continue
                 break
             continue
 
         try:
             builder = _PROVIDER_BUILDERS[provider]
             llm = builder(config, api_key=api_key)
-            response = llm.invoke(messages, config={"callbacks": [_TokenTrackingCallback(agent_role)]})
+            response = llm.invoke(
+                messages, config={"callbacks": [_TokenTrackingCallback(agent_role)]}
+            )
             return response
 
         except Exception as exc:
             last_error = exc
             if _is_rate_limit_error(exc):
                 tried_keys.add(api_key)
+                continue
+            if _is_transient_error(exc):
+                tried_keys.add(api_key)
+                transient_error_count += 1
                 continue
             raise
 

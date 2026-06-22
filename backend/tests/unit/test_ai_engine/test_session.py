@@ -55,14 +55,11 @@ class TestTripSlots:
     def test_missing_required_all_missing(self):
         slots = TripSlots()
         missing = slots.missing_required()
+        # Only destination + duration are required now; everything else
+        # gets smart defaults via fill_defaults().
         assert "destination" in missing
         assert "duration" in missing
-        assert "budget_level" in missing
-        assert "travel_style" in missing
-        assert "pace" in missing
-        assert "interests" in missing
-        assert "food_preferences" in missing
-        assert "accommodation_preferences" in missing
+        assert len(missing) == 2
 
     def test_missing_required_only_trip_info(self):
         slots = TripSlots(
@@ -79,17 +76,14 @@ class TestTripSlots:
         assert "budget_level" not in missing
         assert "travel_style" not in missing
 
-    def test_missing_required_only_profile(self):
+    def test_missing_required_only_destination_duration(self):
         slots = TripSlots(destination_city="Paris", duration_days=5)
         missing = slots.missing_required()
+        # With destination + duration set, nothing is missing
         assert "destination" not in missing
         assert "duration" not in missing
-        assert "budget_level" in missing
-        assert "travel_style" in missing
-        assert "pace" in missing
-        assert "interests" in missing
-        assert "food_preferences" in missing
-        assert "accommodation_preferences" in missing
+        assert len(missing) == 0
+        assert slots.is_complete() is True
 
     def test_is_complete_when_all_required_filled(self):
         slots = TripSlots(
@@ -104,9 +98,17 @@ class TestTripSlots:
         )
         assert slots.is_complete() is True
 
-    def test_is_complete_when_missing_profile(self):
+    def test_is_complete_when_destination_duration_only(self):
         slots = TripSlots(destination_city="Paris", duration_days=5)
-        assert slots.is_complete() is False
+        # With the new simplified approach, destination + duration is enough
+        assert slots.is_complete() is True
+        # fill_defaults should populate the rest
+        slots.fill_defaults()
+        assert slots.budget_level == "moderate"
+        assert slots.travel_style == "cultural"
+        assert slots.pace == "moderate"
+        assert slots.group_size == 2
+        assert slots.traveler_group_type == "couple"
 
     def test_is_complete_when_missing_trip_info(self):
         slots = TripSlots(
@@ -342,15 +344,21 @@ class TestConversationState:
         assert state.phase == ConversationPhase.GREETING
         state.transition_to(ConversationPhase.SLOT_FILLING)
 
-        # Slot filling — all 9 required fields
+        # Slot filling — only destination + duration required now
         state.slots.merge({"destination_city": "Cairo"})
         assert not state.slots.is_complete()
         state.slots.merge({"duration_days": 3})
-        assert not state.slots.is_complete()
-        state.slots.merge({"budget_level": "moderate", "travel_style": "cultural", "pace": "moderate"})
-        assert not state.slots.is_complete()
-        state.slots.merge({"interests": ["history"], "food_preferences": ["local cuisine"], "accommodation_preferences": ["hotel"]})
+        # With destination + duration, is_complete() returns True
         assert state.slots.is_complete()
+        # fill_defaults() populates the rest
+        state.slots.fill_defaults()
+        assert state.slots.budget_level == "moderate"
+        assert state.slots.travel_style == "cultural"
+        assert state.slots.pace == "moderate"
+        assert state.slots.group_size == 2
+        assert state.slots.traveler_group_type == "couple"
+        assert state.slots.food_preferences == ["local cuisine"]
+        assert state.slots.accommodation_preferences == ["hotel"]
 
         # Plan generation
         state.transition_to(ConversationPhase.PLAN_GENERATION)

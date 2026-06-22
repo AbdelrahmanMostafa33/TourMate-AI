@@ -42,7 +42,7 @@ class Place(Base):
     timezone          = Column(String, nullable=True)
     opening_hours     = Column(JSON, nullable=True)          # Map<DayOfWeek, String>
     photo_urls        = Column(JSON, nullable=True)          # List[str]
-    embedding         = Column(JSON, nullable=True)          # vector stored as JSON list
+    embedding         = Column(JSON, nullable=True)          # vector stored as JSON list (will migrate to pgvector vector(768) later)
 
     # Relationships
     reviews          = relationship("Review",         back_populates="place", cascade="all, delete-orphan")

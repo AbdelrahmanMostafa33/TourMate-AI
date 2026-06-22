@@ -1,0 +1,281 @@
+"""
+Itinerary Modifier Agent — surgically edits an existing itinerary.
+
+Instead of re-running the full pipeline (retrieval → ranking → planning →
+optimizer → validator), this agent makes targeted changes to the current
+itinerary based on the user's modification request.
+
+Capabilities:
+  - SWAP: Replace one stop with another from the available places pool
+  - REMOVE: Delete a specific stop and re-balance the day
+  - ADD: Insert a new stop from the available pool into a specific day/time
+  - CHANGE_HOTEL: Replace a hotel suggestion with another from the pool
+  - RE_THEME: Update a day's theme or description
+  - REORDER: Change the order of stops within a day
+
+If the modification request is too complex or the LLM output is invalid,
+the caller (conversation_agent.py) falls back to the full pipeline.
+"""
+
+import json
+import logging
+from langchain_core.messages import SystemMessage, HumanMessage
+from ai_engine.llm_config import invoke_with_fallback
+from ai_engine.utils.json_utils import extract_json_from_llm_output
+
+logger = logging.getLogger(__name__)
+
+
+# ── Modifier Prompt ──────────────────────────────────────────────────────────
+
+MODIFIER_SYSTEM_PROMPT = """\
+You are the Itinerary Modifier Agent for TourMate AI. You receive:
+
+1. **Current Itinerary**: Full JSON itinerary (days, stops, accommodation)
+2. **Available Places Pool**: Places in the destination city you can choose from
+3. **Modification Request**: What the user wants to change
+
+**Your job**: Make ONLY the requested changes to the itinerary. Return the
+**entire modified itinerary JSON** preserving everything the user didn't ask
+to change.
+
+**Available operations** — pick one or more:
+- **SWAP**: Replace an existing stop with a better one from the available pool.
+  Keep the same time slot and day position. Preserve `id`, `name`, `category`,
+  `sub_category`, `lat`, `lon`, etc. from the chosen place. Add a new
+  `why_recommended` explaining why this new place fits the user's request.
+- **REMOVE**: Delete a specific stop. If the removed stop was between other
+  stops, reconnect the remaining stops by updating their
+  `travel_time_to_next_minutes` and `transport_mode`.
+- **ADD**: Insert a new stop from the available pool into a specific day/time.
+  Pick a place that matches the user's modification request. Recompute
+  travel times for affected stops.
+- **CHANGE_HOTEL**: Replace or add a hotel in `accommodation_suggestions`.
+  Pick from the available pool.
+- **RE_THEME**: Update a day's `theme` string.
+- **REORDER**: Swap the order of stops within a day.
+
+**Rules**:
+1. Do NOT change stops the user didn't ask about — preserve them exactly.
+2. Do NOT invent places — only use places from the Available Places Pool.
+3. If adding a restaurant, pick a cuisine type different from other restaurant stops nearby.
+4. Every stop must have a `why_recommended` explaining why it fits.
+5. Return ONLY valid JSON — no preamble, no markdown fences.
+6. If the modification cannot be done (e.g. no suitable place in the pool),
+   return the original itinerary unchanged with a note in `_modifier_note`.
+
+**Output schema** — the SAME schema as the input itinerary, optionally with a
+`_modifier_note` field at the top level explaining what changed:
+{
+  "destination": string,
+  "duration_days": integer,
+  "_modifier_note": string (optional — explain what you changed),
+  "accommodation_suggestions": [...],
+  "days": [
+    {
+      "day_number": integer,
+      "theme": string,
+      "stops": [
+        {
+          "id": string,
+          "name": string,
+          "category": string,
+          "sub_category": string,
+          "lat": float,
+          "lon": float,
+          "why_recommended": string,
+          "estimated_duration_minutes": integer,
+          "suggested_time_of_day": "morning" | "afternoon" | "evening",
+          "travel_time_to_next_minutes": float (omit for last stop),
+          "transport_mode": string (omit for last stop)
+        }
+      ]
+    }
+  ]
+}
+"""
+
+
+# ── Helpers ──────────────────────────────────────────────────────────────────
+
+
+def _trim_for_modifier(place: dict) -> dict:
+    """Reduce a place record to the information needed by the modifier."""
+    trimmed = {
+        "id": place.get("id", ""),
+        "name": place.get("name", ""),
+        "category": place.get("category", ""),
+        "sub_category": place.get("sub_category", place.get("subcategory", "")),
+        "lat": place.get("lat", 0),
+        "lon": place.get("lon", 0),
+        "rating": place.get("rating", 0),
+        "popularity_score": place.get("popularity_score", 0),
+    }
+    # Include cuisine_type for restaurants
+    if place.get("category") == "restaurant" and place.get("cuisine_type"):
+        trimmed["cuisine_type"] = place["cuisine_type"]
+    # Include accommodation_type and amenities for hotels
+    if place.get("category") == "hotel":
+        trimmed["accommodation_type"] = place.get("accommodation_type", "")
+        amenities = place.get("amenities", [])
+        trimmed["amenities"] = amenities[:3] if len(amenities) > 3 else amenities
+    return trimmed
+
+
+# ── Main entry point ─────────────────────────────────────────────────────────
+
+
+async def run_itinerary_modifier(
+    current_itinerary: dict,
+    modification_request: str,
+    available_places: list[dict],
+    preferences: dict | None = None,
+) -> dict:
+    """
+    Run the Itinerary Modifier Agent.
+
+    Args:
+        current_itinerary: The full itinerary JSON from the last pipeline run.
+        modification_request: The user's edit request (e.g. "swap the Egyptian
+            Museum for something more entertaining").
+        available_places: Pool of candidate places from the last retrieval
+            (used as the source for swaps/additions).
+        preferences: Optional dict with budget/pace/interests for context.
+
+    Returns:
+        Modified itinerary JSON (same schema as pipeline output).
+        If modification fails, returns the original itinerary unchanged.
+    """
+    if not current_itinerary or not modification_request:
+        return current_itinerary
+
+    # Trim available places to only the info the modifier needs
+    trimmed_pool = [_trim_for_modifier(p) for p in (available_places or [])]
+
+    # Remove places already in the itinerary (no point suggesting them)
+    used_ids = set()
+    for day in current_itinerary.get("days", []):
+        for stop in day.get("stops", []):
+            used_ids.add(stop.get("id", ""))
+    for hotel in current_itinerary.get("accommodation_suggestions", []):
+        used_ids.add(hotel.get("id", ""))
+    fresh_pool = [p for p in trimmed_pool if p["id"] not in used_ids]
+
+    # Cap the pool to avoid blowing the token budget
+    fresh_pool = fresh_pool[:60]
+
+    # Build preferences context
+    pref_text = ""
+    if preferences:
+        parts = []
+        if preferences.get("budget_level"):
+            parts.append(f"budget: {preferences['budget_level']}")
+        if preferences.get("travel_style"):
+            parts.append(f"style: {preferences['travel_style']}")
+        if preferences.get("pace"):
+            parts.append(f"pace: {preferences['pace']}")
+        if preferences.get("interests"):
+            parts.append(f"interests: {', '.join(preferences['interests'])}")
+        if preferences.get("food_preferences"):
+            parts.append(f"food: {', '.join(preferences['food_preferences'])}")
+        if parts:
+            pref_text = "User preferences:\n" + "\n".join(parts)
+
+    prompt = f"""\
+Modification Request: {modification_request}
+
+{pref_text}
+
+Current Itinerary:
+{json.dumps(current_itinerary, indent=2, ensure_ascii=False)}
+
+Available Places Pool ({len(fresh_pool)} places to choose from):
+{json.dumps(fresh_pool, indent=2, ensure_ascii=False)}
+
+Apply the modification now. Return the FULL modified itinerary JSON."""
+
+    messages = [
+        SystemMessage(content=MODIFIER_SYSTEM_PROMPT),
+        HumanMessage(content=prompt),
+    ]
+
+    max_attempts = 2
+    last_error = None
+
+    for attempt in range(1, max_attempts + 1):
+        try:
+            attempt_messages = list(messages)
+            if attempt > 1 and last_error:
+                retry_note = (
+                    f"\n\nYour previous output was invalid: {last_error}. "
+                    f"Return ONLY the raw JSON object starting with {{ "
+                    f"and ending with }}. No preamble, no fences."
+                )
+                attempt_messages.append(HumanMessage(content=retry_note))
+
+            response = await invoke_with_fallback("modifier", attempt_messages)
+            raw_text = response.content
+
+            extracted = extract_json_from_llm_output(raw_text)
+            modified = json.loads(extracted)
+
+            # Validate: must have days and destination
+            if not isinstance(modified, dict):
+                raise ValueError("Output is not a dict")
+            if "days" not in modified:
+                raise ValueError("Missing 'days' in modified itinerary")
+            if not modified.get("days"):
+                raise ValueError("Empty 'days' array")
+
+            # Keep the original destination/duration if modifier omitted them
+            if not modified.get("destination"):
+                modified["destination"] = current_itinerary.get("destination", "")
+            if not modified.get("duration_days"):
+                modified["duration_days"] = current_itinerary.get("duration_days", 0)
+
+            # Reattach full metadata for any new stops
+            place_index = {p.get("id", ""): p for p in (available_places or [])}
+            for day in modified.get("days", []):
+                for stop in day.get("stops", []):
+                    stop_id = stop.get("id", "")
+                    full = place_index.get(stop_id)
+                    if full and stop_id not in used_ids:
+                        # Newly added stop — copy full metadata
+                        for key in ("address", "maps_link", "photos",
+                                    "cuisine_type", "interest_tags",
+                                    "phone", "website", "price_level",
+                                    "opening_hours", "review_count"):
+                            if full.get(key) and not stop.get(key):
+                                stop[key] = full[key]
+
+            # Reattach full metadata for new hotels
+            for hotel in modified.get("accommodation_suggestions", []):
+                hotel_id = hotel.get("id", "")
+                full = place_index.get(hotel_id)
+                if full and hotel_id not in {h.get("id", "") for h in
+                        current_itinerary.get("accommodation_suggestions", [])}:
+                    for key in ("address", "maps_link", "photos",
+                                "rating", "amenities", "accommodation_type",
+                                "category", "price_level"):
+                        if full.get(key) and not hotel.get(key):
+                            hotel[key] = full[key]
+
+            logger.info(
+                "[ModifierAgent] Modification applied: %s",
+                modified.get("_modifier_note", "no note")
+            )
+            return modified
+
+        except Exception as e:
+            last_error = str(e)
+            logger.warning(
+                "[ModifierAgent] Attempt %d/%d failed: %s",
+                attempt, max_attempts, last_error,
+            )
+
+    # All attempts failed — return original itinerary unchanged
+    logger.warning(
+        "[ModifierAgent] All %d attempts failed — returning original itinerary",
+        max_attempts,
+    )
+    return current_itinerary

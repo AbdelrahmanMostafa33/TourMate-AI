@@ -18,3 +18,5 @@ langsmith
 pytest
 pytest-asyncio
 redis
+sentence-transformers  # local embedding model (all-MiniLM-L6-v2)
+# pgvector  # uncomment when installing pgvector PostgreSQL extension

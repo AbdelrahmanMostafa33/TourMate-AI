@@ -7,6 +7,9 @@ Usage (from backend/):
 The script reads data/cairo/cairo_places_class_diagram.json and inserts
 places plus their detail records (hotel_details, restaurant_details,
 attraction_details) into the database.
+
+It also loads pre-generated embeddings from data/cairo/cairo_embeddings.json
+(if the file exists) and sets them on each place during insertion.
 """
 
 import json
@@ -27,6 +30,7 @@ from app.models.place import Place, HotelDetails, RestaurantDetails, AttractionD
 # ── Config ───────────────────────────────────────────────────────────────────
 DATA_DIR = BACKEND_DIR.parent / "data" / "cairo"
 PLACES_FILE = DATA_DIR / "cairo_places_class_diagram.json"
+EMBEDDINGS_FILE = DATA_DIR / "cairo_embeddings.json"
 
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
@@ -47,8 +51,16 @@ def normalize_category(raw: str) -> str:
 
 
 
-def build_place(row: dict) -> dict:
-    """Map a JSON row to a Place dict."""
+def build_place(row: dict, embeddings_map: dict[str, list[float]] | None = None) -> dict:
+    """Map a JSON row to a Place dict.
+
+    If ``embeddings_map`` is provided, the place's embedding vector
+    is looked up from ``cairo_embeddings.json`` and included.
+    """
+    embedding = None
+    if embeddings_map:
+        embedding = embeddings_map.get(row["placeId"])
+
     return {
         "place_id": row["placeId"],
         "name": row["name"],
@@ -68,7 +80,7 @@ def build_place(row: dict) -> dict:
         "timezone": row.get("timezone"),
         "opening_hours": row.get("openingHours"),
         "photo_urls": row.get("photoUrls"),
-        "embedding": row.get("embedding", []),
+        "embedding": embedding,
     }
 
 
@@ -133,6 +145,16 @@ def seed() -> None:
 
     print(f"Loaded {len(places_data)} places from {PLACES_FILE.name}")
 
+    # ── Load pre-generated embeddings ────────────────────────────────────────
+    embeddings_map: dict[str, list[float]] | None = None
+    if EMBEDDINGS_FILE.exists():
+        print(f"Loaded embeddings from {EMBEDDINGS_FILE.name}")
+        with open(EMBEDDINGS_FILE, "r", encoding="utf-8") as f:
+            embeddings_map = json.load(f)
+        print(f"   [OK] {len(embeddings_map)} embedding vectors available")
+    else:
+        print(f"[SKIP] {EMBEDDINGS_FILE.name} not found — places will be seeded without embeddings")
+
     engine = create_engine(db_url)
 
     with Session(engine) as session:
@@ -140,6 +162,7 @@ def seed() -> None:
         inserted_hotels = 0
         inserted_restaurants = 0
         inserted_attractions = 0
+        embedded_count = 0
         skipped = 0
 
         for row in places_data:
@@ -157,7 +180,9 @@ def seed() -> None:
                 skipped += 1
                 continue
 
-            place_dict = build_place(row)
+            place_dict = build_place(row, embeddings_map)
+            if place_dict["embedding"] is not None:
+                embedded_count += 1
             session.add(Place(**place_dict))
             inserted_places += 1
 
@@ -183,6 +208,7 @@ def seed() -> None:
 
     print("\n--- Results ---")
     print(f"  Places inserted:         {inserted_places}")
+    print(f"  With embeddings:         {embedded_count}")
     print(f"  Hotel details inserted:  {inserted_hotels}")
     print(f"  Restaurant details:      {inserted_restaurants}")
     print(f"  Attraction details:      {inserted_attractions}")

@@ -6,19 +6,24 @@ The LLM's job is to REASON, not search. It receives:
 2. Pre-ranked candidate places (15–30 from Ranking Agent)
 
 It produces a structured day-by-day itinerary choosing from candidates.
+
+Uses Pydantic-based structured output (``with_structured_output``) to guarantee
+valid JSON with the required ``days`` key, eliminating manual extraction/repair.
 """
 
 import json
-import re
 import logging
 from langchain_core.messages import SystemMessage, HumanMessage
 from ai_engine.llm_config import invoke_with_fallback
 from ai_engine.graph.state import TripState
+from ai_engine.schemas.planning_schema import ItineraryPlan
+
 logger = logging.getLogger(__name__)
 
 
-# System prompt that defines the Planning Agent's role, rules,
-# and the exact JSON schema expected from the LLM.
+# System prompt that defines the Planning Agent's role and rules.
+# The JSON schema is enforced by Pydantic's structured output — the prompt
+# focuses on reasoning rules rather than formatting instructions.
 PLANNER_SYSTEM_PROMPT = """
 You are the Planning Agent for TourMate AI. Create a structured, multi-day travel itinerary.
 
@@ -84,49 +89,9 @@ You will receive:
 - Include `accommodation_type` and `amenities` in accommodation_suggestions.
 
 ### Output
-- Output ONLY valid JSON, no preamble, no markdown fences.
+- The output schema is provided automatically — fill all fields.
 - Every stop MUST have a `why_recommended` explaining why it fits this user (1–2 sentences, reference their interests and the place's score).
 - Every accommodation suggestion MUST have a `why_recommended` explaining the choice.
-
-JSON schema:
-{
-  "destination": string,
-  "duration_days": integer,
-  "accommodation_suggestions": [
-    {
-      "id": string,
-      "name": string,
-      "sub_category": string,
-      "accommodation_type": string,
-      "lat": float,
-      "lon": float,
-      "why_recommended": string,
-      "rating": float,
-      "amenities": [string]
-    }
-  ],
-  "days": [
-    {
-      "day_number": integer,
-      "theme": string,
-      "stops": [
-        {
-          "id": string,
-          "name": string,
-          "category": string,
-          "sub_category": string,
-          "cuisine_type": string (include for restaurants, omit for others),
-          "interest_tags": [string],
-          "lat": float,
-          "lon": float,
-          "why_recommended": string,
-          "estimated_duration_minutes": integer,
-          "suggested_time_of_day": "morning" | "afternoon" | "evening"
-        }
-      ]
-    }
-  ]
-}
 """
 
 
@@ -158,162 +123,10 @@ def _trim_for_prompt(place: dict) -> dict:
     return trimmed
 
 
-# ── JSON extraction helpers ─────────────────────────────────────────────────
-
-
-def _extract_json_from_llm_output(text: str) -> str:
-    """Extract a JSON object from LLM output that may contain preamble,
-    markdown fences, or trailing commentary.
-
-    Fixes three common LLM output issues:
-    1. Preamble text before JSON ("Here is your itinerary: { ... }")
-    2. Markdown code fences (```json ... ```)
-    3. Trailing commentary after JSON
-
-    Returns the extracted JSON string (still needs json.loads to parse).
-    """
-    if not text:
-        raise ValueError("Empty LLM output")
-
-    # Step 1: Remove markdown code fences if present.
-    # Use regex instead of str.strip() to avoid corrupting JSON.
-    text = text.strip()
-    fence_match = re.search(r"```(?:json)?\s*\n?(.*?)\n?\s*```", text, re.DOTALL)
-    if fence_match:
-        text = fence_match.group(1).strip()
-
-    # Step 2: If it already looks like valid JSON, return as-is.
-    if text.startswith("{") and text.endswith("}"):
-        return text
-
-    # Step 3: Find the first '{' and last '}' to extract the JSON object.
-    first_brace = text.find("{")
-    last_brace = text.rfind("}")
-
-    if first_brace == -1 or last_brace == -1 or last_brace <= first_brace:
-        raise ValueError(
-            f"No JSON object found in LLM output (first 200 chars: {text[:200]!r})"
-        )
-
-    return text[first_brace:last_brace + 1]
-
-
-def _repair_missing_commas(text: str) -> str:
-    """
-    Insert missing commas by using json.JSONDecodeError position hints.
-
-    The LLM (especially Gemini) commonly produces JSON with missing commas
-    between fields, like:
-        {"name": "Museum" "id": "123"}   → missing comma after "Museum"
-        {"scores": [1 2 3]}               → missing commas in array
-        {"a": 1 {"b": 2}}               → missing comma before nested object
-
-    This function iteratively:
-    1. Attempts json.loads()
-    2. If it fails with a missing-comma error, inserts a comma at the
-       error position and retries (up to 5 iterations).
-
-    Returns the repaired JSON string (which may still be invalid on
-    non-comma errors — the caller falls through to _repair_truncated_json).
-    """
-    repaired = text
-
-    for _ in range(5):
-        try:
-            json.loads(repaired)
-            return repaired  # Valid JSON — done
-        except json.JSONDecodeError as e:
-            # Only handle missing comma / property name errors here.
-            if not ("Expecting '" in e.msg and "delimiter" in e.msg):
-                if "Expecting property name" not in e.msg:
-                    break  # Non-comma error — let truncation repair handle it
-            pos = e.pos
-            # Guard: don't insert at end of string
-            if pos >= len(repaired):
-                break
-            if repaired[pos] in (',', '}', ']', ':', ' '):
-                break  # Already has comma or structural — different issue
-
-            # If error position points to a key inside a newly-started nested
-            # object (e.g. {"a": 1 {"b": 2}}), the comma needs to go BEFORE
-            # the opening brace, not before the key string.
-            if (pos > 0 and repaired[pos] == '"'
-                    and repaired[pos - 1] in ('{', '[')):
-                pos = pos - 1
-
-            repaired = repaired[:pos] + ',' + repaired[pos:]
-            continue
-
-    return repaired  # Best attempt
-
-
-def _repair_truncated_json(text: str) -> str:
-    """Attempt to repair JSON that was truncated by max_tokens limit.
-
-    Common truncation patterns:
-    - Unterminated string: '"name": "Some place' → close the string
-    - Missing closing brackets: incomplete days/stops arrays
-
-    Returns the repaired JSON string.
-    """
-    repaired = text.rstrip()
-
-    # If it's already valid, return as-is.
-    try:
-        json.loads(repaired)
-        return repaired
-    except json.JSONDecodeError:
-        pass
-
-    # Strategy 1: Close an unterminated string at the end.
-    # If the last non-whitespace char is not a quote, bracket, or comma,
-    # we're likely mid-string or mid-value.
-    if repaired and repaired[-1] not in ('"', '}', ']', ',', ':', ' '):
-        # Check if we're inside a string (odd number of unescaped quotes)
-        in_string = False
-        for ch in reversed(repaired):
-            if ch == '"':
-                in_string = not in_string
-        if in_string:
-            repaired += '"'
-
-    # Strategy 2: Count unmatched opening brackets and close them.
-    open_braces = 0
-    open_brackets = 0
-    in_str = False
-    escape_next = False
-    for ch in repaired:
-        if escape_next:
-            escape_next = False
-            continue
-        if ch == '\\':
-            escape_next = True
-            continue
-        if ch == '"':
-            in_str = not in_str
-            continue
-        if in_str:
-            continue
-        if ch == '{':
-            open_braces += 1
-        elif ch == '}':
-            open_braces -= 1
-        elif ch == '[':
-            open_brackets += 1
-        elif ch == ']':
-            open_brackets -= 1
-
-    # Close any unclosed brackets/braces (innermost first)
-    closing = ']' * max(open_brackets, 0) + '}' * max(open_braces, 0)
-    repaired += closing
-
-    # Validate the repair.
-    try:
-        json.loads(repaired)
-        return repaired
-    except json.JSONDecodeError:
-        # Could not repair — return the best attempt.
-        return repaired
+# ── JSON extraction helpers (moved to ai_engine.utils.json_utils) ────────
+# The functions _extract_json_from_llm_output, _repair_missing_commas, and
+# _repair_truncated_json have been extracted to the shared module
+# ai_engine/utils/json_utils.py and imported above.
 
 
 async def run_planning_agent(state: TripState) -> TripState:
@@ -411,77 +224,29 @@ Generate the itinerary now.
         HumanMessage(content=prompt),
     ]
 
-    # ── LLM call with JSON parse retry ─────────────────────────────
-    # Some LLM outputs are malformed (preamble text, truncated JSON,
-    # markdown fences).  We retry up to 2 times with increasingly
-    # explicit instructions before giving up.
-    # ──────────────────────────────────────────────────────────────
-    max_attempts = 3
-    last_error = None
-    itinerary = None
+    # ── LLM call with structured output ───────────────────────────
+    # Uses Pydantic-based ``.with_structured_output(ItineraryPlan)`` to
+    # guarantee valid JSON with all required keys (including ``days``).
+    # ``invoke_with_fallback`` handles key rotation and retry on both
+    # rate-limit (429) and transient (503) errors internally.
+    # ----------------------------------------------------------------
+    try:
+        response: ItineraryPlan = await invoke_with_fallback(
+            "planner", messages, structured_output=ItineraryPlan,
+        )
+    except Exception as e:
+        logger.error("[Planner] Failed after all retries: %s", e)
+        state["error"] = f"Planning Agent failed: {e}"
+        return state
 
-    for attempt in range(1, max_attempts + 1):
-        try:
-            # On retry, prepend error context so the LLM corrects itself.
-            attempt_messages = list(messages)
-            if attempt > 1 and last_error:
-                retry_note = (
-                    f"\n\nIMPORTANT: Your previous output was invalid JSON. "
-                    f"Error: {last_error}. "
-                    f"Output ONLY the raw JSON object starting with {{ and ending with }}. "
-                    f"No preamble, no markdown fences, no trailing text."
-                )
-                attempt_messages.append(HumanMessage(content=retry_note))
+    # Convert Pydantic model to plain dict for downstream processing.
+    itinerary = response.model_dump()
 
-            response = await invoke_with_fallback("planner", attempt_messages)
-            raw_text = response.content
-
-            # Robust JSON extraction: handles preamble, markdown fences,
-            # and trailing commentary.
-            extracted = _extract_json_from_llm_output(raw_text)
-
-            try:
-                itinerary = json.loads(extracted)
-            except json.JSONDecodeError as parse_err:
-                # ── Repair chain ────────────────────────────────────────
-                # 1. Try missing comma repair (most common Gemini issue)
-                logger.warning(
-                    "[Planner] JSON parse failed on attempt %d: %s — attempting comma repair",
-                    attempt, parse_err,
-                )
-                repaired = _repair_missing_commas(extracted)
-                try:
-                    itinerary = json.loads(repaired)
-                    logger.info("[Planner] Comma repair succeeded")
-                except json.JSONDecodeError:
-                    # 2. Try truncation repair (unclosed brackets, unterminated strings)
-                    logger.warning(
-                        "[Planner] Comma repair failed — attempting truncation repair",
-                    )
-                    repaired = _repair_truncated_json(repaired)
-                    itinerary = json.loads(repaired)
-                    logger.info("[Planner] Truncation repair succeeded")
-
-            # Validate essential structure.
-            if not isinstance(itinerary, dict) or "days" not in itinerary:
-                raise ValueError(
-                    f"LLM output is a valid JSON but missing required 'days' key. "
-                    f"Top-level keys: {list(itinerary.keys()) if isinstance(itinerary, dict) else type(itinerary).__name__}"
-                )
-            if not itinerary.get("days"):
-                raise ValueError("Itinerary has empty 'days' array")
-
-            # Success — break out of retry loop.
-            break
-
-        except Exception as e:
-            last_error = str(e)
-            logger.warning(
-                "[Planner] Attempt %d/%d failed: %s", attempt, max_attempts, last_error,
-            )
-            if attempt == max_attempts:
-                state["error"] = f"Planning Agent failed after {max_attempts} attempts: {last_error}"
-                return state
+    # Validate non-empty days (the schema guarantees "days" key exists).
+    if not itinerary.get("days"):
+        logger.warning("[Planner] Itinerary has empty days array — returning error")
+        state["error"] = "Planning Agent produced an itinerary with no days"
+        return state
 
     # ---------------------------------------------------------
     # Hydration: reattach full metadata for selected places.

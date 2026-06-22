@@ -40,6 +40,21 @@ from ai_engine.memory.redis_memory import get_session_manager
 # LangGraph-based itinerary generation pipeline
 from ai_engine.graph.graph_builder import trip_graph
 
+# Itinerary Modifier Agent — surgically edits existing itineraries
+from ai_engine.agents.itinerary_modifier_agent import run_itinerary_modifier
+
+# Preference Reranker Agent — interprets vibe changes and re-ranks candidates
+from ai_engine.agents.preference_reranker_agent import (
+    interpret_preference_adjustment,
+    apply_preference_adjustments,
+)
+
+# Direct agent imports for re-ranking (skip retrieval, go straight to rank→plan→optimize→validate)
+from ai_engine.agents.ranking_agent import run_ranking_agent
+from ai_engine.agents.planning_agent import run_planning_agent
+from ai_engine.agents.optimization_agent import run_optimization_agent
+from ai_engine.agents.validation_agent import run_validation_agent
+
 # Image analysis pipeline for travel-related images
 from ai_engine.vision.image_analyzer import analyze_travel_image
 
@@ -186,7 +201,12 @@ async def _process_message_inner(
         if state.phase == ConversationPhase.GREETING:
             state.transition_to(ConversationPhase.SLOT_FILLING)
 
-        # If all required info is collected → generate itinerary
+        # Fill smart defaults for any unset non-mandatory slots so
+        # downstream agents always see populated values, even if the
+        # user only provided destination + duration.
+        state.slots.fill_defaults()
+
+        # If required info (destination + duration) is collected → generate itinerary
         if state.slots.is_complete():
             state.transition_to(ConversationPhase.PLAN_GENERATION)
             state.plan_started_at = datetime.now(timezone.utc).isoformat()
@@ -200,7 +220,7 @@ async def _process_message_inner(
                 state
             )
 
-        # Otherwise ask user for missing details
+        # Otherwise ask user for missing destination or duration
         else:
             if state.phase != ConversationPhase.SLOT_FILLING:
                 state.transition_to(ConversationPhase.SLOT_FILLING)
@@ -247,22 +267,14 @@ async def _process_message_inner(
         # Only allow modification during review phase
         if state.phase == ConversationPhase.ITINERARY_REVIEW:
 
-            state.transition_to(ConversationPhase.PLAN_GENERATION)
-            state.plan_started_at = datetime.now(timezone.utc).isoformat()
+            # ── TRY 3 STRATEGIES IN ORDER ──────────────────────────
+            # 1. Mode 2: Surgical modifier (fast) — for specific edits
+            # 2. Mode 1: Preference re-ranking (medium) — for vibe changes
+            # 3. Full pipeline regeneration (slow) — fallback
 
-            # Merge modification request into special_requests
-            extracted = dict(router_result.extracted)
-            extracted["special_requests"] = (
-                f"{state.slots.special_requests or ''} | Modification: {effective_message}"
-            ).strip(" | ")
-
-            response = await _handle_plan_trip(
-                user_id,
-                effective_message,
-                extracted,
-                image_features,
-                token,
-                state
+            response = await _handle_modify_itinerary(
+                user_id, state, effective_message, router_result,
+                image_features, token,
             )
         else:
             response = {
@@ -305,6 +317,9 @@ async def _process_message_inner(
 
         # Re-apply newly extracted data
         state.slots.merge(router_result.extracted)
+
+        # Fill smart defaults for any unset non-mandatory slots
+        state.slots.fill_defaults()
 
         # If enough info → generate new itinerary
         if state.slots.is_complete():
@@ -648,6 +663,220 @@ def _format_itinerary(itinerary: dict) -> str:
     return "\n".join(lines)
 
 
+@traced(name="modify_itinerary", tags=["conversation", "modify"], metadata={"component": "conversation_agent"})
+async def _handle_modify_itinerary(
+    user_id: str,
+    state: ConversationState,
+    effective_message: str,
+    router_result,
+    image_features: Optional[dict],
+    token: Optional[str],
+) -> dict:
+    """
+    Handle modification requests with 3 strategies in order of speed:
+
+    1. **Mode 2 — Surgical Modifier** (fastest, ~2-3s):
+       LLM edits the itinerary JSON directly. Best for "swap X for Y",
+       "remove stop Z", "change hotel".
+
+    2. **Mode 1 — Preference Re-Ranking** (medium, ~10s):
+       Interpret the vibe change (e.g. "more entertaining"), adjust
+       preference scores, re-rank the existing candidate places pool,
+       and re-plan. Skips retrieval — only runs rank→plan→optimize→validate.
+
+    3. **Full Pipeline** (slowest, ~15s+):
+       Complete regeneration from scratch. Fallback for complex changes.
+    """
+
+    # ── Mode 2: Try the surgical modifier first ─────────────────────────
+    preferences = {
+        "budget_level": state.slots.budget_level,
+        "travel_style": state.slots.travel_style,
+        "pace": state.slots.pace,
+        "interests": state.slots.interests or [],
+        "food_preferences": state.slots.food_preferences or [],
+    }
+    modified = await run_itinerary_modifier(
+        current_itinerary=state.itinerary,
+        modification_request=effective_message,
+        available_places=state.candidate_places or [],
+        preferences=preferences,
+    )
+
+    if modified is not state.itinerary and modified.get("days"):
+        # Modifier succeeded — use the modified itinerary directly
+        modifier_note = modified.get("_modifier_note", "")
+        message = _format_itinerary(modified)
+        state.set_itinerary(modified, candidate_places=state.candidate_places)
+
+        return {
+            "response_type": "itinerary",
+            "message": message,
+            "itinerary": modified,
+            "image_features": image_features,
+            "agent_messages": [f"[ModifierAgent] {modifier_note}"] if modifier_note else [],
+        }
+
+    # ── Mode 1: Try preference re-ranking for vibe changes ──────────────
+    if state.candidate_places and len(state.candidate_places) > 5:
+        logger.info(
+            "[ConversationAgent] Modifier unchanged — trying preference re-ranking "
+            "(candidate_places: %d)",
+            len(state.candidate_places),
+        )
+
+        # 1. Interpret the vibe change
+        adjustments = await interpret_preference_adjustment(
+            effective_message,
+            current_preferences=preferences,
+        )
+
+        if adjustments:
+            # 2. Apply adjustments
+            reranked = await _rerank_and_replan(
+                user_id=user_id,
+                state=state,
+                adjustments=adjustments,
+                effective_message=effective_message,
+                image_features=image_features,
+                token=token,
+            )
+
+            if reranked:
+                # Success — update state and return
+                state.set_itinerary(
+                    reranked["itinerary"],
+                    candidate_places=reranked.get("candidate_places") or state.candidate_places,
+                )
+
+                return {
+                    "response_type": "itinerary",
+                    "message": _format_itinerary(reranked["itinerary"]),
+                    "itinerary": reranked["itinerary"],
+                    "image_features": image_features,
+                    "agent_messages": reranked.get("agent_messages", []),
+                    "validation": reranked.get("validation"),
+                }
+
+        logger.info(
+            "[ConversationAgent] Preference re-ranking failed or no adjustments — "
+            "falling back to full pipeline"
+        )
+
+    # ── Mode 3: Full pipeline regeneration ─────────────────────────────
+    logger.info(
+        "[ConversationAgent] Falling back to full pipeline regeneration"
+    )
+    state.transition_to(ConversationPhase.PLAN_GENERATION)
+    state.plan_started_at = datetime.now(timezone.utc).isoformat()
+
+    extracted = dict(router_result.extracted)
+    extracted["special_requests"] = (
+        f"{state.slots.special_requests or ''} | Modification: {effective_message}"
+    ).strip(" | ")
+
+    return await _handle_plan_trip(
+        user_id,
+        effective_message,
+        extracted,
+        image_features,
+        token,
+        state,
+    )
+
+
+@traced(name="rerank_and_replan", tags=["conversation", "rerank"], metadata={"component": "conversation_agent"})
+async def _rerank_and_replan(
+    user_id: str,
+    state: ConversationState,
+    adjustments: dict,
+    effective_message: str,
+    image_features: Optional[dict] = None,
+    token: Optional[str] = None,
+) -> dict | None:
+    """
+    Re-rank the existing candidate places with adjusted preferences, then
+    re-run planner → optimizer → validator.  Skips retrieval entirely.
+
+    This is Mode 1 of the editing system.
+    """
+    try:
+        # 1. Build adjusted extracted_preferences for the ranking agent
+        adjusted_prefs = apply_preference_adjustments(state.slots, adjustments)
+
+        # 2. Build a TripState-compatible dict with the existing pool
+        rerank_state = {
+            "filtered_places": state.candidate_places,
+            "extracted_preferences": adjusted_prefs,
+            "duration_days": state.slots.duration_days or 3,
+            "destination_city": state.slots.destination_city or "",
+            "destination_country": state.slots.destination_country,
+            "profile": _build_profile_from_slots(state.slots, user_id),
+            "user_message": effective_message,
+            "conversation_context": _build_conversation_context(state),
+            "candidate_places": None,  # will be set by ranking agent
+            "draft_itinerary": None,
+            "optimized_itinerary": None,
+            "is_valid": None,
+            "validation": None,
+            "error": None,
+            "planning_attempts": 0,
+            "agent_messages": [],
+        }
+
+        # 3. Run ranking agent with adjusted preferences
+        rerank_state = await run_ranking_agent(rerank_state)
+
+        if rerank_state.get("error") or not rerank_state.get("candidate_places"):
+            logger.warning(
+                "[RerankReplan] Ranking failed: %s",
+                rerank_state.get("error", "no candidates"),
+            )
+            return None
+
+        # 4. Run planning agent
+        rerank_state = await run_planning_agent(rerank_state)
+
+        if rerank_state.get("error") or not rerank_state.get("draft_itinerary"):
+            logger.warning(
+                "[RerankReplan] Planning failed: %s",
+                rerank_state.get("error", "no draft"),
+            )
+            return None
+
+        # 5. Run optimizer
+        rerank_state = await run_optimization_agent(rerank_state)
+
+        # 6. Run validator
+        rerank_state = await run_validation_agent(rerank_state)
+
+        # 7. Check result
+        optimized = rerank_state.get("optimized_itinerary")
+        is_valid = rerank_state.get("is_valid")
+
+        if not optimized or not is_valid:
+            logger.warning("[RerankReplan] Validation failed or no optimized itinerary")
+            return None
+
+        logger.info(
+            "[RerankReplan] Success: %d days, %d total stops, valid=%s",
+            len(optimized.get("days", [])),
+            sum(len(d.get("stops", [])) for d in optimized.get("days", [])),
+            is_valid,
+        )
+
+        return {
+            "itinerary": optimized,
+            "candidate_places": rerank_state.get("candidate_places"),
+            "agent_messages": rerank_state.get("agent_messages", []),
+            "validation": rerank_state.get("validation"),
+        }
+
+    except Exception as e:
+        logger.exception("[RerankReplan] Unexpected error: %s", e)
+        return None
+
+
 @traced(name="plan_trip_pipeline", tags=["conversation", "pipeline"], metadata={"component": "conversation_agent"})
 async def _handle_plan_trip(user_id, user_message, extracted, image_features, token=None, state=None):
     """Runs full LangGraph itinerary generation pipeline."""
@@ -774,10 +1003,13 @@ async def _handle_plan_trip(user_id, user_message, extracted, image_features, to
     else:
         message = "I wasn't able to generate a complete itinerary. Please try again."
 
+    # Store candidate_places from the pipeline for future modifier use
+    candidate_places = result_state.get("candidate_places") or result_state.get("filtered_places")
+
     # Only set the itinerary if it passed validation.
     # Otherwise go back to slot filling so the user can retry.
     if state and optimized and is_valid:
-        state.set_itinerary(optimized)
+        state.set_itinerary(optimized, candidate_places=candidate_places)
     elif state:
         # Pipeline failed — go back to slot filling so user can retry
         state.transition_to(ConversationPhase.SLOT_FILLING)
