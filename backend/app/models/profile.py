@@ -37,12 +37,6 @@ class TripProfile(Base):
     food_preferences     = Column(JSON, nullable=True)     # List[str]
     accommodation_preferences = Column(JSON, nullable=True)  # List[str]
 
-    # --- AI-generated Scoring Fields (0.0 - 1.0) ---
-    luxury_score         = Column(Float, nullable=True)
-    culture_score        = Column(Float, nullable=True)
-    adventure_score      = Column(Float, nullable=True)
-    confidence           = Column(Float, nullable=True)
-
     # --- Timestamps ---
     generated_at         = Column(DateTime, default=func.now())
     updated_at           = Column(DateTime, default=func.now(), onupdate=func.now())

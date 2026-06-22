@@ -5,13 +5,10 @@ from app.core.database import Base  # noqa: F401 – needed by Alembic env.py
 # --- Enums (re-exported for convenience) ---
 from app.models.enums import (
     TripStatus, ItineraryStatus, StopStatus, TravelMode,
-    StopClassification, TimeOfDay, TravelerGroupType,
+    TimeOfDay,
     PlaceCategory, AccommodationType,
     BookingType, BookingStatus, BookingProvider,
     PaymentMethod, PaymentStatus, PaymentProvider,
-    RecommendationType, RecommendationStatus,
-    PaceStyle, SpendingStyle, ExperienceLean,
-    DayRhythm, AttractionPreference, SocialStyle,
     BudgetLevel, TravelStyle, TripPace,
     FeedbackType,
     ConversationStatus, ProcessingStatus,
@@ -36,9 +33,8 @@ from app.models.booking import Booking, Payment, Receipt
 # --- Feedback ---
 from app.models.feedback import Feedback
 
-# --- Saved places & Recommendations ---
+# --- Saved places ---
 from app.models.saved_place import SavedPlace
-from app.models.recommendation import Recommendation
 
 # --- Image upload & features ---
 from app.models.image import Image, ImageFeature

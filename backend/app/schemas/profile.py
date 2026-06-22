@@ -27,10 +27,6 @@ class TripProfileResponse(BaseModel):
     interests: Optional[List[str]] = None
     food_preferences: Optional[List[str]] = None
     accommodation_preferences: Optional[List[str]] = None
-    luxury_score: Optional[float] = None
-    culture_score: Optional[float] = None
-    adventure_score: Optional[float] = None
-    confidence: Optional[float] = None
     generated_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
 

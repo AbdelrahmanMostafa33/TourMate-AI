@@ -1,14 +1,14 @@
 """Trip model - matches the class diagram."""
 
 from sqlalchemy import (
-    Column, String, Integer, Float, Text, Date, DateTime,
-    ForeignKey, JSON, Enum as SAEnum
+    Column, String, Integer, Date, DateTime,
+    ForeignKey, Enum as SAEnum
 )
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 
 from app.core.database import Base
-from app.models.enums import TripStatus, TravelerGroupType
+from app.models.enums import TripStatus
 
 
 # --- Trip ---
@@ -23,9 +23,7 @@ class Trip(Base):
     start_date           = Column(Date, nullable=True)
     end_date             = Column(Date, nullable=True)
     number_of_travelers  = Column(Integer, default=1)
-    traveler_group_type  = Column(SAEnum(TravelerGroupType, name="traveler_group_type", values_callable=lambda obj: [e.value for e in obj]), nullable=True)
     conversation_id      = Column(String, ForeignKey("conversations.conversation_id"), nullable=True, index=True)
-    budget               = Column(Float, nullable=True)
     status               = Column(
         SAEnum(TripStatus, name="trip_status"),
         default=TripStatus.planning,
@@ -42,5 +40,4 @@ class Trip(Base):
     trip_profiles   = relationship("TripProfile",     back_populates="trip", cascade="all, delete-orphan")
     images          = relationship("Image",           back_populates="trip", cascade="all, delete-orphan")
     bookings        = relationship("Booking",         back_populates="trip", cascade="all, delete-orphan")
-    recommendations = relationship("Recommendation",  back_populates="trip", cascade="all, delete-orphan")
     feedbacks       = relationship("Feedback",        back_populates="trip", cascade="all, delete-orphan")

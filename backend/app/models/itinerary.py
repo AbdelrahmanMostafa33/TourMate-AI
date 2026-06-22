@@ -2,14 +2,14 @@
 
 import uuid
 from sqlalchemy import (
-    Column, String, Integer, Float, Text, Date, Time, DateTime,
+    Column, String, Integer, Float, Text, Date, DateTime,
     ForeignKey, JSON, Enum as SAEnum
 )
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 
 from app.core.database import Base
-from app.models.enums import ItineraryStatus, StopStatus, TravelMode, StopClassification, TimeOfDay
+from app.models.enums import ItineraryStatus, StopStatus, TravelMode, TimeOfDay
 
 
 # ─── Itinerary ───────────────────────────────────────────────────────────────
@@ -60,17 +60,13 @@ class ItineraryStop(Base):
     day_id                = Column(String, ForeignKey("days.day_id", ondelete="CASCADE"), nullable=False, index=True)
     place_id              = Column(String, ForeignKey("places.place_id"), nullable=True)
     place_snapshot        = Column(JSON, nullable=True)       # snapshot of Place data at creation time
-    scheduled_time        = Column(Time, nullable=True)
     duration_minutes      = Column(Integer, nullable=True)
     order_in_day          = Column(Integer, default=0)
-    classification        = Column(SAEnum(StopClassification, name="stop_classification", values_callable=lambda obj: [e.value for e in obj]), nullable=True)
-    importance_score      = Column(Integer, nullable=True)
     time_of_day           = Column(SAEnum(TimeOfDay, name="time_of_day", values_callable=lambda obj: [e.value for e in obj]), nullable=True)
     minutes_from_prev_stop = Column(Integer, nullable=True)
     travel_mode           = Column(SAEnum(TravelMode, name="travel_mode", values_callable=lambda obj: [e.value for e in obj]), nullable=True)
     estimated_cost        = Column(Float, nullable=True)
     ai_notes              = Column(Text, nullable=True)
-    user_notes            = Column(Text, nullable=True)
     status                = Column(
         SAEnum(StopStatus, name="stop_status"),
         default=StopStatus.planned,

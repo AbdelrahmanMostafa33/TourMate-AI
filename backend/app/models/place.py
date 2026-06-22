@@ -47,7 +47,6 @@ class Place(Base):
     # Relationships
     reviews          = relationship("Review",         back_populates="place", cascade="all, delete-orphan")
     saved_places     = relationship("SavedPlace",     back_populates="place", cascade="all, delete-orphan")
-    recommendations  = relationship("Recommendation", back_populates="place")
     hotel_details    = relationship("HotelDetails",    back_populates="place", uselist=False, cascade="all, delete-orphan")
     restaurant_details = relationship("RestaurantDetails", back_populates="place", uselist=False, cascade="all, delete-orphan")
     attraction_details = relationship("AttractionDetails", back_populates="place", uselist=False, cascade="all, delete-orphan")

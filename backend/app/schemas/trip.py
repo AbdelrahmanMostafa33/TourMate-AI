@@ -1,8 +1,8 @@
 from pydantic import BaseModel
 from typing import Optional, List
-from datetime import date, datetime, time
+from datetime import date, datetime
 
-from app.models.enums import TripStatus, ItineraryStatus, StopStatus, TravelMode, TravelerGroupType, StopClassification, TimeOfDay
+from app.models.enums import TripStatus, ItineraryStatus, StopStatus, TravelMode, TimeOfDay
 
 
 # ─── ItineraryStop ───────────────────────────────────────────────────────────
@@ -11,17 +11,13 @@ class StopCreate(BaseModel):
     """Create schema for ItineraryStop – aligns with model fields."""
     place_id:               Optional[str]  = None
     place_snapshot:         Optional[dict] = None
-    scheduled_time:         Optional[time] = None
     duration_minutes:       Optional[int]  = None
     order_in_day:           Optional[int]  = 0
-    classification:         Optional[StopClassification] = None
-    importance_score:       Optional[int]  = None
     time_of_day:            Optional[TimeOfDay] = None
     minutes_from_prev_stop: Optional[int]  = None
     travel_mode:            Optional[TravelMode] = None
     estimated_cost:         Optional[float] = None
     ai_notes:               Optional[str]   = None
-    user_notes:             Optional[str]   = None
     status:                 Optional[StopStatus] = StopStatus.planned
 
 
@@ -31,17 +27,13 @@ class StopResponse(BaseModel):
     day_id:                 str
     place_id:               Optional[str]  = None
     place_snapshot:         Optional[dict] = None
-    scheduled_time:         Optional[time] = None
     duration_minutes:       Optional[int]  = None
     order_in_day:           Optional[int]  = None
-    classification:         Optional[StopClassification] = None
-    importance_score:       Optional[int]  = None
     time_of_day:            Optional[TimeOfDay] = None
     minutes_from_prev_stop: Optional[int]  = None
     travel_mode:            Optional[TravelMode] = None
     estimated_cost:         Optional[float] = None
     ai_notes:               Optional[str]   = None
-    user_notes:             Optional[str]   = None
     status:                 StopStatus
     created_at:             datetime
 
@@ -106,8 +98,6 @@ class TripCreate(BaseModel):
     start_date:            Optional[date]  = None
     end_date:              Optional[date]  = None
     number_of_travelers:   Optional[int]   = 1
-    traveler_group_type:   Optional[TravelerGroupType] = None
-    budget:                Optional[float] = None
 
 
 class TripResponse(BaseModel):
@@ -119,9 +109,7 @@ class TripResponse(BaseModel):
     start_date:           Optional[date]
     end_date:             Optional[date]
     number_of_travelers:  int
-    traveler_group_type:  Optional[TravelerGroupType] = None
     conversation_id:      Optional[str]   = None
-    budget:               Optional[float]  = None
     status:               TripStatus
     created_at:           datetime
     updated_at:           Optional[datetime] = None

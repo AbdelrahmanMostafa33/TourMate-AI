@@ -11,14 +11,6 @@ class TripStatus(str, PyEnum):
     completed = "completed"
 
 
-class TravelerGroupType(str, PyEnum):
-    SOLO        = "solo"
-    COUPLE      = "couple"
-    FAMILY      = "family"
-    FRIENDS     = "friends"
-    BUSINESS    = "business"
-
-
 class ItineraryStatus(str, PyEnum):
     draft    = "draft"
     active   = "active"
@@ -37,12 +29,6 @@ class TravelMode(str, PyEnum):
     driving = "driving"
     transit = "transit"
     cycling = "cycling"
-
-
-class StopClassification(str, PyEnum):
-    MUST_SEE   = "must_see"
-    NICE_TO_HAVE = "nice_to_have"
-    OPTIONAL   = "optional"
 
 
 class TimeOfDay(str, PyEnum):
@@ -111,54 +97,6 @@ class PaymentProvider(str, PyEnum):
     apple_pay  = "apple_pay"
     google_pay = "google_pay"
     other      = "other"
-
-
-# ─── Recommendation ─────────────────────────────────────────────────────────
-
-class RecommendationType(str, PyEnum):
-    place    = "place"
-    activity = "activity"
-    restaurant = "restaurant"
-    hotel    = "hotel"
-
-
-class RecommendationStatus(str, PyEnum):
-    pending  = "pending"
-    accepted = "accepted"
-    rejected = "rejected"
-    expired  = "expired"
-
-
-# ─── Profile / Behavioral ───────────────────────────────────────────────────
-
-class PaceStyle(str, PyEnum):
-    ADVENTUROUS = "ADVENTUROUS"
-    RELAXING    = "RELAXING"
-
-
-class SpendingStyle(str, PyEnum):
-    BUDGET_CONSCIOUS = "BUDGET_CONSCIOUS"
-    LUXURIOUS       = "LUXURIOUS"
-
-
-class ExperienceLean(str, PyEnum):
-    NATURE_OUTDOORS = "NATURE_OUTDOORS"
-    CULTURE         = "CULTURE"
-
-
-class DayRhythm(str, PyEnum):
-    EARLY_BIRD = "EARLY_BIRD"
-    NIGHT_OWL  = "NIGHT_OWL"
-
-
-class AttractionPreference(str, PyEnum):
-    POPULAR = "POPULAR"
-    LOCAL   = "LOCAL"
-
-
-class SocialStyle(str, PyEnum):
-    INDEPENDENT = "INDEPENDENT"
-    SOCIAL      = "SOCIAL"
 
 
 # ─── Trip Profiles (per-trip AI-generated profiles) ─────────────────────────
