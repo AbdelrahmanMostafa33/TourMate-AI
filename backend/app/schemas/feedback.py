@@ -15,6 +15,13 @@ class FeedbackCreate(BaseModel):
     comment:       Optional[str]  = None
 
 
+class FeedbackUpdate(BaseModel):
+    """Update schema for Feedback – all fields optional."""
+    feedback_type: Optional[FeedbackType] = None
+    rating:        Optional[int]          = None
+    comment:       Optional[str]          = None
+
+
 class FeedbackResponse(BaseModel):
     """Response schema for Feedback – aligns with model fields."""
     feedback_id:   str
