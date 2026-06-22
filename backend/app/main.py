@@ -17,6 +17,7 @@ from app.api.v1.routes import recommendations as recommendations_router
 from app.api.v1.routes import images as images_router
 from app.api.v1.routes import places as places_router
 from app.api.v1.routes import itinerary as itinerary_router
+from app.api.v1.routes import feedback as feedback_router
 from ai_engine.observability.tracing import setup_langsmith
 
 
@@ -55,6 +56,7 @@ app.include_router(recommendations_router.router, prefix="/api/v1/recommendation
 app.include_router(images_router.router, prefix="/api/v1/images", tags=["Images"])
 app.include_router(places_router.router, prefix="/api/v1/places", tags=["Places"])
 app.include_router(itinerary_router.router, prefix="/api/v1/itinerary", tags=["Itinerary"])
+app.include_router(feedback_router.router, prefix="/api/v1/feedback", tags=["Feedback"])
 app.include_router(health.router,       tags=["Health"])
 
 
