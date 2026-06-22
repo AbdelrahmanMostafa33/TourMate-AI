@@ -80,8 +80,7 @@ async def load_trip_profile(trip_id: str, token: str) -> TripProfile:
         luxury_score=data.get("luxury_score", 0.5),
         culture_score=data.get("culture_score", 0.5),
         adventure_score=data.get("adventure_score", 0.5),
-        shopping_score=data.get("shopping_score", 0.3),
-        family_score=data.get("family_score", 0.3),
+
 
         # Confidence score representing profile reliability.
         confidence=data.get("confidence", 0.0),
@@ -137,8 +136,7 @@ def load_mock_profile(trip_id: str = "mock_trip_001") -> TripProfile:
         luxury_score=0.5,
         culture_score=0.75,
         adventure_score=0.35,
-        shopping_score=0.15,
-        family_score=0.2,
+
 
         # Example confidence level.
         confidence=0.83,

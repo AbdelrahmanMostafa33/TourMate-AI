@@ -26,8 +26,7 @@ def _make_profile(**overrides) -> TripProfile:
         "luxury_score": 0.5,
         "culture_score": 0.75,
         "adventure_score": 0.35,
-        "shopping_score": 0.15,
-        "family_score": 0.2,
+
         "confidence": 0.83,
         "generated_at": None,
         "updated_at": None,

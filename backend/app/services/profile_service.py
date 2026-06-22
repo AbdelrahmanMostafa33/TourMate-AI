@@ -80,7 +80,7 @@ async def update_trip_profile_scores(
     # ── Update score fields ──────────────────────────────────────────
     score_fields = [
         "luxury_score", "culture_score", "adventure_score",
-        "shopping_score", "family_score", "confidence",
+        "confidence",
     ]
     for field in score_fields:
         if field in scores and scores[field] is not None:

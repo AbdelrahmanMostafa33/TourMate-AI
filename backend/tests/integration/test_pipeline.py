@@ -42,7 +42,6 @@ from ai_engine.graph.edges import (
 from tests.integration.conftest import (
     MOCK_PLACES,
     build_pipeline_state,
-    build_preference_llm_response,
     build_planning_llm_response,
     build_validation_llm_response,
     make_mock_matrix,
@@ -66,10 +65,8 @@ class TestFullPipelineHappyPath:
         assert result["profile"]["budget_level"] == "moderate"
 
     @pytest.mark.asyncio
-    @patch("ai_engine.agents.preference_agent.invoke_with_fallback")
-    async def test_preference_agent_enriches_profile(self, mock_llm):
+    async def test_preference_agent_enriches_profile(self):
         """Preference Agent derives scores and produces extracted_preferences."""
-        mock_llm.return_value = build_preference_llm_response()
         state = build_pipeline_state()
 
         result = await preference_node(state)
@@ -78,18 +75,13 @@ class TestFullPipelineHappyPath:
         assert profile["luxury_score"] is not None
         assert profile["culture_score"] is not None
         assert profile["adventure_score"] is not None
-        assert profile["shopping_score"] is not None
-        assert profile["family_score"] is not None
         assert profile["confidence"] is not None
         assert result["extracted_preferences"] is not None
         assert "interests_from_conversation" in result["extracted_preferences"]
 
     @pytest.mark.asyncio
-    @patch("ai_engine.agents.preference_agent.invoke_with_fallback")
-    async def test_retrieval_agent_filters_and_diversifies(self, mock_pref_llm):
+    async def test_retrieval_agent_filters_and_diversifies(self):
         """Retrieval Agent loads places, filters, and ensures diversity."""
-        mock_pref_llm.return_value = build_preference_llm_response()
-
         state = build_pipeline_state()
         state = await preference_node(state)
 
@@ -105,11 +97,8 @@ class TestFullPipelineHappyPath:
             assert "lon" in place
 
     @pytest.mark.asyncio
-    @patch("ai_engine.agents.preference_agent.invoke_with_fallback")
-    async def test_ranking_agent_scores_and_selects(self, mock_pref_llm):
+    async def test_ranking_agent_scores_and_selects(self):
         """Ranking Agent scores candidates and caps the result set."""
-        mock_pref_llm.return_value = build_preference_llm_response()
-
         state = build_pipeline_state()
         state = await preference_node(state)
 
@@ -122,11 +111,9 @@ class TestFullPipelineHappyPath:
         assert len(candidates) <= 30  # MAX_TOTAL_CANDIDATES
 
     @pytest.mark.asyncio
-    @patch("ai_engine.agents.preference_agent.invoke_with_fallback")
     @patch("ai_engine.agents.planning_agent.invoke_with_fallback")
-    async def test_planner_produces_draft_itinerary(self, mock_plan_llm, mock_pref_llm):
+    async def test_planner_produces_draft_itinerary(self, mock_plan_llm):
         """Planning Agent produces a draft itinerary from candidates."""
-        mock_pref_llm.return_value = build_preference_llm_response()
         mock_plan_llm.return_value = build_planning_llm_response(num_days=2, num_stops_per_day=3)
 
         state = build_pipeline_state()
@@ -145,14 +132,12 @@ class TestFullPipelineHappyPath:
         assert len(draft["accommodation_suggestions"]) >= 1
 
     @pytest.mark.asyncio
-    @patch("ai_engine.agents.preference_agent.invoke_with_fallback")
     @patch("ai_engine.agents.planning_agent.invoke_with_fallback")
     @patch("ai_engine.agents.optimization_agent.compute_day_matrix", new_callable=AsyncMock)
     async def test_optimizer_reorders_stops(
-        self, mock_matrix, mock_plan_llm, mock_pref_llm
+        self, mock_matrix, mock_plan_llm
     ):
         """Optimizer reorders stops and annotates travel times."""
-        mock_pref_llm.return_value = build_preference_llm_response()
         mock_plan_llm.return_value = build_planning_llm_response(num_days=1, num_stops_per_day=3)
         mock_matrix.return_value = make_mock_matrix(3, travel_time=8.0)
 
@@ -177,15 +162,13 @@ class TestFullPipelineHappyPath:
             assert "transport_mode" in stop
 
     @pytest.mark.asyncio
-    @patch("ai_engine.agents.preference_agent.invoke_with_fallback")
     @patch("ai_engine.agents.planning_agent.invoke_with_fallback")
     @patch("ai_engine.agents.optimization_agent.compute_day_matrix", new_callable=AsyncMock)
     @patch("ai_engine.agents.validation_agent.invoke_with_fallback")
     async def test_full_pipeline_produces_valid_itinerary(
-        self, mock_val_llm, mock_matrix, mock_plan_llm, mock_pref_llm
+        self, mock_val_llm, mock_matrix, mock_plan_llm
     ):
         """Full pipeline: preference → retrieval → ranking → planner → optimizer → validator."""
-        mock_pref_llm.return_value = build_preference_llm_response()
         mock_plan_llm.return_value = build_planning_llm_response(num_days=2, num_stops_per_day=3)
         mock_matrix.return_value = make_mock_matrix(3, travel_time=8.0)
         mock_val_llm.return_value = build_validation_llm_response(is_valid=True, score=85)
@@ -219,88 +202,7 @@ class TestFullPipelineHappyPath:
         assert state["validation"]["score"] >= 70
 
 
-# ═══════════════════════════════════════════════════════════════════════════
-# 2. Preference Refinement Flows Downstream
-# ═══════════════════════════════════════════════════════════════════════════
 
-class TestPreferenceRefinementFlowsDownstream:
-    """When the LLM refines interests, downstream agents see the updates."""
-
-    @pytest.mark.asyncio
-    @patch("ai_engine.agents.preference_agent.invoke_with_fallback")
-    async def test_adding_interests_affects_retrieval(self, mock_llm):
-        """LLM adds 'shopping' interest → retrieval includes market places."""
-        mock_llm.return_value = build_preference_llm_response({
-            "interests_add": ["shopping"],
-        })
-
-        state = build_pipeline_state(
-            profile=_make_profile(interests=["history", "art"]),
-        )
-        state = await preference_node(state)
-
-        # Verify shopping was added
-        interests = state["profile"]["interests"]
-        assert "shopping" in interests
-
-        # Retrieval should now include shopping-tagged places
-        with patch("ai_engine.agents.retrieval_agent.get_places_for_city", new_callable=AsyncMock, return_value=MOCK_PLACES):
-            state = await retrieval_node(state)
-
-        filtered_names = [p["name"] for p in state["filtered_places"]]
-        # Khan El Khalili has "shopping" in its interest_tags
-        assert "Khan El Khalili" in filtered_names
-
-    @pytest.mark.asyncio
-    @patch("ai_engine.agents.preference_agent.invoke_with_fallback")
-    async def test_removing_interests_affects_retrieval(self, mock_llm):
-        """LLM removes 'history' → retrieval may exclude history-only places."""
-        mock_llm.return_value = build_preference_llm_response({
-            "interests_remove": ["history"],
-        })
-
-        state = build_pipeline_state(
-            profile=_make_profile(interests=["history"]),
-        )
-        state = await preference_node(state)
-
-        interests = state["profile"]["interests"]
-        assert "history" not in interests
-
-    @pytest.mark.asyncio
-    @patch("ai_engine.agents.preference_agent.invoke_with_fallback")
-    async def test_style_change_affects_scores(self, mock_llm):
-        """LLM overrides travel_style → culture_score changes."""
-        mock_llm.return_value = build_preference_llm_response({
-            "travel_style": "adventure",
-        })
-
-        state = build_pipeline_state(
-            profile=_make_profile(travel_style="cultural", interests=["history", "art"]),
-        )
-
-        original_culture = state["profile"]["culture_score"]
-
-        state = await preference_node(state)
-
-        # Adventure style should lower culture_score vs cultural style
-        new_culture = state["profile"]["culture_score"]
-        assert new_culture <= original_culture
-
-    @pytest.mark.asyncio
-    @patch("ai_engine.agents.preference_agent.invoke_with_fallback")
-    async def test_empty_refinement_preserves_profile(self, mock_llm):
-        """Empty LLM response {} → profile fields stay the same."""
-        mock_llm.return_value = build_preference_llm_response({})
-
-        state = build_pipeline_state()
-        original_budget = state["profile"]["budget_level"]
-        original_style = state["profile"]["travel_style"]
-
-        state = await preference_node(state)
-
-        assert state["profile"]["budget_level"] == original_budget
-        assert state["profile"]["travel_style"] == original_style
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -325,11 +227,8 @@ class TestErrorPropagation:
         assert should_rank(state) == "end"
 
     @pytest.mark.asyncio
-    @patch("ai_engine.agents.preference_agent.invoke_with_fallback")
-    async def test_empty_filtered_places_terminates_after_retrieval(self, mock_llm):
+    async def test_empty_filtered_places_terminates_after_retrieval(self):
         """All places filtered out → empty filtered_places → end."""
-        mock_llm.return_value = build_preference_llm_response()
-
         state = build_pipeline_state()
         state = await preference_node(state)
 
@@ -344,11 +243,8 @@ class TestErrorPropagation:
         assert edge_result == "end"
 
     @pytest.mark.asyncio
-    @patch("ai_engine.agents.preference_agent.invoke_with_fallback")
-    async def test_no_candidates_terminates_after_ranking(self, mock_llm):
+    async def test_no_candidates_terminates_after_ranking(self):
         """No candidates after ranking → edge routes to end."""
-        mock_llm.return_value = build_preference_llm_response()
-
         state = build_pipeline_state()
         state = await preference_node(state)
 
@@ -363,11 +259,9 @@ class TestErrorPropagation:
         assert should_plan(state) == "end"
 
     @pytest.mark.asyncio
-    @patch("ai_engine.agents.preference_agent.invoke_with_fallback")
     @patch("ai_engine.agents.planning_agent.invoke_with_fallback")
-    async def test_llm_failure_in_planner_sets_error(self, mock_plan_llm, mock_pref_llm):
+    async def test_llm_failure_in_planner_sets_error(self, mock_plan_llm):
         """Planning Agent LLM throws → error state set."""
-        mock_pref_llm.return_value = build_preference_llm_response()
         # Mock invoke_with_fallback to raise an exception
         mock_plan_llm.side_effect = Exception("API timeout")
 
@@ -383,11 +277,9 @@ class TestErrorPropagation:
         assert "Planning Agent failed" in result["error"]
 
     @pytest.mark.asyncio
-    @patch("ai_engine.agents.preference_agent.invoke_with_fallback")
     @patch("ai_engine.agents.planning_agent.invoke_with_fallback")
-    async def test_invalid_json_from_planner_sets_error(self, mock_plan_llm, mock_pref_llm):
+    async def test_invalid_json_from_planner_sets_error(self, mock_plan_llm):
         """Planning Agent returns invalid JSON → error state set."""
-        mock_pref_llm.return_value = build_preference_llm_response()
         mock_plan_llm.return_value = MagicMock()
         mock_plan_llm.return_value.content = "not valid json at all"
 
@@ -484,15 +376,13 @@ class TestValidationRetryFlow:
     """When validation fails, the pipeline can retry from the planner."""
 
     @pytest.mark.asyncio
-    @patch("ai_engine.agents.preference_agent.invoke_with_fallback")
     @patch("ai_engine.agents.planning_agent.invoke_with_fallback")
     @patch("ai_engine.agents.optimization_agent.compute_day_matrix", new_callable=AsyncMock)
     @patch("ai_engine.agents.validation_agent.invoke_with_fallback")
     async def test_validation_failure_increments_planning_attempts(
-        self, mock_val_llm, mock_matrix, mock_plan_llm, mock_pref_llm
+        self, mock_val_llm, mock_matrix, mock_plan_llm
     ):
         """When validation fails, planning_attempts should be trackable."""
-        mock_pref_llm.return_value = build_preference_llm_response()
         mock_plan_llm.return_value = build_planning_llm_response(num_days=1, num_stops_per_day=3)
         mock_matrix.return_value = make_mock_matrix(3, travel_time=5.0)
         mock_val_llm.return_value = build_validation_llm_response(is_valid=False, score=30)
@@ -527,11 +417,8 @@ class TestScoreDerivation:
     """Preference Agent score derivation logic runs correctly."""
 
     @pytest.mark.asyncio
-    @patch("ai_engine.agents.preference_agent.invoke_with_fallback")
-    async def test_luxury_profile_gets_high_luxury_score(self, mock_llm):
+    async def test_luxury_profile_gets_high_luxury_score(self):
         """Luxury budget + resort → high luxury_score."""
-        mock_llm.return_value = build_preference_llm_response()
-
         from ai_engine.agents.preference_agent import _derive_scores
 
         profile = _make_profile(
@@ -542,8 +429,7 @@ class TestScoreDerivation:
         assert scores["luxury_score"] >= 0.8
 
     @pytest.mark.asyncio
-    @patch("ai_engine.agents.preference_agent.invoke_with_fallback")
-    async def test_budget_profile_gets_low_luxury_score(self, mock_llm):
+    async def test_budget_profile_gets_low_luxury_score(self):
         """Budget level → low luxury_score."""
         from ai_engine.agents.preference_agent import _derive_scores
 
@@ -555,8 +441,7 @@ class TestScoreDerivation:
         assert scores["luxury_score"] <= 0.2
 
     @pytest.mark.asyncio
-    @patch("ai_engine.agents.preference_agent.invoke_with_fallback")
-    async def test_cultural_style_boosts_culture_score(self, mock_llm):
+    async def test_cultural_style_boosts_culture_score(self):
         """Cultural travel_style + history/art interests → high culture_score."""
         from ai_engine.agents.preference_agent import _derive_scores
 
@@ -568,8 +453,7 @@ class TestScoreDerivation:
         assert scores["culture_score"] >= 0.8
 
     @pytest.mark.asyncio
-    @patch("ai_engine.agents.preference_agent.invoke_with_fallback")
-    async def test_adventure_style_boosts_adventure_score(self, mock_llm):
+    async def test_adventure_style_boosts_adventure_score(self):
         """Adventure travel_style + hiking interests → high adventure_score."""
         from ai_engine.agents.preference_agent import _derive_scores
 
@@ -582,28 +466,7 @@ class TestScoreDerivation:
         assert scores["adventure_score"] >= 0.8
 
     @pytest.mark.asyncio
-    @patch("ai_engine.agents.preference_agent.invoke_with_fallback")
-    async def test_family_style_boosts_family_score(self, mock_llm):
-        """Family travel_style → high family_score."""
-        from ai_engine.agents.preference_agent import _derive_scores
-
-        profile = _make_profile(travel_style="family")
-        scores = _derive_scores(profile)
-        assert scores["family_score"] >= 0.8
-
-    @pytest.mark.asyncio
-    @patch("ai_engine.agents.preference_agent.invoke_with_fallback")
-    async def test_shopping_interests_boost_shopping_score(self, mock_llm):
-        """Shopping interests → high shopping_score."""
-        from ai_engine.agents.preference_agent import _derive_scores
-
-        profile = _make_profile(interests=["shopping", "markets", "bazaar"])
-        scores = _derive_scores(profile)
-        assert scores["shopping_score"] >= 0.5
-
-    @pytest.mark.asyncio
-    @patch("ai_engine.agents.preference_agent.invoke_with_fallback")
-    async def test_confidence_scales_with_filled_fields(self, mock_llm):
+    async def test_confidence_scales_with_filled_fields(self):
         """More filled fields → higher confidence."""
         from ai_engine.agents.preference_agent import _calculate_confidence
 

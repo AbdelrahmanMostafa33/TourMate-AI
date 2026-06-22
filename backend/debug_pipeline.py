@@ -40,8 +40,7 @@ async def main():
             "luxury_score": None,
             "culture_score": None,
             "adventure_score": None,
-            "shopping_score": None,
-            "family_score": None,
+
             "confidence": None,
             "generated_at": None,
             "updated_at": None,

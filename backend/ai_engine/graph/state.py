@@ -31,8 +31,6 @@ class TripProfile(TypedDict):
     luxury_score: Optional[float]
     culture_score: Optional[float]
     adventure_score: Optional[float]
-    shopping_score: Optional[float]
-    family_score: Optional[float]
 
     # ── Metadata ─────────────────────────────────────────────────
     confidence: Optional[float]        # 0.0-1.0 how confident we are in the profile

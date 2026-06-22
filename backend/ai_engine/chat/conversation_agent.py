@@ -583,8 +583,7 @@ def _build_profile_from_slots(slots: TripSlots, trip_id: str) -> dict:
         luxury_score=None,
         culture_score=None,
         adventure_score=None,
-        shopping_score=None,
-        family_score=None,
+
 
         confidence=None,
         generated_at=None,

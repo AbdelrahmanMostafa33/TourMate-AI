@@ -28,7 +28,6 @@ Usage::
 from __future__ import annotations
 
 import asyncio
-import time
 import logging
 from dataclasses import dataclass
 from enum import Enum
@@ -293,7 +292,7 @@ _init_key_manager()
 AGENT_LLM_REGISTRY: Dict[str, LLMConfig] = {
     # ── Groq — classification, extraction, validation (massive RPD headroom) ──
     "router":         LLMConfig(Provider.GROQ, "llama-3.3-70b-versatile", temperature=0.7, max_tokens=2048),
-    "preference":     LLMConfig(Provider.GROQ, "llama-3.1-8b-instant",  temperature=0.2, max_tokens=2048),
+    "preference_reranker": LLMConfig(Provider.GROQ, "llama-3.1-8b-instant",  temperature=0.2, max_tokens=2048),
     "validator":      LLMConfig(Provider.GROQ, "llama-3.3-70b-versatile", temperature=0.2, max_tokens=2048),
     "review_qa":      LLMConfig(Provider.GROQ, "llama-3.3-70b-versatile", temperature=0.7, max_tokens=8192),
     "modifier":       LLMConfig(Provider.GROQ, "llama-3.3-70b-versatile", temperature=0.3, max_tokens=8192),
@@ -569,86 +568,6 @@ async def invoke_with_fallback(
             raise
 
     # All retries exhausted
-    raise last_error or RuntimeError(
-        f"All API keys exhausted for {provider.value} (role: {agent_role})"
-    )
-
-
-def invoke_with_fallback_sync(
-    agent_role: str,
-    messages: list[BaseMessage],
-    max_retries: int | None = None,
-) -> Any:
-    """
-    Synchronous variant of ``invoke_with_fallback``.
-
-    Use this for synchronous callers (e.g. preference agent).
-    """
-    config = AGENT_LLM_REGISTRY.get(agent_role)
-    if config is None:
-        available = ", ".join(sorted(AGENT_LLM_REGISTRY))
-        raise ValueError(
-            f"Unknown agent role '{agent_role}'. "
-            f"Available roles: {available}"
-        )
-
-    provider = config.provider
-    total_keys = key_manager.get_total_count(provider)
-
-    # Default: one full pass through all keys (minimum 4 attempts) —
-    # avoids wasting time on excessive retry cycles.
-    if max_retries is None:
-        max_retries = max(total_keys, 4)
-
-    last_error: Exception | None = None
-    # Local set of keys already tried in THIS pass.
-    tried_keys: set[str] = set()
-    transient_error_count = 0
-
-    for attempt in range(max_retries):
-        api_key = key_manager.get_key(provider)
-        if api_key is None:
-            break
-
-        if api_key in tried_keys:
-            if len(tried_keys) >= total_keys:
-                if last_error is not None and _is_transient_error(last_error):
-                    transient_error_count += 1
-                    backoff = min(
-                        _BASE_TRANSIENT_BACKOFF * (2 ** (transient_error_count - 1)),
-                        _MAX_TRANSIENT_BACKOFF,
-                    )
-                    logger.warning(
-                        "[Fallback] All %d key(s) on %s for role '%s' returned transient "
-                        "errors — waiting %.1fs before retry cycle (transient #%d)",
-                        total_keys, provider.value, agent_role,
-                        backoff, transient_error_count,
-                    )
-                    time.sleep(backoff)
-                    tried_keys.clear()
-                    continue
-                break
-            continue
-
-        try:
-            builder = _PROVIDER_BUILDERS[provider]
-            llm = builder(config, api_key=api_key)
-            response = llm.invoke(
-                messages, config={"callbacks": [_TokenTrackingCallback(agent_role)]}
-            )
-            return response
-
-        except Exception as exc:
-            last_error = exc
-            if _is_rate_limit_error(exc):
-                tried_keys.add(api_key)
-                continue
-            if _is_transient_error(exc):
-                tried_keys.add(api_key)
-                transient_error_count += 1
-                continue
-            raise
-
     raise last_error or RuntimeError(
         f"All API keys exhausted for {provider.value} (role: {agent_role})"
     )
