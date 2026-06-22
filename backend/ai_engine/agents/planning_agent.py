@@ -123,10 +123,6 @@ def _trim_for_prompt(place: dict) -> dict:
     return trimmed
 
 
-# ── JSON extraction helpers (moved to ai_engine.utils.json_utils) ────────
-# The functions _extract_json_from_llm_output, _repair_missing_commas, and
-# _repair_truncated_json have been extracted to the shared module
-# ai_engine/utils/json_utils.py and imported above.
 
 
 async def run_planning_agent(state: TripState) -> TripState:

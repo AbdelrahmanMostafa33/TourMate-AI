@@ -253,6 +253,49 @@ async def chat_loop():
     turn = 0
     last_result = None
 
+    # ── Check for existing session to resume ──────────────────────────
+    try:
+        state = await manager.get_active_session(user_id)
+        if state and state.turn_count > 0:
+            slots = state.slots
+            has_data = any([
+                slots.destination_city,
+                slots.duration_days,
+                slots.budget_level,
+                slots.travel_style,
+                slots.interests,
+            ])
+            if has_data:
+                session_id = state.session_id
+                turn = state.turn_count
+                print(f"\n{YELLOW}{BOLD}↻ Resuming previous session{RESET}")
+                print(f"{DIM}  session: {session_id[:16]}... | phase: {state.phase.value} | turn: {turn}{RESET}")
+
+                # Show what's already filled
+                if slots.destination_city:
+                    dur = f" ({slots.duration_days} days)" if slots.duration_days else ""
+                    print(f"  📍 Destination: {slots.destination_city}{dur}")
+                if slots.budget_level:
+                    print(f"  💰 Budget:      {slots.budget_level}")
+                if slots.travel_style:
+                    print(f"  🎯 Style:       {slots.travel_style}")
+                if slots.interests:
+                    print(f"  🎨 Interests:   {', '.join(slots.interests[:5])}")
+                if slots.food_preferences:
+                    print(f"  🍽️  Food:        {', '.join(slots.food_preferences[:3])}")
+
+                missing = slots.missing_required()
+                if missing:
+                    print(f"{YELLOW}  ⚠ Still need: {', '.join(missing)}{RESET}")
+                elif state.phase in ("plan_generation", "itinerary_review", "completed"):
+                    print(f"{GREEN}  ✅ All trip info collected — ready to generate/modify!{RESET}")
+                else:
+                    print(f"{GREEN}  ✅ All required info collected{RESET}")
+
+                print(f"{DIM}  Type /reset to start fresh /history to see full history{RESET}\n")
+    except Exception:
+        pass  # Non-fatal — just proceed without resume context
+
     print(f"{DIM}Start chatting! (Type /help for commands){RESET}\n")
 
     while True:
