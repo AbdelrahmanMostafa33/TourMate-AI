@@ -28,7 +28,6 @@ def test_load_mock_profile():
     assert len(profile["interests"]) > 0
     assert isinstance(profile["food_preferences"], list)
     assert isinstance(profile["accommodation_preferences"], list)
-    assert profile["confidence"] > 0
 
 
 def test_profile_to_text():
@@ -43,7 +42,6 @@ def test_profile_to_text():
     assert "Interests:" in text
     assert "Food:" in text
     assert "Accommodation:" in text
-    assert "Luxury score:" in text
 
     print(f"\nProfile text:\n{text}")
 
@@ -55,11 +53,6 @@ def test_is_profile_complete():
     # Complete profile
     complete = load_mock_profile()
     assert is_profile_complete(complete) is True
-
-    # Incomplete: no confidence
-    incomplete_no_confidence = load_mock_profile()
-    incomplete_no_confidence["confidence"] = 0.0
-    assert is_profile_complete(incomplete_no_confidence) is False
 
     # Incomplete: no interests
     incomplete_no_interests = load_mock_profile()
@@ -85,8 +78,6 @@ def test_graph_runs_with_mock_profile():
         "profile": None,
         "token":              None,
         "trip_id":            None,
-        # Preference extraction
-        "extracted_preferences": None,
         # Retrieval pipeline
         "filtered_places":   None,
         "candidate_places":  None,
@@ -175,7 +166,7 @@ def test_graph_runs_with_mock_profile():
     print(f"\n--- Pipeline Debug ---")
     print(f"   Profile loaded: {result.get('profile') is not None}")
     print(f"   Budget level: {result.get('profile', {}).get('budget_level', 'N/A')}")
-    print(f"   Extracted prefs: {result.get('extracted_preferences') is not None}")
+    print(f"   Profile: {result.get('profile') is not None}")
     print(f"   Filtered places: {len(result.get('filtered_places') or [])}")
     print(f"   Candidate places: {len(result.get('candidate_places') or [])}")
     print(f"   Draft itinerary: {result.get('draft_itinerary') is not None}")

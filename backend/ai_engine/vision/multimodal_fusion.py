@@ -17,9 +17,6 @@ def fuse_image_with_profile(
 
     Behavior:
     - Appends inferred_interests to profile["interests"] (no duplicates).
-    - If image confidence is "high", enriches adventure_score with
-      activity_style signal.
-    - Bumps confidence to reflect additional signal.
 
     Args:
         profile:        The TripProfile loaded from TripState.
@@ -41,25 +38,5 @@ def fuse_image_with_profile(
             existing_interests.append(interest)
             existing_lower.add(interest.lower())
     updated["interests"] = existing_interests
-
-    # --- Enrich adventure_score from image activity_style ---
-    if img_confidence == "high":
-        activity_style = image_features.get("activity_style")
-        if activity_style:
-            style_to_score = {
-                "adventurous": 0.85,
-                "relaxing":    0.25,
-                "cultural":    0.55,
-                "culinary":    0.50,
-                "mixed":       0.50,
-            }
-            new_score = style_to_score.get(activity_style, 0.50)
-            current = updated.get("adventure_score") or 0.50
-            updated["adventure_score"] = round((current + new_score) / 2, 2)
-
-    # --- Bump confidence ---
-    current_conf = updated.get("confidence", 0.0) or 0.0
-    if img_confidence == "high":
-        updated["confidence"] = min(1.0, round(current_conf + 0.15, 2))
 
     return TripProfile(**updated)

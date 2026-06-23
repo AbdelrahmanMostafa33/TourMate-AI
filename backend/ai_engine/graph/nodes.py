@@ -1,7 +1,6 @@
 from ai_engine.graph.state import TripState
 from ai_engine.graph.progress import report_progress
 from ai_engine.tools.profile_tool import load_trip_profile, load_mock_profile
-from ai_engine.agents.preference_agent import run_preference_agent
 from ai_engine.agents.retrieval_agent import run_retrieval_agent
 from ai_engine.agents.ranking_agent import run_ranking_agent
 from ai_engine.agents.planning_agent import run_planning_agent
@@ -29,7 +28,7 @@ async def load_profile_node(state: TripState) -> TripState:
         await report_progress(pk, "LoadProfile", "running", "Loading your travel profile...")
 
     if state.get("profile"):
-        print(f"[LoadProfile] Profile already loaded (confidence={state['profile'].get('confidence', '?')})")
+        print("[LoadProfile] Profile already loaded")
         if pk:
             await report_progress(pk, "LoadProfile", "done", "Profile already loaded")
         return state
@@ -42,7 +41,7 @@ async def load_profile_node(state: TripState) -> TripState:
     if token:
         try:
             profile = await load_trip_profile(trip_id=trip_id, token=token)
-            print(f"[LoadProfile] Real profile loaded (confidence={profile.get('confidence', '?')})")
+            print("[LoadProfile] Real profile loaded")
             if pk:
                 await report_progress(pk, "LoadProfile", "done", "Profile loaded from your account")
         except Exception as e:
@@ -58,25 +57,6 @@ async def load_profile_node(state: TripState) -> TripState:
 
     state["profile"] = profile
     return state
-
-
-@traced(name="preference_agent", tags=["agent", "preference"], metadata={"role": "preference"})
-async def preference_node(state: TripState) -> TripState:
-    """
-    PREFERENCE AGENT NODE — Extracts structured preferences from
-    the user's message and behavioral profile.
-    """
-    ctx = (state.get("conversation_context") or state.get("user_message", ""))[:80]
-    pk = _progress_key(state)
-    if pk:
-        await report_progress(pk, "PreferenceAgent", "running", "Analyzing your travel preferences...")
-
-    print(f"[PreferenceAgent] Refining profile (context: {ctx}...)")
-    result = await run_preference_agent(state)
-
-    if pk:
-        await report_progress(pk, "PreferenceAgent", "done", "Preferences analyzed")
-    return result
 
 
 @traced(name="retrieval_agent", tags=["agent", "retrieval"], metadata={"role": "retrieval"})

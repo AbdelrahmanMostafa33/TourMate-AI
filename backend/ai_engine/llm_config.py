@@ -295,9 +295,9 @@ AGENT_LLM_REGISTRY: Dict[str, LLMConfig] = {
     "preference_reranker": LLMConfig(Provider.GROQ, "llama-3.1-8b-instant",  temperature=0.2, max_tokens=2048),
     "validator":      LLMConfig(Provider.GROQ, "llama-3.3-70b-versatile", temperature=0.2, max_tokens=2048),
     "review_qa":      LLMConfig(Provider.GROQ, "llama-3.3-70b-versatile", temperature=0.7, max_tokens=8192),
-    "modifier":       LLMConfig(Provider.GROQ, "llama-3.3-70b-versatile", temperature=0.3, max_tokens=8192),
 
-    # ── Gemini — planning (reasoning) and vision (multimodal) — 20 RPD ───────
+    # ── Gemini — planning (reasoning), vision (multimodal), modification — 20 RPD ──
+    "modifier":       LLMConfig(Provider.GEMINI, "gemini-2.5-flash", temperature=0.5, max_tokens=8192),
     "planner":        LLMConfig(Provider.GEMINI, "gemini-2.5-flash", temperature=0.7, max_tokens=8192),
     "vision":         LLMConfig(Provider.GEMINI, "gemini-2.5-flash", temperature=0.7, max_tokens=8192),
 }
@@ -441,6 +441,32 @@ def _is_transient_error(exc: Exception) -> bool:
     )
 
 
+def _is_request_too_large_error(exc: Exception) -> bool:
+    """Check whether an exception is a 413 Request Entity Too Large error.
+
+    This happens when the prompt exceeds the provider's per-request token
+    limit (e.g. Groq free tier caps at 12,000 TPM).  Unlike 429 rate limits,
+    cycling through keys will NOT fix this — the prompt itself needs to be
+    smaller.  We raise immediately so the caller can retry with a downsized
+    payload.
+    """
+    msg = str(exc).lower()
+    # Check specific 413 indicators first — these MUST come before the more
+    # generic "tokens per" / "quota" checks in _is_rate_limit_error so that
+    # 413 errors (which also contain "tokens per" in their body) are caught
+    # by the right handler.
+    return any(
+        kw in msg
+        for kw in (
+            "413",
+            "request too large",
+            "payload too large",
+            "entity too large",
+            "reduce your message size",
+        )
+    )
+
+
 
 async def invoke_with_fallback(
     agent_role: str,
@@ -553,6 +579,20 @@ async def invoke_with_fallback(
 
         except Exception as exc:
             last_error = exc
+
+            # ── 413 Request Too Large — prompt exceeds token limit ──────
+            # Check BEFORE rate-limit because 413 errors often contain
+            # "tokens per" / "quota" keywords that would match there.
+            # Cycling keys won't help — the caller must reduce payload size.
+            if _is_request_too_large_error(exc):
+                logger.error(
+                    "[Fallback] Key …%s request too large on '%s' — "
+                    "prompt exceeds token limit. Raising immediately.",
+                    api_key[-4:], agent_role,
+                )
+                raise
+
+            # ── 429 Rate Limit — try next key ──────────────────────────
             if _is_rate_limit_error(exc):
                 tried_keys.add(api_key)
                 logger.warning(
@@ -561,6 +601,7 @@ async def invoke_with_fallback(
                 )
                 continue
 
+            # ── 503 / Transient — try next key with backoff ────────────
             if _is_transient_error(exc):
                 tried_keys.add(api_key)
                 transient_error_count += 1

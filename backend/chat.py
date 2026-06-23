@@ -15,6 +15,7 @@ Commands:
 
 import asyncio
 import json
+import logging
 import os
 import sys
 from datetime import datetime, timezone
@@ -26,6 +27,13 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), ".")))
 # when @traced decorators are applied at import time.
 from dotenv import load_dotenv
 load_dotenv()
+
+# Suppress noisy SQLAlchemy engine query logs from cluttering chat output.
+# Use basicConfig at WARNING so all INFO-level library logs are silenced,
+# then allow specific loggers (like our own) to opt back to INFO if needed.
+logging.basicConfig(level=logging.WARNING)
+# Also explicitly squelch the SQLAlchemy engine logger (belt + suspenders).
+logging.getLogger("sqlalchemy.engine").setLevel(logging.WARNING)
 
 # Initialize LangSmith tracing status
 from ai_engine.observability import setup_langsmith
@@ -65,50 +73,6 @@ def print_user_msg(msg: str):
 def print_bot_msg(msg: str):
     print(f"\n{CYAN}{BOLD}TourMate:{RESET} {msg}")
 
-
-def print_itinerary(itinerary: dict):
-    """Pretty-print the generated itinerary."""
-    days = itinerary.get("days", [])
-    hotels = itinerary.get("accommodation_suggestions", [])
-
-    print(f"\n{YELLOW}{BOLD}{'='*60}")
-    print(f"  📋 ITINERARY — {itinerary.get('destination', 'Unknown')} ({len(days)} days)")
-    print(f"{'='*60}{RESET}")
-
-    for day in days:
-        day_num = day.get("day_number", "?")
-        theme = day.get("theme", "")
-        stops = day.get("stops", [])
-
-        print(f"\n{YELLOW}{BOLD}  Day {day_num}: {theme}{RESET}")
-        print(f"  {'─'*40}")
-
-        for i, stop in enumerate(stops, 1):
-            name = stop.get("name", "?")
-            category = stop.get("category", "")
-            duration = stop.get("estimated_duration_minutes", "")
-            time_of_day = stop.get("suggested_time_of_day", "")
-            why = stop.get("why_recommended", "")
-
-            time_emoji = {"morning": "🌅", "afternoon": "☀️", "evening": "🌙"}.get(time_of_day, "⏰")
-            duration_str = f" ({duration}min)" if duration else ""
-
-            print(f"    {i}. {time_emoji} {name} [{category}]{duration_str}")
-            if why:
-                print(f"       {DIM}→ {why}{RESET}")
-
-    if hotels:
-        print(f"\n{YELLOW}{BOLD}  🏨 Accommodation Suggestions{RESET}")
-        print(f"  {'─'*40}")
-        for hotel in hotels:
-            name = hotel.get("name", "?")
-            sub = hotel.get("sub_category", "")
-            why = hotel.get("why_recommended", "")
-            print(f"    • {name} [{sub}]")
-            if why:
-                print(f"      {DIM}→ {why}{RESET}")
-
-    print(f"\n{YELLOW}{'='*60}{RESET}")
 
 
 def print_debug(result: dict):
@@ -450,9 +414,6 @@ async def chat_loop():
 
         if response_type == "itinerary":
             print_bot_msg(message)
-            itinerary = result.get("itinerary")
-            if itinerary:
-                print_itinerary(itinerary)
         elif response_type == "clarification":
             print_bot_msg(message)
         elif response_type == "chat":

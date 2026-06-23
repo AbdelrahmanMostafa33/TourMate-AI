@@ -37,20 +37,12 @@ async def main():
             "interests": ["history", "food", "art"],
             "food_preferences": ["local cuisine", "street food"],
             "accommodation_preferences": ["boutique hotel"],
-            "luxury_score": None,
-            "culture_score": None,
-            "adventure_score": None,
-
-            "confidence": None,
             "generated_at": None,
             "updated_at": None,
         },
 
         "token": None,
         "trip_id": "debug_trip_001",
-
-        # ── Preference extraction ─────────────────────────────
-        "extracted_preferences": None,
 
         # ── Retrieval pipeline ────────────────────────────────
         "filtered_places": None,
@@ -125,16 +117,7 @@ async def main():
         print(f"  Budget: {profile.get('budget_level')}")
         print(f"  Style:  {profile.get('travel_style')}")
         print(f"  Pace:   {profile.get('pace')}")
-        print(f"  Luxury score:  {profile.get('luxury_score')}")
-        print(f"  Culture score: {profile.get('culture_score')}")
-        print(f"  Adventure score: {profile.get('adventure_score')}")
-        print(f"  Confidence: {profile.get('confidence')}")
-
-    # Extracted preferences
-    prefs = result_state.get("extracted_preferences")
-    if prefs:
-        print(f"\n🎯 Extracted Preferences:")
-        print(json.dumps(prefs, indent=2, default=str))
+        print(f"  Interests: {', '.join(profile.get('interests') or [])}")
 
     # Filtered places count
     filtered = result_state.get("filtered_places", [])

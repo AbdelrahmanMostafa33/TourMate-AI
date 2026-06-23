@@ -194,9 +194,6 @@ class TestProfileBuildingFromSlots:
         assert profile["interests"] == ["history", "art"]
         assert profile["food_preferences"] == ["local cuisine"]
         assert profile["accommodation_preferences"] == ["boutique hotel"]
-        # Scores are None before Preference Agent enriches them
-        assert profile["luxury_score"] is None
-        assert profile["culture_score"] is None
 
     def test_build_profile_from_slots_defaults_empty_lists(self):
         """Missing list fields default to empty lists, not None."""

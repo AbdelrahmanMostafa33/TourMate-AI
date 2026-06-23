@@ -23,11 +23,6 @@ def _make_profile(**overrides) -> TripProfile:
         "interests": ["history", "art", "food"],
         "food_preferences": ["local cuisine", "street food"],
         "accommodation_preferences": ["boutique hotel", "airbnb"],
-        "luxury_score": 0.5,
-        "culture_score": 0.75,
-        "adventure_score": 0.35,
-
-        "confidence": 0.83,
         "generated_at": None,
         "updated_at": None,
     }
@@ -103,7 +98,6 @@ def _make_state(**overrides) -> dict:
         "token": None,
         "trip_id": None,
         "profile": _make_profile(),
-        "extracted_preferences": None,
         "filtered_places": None,
         "candidate_places": None,
         "draft_itinerary": None,

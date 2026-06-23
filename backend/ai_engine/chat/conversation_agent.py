@@ -10,6 +10,7 @@ The shared routing logic lives in _process_message(), which both the synchronous
 """
 
 import asyncio
+import copy
 import logging
 from collections import OrderedDict
 from datetime import datetime, timezone, timedelta
@@ -46,7 +47,6 @@ from ai_engine.agents.itinerary_modifier_agent import run_itinerary_modifier
 # Preference Reranker Agent — interprets vibe changes and re-ranks candidates
 from ai_engine.agents.preference_reranker_agent import (
     interpret_preference_adjustment,
-    apply_preference_adjustments,
 )
 
 # Direct agent imports for re-ranking (skip retrieval, go straight to rank→plan→optimize→validate)
@@ -580,15 +580,146 @@ def _build_profile_from_slots(slots: TripSlots, trip_id: str) -> dict:
         accommodation_preferences=slots.accommodation_preferences or [],
 
         # Optional scoring fields (can be computed later)
-        luxury_score=None,
-        culture_score=None,
-        adventure_score=None,
-
-
-        confidence=None,
         generated_at=None,
         updated_at=None,
     )
+
+
+def _has_real_modifications(mod: dict, orig: dict) -> bool:
+    """Check if the modifier made substantive content changes.
+
+    The modifier can return a new dict with the identical content
+    plus a ``_modifier_note`` saying "couldn't find X".  We need
+    to distinguish that from a real edit.
+
+    Compares stop IDs in ORDER (to catch REORDER operations),
+    hotel accommodation types, and hotel IDs.
+    """
+    if mod is orig:
+        return False
+
+    # Compare stop IDs as lists (order matters — REORDER changes order)
+    orig_stop_ids = [
+        s["id"] for d in orig.get("days", [])
+        for s in d.get("stops", []) if s.get("id")
+    ]
+    new_stop_ids = [
+        s["id"] for d in mod.get("days", [])
+        for s in d.get("stops", []) if s.get("id")
+    ]
+    if orig_stop_ids != new_stop_ids:
+        return True
+
+    # Compare hotel accommodation types
+    orig_hotel_types = {
+        h.get("accommodation_type") for h in orig.get("accommodation_suggestions", [])
+    }
+    new_hotel_types = {
+        h.get("accommodation_type") for h in mod.get("accommodation_suggestions", [])
+    }
+    if orig_hotel_types != new_hotel_types:
+        return True
+
+    # Compare hotel IDs
+    orig_hotel_ids = {
+        h["id"] for h in orig.get("accommodation_suggestions", []) if h.get("id")
+    }
+    new_hotel_ids = {
+        h["id"] for h in mod.get("accommodation_suggestions", []) if h.get("id")
+    }
+    if orig_hotel_ids != new_hotel_ids:
+        return True
+
+    return False
+
+
+async def _swap_accommodation_surgically(
+    itinerary: dict,
+    destination_city: str,
+    acc_add: list[str],
+) -> dict | None:
+    """
+    Fetch hotels of the requested type from the DB and swap them into the
+    existing itinerary, preserving all days/stops unchanged.
+
+    This is a surgical alternative to the full pipeline regeneration that
+    only replaces ``accommodation_suggestions``.  Returns ``None`` when no
+    matching hotels could be found (e.g. no resorts in the database for
+    the given city), so callers can fall back to the full pipeline.
+
+    Args:
+        itinerary: The current itinerary dict (days, stops, old hotels).
+        destination_city: City to search for hotels in.
+        acc_add: The new accommodation preferences the user wants
+            (e.g. ``["resort"]`` or ``["luxury", "boutique hotel"]``).
+
+    Returns:
+        A deep-copied itinerary with new ``accommodation_suggestions``,
+        or ``None`` if no matching hotels were found.
+    """
+    from ai_engine.agents.retrieval_agent import _map_accommodation_to_type
+    from ai_engine.tools.places_tool import get_places_for_city
+
+    # Early exit if no new accommodation preferences to search for
+    if not acc_add:
+        logger.warning(
+            "[AccommodationSwap] Empty acc_add — nothing to swap",
+        )
+        return None
+
+    # Map the preference to a canonical accommodation type (e.g. "resort", "luxury")
+    canonical_type = _map_accommodation_to_type(acc_add)
+    if not canonical_type:
+        logger.warning(
+            "[AccommodationSwap] Could not map %r to a canonical type",
+            acc_add,
+        )
+        return None
+
+    # Fetch all places for the destination city
+    all_places = await get_places_for_city(destination_city)
+
+    # Filter for hotels matching the requested type using the same
+    # partial-match logic as ``_apply_filters`` in retrieval_agent.py.
+    matching_hotels = [
+        p for p in all_places
+        if p.get("category") == "hotel"
+        and (
+            canonical_type in (p.get("accommodation_type") or "").lower()
+            or (p.get("accommodation_type") or "").lower() in canonical_type
+        )
+    ]
+
+    if not matching_hotels:
+        logger.warning(
+            "[AccommodationSwap] No hotels matching type '%s' found in %s",
+            canonical_type, destination_city,
+        )
+        return None
+
+    # Sort by rating descending and take top 5
+    matching_hotels.sort(key=lambda h: h.get("rating", 0) or 0, reverse=True)
+    top_hotels = matching_hotels[:5]
+
+    # Add ``why_recommended`` for hotels that don't have one yet
+    acc_display = canonical_type.capitalize() or "Accommodation"
+    for h in top_hotels:
+        if not h.get("why_recommended"):
+            h["why_recommended"] = (
+                f"This {canonical_type} is highly-rated and aligns with your "
+                f"preference for {acc_display.lower()} accommodation."
+            )
+
+    # Deep-copy the itinerary and swap the accommodation suggestions
+    modified = copy.deepcopy(itinerary)
+    modified["accommodation_suggestions"] = top_hotels
+
+    logger.info(
+        "[AccommodationSwap] Swapped %d hotels with type '%s' — itinerary stops preserved",
+        len(top_hotels), canonical_type,
+    )
+
+    return modified
 
 
 def _build_conversation_context(state) -> str:
@@ -740,6 +871,7 @@ async def _handle_modify_itinerary(
         "pace": state.slots.pace,
         "interests": state.slots.interests or [],
         "food_preferences": state.slots.food_preferences or [],
+        "accommodation_preferences": state.slots.accommodation_preferences or [],
     }
     modified = await run_itinerary_modifier(
         current_itinerary=state.itinerary,
@@ -748,8 +880,11 @@ async def _handle_modify_itinerary(
         preferences=preferences,
     )
 
-    # Track whether the modifier actually applied the requested change
-    modifier_applied = modified is not state.itinerary and modified.get("days")
+    # Track whether the modifier actually applied the requested change.
+    # The modifier LLM returns a NEW dict (from json.loads) even when it
+    # can't make the change — it just adds a _modifier_note.  So we must
+    # compare the actual content to detect real modifications.
+    modifier_applied = _has_real_modifications(modified, state.itinerary)
 
     if modifier_applied:
         # Modifier succeeded — use the modified itinerary directly
@@ -765,6 +900,10 @@ async def _handle_modify_itinerary(
             "agent_messages": [f"[ModifierAgent] {modifier_note}"] if modifier_note else [],
         }
 
+    # Track whether accommodation preferences were updated (used below
+    # to suppress a misleading fallback note when Mode 3 succeeds).
+    accommodations_updated = False
+
     # ── Mode 1: Try preference re-ranking for vibe changes ──────────────
     if state.candidate_places and len(state.candidate_places) > 5:
         logger.info(
@@ -779,9 +918,64 @@ async def _handle_modify_itinerary(
             current_preferences=preferences,
         )
 
+        reranked = None
         if adjustments:
-            # 2. Apply adjustments
-            reranked = await _rerank_and_replan(
+            # 2. Apply accommodation changes to state.slots so Mode 3
+            # (full pipeline regeneration) uses updated preferences.
+            acc_add = adjustments.get("accommodation_preferences_add") or []
+            acc_remove = adjustments.get("accommodation_preferences_remove") or []
+            accommodations_updated = bool(acc_add or acc_remove)
+            if accommodations_updated:
+                current = list(state.slots.accommodation_preferences or [])
+                for a in acc_add:
+                    if a not in current:
+                        current.append(a)
+                for r in acc_remove:
+                    if r in current:
+                        current.remove(r)
+                state.slots.accommodation_preferences = current
+
+                # Try surgical swap: query DB for hotels of the new type and
+                # replace only accommodation_suggestions in the existing itinerary.
+                # This preserves all days/stops unchanged.
+                surgically_swapped = await _swap_accommodation_surgically(
+                    itinerary=state.itinerary,
+                    destination_city=state.slots.destination_city or "",
+                    acc_add=acc_add,
+                )
+
+                if surgically_swapped:
+                    logger.info(
+                        "[ConversationAgent] Surgical accommodation swap succeeded — "
+                        "%d new hotels, itinerary stops preserved",
+                        len(surgically_swapped.get("accommodation_suggestions", [])),
+                    )
+                    state.set_itinerary(
+                        surgically_swapped,
+                        candidate_places=state.candidate_places,
+                    )
+                    return {
+                        "response_type": "itinerary",
+                        "message": _format_itinerary(surgically_swapped),
+                        "itinerary": surgically_swapped,
+                        "image_features": image_features,
+                        "agent_messages": [
+                            "[AccommodationSwap] Updated accommodation to match your "
+                            "preference — itinerary stops preserved"
+                        ],
+                    }
+
+                logger.info(
+                    "[ConversationAgent] No %s hotels via surgical swap — "
+                    "falling through to full pipeline",
+                    acc_add,
+                )
+            else:
+                # 3. Only re-rank the existing pool for non-accommodation
+                # vibe changes (e.g. "more entertaining", "cheaper").
+                # Accommodation changes need a full pipeline re-run so
+                # retrieval can fetch places of the new type.
+                reranked = await _rerank_and_replan(
                 user_id=user_id,
                 state=state,
                 adjustments=adjustments,
@@ -832,16 +1026,23 @@ async def _handle_modify_itinerary(
         state,
     )
 
-    # If the modifier couldn't apply the specific change, append a
-    # fallback note so the user knows their request wasn't ignored.
+    # If the modifier couldn't apply the specific change AND we didn't
+    # update accommodation preferences (which would cause Mode 3 to
+    # re-retrieve with changed filters), append a fallback note so the
+    # user knows their request wasn't silently ignored.
     if not modifier_applied:
-        message = result.get("message", "")
-        fallback_note = (
-            f"\n\n⚠️ Note: I couldn't find a place matching "
-            f"\"{effective_message}\" in the available options. "
-            "The itinerary above reflects the best available alternatives."
-        )
-        result["message"] = message + fallback_note
+        # Check whether any accommodation preference update was applied
+        # (from the adjustments block above).  If so, Mode 3 re-ran
+        # retrieval with the new preference and the result should already
+        # reflect the change — don't show a misleading "not found" note.
+        if not accommodations_updated:
+            message = result.get("message", "")
+            fallback_note = (
+                f"\n\n⚠️ Note: I couldn't find a place matching "
+                f"\"{effective_message}\" in the available options. "
+                "The itinerary above reflects the best available alternatives."
+            )
+            result["message"] = message + fallback_note
 
     return result
 
@@ -862,13 +1063,11 @@ async def _rerank_and_replan(
     This is Mode 1 of the editing system.
     """
     try:
-        # 1. Build adjusted extracted_preferences for the ranking agent
-        adjusted_prefs = apply_preference_adjustments(state.slots, adjustments)
-
-        # 2. Build a TripState-compatible dict with the existing pool
+        # 1. Build a TripState-compatible dict with the existing pool
+        # Profile is built from state.slots (which may have been updated
+        # with accommodation changes before this function is called).
         rerank_state = {
             "filtered_places": state.candidate_places,
-            "extracted_preferences": adjusted_prefs,
             "duration_days": state.slots.duration_days or 3,
             "destination_city": state.slots.destination_city or "",
             "destination_country": state.slots.destination_country,
@@ -984,8 +1183,6 @@ async def _handle_plan_trip(user_id, user_message, extracted, image_features, to
     rich_user_message = user_message
     if s and (s.interests or s.food_preferences or s.accommodation_preferences or s.travel_style or s.budget_level):
         context_parts = []
-        if s.destination_city:
-            context_parts.append(f"{s.duration_days or '?'}-day trip to {s.destination_city}")
         if s.budget_level:
             context_parts.append(f"budget: {s.budget_level}")
         if s.travel_style:
@@ -1015,7 +1212,6 @@ async def _handle_plan_trip(user_id, user_message, extracted, image_features, to
         "trip_id": trip_id,
 
         # Planning pipeline fields
-        "extracted_preferences": None,
         "filtered_places": None,
         "candidate_places": None,
         "draft_itinerary": None,

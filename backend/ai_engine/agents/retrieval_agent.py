@@ -21,6 +21,73 @@ from ai_engine.tools.haversine import haversine
 # ── Filter thresholds ────────────────────────────────────────────────────────
 
 MIN_RATING = 3.5
+
+
+# ── Accommodation Type Mapping ───────────────────────────────────────────────
+
+# Maps natural language accommodation phrases to canonical types.
+# Order matters: more specific phrases first to avoid partial matches.
+_ACCOMMODATION_KEYWORDS: list[tuple[str, str]] = [
+    # Hostel keywords
+    ("hostel",         "hostel"),
+    ("backpacker",     "hostel"),
+    ("dorm",           "hostel"),
+    # Resort keywords
+    ("resort",         "resort"),
+    ("beach resort",   "resort"),
+    ("all-inclusive",  "resort"),
+    ("spa resort",     "resort"),
+    # Luxury keywords
+    ("luxury",         "luxury"),
+    ("boutique",       "luxury"),
+    ("palace",         "luxury"),
+    ("five star",      "luxury"),
+    ("5-star",         "luxury"),
+    ("premium",        "luxury"),
+    ("high-end",       "luxury"),
+    ("upscale",        "luxury"),
+    # Hotel (default) keywords
+    ("hotel",          "hotel"),
+    ("apartment",      "hotel"),
+    ("airbnb",         "hotel"),
+    ("motel",          "hotel"),
+]
+
+
+def _map_accommodation_to_type(accommodation_preferences: list[str]) -> str:
+    """
+    Map a list of natural language accommodation preferences to a canonical
+    accommodation type string (e.g., 'luxury', 'resort', 'hostel', 'hotel').
+
+    Checks each preference phrase against keyword mappings.
+    Returns the last matching type, or an empty string if no match.
+
+    Pipeline flow for accommodation changes:
+    1. User says "suggest resorts instead of hotels" during ITINERARY_REVIEW
+    2. ``_handle_modify_itinerary`` → ``interpret_preference_adjustment`` (in
+       ``preference_reranker_agent.py``) detects the change and returns
+       ``{"accommodation_preferences_add": ["resort"],
+          "accommodation_preferences_remove": ["hotel"]}``
+    3. The accommodation change is applied to ``state.slots.accommodation_preferences``
+    4. When Mode 3 (full pipeline) runs, the profile is rebuilt from the
+       updated ``state.slots`` via ``_build_profile_from_slots()``
+    5. This function (``_map_accommodation_to_type``) maps the new preferences
+       to a canonical type, which ``_apply_filters`` uses to match against the
+       DB's ``accommodation_type`` field — only hotels matching the new type pass.
+
+    This is why changing accommodation preferences works: the full pipeline
+    re-runs retrieval with the updated profile, so different hotel types appear.
+    """
+    result = ""
+    for pref in accommodation_preferences:
+        pref_lower = pref.lower().strip()
+        for keyword, acc_type in _ACCOMMODATION_KEYWORDS:
+            if keyword in pref_lower:
+                result = acc_type
+                break
+    return result
+
+
 # Minimum popularity score to include a place (0 = no filter)
 MIN_POPULARITY = 0
 # Maximum distance from city center in km (None = no limit)
@@ -95,16 +162,11 @@ def _apply_filters(
     # This is later used to eliminate places that are too far away.
     center = _compute_city_center(places)
 
-    # Determine the user's preferred accommodation type.
-    # Priority:
-    # 1. Structured enum value (accommodation_type)
-    # 2. Raw extracted text (accommodation_style)
-    # Example values:
-    # "hotel", "hostel", "resort", "boutique hotel"
-    accommodation_type = (
-        preferences.get("accommodation_type")
-        or (preferences.get("accommodation_style") or "").lower()
-    )
+    # Determine the user's preferred accommodation type from profile.
+    # Maps natural language preferences (e.g., "boutique hotel") to canonical types
+    # (e.g., "luxury") for better matching against place accommodation_type fields.
+    acc_prefs = preferences.get("accommodation_preferences") or []
+    accommodation_type = _map_accommodation_to_type(acc_prefs)
 
     # Store places that pass all filtering criteria.
     filtered = []
@@ -280,13 +342,13 @@ async def run_retrieval_agent(state: TripState) -> TripState:
     # Default to 3 if not specified.
     duration_days = state.get("duration_days") or 3
 
-    # User preferences extracted from conversation.
+    # User preferences from the trip profile.
     # Examples:
     # {
-    #     "accommodation_type": "hotel",
-    #     "interests_from_conversation": ["museum", "food"]
+    #     "accommodation_preferences": ["hotel"],
+    #     "interests": ["museum", "food"]
     # }
-    preferences = state.get("extracted_preferences") or {}
+    preferences = state.get("profile") or {}
 
     # ==========================================================
     # STAGE 1: Retrieve all available places.

@@ -3,26 +3,19 @@
 """
 End-to-end integration tests for the accommodation_type flow.
 
-Tests verify the complete pipeline from user preference extraction
+Tests verify the complete pipeline from user profile accommodation preferences
 through to retrieval filtering:
 
-  user message → preference agent → map_accommodation_to_enum →
-  extracted_preferences.accommodation_type → retrieval filtering
+  profile.accommodation_preferences → _map_accommodation_to_type →
+  _apply_filters hotel filtering
 
-Agent logic (enum mapping, scoring, filtering) runs for real.
-Note: The preference agent no longer makes LLM calls (LLM refinement
-was removed in favor of the conversation agent doing all extraction),
-so no LLM mocking is needed.
+Agent logic (accommodation mapping, rating/distance filtering) runs for real.
 """
 
 import pytest
 from unittest.mock import AsyncMock, patch
 
-from ai_engine.agents.preference_agent import (
-    map_accommodation_to_enum,
-    _derive_scores,
-)
-from ai_engine.agents.retrieval_agent import _apply_filters
+from ai_engine.agents.retrieval_agent import _map_accommodation_to_type, _apply_filters
 from tests.unit.test_ai_engine.conftest import _make_profile, _make_hotel, _make_place
 
 
@@ -118,75 +111,65 @@ MIXED_PLACES = [
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-# 1. Enum Mapping → Retrieval Filtering (End-to-End)
+# 1. _map_accommodation_to_type Tests
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+class TestMapAccommodationToType:
+    """Natural language → canonical accommodation type mapping."""
+
+    def test_resort_keyword(self):
+        assert _map_accommodation_to_type(["beach resort"]) == "resort"
+
+    def test_hostel_keyword(self):
+        assert _map_accommodation_to_type(["backpacker hostel"]) == "hostel"
+
+    def test_luxury_keyword(self):
+        assert _map_accommodation_to_type(["boutique hotel"]) == "luxury"
+
+    def test_hotel_keyword(self):
+        assert _map_accommodation_to_type(["hotel"]) == "hotel"
+
+    def test_empty_preferences(self):
+        assert _map_accommodation_to_type([]) == ""
+
+    def test_all_inclusive_maps_to_resort(self):
+        assert _map_accommodation_to_type(["all-inclusive resort"]) == "resort"
+
+    def test_premium_maps_to_luxury(self):
+        assert _map_accommodation_to_type(["premium hotel"]) == "luxury"
+
+    def test_backpacker_maps_to_hostel(self):
+        assert _map_accommodation_to_type(["backpacker dorm"]) == "hostel"
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# 2. Enum Mapping → Retrieval Filtering (End-to-End)
 # ═══════════════════════════════════════════════════════════════════════════
 
 
 class TestAccommodationTypeEndToEnd:
-    """Full flow: preference extraction → enum mapping → retrieval filtering."""
+    """Full flow: accommodation preference → mapping → retrieval filtering."""
 
-    @pytest.mark.asyncio
-    async def test_luxury_preference_filters_to_luxury_hotels(self):
-        """User says 'fancy resort' → enum maps to 'resort' → only resort hotels pass."""
-        state = {
-            "destination_city": "Cairo",
-            "duration_days": 2,
-            "user_message": "I want a fancy resort in Cairo",
-            "profile": _make_profile(
-                accommodation_preferences=["fancy resort"],
-                interests=["history", "art"],
-            ),
-            "extracted_preferences": None,
-            "filtered_places": None,
+    def test_luxury_preference_filters_to_luxury_hotels(self):
+        """User says 'fancy resort' → maps to 'resort' → only resort hotels pass."""
+        prefs = {
+            "accommodation_preferences": ["fancy resort"],
         }
+        filtered = _apply_filters(MIXED_PLACES, prefs, "Cairo")
 
-        # Run preference agent
-        from ai_engine.graph.nodes import preference_node
-
-        state = await preference_node(state)
-
-        # Verify enum mapping happened
-        acc_type = state["extracted_preferences"]["accommodation_type"]
-        assert acc_type == "resort"
-
-        # Run retrieval filtering
-        filtered = _apply_filters(
-            MIXED_PLACES, state["extracted_preferences"], "Cairo"
-        )
-
-        # Only resort hotel + attractions should pass
         hotel_ids = [p["id"] for p in filtered if p["category"] == "hotel"]
         assert "hotel_004" in hotel_ids  # Soma Bay Resort
         assert "hotel_001" not in hotel_ids  # Marriott (luxury, not resort)
         assert "hotel_002" not in hotel_ids  # Steigenberger (hotel)
         assert "hotel_003" not in hotel_ids  # Hostel
 
-    @pytest.mark.asyncio
-    async def test_hostel_preference_filters_to_hostels_only(self):
-        """User says 'hostel' → enum maps to 'hostel' → only hostels pass."""
-
-        state = {
-            "destination_city": "Cairo",
-            "duration_days": 2,
-            "user_message": "I need a cheap hostel",
-            "profile": _make_profile(
-                accommodation_preferences=["hostel"],
-                interests=["history"],
-            ),
-            "extracted_preferences": None,
-            "filtered_places": None,
+    def test_hostel_preference_filters_to_hostels_only(self):
+        """User says 'hostel' → maps to 'hostel' → only hostels pass."""
+        prefs = {
+            "accommodation_preferences": ["hostel"],
         }
-
-        from ai_engine.graph.nodes import preference_node
-
-        state = await preference_node(state)
-
-        acc_type = state["extracted_preferences"]["accommodation_type"]
-        assert acc_type == "hostel"
-
-        filtered = _apply_filters(
-            MIXED_PLACES, state["extracted_preferences"], "Cairo"
-        )
+        filtered = _apply_filters(MIXED_PLACES, prefs, "Cairo")
 
         hotel_ids = [p["id"] for p in filtered if p["category"] == "hotel"]
         assert "hotel_003" in hotel_ids  # Cairo Backpackers Hostel
@@ -194,32 +177,12 @@ class TestAccommodationTypeEndToEnd:
         assert "hotel_002" not in hotel_ids  # Hotel
         assert "hotel_004" not in hotel_ids  # Resort
 
-    @pytest.mark.asyncio
-    async def test_luxury_hotel_preference_filters_to_luxury_only(self):
-        """User says 'five star hotel' → enum maps to 'luxury' → only luxury hotels pass."""
-
-        state = {
-            "destination_city": "Cairo",
-            "duration_days": 2,
-            "user_message": "I want a five star hotel",
-            "profile": _make_profile(
-                accommodation_preferences=["five star hotel"],
-                interests=["history"],
-            ),
-            "extracted_preferences": None,
-            "filtered_places": None,
+    def test_luxury_hotel_preference_filters_to_luxury_only(self):
+        """User says 'five star hotel' → maps to 'luxury' → only luxury hotels pass."""
+        prefs = {
+            "accommodation_preferences": ["five star hotel"],
         }
-
-        from ai_engine.graph.nodes import preference_node
-
-        state = await preference_node(state)
-
-        acc_type = state["extracted_preferences"]["accommodation_type"]
-        assert acc_type == "luxury"
-
-        filtered = _apply_filters(
-            MIXED_PLACES, state["extracted_preferences"], "Cairo"
-        )
+        filtered = _apply_filters(MIXED_PLACES, prefs, "Cairo")
 
         hotel_ids = [p["id"] for p in filtered if p["category"] == "hotel"]
         assert "hotel_001" in hotel_ids  # Marriott (luxury)
@@ -227,32 +190,12 @@ class TestAccommodationTypeEndToEnd:
         assert "hotel_003" not in hotel_ids  # Hostel
         assert "hotel_004" not in hotel_ids  # Resort
 
-    @pytest.mark.asyncio
-    async def test_standard_hotel_preference_keeps_all_non_luxury(self):
-        """User says 'hotel' → enum maps to 'hotel' → hotels of type 'hotel' pass."""
-
-        state = {
-            "destination_city": "Cairo",
-            "duration_days": 2,
-            "user_message": "Just a regular hotel please",
-            "profile": _make_profile(
-                accommodation_preferences=["hotel"],
-                interests=["history"],
-            ),
-            "extracted_preferences": None,
-            "filtered_places": None,
+    def test_standard_hotel_preference_keeps_all_non_luxury(self):
+        """User says 'hotel' → maps to 'hotel' → hotels of type 'hotel' pass."""
+        prefs = {
+            "accommodation_preferences": ["hotel"],
         }
-
-        from ai_engine.graph.nodes import preference_node
-
-        state = await preference_node(state)
-
-        acc_type = state["extracted_preferences"]["accommodation_type"]
-        assert acc_type == "hotel"
-
-        filtered = _apply_filters(
-            MIXED_PLACES, state["extracted_preferences"], "Cairo"
-        )
+        filtered = _apply_filters(MIXED_PLACES, prefs, "Cairo")
 
         hotel_ids = [p["id"] for p in filtered if p["category"] == "hotel"]
         assert "hotel_002" in hotel_ids  # Steigenberger (hotel)
@@ -260,210 +203,64 @@ class TestAccommodationTypeEndToEnd:
         assert "hotel_003" not in hotel_ids  # Hostel
         assert "hotel_004" not in hotel_ids  # Resort
 
-    @pytest.mark.asyncio
-    async def test_no_accommodation_pref_keeps_all_hotels(self):
+    def test_no_accommodation_pref_keeps_all_hotels(self):
         """No accommodation preference → all hotels pass through."""
-
-        state = {
-            "destination_city": "Cairo",
-            "duration_days": 2,
-            "user_message": "Plan me a trip to Cairo",
-            "profile": _make_profile(
-                accommodation_preferences=[],
-                interests=["history"],
-            ),
-            "extracted_preferences": None,
-            "filtered_places": None,
-        }
-
-        from ai_engine.graph.nodes import preference_node
-
-        state = await preference_node(state)
-
-        acc_type = state["extracted_preferences"]["accommodation_type"]
-        assert acc_type is None
-
-        filtered = _apply_filters(
-            MIXED_PLACES, state["extracted_preferences"], "Cairo"
-        )
+        prefs = {}
+        filtered = _apply_filters(MIXED_PLACES, prefs, "Cairo")
 
         hotel_ids = [p["id"] for p in filtered if p["category"] == "hotel"]
         assert len(hotel_ids) == 4
 
-
-# ═══════════════════════════════════════════════════════════════════════════
-# 2. Score Derivation Reflects Accommodation Type
-# ═══════════════════════════════════════════════════════════════════════════
-
-
-class TestScoreDerivationReflectsAccommodationType:
-    """Dimension scores correctly reflect accommodation preferences."""
-
-
-class TestScoreDerivationReflectsAccommodationType:
-    """Dimension scores correctly reflect accommodation preferences."""
-
-    def test_resort_boosts_luxury_score(self):
-        profile = _make_profile(
-            budget_level="moderate",
-            accommodation_preferences=["resort"],
-        )
-        scores = _derive_scores(profile)
-        assert scores["luxury_score"] > 0.5
-
-    def test_hostel_reduces_luxury_score(self):
-        profile = _make_profile(
-            budget_level="moderate",
-            accommodation_preferences=["hostel"],
-        )
-        scores = _derive_scores(profile)
-        assert scores["luxury_score"] < 0.5
-
-    def test_boutique_hotel_boosts_luxury_score(self):
-        profile = _make_profile(
-            budget_level="moderate",
-            accommodation_preferences=["boutique hotel"],
-        )
-        scores = _derive_scores(profile)
-        assert scores["luxury_score"] > 0.5
-
-    def test_luxury_budget_and_resort_gives_max_score(self):
-        profile = _make_profile(
-            budget_level="luxury",
-            accommodation_preferences=["resort"],
-        )
-        scores = _derive_scores(profile)
-        assert scores["luxury_score"] >= 0.9
-
-
-# ═══════════════════════════════════════════════════════════════════════════
-# 4. Router Extraction → Preference Mapping
-# ═══════════════════════════════════════════════════════════════════════════
-
-
-class TestRouterExtractionToPreferenceMapping:
-    """Router extracts accommodation_preferences, preference agent maps to enum."""
-
-    @pytest.mark.asyncio
-    async def test_router_extracted_boutique_maps_to_luxury(self):
-        """Router extracts 'boutique hotel' → preference agent maps to 'luxury'."""
-
-        state = {
-            "destination_city": "Cairo",
-            "duration_days": 2,
-            "user_message": "I want a boutique hotel in Cairo",
-            "profile": _make_profile(
-                accommodation_preferences=["boutique hotel"],
-                interests=["history"],
-            ),
-            "extracted_preferences": None,
-            "filtered_places": None,
+    def test_boutique_maps_to_luxury(self):
+        """'boutique hotel' → maps to 'luxury' → only luxury hotels pass."""
+        prefs = {
+            "accommodation_preferences": ["boutique hotel"],
         }
+        filtered = _apply_filters(MIXED_PLACES, prefs, "Cairo")
 
-        from ai_engine.graph.nodes import preference_node
-
-        state = await preference_node(state)
-
-        acc_type = state["extracted_preferences"]["accommodation_type"]
-        assert acc_type == "luxury"
-
-        filtered = _apply_filters(
-            MIXED_PLACES, state["extracted_preferences"], "Cairo"
-        )
         hotel_ids = [p["id"] for p in filtered if p["category"] == "hotel"]
         assert "hotel_001" in hotel_ids  # Marriott (luxury)
         assert "hotel_002" not in hotel_ids  # Steigenberger (hotel)
         assert "hotel_003" not in hotel_ids  # Hostel
         assert "hotel_004" not in hotel_ids  # Resort
 
-    @pytest.mark.asyncio
-    async def test_router_extracted_all_inclusive_maps_to_resort(self):
-        """Router extracts 'all-inclusive' → preference agent maps to 'resort'."""
-
-        state = {
-            "destination_city": "Cairo",
-            "duration_days": 2,
-            "user_message": "I want an all-inclusive resort",
-            "profile": _make_profile(
-                accommodation_preferences=["all-inclusive resort"],
-                interests=["history"],
-            ),
-            "extracted_preferences": None,
-            "filtered_places": None,
+    def test_all_inclusive_maps_to_resort(self):
+        """'all-inclusive' → maps to 'resort' → only resort hotels pass."""
+        prefs = {
+            "accommodation_preferences": ["all-inclusive resort"],
         }
+        filtered = _apply_filters(MIXED_PLACES, prefs, "Cairo")
 
-        from ai_engine.graph.nodes import preference_node
-
-        state = await preference_node(state)
-
-        acc_type = state["extracted_preferences"]["accommodation_type"]
-        assert acc_type == "resort"
-
-        filtered = _apply_filters(
-            MIXED_PLACES, state["extracted_preferences"], "Cairo"
-        )
         hotel_ids = [p["id"] for p in filtered if p["category"] == "hotel"]
         assert "hotel_004" in hotel_ids  # Resort
         assert "hotel_001" not in hotel_ids  # Luxury
 
-    @pytest.mark.asyncio
-    async def test_router_extracted_backpacker_maps_to_hostel(self):
-        """Router extracts 'backpacker' → preference agent maps to 'hostel'."""
-
-        state = {
-            "destination_city": "Cairo",
-            "duration_days": 2,
-            "user_message": "I'm a backpacker, find me a dorm",
-            "profile": _make_profile(
-                accommodation_preferences=["backpacker dorm"],
-                interests=["history"],
-            ),
-            "extracted_preferences": None,
-            "filtered_places": None,
+    def test_backpacker_maps_to_hostel(self):
+        """'backpacker' → maps to 'hostel' → only hostels pass."""
+        prefs = {
+            "accommodation_preferences": ["backpacker dorm"],
         }
+        filtered = _apply_filters(MIXED_PLACES, prefs, "Cairo")
 
-        from ai_engine.graph.nodes import preference_node
-
-        state = await preference_node(state)
-
-        acc_type = state["extracted_preferences"]["accommodation_type"]
-        assert acc_type == "hostel"
-
-        filtered = _apply_filters(
-            MIXED_PLACES, state["extracted_preferences"], "Cairo"
-        )
         hotel_ids = [p["id"] for p in filtered if p["category"] == "hotel"]
         assert "hotel_003" in hotel_ids  # Hostel
         assert "hotel_001" not in hotel_ids  # Luxury
         assert "hotel_002" not in hotel_ids  # Hotel
         assert "hotel_004" not in hotel_ids  # Resort
 
-    @pytest.mark.asyncio
-    async def test_router_extracted_premium_maps_to_luxury(self):
-        """Router extracts 'premium' → preference agent maps to 'luxury'."""
-
-        state = {
-            "destination_city": "Cairo",
-            "duration_days": 2,
-            "user_message": "I want premium accommodation",
-            "profile": _make_profile(
-                accommodation_preferences=["premium hotel"],
-                interests=["history"],
-            ),
-            "extracted_preferences": None,
-            "filtered_places": None,
+    def test_premium_maps_to_luxury(self):
+        """'premium' → maps to 'luxury' → only luxury hotels pass."""
+        prefs = {
+            "accommodation_preferences": ["premium hotel"],
         }
+        filtered = _apply_filters(MIXED_PLACES, prefs, "Cairo")
 
-        from ai_engine.graph.nodes import preference_node
-
-        state = await preference_node(state)
-
-        acc_type = state["extracted_preferences"]["accommodation_type"]
-        assert acc_type == "luxury"
+        hotel_ids = [p["id"] for p in filtered if p["category"] == "hotel"]
+        assert "hotel_001" in hotel_ids  # Marriott (luxury)
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-# 5. Full Pipeline with Accommodation Type
+# 3. Full Pipeline with Accommodation Type
 # ═══════════════════════════════════════════════════════════════════════════
 
 
@@ -471,8 +268,8 @@ class TestFullPipelineWithAccommodationType:
     """Full pipeline runs with accommodation_type filtering at each stage."""
 
     @pytest.mark.asyncio
-    async def test_preference_to_retrieval_pipeline_reserves_resort(self):
-        """Full preference → retrieval pipeline filters hotels by resort type."""
+    async def test_retrieval_pipeline_filters_hotels_by_resort_type(self):
+        """Retrieval Agent filters hotels by resort type from profile."""
 
         state = {
             "destination_city": "Cairo",
@@ -482,24 +279,36 @@ class TestFullPipelineWithAccommodationType:
                 accommodation_preferences=["beach resort"],
                 interests=["history", "art"],
             ),
-            "extracted_preferences": None,
             "filtered_places": None,
+            "candidate_places": None,
+            "draft_itinerary": None,
+            "optimized_itinerary": None,
+            "is_valid": None,
+            "validation": None,
+            "planning_attempts": 0,
+            "next_agent": None,
+            "error": None,
+            "intent_type": "plan_trip",
+            "destination_country": None,
+            "travel_dates": None,
+            "special_requests": None,
+            "group_size": None,
+            "traveler_group_type": None,
+            "missing_fields": [],
+            "agent_messages": [],
+            "user_id": "test_user",
+            "token": None,
+            "trip_id": None,
         }
 
-        # Step 1: Preference Agent
-        from ai_engine.graph.nodes import preference_node
+        # Run Retrieval Agent (mock places, run real filtering)
+        from ai_engine.graph.nodes import retrieval_node
 
-        state = await preference_node(state)
-        assert state["extracted_preferences"]["accommodation_type"] == "resort"
-
-        # Step 2: Retrieval Agent (mock places, run real filtering)
         with patch(
             "ai_engine.agents.retrieval_agent.get_places_for_city",
             new_callable=AsyncMock,
             return_value=MIXED_PLACES,
         ):
-            from ai_engine.graph.nodes import retrieval_node
-
             state = await retrieval_node(state)
 
         # Verify filtering worked

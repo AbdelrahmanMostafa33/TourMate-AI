@@ -24,7 +24,6 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 from ai_engine.graph.nodes import (
     load_profile_node,
-    preference_node,
     retrieval_node,
     ranking_node,
     planning_node,
@@ -65,25 +64,17 @@ class TestFullPipelineHappyPath:
         assert result["profile"]["budget_level"] == "moderate"
 
     @pytest.mark.asyncio
-    async def test_preference_agent_enriches_profile(self):
-        """Preference Agent derives scores and produces extracted_preferences."""
+    async def test_load_profile_passes_profile_through(self):
+        """load_profile_node passes an already-loaded profile unchanged."""
         state = build_pipeline_state()
-
-        result = await preference_node(state)
-
-        profile = result["profile"]
-        assert profile["luxury_score"] is not None
-        assert profile["culture_score"] is not None
-        assert profile["adventure_score"] is not None
-        assert profile["confidence"] is not None
-        assert result["extracted_preferences"] is not None
-        assert "interests_from_conversation" in result["extracted_preferences"]
+        result = await load_profile_node(state)
+        assert result["profile"] is not None
+        assert result["profile"]["budget_level"] == "moderate"
 
     @pytest.mark.asyncio
     async def test_retrieval_agent_filters_and_diversifies(self):
         """Retrieval Agent loads places, filters, and ensures diversity."""
         state = build_pipeline_state()
-        state = await preference_node(state)
 
         with patch("ai_engine.agents.retrieval_agent.get_places_for_city", new_callable=AsyncMock, return_value=MOCK_PLACES):
             result = await retrieval_node(state)
@@ -100,7 +91,6 @@ class TestFullPipelineHappyPath:
     async def test_ranking_agent_scores_and_selects(self):
         """Ranking Agent scores candidates and caps the result set."""
         state = build_pipeline_state()
-        state = await preference_node(state)
 
         with patch("ai_engine.agents.retrieval_agent.get_places_for_city", new_callable=AsyncMock, return_value=MOCK_PLACES):
             state = await retrieval_node(state)
@@ -117,7 +107,6 @@ class TestFullPipelineHappyPath:
         mock_plan_llm.return_value = build_planning_llm_response(num_days=2, num_stops_per_day=3)
 
         state = build_pipeline_state()
-        state = await preference_node(state)
 
         with patch("ai_engine.agents.retrieval_agent.get_places_for_city", new_callable=AsyncMock, return_value=MOCK_PLACES):
             state = await retrieval_node(state)
@@ -142,7 +131,6 @@ class TestFullPipelineHappyPath:
         mock_matrix.return_value = make_mock_matrix(3, travel_time=8.0)
 
         state = build_pipeline_state(duration_days=1)
-        state = await preference_node(state)
 
         with patch("ai_engine.agents.retrieval_agent.get_places_for_city", new_callable=AsyncMock, return_value=MOCK_PLACES):
             state = await retrieval_node(state)
@@ -175,28 +163,24 @@ class TestFullPipelineHappyPath:
 
         state = build_pipeline_state()
 
-        # Step 1: Preference Agent
-        state = await preference_node(state)
-        assert state["extracted_preferences"] is not None
-
-        # Step 2: Retrieval Agent
+        # Step 1: Retrieval Agent
         with patch("ai_engine.agents.retrieval_agent.get_places_for_city", new_callable=AsyncMock, return_value=MOCK_PLACES):
             state = await retrieval_node(state)
         assert len(state["filtered_places"]) > 0
 
-        # Step 3: Ranking Agent
+        # Step 2: Ranking Agent
         state = await ranking_node(state)
         assert len(state["candidate_places"]) > 0
 
-        # Step 4: Planning Agent
+        # Step 3: Planning Agent
         state = await planning_node(state)
         assert state["draft_itinerary"] is not None
 
-        # Step 5: Optimization Agent
+        # Step 4: Optimization Agent
         state = await optimization_node(state)
         assert state["optimized_itinerary"] is not None
 
-        # Step 6: Validation Agent
+        # Step 5: Validation Agent
         state = await validation_node(state)
         assert state["is_valid"] is True
         assert state["validation"]["score"] >= 70
@@ -230,7 +214,6 @@ class TestErrorPropagation:
     async def test_empty_filtered_places_terminates_after_retrieval(self):
         """All places filtered out → empty filtered_places → end."""
         state = build_pipeline_state()
-        state = await preference_node(state)
 
         # Return places that will be filtered out (low rating)
         bad_places = [_make_place(id="bad_001", name="Bad Place", rating=1.0, lat=30.0, lon=31.0)]
@@ -246,7 +229,6 @@ class TestErrorPropagation:
     async def test_no_candidates_terminates_after_ranking(self):
         """No candidates after ranking → edge routes to end."""
         state = build_pipeline_state()
-        state = await preference_node(state)
 
         with patch("ai_engine.agents.retrieval_agent.get_places_for_city", new_callable=AsyncMock, return_value=[]):
             state = await retrieval_node(state)
@@ -266,7 +248,6 @@ class TestErrorPropagation:
         mock_plan_llm.side_effect = Exception("API timeout")
 
         state = build_pipeline_state()
-        state = await preference_node(state)
 
         with patch("ai_engine.agents.retrieval_agent.get_places_for_city", new_callable=AsyncMock, return_value=MOCK_PLACES):
             state = await retrieval_node(state)
@@ -284,7 +265,6 @@ class TestErrorPropagation:
         mock_plan_llm.return_value.content = "not valid json at all"
 
         state = build_pipeline_state()
-        state = await preference_node(state)
 
         with patch("ai_engine.agents.retrieval_agent.get_places_for_city", new_callable=AsyncMock, return_value=MOCK_PLACES):
             state = await retrieval_node(state)
@@ -390,8 +370,6 @@ class TestValidationRetryFlow:
         state = build_pipeline_state(duration_days=1)
 
         # Run through the pipeline
-        state = await preference_node(state)
-
         with patch("ai_engine.agents.retrieval_agent.get_places_for_city", new_callable=AsyncMock, return_value=MOCK_PLACES):
             state = await retrieval_node(state)
         state = await ranking_node(state)
@@ -410,90 +388,7 @@ class TestValidationRetryFlow:
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-# 6. Score Derivation Correctness
-# ═══════════════════════════════════════════════════════════════════════════
-
-class TestScoreDerivation:
-    """Preference Agent score derivation logic runs correctly."""
-
-    @pytest.mark.asyncio
-    async def test_luxury_profile_gets_high_luxury_score(self):
-        """Luxury budget + resort → high luxury_score."""
-        from ai_engine.agents.preference_agent import _derive_scores
-
-        profile = _make_profile(
-            budget_level="luxury",
-            accommodation_preferences=["resort"],
-        )
-        scores = _derive_scores(profile)
-        assert scores["luxury_score"] >= 0.8
-
-    @pytest.mark.asyncio
-    async def test_budget_profile_gets_low_luxury_score(self):
-        """Budget level → low luxury_score."""
-        from ai_engine.agents.preference_agent import _derive_scores
-
-        profile = _make_profile(
-            budget_level="budget",
-            accommodation_preferences=["hostel"],
-        )
-        scores = _derive_scores(profile)
-        assert scores["luxury_score"] <= 0.2
-
-    @pytest.mark.asyncio
-    async def test_cultural_style_boosts_culture_score(self):
-        """Cultural travel_style + history/art interests → high culture_score."""
-        from ai_engine.agents.preference_agent import _derive_scores
-
-        profile = _make_profile(
-            travel_style="cultural",
-            interests=["history", "art", "museums"],
-        )
-        scores = _derive_scores(profile)
-        assert scores["culture_score"] >= 0.8
-
-    @pytest.mark.asyncio
-    async def test_adventure_style_boosts_adventure_score(self):
-        """Adventure travel_style + hiking interests → high adventure_score."""
-        from ai_engine.agents.preference_agent import _derive_scores
-
-        profile = _make_profile(
-            travel_style="adventure",
-            pace="packed",
-            interests=["hiking", "trekking", "nature"],
-        )
-        scores = _derive_scores(profile)
-        assert scores["adventure_score"] >= 0.8
-
-    @pytest.mark.asyncio
-    async def test_confidence_scales_with_filled_fields(self):
-        """More filled fields → higher confidence."""
-        from ai_engine.agents.preference_agent import _calculate_confidence
-
-        full = _make_profile(
-            budget_level="moderate",
-            travel_style="cultural",
-            pace="moderate",
-            interests=["history"],
-            food_preferences=["local cuisine"],
-            accommodation_preferences=["boutique hotel"],
-        )
-        assert _calculate_confidence(full) == 1.0
-
-        partial = _make_profile(
-            budget_level="moderate",
-            travel_style=None,
-            pace=None,
-            interests=[],
-            food_preferences=[],
-            accommodation_preferences=[],
-        )
-        confidence = _calculate_confidence(partial)
-        assert confidence < 0.5
-
-
-# ═══════════════════════════════════════════════════════════════════════════
-# 7. Profile Completeness Check
+# 6. Profile Completeness Check
 # ═══════════════════════════════════════════════════════════════════════════
 
 class TestProfileCompleteness:

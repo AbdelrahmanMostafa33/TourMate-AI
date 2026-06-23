@@ -485,24 +485,20 @@ class TestRunRankingAgent:
 
 # ── Helpers for ranking agent tests ───────────────────────────────────────────
 
-_DEFAULT_RANKING_PREFS = {
+_DEFAULT_RANKING_PROFILE = {
     "budget_level": "moderate",
     "travel_style": "cultural",
-    "walking_tolerance": "medium",
     "food_preferences": ["local cuisine"],
-    "accommodation_style": "hotel",
-    "nightlife": "low",
-    "interests_from_conversation": ["history", "art"],
-    "pace": "balanced",
-    "special_focus": None,
+    "accommodation_preferences": ["hotel"],
+    "interests": ["history", "art"],
+    "pace": "moderate",
 }
 
 
 def _make_ranking_state(**overrides) -> dict:
-    """State with extracted_preferences pre-populated for ranking tests."""
+    """State with profile pre-populated for ranking tests."""
     defaults = {
-        "profile": None,
-        "extracted_preferences": dict(_DEFAULT_RANKING_PREFS),
+        "profile": dict(_DEFAULT_RANKING_PROFILE),
         "filtered_places": [],
         "destination_city": "Cairo",
     }

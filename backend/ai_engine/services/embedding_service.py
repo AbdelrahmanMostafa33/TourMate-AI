@@ -62,23 +62,25 @@ def _get_next_embed_key() -> str | None:
 
 def build_query_text(preferences: dict) -> str:
     """
-    Convert extracted user preferences into a gemini-embedding-2 query string.
+    Convert user preferences into a gemini-embedding-2 query string.
 
     Format follows the asymmetric retrieval convention:
         task: search result | query: <natural-language description>
 
     Args:
-        preferences: The ``extracted_preferences`` dict from TripState.
+        preferences: The profile dict from TripState (or similar with
+            interests, travel_style, food_preferences, etc.).
 
     Returns:
         A single string ready to pass to ``embed_query()``.
     """
     parts: list[str] = []
 
-    interests = preferences.get("interests_from_conversation") or []
+    interests = preferences.get("interests") or []
     travel_style = (preferences.get("travel_style") or "").strip()
     food_prefs = preferences.get("food_preferences") or []
-    accommodation = (preferences.get("accommodation_style") or "").strip()
+    acc_prefs = preferences.get("accommodation_preferences") or []
+    accommodation = acc_prefs[0].strip() if acc_prefs else ""
     budget = (preferences.get("budget_level") or "").strip()
     pace = (preferences.get("pace") or "").strip()
 

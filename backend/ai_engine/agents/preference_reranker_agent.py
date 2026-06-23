@@ -15,13 +15,19 @@ import json
 import logging
 from langchain_core.messages import SystemMessage, HumanMessage
 from ai_engine.llm_config import invoke_with_fallback
+from ai_engine.observability import traced
 from ai_engine.utils.json_utils import extract_json_from_llm_output
 
+# Create a logger instance for tracking execution, warnings, and errors
 logger = logging.getLogger(__name__)
 
 
 # ── Preference Interpreter Prompt ───────────────────────────────────────────
 
+# System prompt used by the LLM.
+# It teaches the model how to convert a user's modification request
+# into structured preference changes that can later be applied to
+# itinerary ranking.
 PREFERENCE_INTERPRETER_PROMPT = """\
 You are the Preference Reranker Agent for TourMate AI. You interpret a user's
 modification request and determine how to adjust their travel preferences.
@@ -62,6 +68,14 @@ fields that need to change.
   "rerank_reason": "Cultural interests boost museums and historic sites"}
 - "faster pace" → {"pace": "packed",
   "rerank_reason": "Packed pace encourages more stops per day"}
+- "suggest resorts instead of hotels" → {
+  "accommodation_preferences_add": ["resort"],
+  "accommodation_preferences_remove": ["hotel"],
+  "rerank_reason": "User wants resort-style accommodation instead of standard hotels"}
+- "switch to hostels" → {
+  "accommodation_preferences_add": ["hostel"],
+  "accommodation_preferences_remove": ["hotel"],
+  "rerank_reason": "User wants budget-friendly hostel accommodation"}
 
 **Rules**:
 - Only include fields that actually need to change
@@ -70,6 +84,7 @@ fields that need to change.
 """
 
 
+@traced(name="preference_reranker", tags=["agent", "reranker"], metadata={"role": "preference_reranker"})
 async def interpret_preference_adjustment(
     modification_request: str,
     current_preferences: dict | None = None,
@@ -85,20 +100,39 @@ async def interpret_preference_adjustment(
         Dict with adjustment fields (interests_add, budget_level, pace, etc.)
         or empty dict if no changes needed.
     """
+
+    # Human-readable summary of the user's current preferences.
+    # This is included in the prompt to help the LLM understand
+    # what should be changed relative to the current state.
     current_text = ""
+
     if current_preferences:
         parts = []
-        for key in ("budget_level", "travel_style", "pace", "interests",
-                     "food_preferences", "accommodation_preferences"):
+
+        # Collect important preference fields and format them
+        # into text for the prompt.
+        for key in (
+            "budget_level",
+            "travel_style",
+            "pace",
+            "interests",
+            "food_preferences",
+            "accommodation_preferences",
+        ):
             val = current_preferences.get(key)
+
             if val:
                 if isinstance(val, list):
                     parts.append(f"{key}: {', '.join(val)}")
                 else:
                     parts.append(f"{key}: {val}")
+
+        # Build final context block if any preferences exist
         if parts:
             current_text = "Current preferences:\n" + "\n".join(parts)
 
+    # User-specific prompt sent to the LLM.
+    # Combines the modification request with existing preferences.
     prompt = f"""\
 Modification Request: {modification_request}
 
@@ -106,17 +140,26 @@ Modification Request: {modification_request}
 
 Determine the preference adjustments needed and return them as JSON."""
 
+    # Build LangChain messages.
+    # SystemMessage = instructions
+    # HumanMessage = actual request/context
     messages = [
         SystemMessage(content=PREFERENCE_INTERPRETER_PROMPT),
         HumanMessage(content=prompt),
     ]
 
+    # Retry configuration in case the model returns invalid JSON
     max_attempts = 2
     last_error = None
 
+    # Retry loop
     for attempt in range(1, max_attempts + 1):
         try:
+            # Copy original messages so retries don't mutate them
             attempt_messages = list(messages)
+
+            # If previous attempt failed, tell the model why and
+            # explicitly request valid JSON.
             if attempt > 1 and last_error:
                 retry_note = (
                     f"\n\nYour previous output was invalid: {last_error}. "
@@ -124,27 +167,45 @@ Determine the preference adjustments needed and return them as JSON."""
                 )
                 attempt_messages.append(HumanMessage(content=retry_note))
 
-            response = await invoke_with_fallback("preference_reranker", attempt_messages)
+            # Call the LLM using the configured fallback mechanism
+            response = await invoke_with_fallback(
+                "preference_reranker",
+                attempt_messages
+            )
+
+            # Extract JSON from the model response
             extracted = extract_json_from_llm_output(response.content)
+
+            # Parse JSON into a Python dictionary
             result = json.loads(extracted)
+
+            # Log successful interpretation
             logger.info(
                 "[PreferenceReranker] Interpreted '%s' → %s",
                 modification_request[:50],
                 result.get("rerank_reason", "no reason given"),
             )
+
             return result
 
         except Exception as e:
+            # Save error for retry attempt
             last_error = str(e)
+
             logger.warning(
                 "[PreferenceReranker] Attempt %d/%d failed: %s",
-                attempt, max_attempts, last_error,
+                attempt,
+                max_attempts,
+                last_error,
             )
 
+    # All retries failed
     logger.warning(
         "[PreferenceReranker] All attempts failed for '%s'",
         modification_request[:50],
     )
+
+    # Return empty adjustments instead of crashing
     return {}
 
 
@@ -163,45 +224,80 @@ def apply_preference_adjustments(
         Dict with updated preferences that can be passed to the ranking agent
         as ``extracted_preferences``.
     """
-    # Build current list values
+
+    # Copy current preference lists so we can modify them safely
+    # without mutating the original TripSlots object.
     current_interests = list(getattr(slots, "interests", None) or [])
     current_food = list(getattr(slots, "food_preferences", None) or [])
-    current_accommodation = list(getattr(slots, "accommodation_preferences", None) or [])
+    current_accommodation = list(
+        getattr(slots, "accommodation_preferences", None) or []
+    )
 
-    # Apply additions
+    # ── Apply Additions ─────────────────────────────────────────────
+
+    # Add new interests if not already present
     for add in (adjustments.get("interests_add") or []):
         if add not in current_interests:
             current_interests.append(add)
+
+    # Add new food preferences if not already present
     for add in (adjustments.get("food_preferences_add") or []):
         if add not in current_food:
             current_food.append(add)
+
+    # Add new accommodation preferences if not already present
     for add in (adjustments.get("accommodation_preferences_add") or []):
         if add not in current_accommodation:
             current_accommodation.append(add)
 
-    # Apply removals
+    # ── Apply Removals ──────────────────────────────────────────────
+
+    # Remove interests requested by the user
     for rem in (adjustments.get("interests_remove") or []):
         if rem in current_interests:
             current_interests.remove(rem)
+
+    # Remove food preferences requested by the user
     for rem in (adjustments.get("food_preferences_remove") or []):
         if rem in current_food:
             current_food.remove(rem)
+
+    # Remove accommodation preferences requested by the user
     for rem in (adjustments.get("accommodation_preferences_remove") or []):
         if rem in current_accommodation:
             current_accommodation.remove(rem)
 
-    # Build the extracted_preferences dict expected by the ranking agent
-    budget = adjustments.get("budget_level") or getattr(slots, "budget_level", None) or "moderate"
-    style = adjustments.get("travel_style") or getattr(slots, "travel_style", None) or "cultural"
-    pace = adjustments.get("pace") or getattr(slots, "pace", None) or "moderate"
+    # ── Resolve Final Scalar Preferences ────────────────────────────
 
+    # Use adjustment values if provided.
+    # Otherwise fall back to existing slot values.
+    # If neither exists, use sensible defaults.
+    budget = (
+        adjustments.get("budget_level")
+        or getattr(slots, "budget_level", None)
+        or "moderate"
+    )
+
+    style = (
+        adjustments.get("travel_style")
+        or getattr(slots, "travel_style", None)
+        or "cultural"
+    )
+
+    pace = (
+        adjustments.get("pace")
+        or getattr(slots, "pace", None)
+        or "moderate"
+    )
+
+    # Build the final preference profile expected by the ranking agent.
+    # This output can be passed directly as extracted_preferences.
     return {
         "budget_level": budget,
         "travel_style": style,
         "pace": pace,
-        "interests_from_conversation": current_interests,
+        "interests": current_interests,
         "food_preferences": current_food,
-        "accommodation_style": current_accommodation[0] if current_accommodation else "hotel",
         "accommodation_preferences": current_accommodation,
         "special_focus": adjustments.get("special_focus"),
     }

@@ -301,6 +301,158 @@ class TestNormalizeInterests:
         assert normalize_interests([]) is None
 
 
+class TestNormalizeInterestsNoiseFilter:
+    """
+    Tests for the noise filtering added to normalize_interests().
+
+    Verifies that command verbs (remove, swap, add, etc.) and long
+    phrases (> 5 words) are filtered out, while valid interest keywords
+    pass through unchanged.
+    """
+
+    def test_filters_remove_command(self):
+        """'remove abo tarek restaurant from the itinerary' → filtered out."""
+        result = normalize_interests([
+            "remove abo tarek restaurant from the itinerary",
+            "museums",
+        ])
+        assert result == ["museums"]
+
+    def test_filters_swap_command(self):
+        """'swap galaxy cinema with el azhar mosque' → filtered out."""
+        result = normalize_interests([
+            "swap galaxy cinema with el azhar mosque",
+            "history",
+        ])
+        assert result == ["history"]
+
+    def test_filters_add_command(self):
+        """'add a rooftop bar to day 2' → filtered out."""
+        result = normalize_interests([
+            "add a rooftop bar to day 2",
+        ])
+        assert result is None or result == []
+
+    def test_filters_delete_command(self):
+        """'delete the last stop' → filtered out, other interests preserved."""
+        result = normalize_interests([
+            "delete the last stop",
+            "food",
+            "shopping",
+        ])
+        assert "food" in result
+        assert "shopping" in result
+        assert "delete" not in str(result)
+
+    def test_filters_all_major_command_verbs(self):
+        """Each command verb is filtered: remove, swap, add, delete, change, etc."""
+        for verb in ["remove", "swap", "add", "delete", "change", "insert",
+                     "replace", "drop", "update", "modify", "edit", "reorder",
+                     "move", "shift", "switch", "exchange"]:
+            result = normalize_interests([f"{verb} the museum from day 1"])
+            assert result is None or result == [], (
+                f"Command verb '{verb}' should be filtered out, got: {result}"
+            )
+
+    def test_filters_long_phrase(self):
+        """Phrases > 5 words (instructions, not keywords) are filtered."""
+        result = normalize_interests([
+            "I would like to see the pyramids in the morning",  # 11 words
+            "parks",
+        ])
+        assert result == ["parks"]
+
+    def test_short_valid_phrases_preserved(self):
+        """Short phrases ≤ 5 words that aren't commands pass through."""
+        result = normalize_interests([
+            "historic sites",        # 2 words
+            "art galleries",         # 2 words
+            "water sports",          # 2 words
+            "religious sites",       # 2 words
+            "outdoor activities",    # 2 words
+            "local culture",         # 2 words
+        ])
+        assert "history" in result  # historic sites → history
+        assert "art" in result      # art galleries → art
+        assert "water sports" in result
+        assert "religion" in result  # religious sites → religion
+        assert "adventure" in result  # outdoor activities → adventure
+        assert "local culture" in result
+
+    def test_mixed_list_filters_noise_preserves_interests(self):
+        """Realistic scenario: commands + place names + valid interests → only valid interests."""
+        result = normalize_interests([
+            "remove abo tarek restaurant from the itinerary",  # command + long
+            "museums",                                          # valid
+            "el azhar mosque",                                  # 3 words, no command verb → passes through
+        ])
+        # "remove abo tarek..." should be filtered (contains command verb AND > 5 words)
+        # "museums" should be preserved
+        # "el azhar mosque" (3 words, no command verb) → passes through as-is
+        assert "museums" in result
+        assert len(result) == 2  # museums + el azhar mosque
+
+    def test_command_verb_in_middle_of_phrase(self):
+        """Command verb anywhere in the phrase triggers filtering."""
+        result = normalize_interests([
+            "please remove the last stop from day one",  # contains 'remove'
+        ])
+        assert result is None or result == []
+
+    def test_short_clean_interests_unaffected(self):
+        """Normal valid interests pass through unchanged."""
+        result = normalize_interests(["history", "museums", "food", "shopping"])
+        assert result == ["history", "museums", "food", "shopping"]
+
+    def test_exactly_5_words_preserved(self):
+        """Exactly 5 words is ≤ 5 threshold, so preserved."""
+        result = normalize_interests(["one two three four five"])
+        # This is not a recognizable interest keyword, so it passes through as-is
+        assert result == ["one two three four five"]
+
+    def test_6_words_filtered(self):
+        """6 words is > 5 threshold, so filtered."""
+        result = normalize_interests(["one two three four five six"])
+        assert result is None or result == []
+
+    def test_case_insensitive_command_detection(self):
+        """Command detection is case-insensitive."""
+        result = normalize_interests(["Remove the museum", "SWAP the cinema", "ADD a stop"])
+        assert result is None or result == []
+
+    def test_substring_word_boundary(self):
+        """Command detection uses word boundaries (e.g. 'removed' contains 'remove' but as part of a word)."""
+        # Note: 'removed' does contain the word 'remove' via word-boundary matching
+        # because \bremove\b matches 'remove' within 'removed'? Let me check:
+        # \bremove\b — \b before r requires a word boundary (non-word char or start),
+        # \b after e requires a word boundary. In 'removed', after 'e' comes 'd' (word char)
+        # so \b does NOT match. So 'removed' would NOT match 'remove'.
+        # But 'remove' as a standalone word WILL match.
+        result = normalize_interests(["removed", "removes", "removing"])
+        # None of these should match 'remove' with word boundary
+        assert result == ["removed", "removes", "removing"]
+
+    def test_normalize_extracted_slots_integration(self):
+        """Integration test: full normalization pipeline filters noise from interests."""
+        raw = {
+            "destination_city": "Cairo",
+            "duration_days": 2,
+            "budget_level": "moderate",
+            "interests": [
+                "remove abo tarek restaurant from the itinerary",
+                "museums",
+                "swap galaxy cinema with el azhar mosque",
+                "history",
+            ],
+        }
+        result = normalize_extracted_slots(raw)
+        assert "museums" in result["interests"]
+        assert "history" in result["interests"]
+        # Noise should be filtered
+        assert "remove" not in str(result["interests"]), "Filtered interests should not contain 'remove'"
+        assert "swap" not in str(result["interests"]), "Filtered interests should not contain 'swap'"
+
+
 # ══════════════════════════════════════════════════════════════════════════════
 # normalize_extracted_slots (integration)
 # ══════════════════════════════════════════════════════════════════════════════

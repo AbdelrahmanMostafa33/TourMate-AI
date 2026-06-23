@@ -91,8 +91,8 @@ class TripSlots:
     # ── Smart defaults ────────────────────────────────────────────────
     # Applied automatically when destination + duration are known.
     SMART_DEFAULTS = {
-        "group_size": 2,                          # Most common
-        "traveler_group_type": "couple",          # Inferred from 2 travelers
+        "group_size": 1,                          # Most common (solo traveler)
+        "traveler_group_type": "solo",            # Inferred from 1 traveler
         "budget_level": "moderate",               # Safe middle ground
         "travel_style": "cultural",               # Fits most city destinations
         "pace": "moderate",                       # Most flexible

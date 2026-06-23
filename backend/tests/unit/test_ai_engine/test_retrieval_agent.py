@@ -27,14 +27,10 @@ from tests.unit.test_ai_engine.conftest import _make_state, _make_place, _make_h
 # ── Fixtures ──────────────────────────────────────────────────────────────────
 
 def _make_retrieval_state(**overrides) -> dict:
-    """State with extracted_preferences pre-populated for retrieval tests."""
+    """State with profile pre-populated for retrieval tests."""
     defaults = {
         "user_message": "Plan me a trip to Cairo",
         "profile": None,
-        "extracted_preferences": {
-            "interests_from_conversation": ["history", "art"],
-            "walking_tolerance": "medium",
-        },
         "destination_city": "Cairo",
     }
     defaults.update(overrides)
@@ -82,23 +78,23 @@ class TestApplyFilters:
 
     def test_low_rating_filtered_out(self):
         places = [_make_place(rating=2.0)]
-        filtered = _apply_filters(places, {"interests_from_conversation": []}, "Cairo")
+        filtered = _apply_filters(places, {}, "Cairo")
         assert len(filtered) == 0
 
     def test_high_rating_kept(self):
         places = [_make_place(rating=4.5)]
-        filtered = _apply_filters(places, {"interests_from_conversation": []}, "Cairo")
+        filtered = _apply_filters(places, {}, "Cairo")
         assert len(filtered) == 1
 
     def test_rating_at_threshold_kept(self):
         places = [_make_place(rating=MIN_RATING)]
-        filtered = _apply_filters(places, {"interests_from_conversation": []}, "Cairo")
+        filtered = _apply_filters(places, {}, "Cairo")
         assert len(filtered) == 1
 
     def test_hotels_always_kept(self):
         """Hotels should pass through regardless of other filters."""
         places = [_make_hotel(rating=1.0)]  # low rating
-        filtered = _apply_filters(places, {"interests_from_conversation": ["history"]}, "Cairo")
+        filtered = _apply_filters(places, {}, "Cairo")
         assert len(filtered) == 1
 
     def test_all_places_pass_rating_filter(self):
@@ -108,7 +104,7 @@ class TestApplyFilters:
             _make_place(id="a2", name="Sports Bar", interest_tags=["sports"]),
             _make_place(id="a3", name="Shopping Mall", interest_tags=["shopping"]),
         ]
-        prefs = {"interests_from_conversation": ["history", "art"]}
+        prefs = {}
         filtered = _apply_filters(places, prefs, "Cairo")
         # All 3 pass — interest matching is handled by Ranking Agent
         assert len(filtered) == 3
@@ -116,15 +112,15 @@ class TestApplyFilters:
     def test_low_rated_place_still_filtered(self):
         """Only rating + distance are hard filters, not interests."""
         places = [_make_place(interest_tags=["sports"], rating=1.0)]
-        prefs = {"interests_from_conversation": ["sports"]}
+        prefs = {}
         filtered = _apply_filters(places, prefs, "Cairo")
         # Low rating filtered out even though interest matches
         assert len(filtered) == 0
 
-    def test_empty_interests_keeps_all(self):
-        """When no interests specified, all rated places pass."""
+    def test_empty_profile_keeps_all(self):
+        """When profile has no data, all rated places pass."""
         places = [_make_place(interest_tags=["sports"])]
-        prefs = {"interests_from_conversation": []}
+        prefs = {}
         filtered = _apply_filters(places, prefs, "Cairo")
         assert len(filtered) == 1
 
@@ -137,7 +133,7 @@ class TestApplyFilters:
         ]
         # Place ~60km from the cluster center (just beyond 50km threshold)
         far_place = _make_place(id="far", lat=30.5, lon=31.6)
-        prefs = {"interests_from_conversation": []}
+        prefs = {}
         filtered = _apply_filters(close_places + [far_place], prefs, "Cairo")
         ids = {p["id"] for p in filtered}
         assert "far" not in ids  # far place should be filtered out
@@ -148,21 +144,20 @@ class TestApplyFilters:
         hotel = _make_hotel()
         museum = _make_place(name="Museum", interest_tags=["history"])
         bar = _make_place(name="Sports Bar", interest_tags=["sports"])
-        prefs = {"interests_from_conversation": ["history"]}
+        prefs = {}
         filtered = _apply_filters([hotel, museum, bar], prefs, "Cairo")
         names = {p["name"] for p in filtered}
         assert "Test Hotel" in names
         assert "Museum" in names
         assert "Sports Bar" in names  # now kept — ranking agent scores relevance
 
-    def test_hotel_filtered_by_accommodation_type(self):
-        """When accommodation_style is set, only matching hotels are kept."""
+    def test_hotel_filtered_by_accommodation_preferences(self):
+        """When accommodation_preferences is set, only matching hotels are kept."""
         hotel = _make_hotel(accommodation_type="hotel")
         hostel = _make_hotel(id="h2", name="Test Hostel", accommodation_type="hostel")
         resort = _make_hotel(id="h3", name="Test Resort", accommodation_type="resort")
         prefs = {
-            "interests_from_conversation": [],
-            "accommodation_style": "resort",
+            "accommodation_preferences": ["resort"],
         }
         filtered = _apply_filters([hotel, hostel, resort], prefs, "Cairo")
         names = {p["name"] for p in filtered}
@@ -170,23 +165,20 @@ class TestApplyFilters:
         assert "Test Hotel" not in names
         assert "Test Hostel" not in names
 
-    def test_hotel_kept_when_no_accommodation_style(self):
-        """When no accommodation_style is set, all hotels are kept."""
+    def test_hotel_kept_when_no_accommodation_preferences(self):
+        """When no accommodation_preferences is set, all hotels are kept."""
         hotel = _make_hotel(accommodation_type="hotel")
         hostel = _make_hotel(id="h2", name="Test Hostel", accommodation_type="hostel")
-        prefs = {
-            "interests_from_conversation": [],
-        }
+        prefs = {}
         filtered = _apply_filters([hotel, hostel], prefs, "Cairo")
         assert len(filtered) == 2
 
-    def test_accommodation_style_partial_match(self):
-        """'boutique hotel' should match a hotel with type 'hotel'."""
-        hotel = _make_hotel(accommodation_type="hotel")
+    def test_accommodation_maps_boutique_to_luxury(self):
+        """'boutique hotel' should map to 'luxury' and match luxury hotels."""
+        hotel = _make_hotel(accommodation_type="luxury")
         hostel = _make_hotel(id="h2", name="Test Hostel", accommodation_type="hostel")
         prefs = {
-            "interests_from_conversation": [],
-            "accommodation_style": "boutique hotel",
+            "accommodation_preferences": ["boutique hotel"],
         }
         filtered = _apply_filters([hotel, hostel], prefs, "Cairo")
         names = {p["name"] for p in filtered}
@@ -194,7 +186,7 @@ class TestApplyFilters:
         assert "Test Hostel" not in names
 
     def test_empty_places_returns_empty(self):
-        filtered = _apply_filters([], {"interests_from_conversation": []}, "Cairo")
+        filtered = _apply_filters([], {}, "Cairo")
         assert filtered == []
 
 
@@ -323,17 +315,6 @@ class TestRunRetrievalAgent:
 
         call_args = mock_get.call_args
         assert call_args[0][0] == "Dubai"
-
-    @pytest.mark.asyncio
-    async def test_empty_interests_from_conversation_still_works(self):
-        """Agent works when extracted_preferences has no interests."""
-        places = [_make_place(id="a1")]
-        prefs = {"interests_from_conversation": []}
-        with patch("ai_engine.agents.retrieval_agent.get_places_for_city", new_callable=AsyncMock, return_value=places):
-            state = _make_retrieval_state(extracted_preferences=prefs)
-            result = await run_retrieval_agent(state)
-
-        assert result["filtered_places"] is not None
 
     @pytest.mark.asyncio
     async def test_no_profile_still_works(self):

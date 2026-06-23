@@ -5,7 +5,7 @@ Responsibilities:
 1. Score each candidate with a multi-signal formula:
    - Popularity (0.35)
    - User preference match via **semantic embeddings** (0.25)
-   - Proximity to city center (0.15)
+   -t Proximiy to city center (0.15)
    - Rating quality (0.15)
    - Diversity bonus (0.10)
 2. Optimize for category diversity in the final set.
@@ -229,7 +229,7 @@ async def run_ranking_agent(state: TripState) -> TripState:
     6. Store the final candidate set in state for the Planning Agent.
     """
     filtered = state.get("filtered_places") or []
-    preferences = state.get("extracted_preferences") or {}
+    preferences = state.get("profile") or {}
     duration_days = state.get("duration_days", 3)
 
     if not filtered:

@@ -196,8 +196,14 @@ Examples:
   (e.g. 'I want a solo trip', 'cultural travel'). Do NOT confuse interests with style —
   'I like history' → interests: ['history'], NOT travel_style: 'cultural'.
 - **Pace**: Extract the raw phrase. A downstream normalizer canonicalizes to 'relaxed', 'moderate', or 'packed'.
-- **Interests**: Extract the user's exact words. Common mappings: 'parks' → 'parks',
-  'museums' → 'museums'. Do NOT substitute your own terms — use what the user said.
+- **Interests**: Extract ONLY interest CATEGORY keywords — short, single words or
+  short phrases describing what the user wants to SEE or DO. Examples of valid
+  interests: 'museums', 'history', 'food', 'shopping', 'nature', 'parks', 'art',
+  'architecture', 'nightlife', 'beaches', 'photography', 'religion', 'adventure'.
+  Do NOT extract: commands or instructions ('remove X', 'swap Y', 'add Z'),
+  specific place names ('Al-Azhar Mosque', 'Eiffel Tower'), full sentences,
+  or multi-word instructions. If the user says "remove X and add Y and I like
+  museums and food" → extract ONLY ['museums', 'food'].
 - **Food preferences**: Extract from phrases like 'local food', 'street food', 'vegetarian', etc.
 - **Accommodation**: Extract as a phrase containing: 'hotel', 'hostel', 'resort', 'luxury', 'boutique', 'palace'.
   Return as a list with ONE item, e.g. ['boutique hotel'] not ['luxury', 'boutique', 'hotel'].

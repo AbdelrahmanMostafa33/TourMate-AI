@@ -5,7 +5,6 @@ from langgraph.graph import StateGraph, END
 from ai_engine.graph.state import TripState
 from ai_engine.graph.nodes import (
     load_profile_node,
-    preference_node,
     retrieval_node,
     ranking_node,
     planning_node,
@@ -13,7 +12,6 @@ from ai_engine.graph.nodes import (
     validation_node,
 )
 from ai_engine.graph.edges import (
-    should_retrieve,
     should_rank,
     should_plan,
     should_optimize,
@@ -27,11 +25,10 @@ def build_trip_graph():
     Assembles the full multi-agent graph for itinerary generation.
 
     Pipeline:
-      load_profile → preference → retrieval → ranking → planner → optimizer → validator
+      load_profile → retrieval → ranking → planner → optimizer → validator
 
     Each agent is a specialized node that handles one concern:
       - load_profile: Load user behavioral profile from DB
-      - preference:   Extract structured preferences from conversation
       - retrieval:    Filter places using SQL-style criteria
       - ranking:      Score candidates with multi-signal formula + diversity
       - planner:      LLM generates the day-by-day itinerary
@@ -48,7 +45,6 @@ def build_trip_graph():
 
     # ── Add all agent nodes ───────────────────────────────────────
     graph.add_node("load_profile",  load_profile_node)
-    graph.add_node("preference",    preference_node)
     graph.add_node("retrieval",     retrieval_node)
     graph.add_node("ranking",       ranking_node)
     graph.add_node("planner",       planning_node)
@@ -59,18 +55,9 @@ def build_trip_graph():
     graph.set_entry_point("load_profile")
 
     # ── Fixed edges (always follow this path) ─────────────────────
-    graph.add_edge("load_profile", "preference")
+    graph.add_edge("load_profile", "retrieval")
 
     # ── Conditional edges (routing based on agent output) ─────────
-    graph.add_conditional_edges(
-        "preference",
-        should_retrieve,
-        {
-            "retrieval": "retrieval",
-            "end": END,
-        },
-    )
-
     graph.add_conditional_edges(
         "retrieval",
         should_rank,

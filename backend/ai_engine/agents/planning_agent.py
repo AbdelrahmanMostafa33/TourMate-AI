@@ -30,9 +30,8 @@ You are the Planning Agent for TourMate AI. Create a structured, multi-day trave
 
 You will receive:
 1. User request with trip context (preferences, interests, duration)
-2. Dimension scores (luxury, culture, adventure) if available
-3. Candidate attractions & restaurants (already ranked by relevance) — these go in day stops
-4. Candidate hotels (listed separately) — these go in accommodation_suggestions
+2. Candidate attractions & restaurants (already ranked by relevance) — these go in day stops
+3. Candidate hotels (listed separately) — these go in accommodation_suggestions
 
 ## Scoring Reference
 - Each place has a `score` (0–100). Higher = more relevant to the user.
@@ -94,6 +93,90 @@ You will receive:
 - Every stop MUST have a `why_recommended` explaining why it fits this user (1–2 sentences, reference their interests and the place's score).
 - Every accommodation suggestion MUST have a `why_recommended` explaining the choice.
 """
+
+
+def _build_retry_note(last_error: str) -> str:
+    """
+    Build a targeted retry note based on the specific validation error.
+
+    Parses the error message to detect missing fields and provide
+    focused guidance to the LLM so it can fix the problem on retry.
+
+    Pydantic ``ValidationError`` format::
+
+        1 validation error for ItineraryPlan
+        accommodation_suggestions.2.lat
+          Field required [type=missing, ...]
+              ^-- field path is on the line BEFORE `Field required`
+    """
+    error_lower = last_error.lower()
+
+    # Extract field names from Pydantic ValidationError format.
+    # The field path (e.g. "accommodation_suggestions.2.lat") appears on its own
+    # line, followed by an indented line with "Field required".
+    def _extract_missing_fields(text: str) -> list[str]:
+        """Parse Pydantic error text and extract missing field names."""
+        lines = text.split("\n")
+        fields: list[str] = []
+        for i, line in enumerate(lines):
+            stripped = line.strip()
+            if "field required" in stripped.lower() and i > 0:
+                # The field path is on the line above (may have leading spaces)
+                prev = lines[i - 1].strip()
+                if prev and "." in prev:
+                    # Extract just the field name from paths like
+                    # "accommodation_suggestions.2.lat" → "lat"
+                    field_name = prev.rsplit(".", 1)[-1]
+                    if field_name not in fields:
+                        fields.append(field_name)
+        return fields
+
+    # Detect missing fields in accommodation_suggestions
+    if "accommodation_suggestions" in error_lower and "field required" in error_lower:
+        missing = _extract_missing_fields(last_error)
+        missing_str = ", ".join(missing) if missing else "required fields"
+
+        return (
+            f"\n\nIMPORTANT: Your previous itinerary was invalid \u2014 "
+            f"hotel entries are missing {missing_str}. "
+            f"Error: {last_error}. "
+            f"\nEvery hotel in `accommodation_suggestions` MUST include ALL of the following "
+            f"fields: id, name, sub_category, accommodation_type, lat, lon, "
+            f"why_recommended, rating, amenities. Pay special attention to ensuring "
+            f"lat AND lon are provided for EVERY hotel entry."
+        )
+
+    # Detect missing fields in stops
+    if "stop" in error_lower and "field required" in error_lower:
+        return (
+            f"\n\nIMPORTANT: Your previous itinerary was invalid \u2014 "
+            f"stops are missing required fields. "
+            f"Error: {last_error}. "
+            f"\nEvery stop MUST include ALL required fields: id, name, category, "
+            f"sub_category, lat, lon, why_recommended, estimated_duration_minutes, "
+            f"suggested_time_of_day. Ensure every stop has lat and lon populated."
+        )
+
+    # Detect empty days
+    if "empty 'days'" in error_lower or "no day" in error_lower:
+        return (
+            f"\n\nIMPORTANT: Your previous itinerary was invalid \u2014 "
+            f"it had no day-by-day stops. "
+            f"Error: {last_error}. "
+            f"\nYou MUST create a complete itinerary with actual stops "
+            f"for each day. Fill the `days` array with real stops "
+            f"using the candidate places provided."
+        )
+
+    # Generic fallback - include the actual error
+    return (
+        f"\n\nIMPORTANT: Your previous itinerary was invalid. "
+        f"Error: {last_error}. "
+        f"\nYou MUST create a complete itinerary with valid stops "
+        f"for each day. Fill the `days` array with real stops "
+        f"using the candidate places provided. Ensure all required "
+        f"fields are populated for every stop and hotel."
+    )
 
 
 def _trim_for_prompt(place: dict) -> dict:
@@ -192,25 +275,15 @@ async def run_planning_agent(state: TripState) -> TripState:
     attractions_restaurants = [p for p in trimmed if p.get("category") != "hotel"]
     hotels = [p for p in trimmed if p.get("category") == "hotel"]
 
-    # Extract unique info (dimension scores) that synthesized_request doesn't have
-    profile_dimensions = []
-    if profile:
-        for dim in ["luxury_score", "culture_score", "adventure_score"]:
-            val = profile.get(dim)
-            if val is not None:
-                profile_dimensions.append(f"{dim.replace('_', ' ').capitalize()}: {val}")
-    dimension_text = "\n".join(profile_dimensions) if profile_dimensions else ""
-
     # Construct the user prompt — avoids duplicating info from synthesized_request
     prompt = f"""User Request: {synthesized_request}
 Trip Duration: {duration_days} days
-{dimension_text}
 
 Candidate Attractions & Restaurants in {city} ({len(attractions_restaurants)}):
-{json.dumps(attractions_restaurants, indent=2, ensure_ascii=False)}
+{json.dumps(attractions_restaurants, indent=None, ensure_ascii=False)}
 
 Candidate Hotels ({len(hotels)}):
-{json.dumps(hotels, indent=2, ensure_ascii=False)}
+{json.dumps(hotels, indent=None, ensure_ascii=False)}
 
 Generate the itinerary now.
 """
@@ -240,14 +313,7 @@ Generate the itinerary now.
         try:
             attempt_messages = list(messages)
             if attempt > 1 and last_planner_error:
-                retry_note = (
-                    f"\n\nIMPORTANT: Your previous itinerary was invalid — "
-                    f"it had no day-by-day stops. "
-                    f"Error: {last_planner_error}. "
-                    f"You MUST create a complete itinerary with actual stops "
-                    f"for each day.  Fill the `days` array with real stops "
-                    f"using the candidate places provided."
-                )
+                retry_note = _build_retry_note(last_planner_error)
                 attempt_messages.append(HumanMessage(content=retry_note))
 
             response: ItineraryPlan = await invoke_with_fallback(
@@ -304,6 +370,11 @@ Generate the itinerary now.
                 # Reattach cuisine_type if available (the LLM may omit it)
                 if full.get("cuisine_type") and not stop.get("cuisine_type"):
                     stop["cuisine_type"] = full["cuisine_type"]
+                # Fallback lat/lon from DB if the LLM omitted them
+                if not stop.get("lat"):
+                    stop["lat"] = full.get("lat", 0.0)
+                if not stop.get("lon"):
+                    stop["lon"] = full.get("lon", 0.0)
 
     # Enrich accommodation suggestions.
     for hotel in itinerary.get("accommodation_suggestions", []):
@@ -316,6 +387,11 @@ Generate the itinerary now.
             hotel["photos"] = full.get("photos", [])[:1]
             hotel["address"] = full.get("address")
             hotel["maps_link"] = full.get("maps_link")
+            # Fallback lat/lon from DB if the LLM omitted them
+            if not hotel.get("lat") or hotel["lat"] == 0.0:
+                hotel["lat"] = full.get("lat", 0.0)
+            if not hotel.get("lon") or hotel["lon"] == 0.0:
+                hotel["lon"] = full.get("lon", 0.0)
 
     # Store successful itinerary in workflow state.
     state["draft_itinerary"] = itinerary

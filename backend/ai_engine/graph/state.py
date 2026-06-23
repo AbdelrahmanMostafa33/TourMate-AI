@@ -27,13 +27,7 @@ class TripProfile(TypedDict):
     food_preferences: List[str]        # e.g. ["local cuisine", "street food"]
     accommodation_preferences: List[str]  # e.g. ["boutique hotel", "airbnb"]
 
-    # ── Dimension Scores (0.0 – 1.0) ─────────────────────────────
-    luxury_score: Optional[float]
-    culture_score: Optional[float]
-    adventure_score: Optional[float]
-
     # ── Metadata ─────────────────────────────────────────────────
-    confidence: Optional[float]        # 0.0-1.0 how confident we are in the profile
     generated_at: Optional[str]        # ISO-8601 timestamp of profile creation
     updated_at: Optional[str]          # ISO-8601 timestamp of last update
 
@@ -67,12 +61,6 @@ class TripState(TypedDict):
     # ── Loaded Profile (per-trip) ───────────────────────────────────
     profile: Optional[TripProfile]
 
-
-    # ── Preference Extraction ─────────────────────────────────────
-    extracted_preferences: Optional[dict]
-    # Structured preferences extracted by Preference Agent:
-    # {budget_level, travel_style, walking_tolerance, food_preferences,
-    #  accommodation_style, nightlife, interests_from_conversation}
 
     # ── Retrieval Pipeline ────────────────────────────────────────
     filtered_places: Optional[List[dict]]

@@ -34,13 +34,6 @@ def profile_to_text(profile: TripProfile) -> str:
     if profile.get("accommodation_preferences"):
         lines.append(f"Accommodation: {', '.join(profile['accommodation_preferences'])}")
 
-    if profile.get("luxury_score") is not None:
-        lines.append(f"Luxury score: {profile['luxury_score']}")
-    if profile.get("culture_score") is not None:
-        lines.append(f"Culture score: {profile['culture_score']}")
-    if profile.get("adventure_score") is not None:
-        lines.append(f"Adventure score: {profile['adventure_score']}")
-
     return "\n".join(lines)
 
 
@@ -48,8 +41,6 @@ def is_profile_complete(profile: TripProfile) -> bool:
     """
     Returns True if the profile has enough data to personalize planning.
 
-    A profile is considered complete if confidence_score > 0 and
-    at least one interest was provided.
+    A profile is considered complete if at least one interest was provided.
     """
-    confidence = profile.get("confidence", 0.0) or 0.0
-    return confidence > 0 and len(profile.get("interests", [])) > 0
+    return len(profile.get("interests", [])) > 0

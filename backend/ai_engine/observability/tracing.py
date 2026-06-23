@@ -11,7 +11,6 @@ dashboard shows the full agent hierarchy:
 
     trip_pipeline (trace)
     ├── load_profile
-    ├── preference_agent
     ├── retrieval_agent
     ├── ranking_agent
     ├── planning_agent

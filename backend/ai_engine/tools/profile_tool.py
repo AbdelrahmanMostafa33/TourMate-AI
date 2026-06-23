@@ -76,17 +76,6 @@ async def load_trip_profile(trip_id: str, token: str) -> TripProfile:
         # Preferred accommodation types.
         accommodation_preferences=data.get("accommodation_preferences", []),
 
-        # Scoring fields: API no longer returns these, so defaults are used.
-        # They remain in the TypedDict as runtime values for agent computations
-        # and image signal enrichment (multimodal_fusion.py).
-        luxury_score=0.5,
-        culture_score=0.5,
-        adventure_score=0.5,
-
-
-        # Confidence score representing profile reliability.
-        confidence=0.0,
-
         # Timestamp when the profile was first generated.
         generated_at=data.get("generated_at"),
 
@@ -133,15 +122,6 @@ def load_mock_profile(trip_id: str = "mock_trip_001") -> TripProfile:
 
         # Example accommodation preferences.
         accommodation_preferences=["boutique hotel", "airbnb"],
-
-        # Example AI preference scores.
-        luxury_score=0.5,
-        culture_score=0.75,
-        adventure_score=0.35,
-
-
-        # Example confidence level.
-        confidence=0.83,
 
         # No timestamps for mock data.
         generated_at=None,

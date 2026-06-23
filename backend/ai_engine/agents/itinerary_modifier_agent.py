@@ -21,7 +21,11 @@ import json
 import logging
 from langchain_core.messages import SystemMessage, HumanMessage
 from ai_engine.llm_config import invoke_with_fallback
-from ai_engine.utils.json_utils import extract_json_from_llm_output
+from ai_engine.utils.json_utils import (
+    extract_json_from_llm_output,
+    repair_missing_commas,
+    repair_truncated_json,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -40,31 +44,48 @@ You are the Itinerary Modifier Agent for TourMate AI. You receive:
 to change.
 
 **Available operations** — pick one or more:
-- **SWAP**: Replace an existing stop with a better one from the available pool.
-  Keep the same time slot and day position. Copy the new place's `id`, `name`,
-  `category`, `sub_category`, `lat`, `lon`, and **`estimated_duration_minutes`**
-  from the available pool entry. Do NOT reuse the old stop's duration — each
-  place has its own intrinsic duration. Add a new `why_recommended` explaining
-  why this new place fits the user's request.
+- **SWAP**: Replace an existing stop with a DIFFERENT place from the available
+  pool. Keep the same time slot and day position. Copy the new place's `id`,
+  `name`, `category`, `sub_category`, `lat`, `lon`, and
+  **`estimated_duration_minutes`** from the available pool entry. Do NOT reuse
+  the old stop's duration — each place has its own intrinsic duration. Add a
+  new `why_recommended` explaining why this new place fits the user's request.
+  **IMPORTANT — deduplication check**: If the place the user wants to swap IN
+  is already a stop elsewhere in the itinerary, do NOT SWAP. Instead, treat
+  this as a **REORDER** (see below): move the existing stop to the target
+  position and remove the one it's replacing.
 - **REMOVE**: Delete a specific stop. If the removed stop was between other
   stops, reconnect the remaining stops by updating their
   `travel_time_to_next_minutes` and `transport_mode`.
 - **ADD**: Insert a new stop from the available pool into a specific day/time.
-  Pick a place that matches the user's modification request. Recompute
-  travel times for affected stops.
+  Pick a place that matches the user's modification request. If adding a
+  restaurant, pick a cuisine type different from other restaurant stops
+  nearby. Recompute travel times for affected stops.
 - **CHANGE_HOTEL**: Replace or add a hotel in `accommodation_suggestions`.
   Pick from the available pool.
 - **RE_THEME**: Update a day's `theme` string.
-- **REORDER**: Swap the order of stops within a day.
+- **REORDER**: Swap the order of stops within a day. When reordering:
+  **a)** Preserve each stop's own `estimated_duration_minutes` — do NOT swap
+  durations between stops; each duration belongs to its place.
+  **b)** Recalculate `travel_time_to_next_minutes` and `transport_mode` for
+  the newly adjacent stops based on their actual lat/lon positions.
+  **c)** Remove `travel_time_to_next_minutes` from the new last stop.
+  **d)** Update each stop's `suggested_time_of_day` to match its new
+  position in the day (morning → first, afternoon → middle, evening → last).
+  **e)** Refresh each reordered stop's `why_recommended` so it reflects
+  the new context rather than historical pipeline artifacts.
 
 **Rules**:
 1. Do NOT change stops the user didn't ask about — preserve them exactly.
 2. Do NOT invent places — only use places from the Available Places Pool.
-3. If adding a restaurant, pick a cuisine type different from other restaurant stops nearby.
-4. Every stop must have a `why_recommended` explaining why it fits.
-5. Return ONLY valid JSON — no preamble, no markdown fences.
-6. If the modification cannot be done (e.g. no suitable place in the pool),
+3. Every stop must have a `why_recommended` explaining why it fits.
+4. Return ONLY valid JSON — no preamble, no markdown fences.
+5. If the modification cannot be done (e.g. no suitable place in the pool),
    return the original itinerary unchanged with a note in `_modifier_note`.
+6. **Acknowledge ALL sub-requests in `_modifier_note`**: List every change
+   you made AND mention any requests you couldn't fulfill (e.g. "Removed X:
+   X was not in the itinerary" or "Added Y: no suitable place available").
+   This prevents silent omission of user requests.
 
 **Output schema** — the SAME schema as the input itinerary, optionally with a
 `_modifier_note` field at the top level explaining what changed:
@@ -113,6 +134,11 @@ def _trim_for_modifier(place: dict) -> dict:
         "rating": place.get("rating", 0),
         "popularity_score": place.get("popularity_score", 0),
     }
+    # Include estimated_duration_minutes so the LLM has a source of truth for swaps
+    dur = place.get("estimated_duration_minutes") or place.get("duration_minutes")
+    if dur is not None:
+        trimmed["estimated_duration_minutes"] = int(dur)
+
     # Include cuisine_type for restaurants
     if place.get("category") == "restaurant" and place.get("cuisine_type"):
         trimmed["cuisine_type"] = place["cuisine_type"]
@@ -316,7 +342,101 @@ def _reorder_pool_by_category(fresh_pool: list[dict], category_hints: dict) -> l
     return matching + non_matching
 
 
+# ── Post-processing safeguard ───────────────────────────────────────────────
+
+
+def _fix_durations_on_reorder(
+    modified: dict,
+    original: dict,
+) -> None:
+    """
+    Fix `estimated_duration_minutes` for stops that were reordered (not swapped).
+
+    The LLM sometimes swaps durations between stops during a REORDER. This
+    function detects pre-existing stops by ID and restores their original
+    duration, preventing duration drift.
+
+    Only overrides durations for stops whose ID exists in the original
+    itinerary (i.e. not newly SWAPPED or ADDED stops).
+    """
+    # Build index of original stop durations: {stop_id: duration}
+    orig_durations: dict[str, int] = {}
+    for day in original.get("days", []):
+        for stop in day.get("stops", []):
+            sid = stop.get("id", "")
+            dur = stop.get("estimated_duration_minutes")
+            if sid and dur is not None:
+                orig_durations[sid] = int(dur)
+
+    # Fix modified output: if a stop existed before, restore its original duration
+    for day in modified.get("days", []):
+        for stop in day.get("stops", []):
+            sid = stop.get("id", "")
+            if sid in orig_durations:
+                stop["estimated_duration_minutes"] = orig_durations[sid]
+
+
 # ── Main entry point ─────────────────────────────────────────────────────────
+
+
+def _build_modifier_retry_note(last_error: str) -> str:
+    """
+    Build a targeted retry note for the modifier agent based on the error.
+
+    Parses the error to detect the type of JSON issue and gives the LLM
+    focused guidance on how to fix it.
+    """
+    error_lower = last_error.lower()
+
+    # Missing comma between fields/values (most common Gemini issue)
+    if "expecting '" in error_lower and "delimiter" in error_lower:
+        return (
+            f"\n\nYour previous output had a JSON formatting error: missing comma. "
+            f"Error: {last_error}. "
+            f"\nPlease ensure EVERY field and value in the JSON object is separated "
+            f"by a comma. Common mistakes: missing commas between object properties, "
+            f"between array elements, or before nested objects. "
+            f"Return ONLY the raw JSON object \u2014 no preamble, no markdown fences."
+        )
+
+    # Missing property name (another common JSON issue)
+    if "expecting property name" in error_lower:
+        return (
+            f"\n\nYour previous output had a JSON formatting error: missing property name. "
+            f"Error: {last_error}. "
+            f"\nThis often means a comma is missing before a new key-value pair. "
+            f"Ensure every object key is enclosed in double quotes and preceded "
+            f"by a comma when following another property. "
+            f"Return ONLY the raw JSON object \u2014 no preamble, no markdown fences."
+        )
+
+    # Truncated/incomplete JSON
+    if "unterminated" in error_lower or "unexpected end" in error_lower:
+        return (
+            f"\n\nYour previous output was truncated or incomplete. "
+            f"Error: {last_error}. "
+            f"\nYou MUST output the COMPLETE modified itinerary JSON \u2014 "
+            f"every day, every stop, and every accommodation suggestion. "
+            f"Do not abbreviate or skip sections. "
+            f"Return ONLY the complete raw JSON object."
+        )
+
+    # Extra data after valid JSON (trailing commentary)
+    if "extra data" in error_lower:
+        return (
+            f"\n\nYour previous output had extra text after the JSON object. "
+            f"Error: {last_error}. "
+            f"\nReturn ONLY the raw JSON object with NO text before or after. "
+            f"No explanation, no markdown, no notes."
+        )
+
+    # Generic fallback - include the actual error
+    return (
+        f"\n\nYour previous output was invalid JSON. "
+        f"Error: {last_error}. "
+        f"\nReturn ONLY a single valid JSON object starting with {{ and ending with }}. "
+        f"No preamble, no markdown fences, no trailing text."
+    )
 
 
 async def run_itinerary_modifier(
@@ -422,24 +542,28 @@ Apply the modification now. Return the FULL modified itinerary JSON."""
         HumanMessage(content=prompt),
     ]
 
-    max_attempts = 2
+    max_attempts = 3
     last_error = None
 
     for attempt in range(1, max_attempts + 1):
         try:
             attempt_messages = list(messages)
             if attempt > 1 and last_error:
-                retry_note = (
-                    f"\n\nYour previous output was invalid: {last_error}. "
-                    f"Return ONLY the raw JSON object starting with {{ "
-                    f"and ending with }}. No preamble, no fences."
-                )
+                retry_note = _build_modifier_retry_note(last_error)
                 attempt_messages.append(HumanMessage(content=retry_note))
 
             response = await invoke_with_fallback("modifier", attempt_messages)
             raw_text = response.content
 
+            # Step 1: Strip preamble, markdown fences, trailing text
             extracted = extract_json_from_llm_output(raw_text)
+
+            # Step 2: Try to repair missing commas (common Gemini issue)
+            extracted = repair_missing_commas(extracted)
+
+            # Step 3: Try to repair truncation (unclosed brackets/strings)
+            extracted = repair_truncated_json(extracted)
+
             modified = json.loads(extracted)
 
             # Validate: must have days and destination
@@ -455,6 +579,9 @@ Apply the modification now. Return the FULL modified itinerary JSON."""
                 modified["destination"] = current_itinerary.get("destination", "")
             if not modified.get("duration_days"):
                 modified["duration_days"] = current_itinerary.get("duration_days", 0)
+
+            # 🛡️ Fix durations for reordered stops (LLM sometimes swaps them)
+            _fix_durations_on_reorder(modified, current_itinerary)
 
             # Reattach full metadata for any new stops
             place_index = {p.get("id", ""): p for p in (available_places or [])}

@@ -608,6 +608,13 @@ def normalize_accommodation(preferences: Optional[List[str]]) -> Optional[List[s
 # Interest normalization
 # ══════════════════════════════════════════════════════════════════════════════
 
+# Command verbs that indicate an instruction, not an interest (used to filter noise)
+_INTEREST_COMMAND_VERBS: set[str] = {
+    "remove", "swap", "add", "delete", "change", "insert",
+    "replace", "drop", "update", "modify", "edit", "reorder",
+    "move", "put", "take", "shift", "switch", "exchange",
+}
+
 _INTEREST_SYNONYM_MAP: Dict[str, str] = {
     "history": "history",
     "historical": "history",
@@ -707,9 +714,14 @@ def normalize_interests(interests: Optional[List[str]]) -> Optional[List[str]]:
     """
     Normalize a list of interest strings to canonical tags.
 
+    Filters out noise: commands ('remove X', 'swap Y', 'add Z'), specific place names
+    ('Al-Azhar Mosque', 'Eiffel Tower'), and multi-word instructions.
+
     - Deduplicates items (case-insensitive)
     - Maps synonyms to canonical tags
     - Strips whitespace
+    - Skips items containing command verbs (remove, swap, add, delete, etc.)
+    - Skips items longer than 5 words (likely instructions, not interest keywords)
 
     Examples::
 
@@ -718,6 +730,9 @@ def normalize_interests(interests: Optional[List[str]]) -> Optional[List[str]]:
 
         normalize_interests(["sightseeing", "landmarks", "photos"])
         → ["sightseeing", "photography"]
+
+        normalize_interests(["remove abo tarek restaurant from the itinerary", "museums"])
+        → ["museums"]  (command phrase filtered out)
     """
     if not interests or not isinstance(interests, list):
         return None
@@ -733,6 +748,24 @@ def normalize_interests(interests: Optional[List[str]]) -> Optional[List[str]]:
         if not normalized:
             continue
 
+        # ── Noise filters ────────────────────────────────────────────
+        # Skip items containing command verbs (e.g. "remove abo tarek" → filtered)
+        if any(_contains_word(normalized, verb) for verb in _INTEREST_COMMAND_VERBS):
+            logger.debug(
+                "[SlotNormalizer] Filtered out command-like interest: %r", item
+            )
+            continue
+
+        # Skip items that are too long (> 5 words suggests an instruction, not keyword)
+        word_count = len(normalized.split())
+        if word_count > 5:
+            logger.debug(
+                "[SlotNormalizer] Filtered out long interest phrase (%d words): %r",
+                word_count, item,
+            )
+            continue
+
+        # ── Synonym matching ─────────────────────────────────────────
         # Try synonym map
         canonical = _INTEREST_SYNONYM_MAP.get(normalized)
 
