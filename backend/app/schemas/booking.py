@@ -72,6 +72,7 @@ class PaymentResponse(BaseModel):
 
 class BookingCreate(BaseModel):
     """Create schema for Booking – aligns with model fields."""
+    trip_id:             str
     booking_type:        BookingType
     place_id:            Optional[str]     = None
     provider:            Optional[BookingProvider] = None
@@ -111,3 +112,29 @@ class BookingResponse(BaseModel):
 class BookingStatusUpdate(BaseModel):
     """Update schema for Booking status."""
     status: BookingStatus
+
+
+# ─── Trip Package Booking ────────────────────────────────────────────────────
+
+class PackageBookingItem(BaseModel):
+    """A single booking created as part of a trip package."""
+    booking_id:          str
+    place_name:          str
+    booking_type:        BookingType
+    category:            str
+    total_cost:          Optional[float] = None
+    currency:            Optional[str] = None
+    status:              BookingStatus
+    confirmation_number: str
+
+
+class TripPackageBookingResponse(BaseModel):
+    """Response for booking an entire trip as a package."""
+    trip_id:      str
+    trip_name:    Optional[str] = None
+    destination:  str
+    total_cost:   float
+    currency:     str
+    bookings:     list[PackageBookingItem]
+    stop_count:   int
+    booking_count: int

@@ -6,7 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 
 from app.core.database import engine, Base
-from app.models import user, profile, trip, chat
+from app.models import user, profile, trip, chat, booking
 
 from app.api.v1.routes import auth, users, health
 from app.api.v1.routes import trips as trips_router
@@ -17,6 +17,8 @@ from app.api.v1.routes import images as images_router
 from app.api.v1.routes import places as places_router
 from app.api.v1.routes import itinerary as itinerary_router
 from app.api.v1.routes import feedback as feedback_router
+from app.api.v1.routes import bookings as bookings_router
+from app.api.v1.routes import webhooks as webhooks_router
 from ai_engine.observability.tracing import setup_langsmith
 
 
@@ -55,6 +57,8 @@ app.include_router(images_router.router, prefix="/api/v1/images", tags=["Images"
 app.include_router(places_router.router, prefix="/api/v1/places", tags=["Places"])
 app.include_router(itinerary_router.router, prefix="/api/v1/itinerary", tags=["Itinerary"])
 app.include_router(feedback_router.router, prefix="/api/v1/feedback", tags=["Feedback"])
+app.include_router(bookings_router.router, prefix="/api/v1/bookings", tags=["Bookings"])
+app.include_router(webhooks_router.router, prefix="/api/v1/webhooks", tags=["Webhooks"])
 app.include_router(health.router,       tags=["Health"])
 
 

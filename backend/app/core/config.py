@@ -24,6 +24,11 @@ class Settings(BaseSettings):
 
     backend_base_url: str = "http://localhost:8000"
 
+    # === Stripe (Sandbox Payments) ===
+    STRIPE_SECRET_KEY: str = "sk_test_51Sug26AirNZX1E8p0iAsyZmazRSg1tePIS1Nfcrm656s6BWp5xfECQ6xqMzanFIXPGJYnMRqHy2v4mMGV37fMAZD00bWGF1RED"
+    STRIPE_PUBLISHABLE_KEY: str = "pk_test_51Sug26AirNZX1E8p5g6fVMcFYxsTSu77v2GNSQ4fzcPwtIBdMFxdEqKAqYAsdD9ZSUFfWz65buMkngDCoCqQmlVC008tqZjMVo"
+    STRIPE_WEBHOOK_SECRET: str = "whsec_0634fe269ef52d414dcd737485324c56b4f99170b995305a31505f804b15c997"
+
     # === LangSmith (Observability) ===
     # Set these in your .env to enable tracing:
     #   LANGCHAIN_TRACING_V2=true
