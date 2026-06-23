@@ -1,4 +1,6 @@
-class TripSummaryModel {
+import 'package:equatable/equatable.dart';
+
+class TripSummaryModel extends Equatable {
   final String tripId;
   final String? tripName;
   final String destination;
@@ -7,7 +9,7 @@ class TripSummaryModel {
   final int numberOfTravelers;
   final String status;
 
-  TripSummaryModel({
+  const TripSummaryModel({
     required this.tripId,
     this.tripName,
     required this.destination,
@@ -40,4 +42,30 @@ class TripSummaryModel {
       status: json['status'] ?? '',
     );
   }
+
+  TripSummaryModel copyWith({
+    String? tripId,
+    String? tripName,
+    String? destination,
+    String? startDate,
+    String? endDate,
+    int? numberOfTravelers,
+    String? status,
+  }) {
+    return TripSummaryModel(
+      tripId: tripId ?? this.tripId,
+      tripName: tripName ?? this.tripName,
+      destination: destination ?? this.destination,
+      startDate: startDate ?? this.startDate,
+      endDate: endDate ?? this.endDate,
+      numberOfTravelers: numberOfTravelers ?? this.numberOfTravelers,
+      status: status ?? this.status,
+    );
+  }
+
+  @override
+  List<Object?> get props => [
+        tripId, tripName, destination, startDate,
+        endDate, numberOfTravelers, status,
+      ];
 }

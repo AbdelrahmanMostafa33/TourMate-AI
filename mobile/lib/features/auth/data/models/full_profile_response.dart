@@ -1,4 +1,6 @@
-class TripProfileData {
+import 'package:equatable/equatable.dart';
+
+class TripProfileData extends Equatable {
   final String? profileId;
   final String? tripId;
   final String? budgetLevel;
@@ -8,7 +10,7 @@ class TripProfileData {
   final List<String>? foodPreferences;
   final List<String>? accommodationPreferences;
 
-  TripProfileData({
+  const TripProfileData({
     this.profileId,
     this.tripId,
     this.budgetLevel,
@@ -31,9 +33,38 @@ class TripProfileData {
       accommodationPreferences: (json['accommodation_preferences'] as List?)?.map((e) => e.toString()).toList(),
     );
   }
+
+  TripProfileData copyWith({
+    String? profileId,
+    String? tripId,
+    String? budgetLevel,
+    String? travelStyle,
+    String? pace,
+    List<String>? interests,
+    List<String>? foodPreferences,
+    List<String>? accommodationPreferences,
+  }) {
+    return TripProfileData(
+      profileId: profileId ?? this.profileId,
+      tripId: tripId ?? this.tripId,
+      budgetLevel: budgetLevel ?? this.budgetLevel,
+      travelStyle: travelStyle ?? this.travelStyle,
+      pace: pace ?? this.pace,
+      interests: interests ?? this.interests,
+      foodPreferences: foodPreferences ?? this.foodPreferences,
+      accommodationPreferences: accommodationPreferences ?? this.accommodationPreferences,
+    );
+  }
+
+  @override
+  List<Object?> get props => [
+        profileId, tripId, budgetLevel, travelStyle,
+        pace, interests, foodPreferences,
+        accommodationPreferences,
+      ];
 }
 
-class FullProfileResponse {
+class FullProfileResponse extends Equatable {
   final String userId;
   final String? fullName;
   final String email;
@@ -43,7 +74,7 @@ class FullProfileResponse {
   final String? travelerPersona;
   final TripProfileData? tripProfile;
 
-  FullProfileResponse({
+  const FullProfileResponse({
     required this.userId,
     this.fullName,
     required this.email,
@@ -68,4 +99,32 @@ class FullProfileResponse {
           : null,
     );
   }
+
+  FullProfileResponse copyWith({
+    String? userId,
+    String? fullName,
+    String? email,
+    String? phoneNumber,
+    String? homeCity,
+    String? registrationDate,
+    String? travelerPersona,
+    TripProfileData? tripProfile,
+  }) {
+    return FullProfileResponse(
+      userId: userId ?? this.userId,
+      fullName: fullName ?? this.fullName,
+      email: email ?? this.email,
+      phoneNumber: phoneNumber ?? this.phoneNumber,
+      homeCity: homeCity ?? this.homeCity,
+      registrationDate: registrationDate ?? this.registrationDate,
+      travelerPersona: travelerPersona ?? this.travelerPersona,
+      tripProfile: tripProfile ?? this.tripProfile,
+    );
+  }
+
+  @override
+  List<Object?> get props => [
+        userId, fullName, email, phoneNumber, homeCity,
+        registrationDate, travelerPersona, tripProfile,
+      ];
 }

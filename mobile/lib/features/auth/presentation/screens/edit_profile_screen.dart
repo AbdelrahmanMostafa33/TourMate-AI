@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../../../core/network/service_locator.dart';
+import '../../../../core/widgets/city_picker.dart';
 import '../../data/models/full_profile_response.dart';
 import '../../data/repository/profile_repository.dart';
 import '../../logic/profile_cubit.dart';
@@ -31,7 +32,7 @@ class _EditProfileView extends StatefulWidget {
 class _EditProfileViewState extends State<_EditProfileView> {
   late TextEditingController _nameController;
   late TextEditingController _phoneController;
-  late TextEditingController _cityController;
+  String _selectedCity = '';
   bool _loading = false;
 
   @override
@@ -39,14 +40,13 @@ class _EditProfileViewState extends State<_EditProfileView> {
     super.initState();
     _nameController = TextEditingController(text: widget.profile.fullName ?? '');
     _phoneController = TextEditingController(text: widget.profile.phoneNumber ?? '');
-    _cityController = TextEditingController(text: widget.profile.homeCity ?? '');
+    _selectedCity = widget.profile.homeCity ?? '';
   }
 
   @override
   void dispose() {
     _nameController.dispose();
     _phoneController.dispose();
-    _cityController.dispose();
     super.dispose();
   }
 
@@ -61,9 +61,9 @@ class _EditProfileViewState extends State<_EditProfileView> {
       phoneNumber: _phoneController.text.trim().isEmpty
           ? null
           : _phoneController.text.trim(),
-      homeCity: _cityController.text.trim().isEmpty
-          ? null
-          : _cityController.text.trim(),
+      homeCity: _selectedCity.isNotEmpty
+          ? _selectedCity
+          : null,
     );
 
     if (!mounted) return;
@@ -208,10 +208,22 @@ class _EditProfileViewState extends State<_EditProfileView> {
 
               const SizedBox(height: 16),
 
-              _buildField(
-                label: 'Home City',
-                controller: _cityController,
-                icon: Icons.location_city_outlined,
+              // ── Home City (Country + City dropdown) ──────
+              const Text(
+                'HOME CITY',
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                  color: Colors.grey,
+                  letterSpacing: 1,
+                ),
+              ),
+              const SizedBox(height: 12),
+              CityPicker(
+                initialValue: _selectedCity,
+                onCitySelected: (city) {
+                  _selectedCity = city;
+                },
               ),
 
               const SizedBox(height: 40),
@@ -232,7 +244,7 @@ class _EditProfileViewState extends State<_EditProfileView> {
                     const SizedBox(width: 10),
                     Expanded(
                       child: Text(
-                        'You can also update your preferences by retaking the onboarding quiz from your profile settings.',
+                        'Update your personal details above. Your travel preferences are learned from your chats with TourMate.',
                         style: TextStyle(
                           fontSize: 13,
                           color: Colors.blue[700],

@@ -31,7 +31,7 @@ import asyncio
 import logging
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any, Dict, List, Optional
+from typing import Any, Awaitable, Callable, Dict, List, Optional
 
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import BaseMessage
@@ -297,7 +297,7 @@ AGENT_LLM_REGISTRY: Dict[str, LLMConfig] = {
     "review_qa":      LLMConfig(Provider.GROQ, "llama-3.3-70b-versatile", temperature=0.7, max_tokens=8192),
 
     # ── Gemini — planning (reasoning), vision (multimodal), modification — 20 RPD ──
-    "modifier":       LLMConfig(Provider.GEMINI, "gemini-2.5-flash", temperature=0.5, max_tokens=8192),
+    "modifier":       LLMConfig(Provider.GEMINI, "gemini-2.5-flash", temperature=0.0, max_tokens=8192),
     "planner":        LLMConfig(Provider.GEMINI, "gemini-2.5-flash", temperature=0.7, max_tokens=8192),
     "vision":         LLMConfig(Provider.GEMINI, "gemini-2.5-flash", temperature=0.7, max_tokens=8192),
 }
@@ -319,6 +319,11 @@ def _build_gemini_llm(config: LLMConfig, api_key: str | None = None) -> BaseChat
         temperature=config.temperature,
         max_tokens=config.max_tokens,
         google_api_key=api_key,
+        # Disable LangChain's internal retry — invoke_with_fallback
+        # handles key rotation and retry externally with instant failover.
+        # Default is 6 retries with exponential backoff which adds ~30s
+        # of dead time before our fallback logic can switch API keys.
+        max_retries=0,
     )
 
 
@@ -334,6 +339,9 @@ def _build_groq_llm(config: LLMConfig, api_key: str | None = None) -> BaseChatMo
         temperature=config.temperature,
         max_tokens=config.max_tokens,
         groq_api_key=api_key,
+        # Disable LangChain's internal retry — invoke_with_fallback
+        # handles key rotation and retry externally with instant failover.
+        max_retries=0,
     )
 
 
@@ -473,6 +481,7 @@ async def invoke_with_fallback(
     messages: list[BaseMessage],
     max_retries: int | None = None,
     structured_output: type | None = None,
+    on_retry: Callable[[int, int, str], Awaitable[None]] | None = None,
 ) -> Any:
     """
     Invoke the LLM for *agent_role* with automatic key rotation and retry.
@@ -496,6 +505,9 @@ async def invoke_with_fallback(
         structured_output: Optional Pydantic model class for structured output.
                            When provided, the LLM is bound with
                            .with_structured_output(schema) for guaranteed valid JSON.
+        on_retry:     Optional async callback ``(attempt, max_retries, reason)``
+                      invoked on each retry (rate-limit or transient error).
+                      Useful for reporting intermediate progress to the UI.
 
     Returns:
         The LLM response object (same as ``BaseChatModel.ainvoke``).
@@ -599,6 +611,8 @@ async def invoke_with_fallback(
                     "[Fallback] Key …%s rate-limited on '%s' (attempt %d/%d, trying next key)",
                     api_key[-4:], agent_role, attempt + 1, max_retries,
                 )
+                if on_retry:
+                    await on_retry(attempt + 1, max_retries, "Switching to next API key")
                 continue
 
             # ── 503 / Transient — try next key with backoff ────────────
@@ -609,6 +623,8 @@ async def invoke_with_fallback(
                     "[Fallback] Key …%s transient-error on '%s' (attempt %d/%d, trying next key)",
                     api_key[-4:], agent_role, attempt + 1, max_retries,
                 )
+                if on_retry:
+                    await on_retry(attempt + 1, max_retries, "Server busy, retrying...")
                 continue
 
             # Non-retryable error — raise immediately

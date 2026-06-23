@@ -3,29 +3,30 @@
 """
 Integration tests for the Itinerary Modifier Agent (Mode 2).
 
-Tests cover surgically editing an existing itinerary without re-running
-the full pipeline. The LLM (invoke_with_fallback) is mocked, but all
-agent logic (prompt building, place trimming, dedup, JSON parsing,
-metadata reattachment) runs for real.
+The modifier now uses **delta operations** instead of full itinerary
+regeneration.  The LLM (via ``invoke_with_fallback`` with
+``structured_output=ModifierResponse``) returns a Pydantic operation
+model.  Deterministic Python code in ``operations.py`` applies it.
 
-Operations tested:
-    - SWAP: Replace a stop with a different place from the pool
-    - REMOVE: Delete a specific stop
-    - ADD: Insert a new stop from the pool
-    - CHANGE_HOTEL: Replace a hotel suggestion
-    - REORDER: Change the order of stops within a day
-    - RE_THEME: Update a day's theme or description
-    - Error handling: invalid JSON, empty response, missing days
+These tests mock ``invoke_with_fallback`` to return a pre-built
+``ModifierResponse``, then verify that ``run_itinerary_modifier``
+correctly delegates to ``apply_operation`` and returns a properly
+modified itinerary.
 """
 
-import json
 import copy
-import pytest
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
-from ai_engine.agents.itinerary_modifier_agent import (
-    run_itinerary_modifier,
-    _trim_for_modifier,
+import pytest
+
+from ai_engine.agents.itinerary_modifier_agent import run_itinerary_modifier
+from ai_engine.agents.operations import (
+    AddOperation,
+    ChangeHotelOperation,
+    RemoveOperation,
+    ReorderOperation,
+    ReThemeOperation,
+    SwapOperation,
 )
 from tests.integration.conftest import MOCK_PLACES
 
@@ -44,7 +45,7 @@ BASE_ITINERARY = {
                 {
                     "id": "place_001",
                     "name": "Egyptian Museum",
-                    "category": "attractions",
+                    "category": "attraction",
                     "sub_category": "museum",
                     "lat": 30.0478, "lon": 31.2336,
                     "cuisine_type": "",
@@ -58,7 +59,7 @@ BASE_ITINERARY = {
                 {
                     "id": "place_003",
                     "name": "Pyramids of Giza",
-                    "category": "attractions",
+                    "category": "attraction",
                     "sub_category": "historic",
                     "lat": 29.9792, "lon": 31.1342,
                     "cuisine_type": "",
@@ -76,7 +77,7 @@ BASE_ITINERARY = {
                 {
                     "id": "place_004",
                     "name": "Al-Azhar Park",
-                    "category": "attractions",
+                    "category": "attraction",
                     "sub_category": "park",
                     "lat": 30.0436, "lon": 31.2496,
                     "cuisine_type": "",
@@ -123,13 +124,6 @@ PREFERENCES = {
 }
 
 
-def _make_mock_response(content_dict: dict) -> MagicMock:
-    """Wrap a dict as a MagicMock with .content returning JSON."""
-    response = MagicMock()
-    response.content = json.dumps(content_dict)
-    return response
-
-
 # ═══════════════════════════════════════════════════════════════════════════
 # 1. SWAP Operation
 # ═══════════════════════════════════════════════════════════════════════════
@@ -138,33 +132,25 @@ def _make_mock_response(content_dict: dict) -> MagicMock:
 class TestSwapOperation:
 
     @pytest.mark.asyncio
-    async def test_swap_stop_with_entertainment_venue(self):
+    async def test_swap_stop_with_pool_place(self):
         """
         "Swap the Egyptian Museum for something more entertaining"
-        → place_001 replaced with place_004 (Al-Azhar Park) which has
-          entertainment-relevant tags.
+        → place_001 replaced with place_004 (Al-Azhar Park).
         """
-        modified = copy.deepcopy(BASE_ITINERARY)
-        modified["_modifier_note"] = "Swapped Egyptian Museum for Al-Azhar Park for an entertaining outdoor experience"
-        # Replace Day 1 stop 0 (Egyptian Museum) with Al-Azhar Park
-        modified["days"][0]["stops"][0] = {
-            "id": "place_004",
-            "name": "Al-Azhar Park",
-            "category": "attractions",
-            "sub_category": "park",
-            "lat": 30.0436, "lon": 31.2496,
-            "cuisine_type": "",
-            "interest_tags": ["nature", "parks", "outdoors"],
-            "why_recommended": "Beautiful park with great views and entertainment options",
-            "estimated_duration_minutes": 90,
-            "suggested_time_of_day": "morning",
-            "travel_time_to_next_minutes": 15.0,
-            "transport_mode": "driving",
-        }
+        operation = SwapOperation(
+            remove_place_id="place_001",
+            add_place_id="place_004",
+            day_number=1,
+            new_why_recommended="Outdoor park with cultural shows",
+        )
+
+        async def _mock_invoke(*args, **kwargs):
+            from ai_engine.agents.operations import ModifierResponse
+            return ModifierResponse(operation=operation, note="Swapped museum for park")
 
         with patch(
             "ai_engine.agents.itinerary_modifier_agent.invoke_with_fallback",
-            return_value=_make_mock_response(modified),
+            side_effect=_mock_invoke,
         ):
             result = await run_itinerary_modifier(
                 current_itinerary=BASE_ITINERARY,
@@ -173,43 +159,38 @@ class TestSwapOperation:
                 preferences=PREFERENCES,
             )
 
-        assert result is not BASE_ITINERARY  # not the same object
-        assert result["_modifier_note"] == modified["_modifier_note"]
+        assert result is not BASE_ITINERARY  # deep copy returned
+        # Day 1 stop 0 should now be place_004 (Al-Azhar Park)
         assert result["days"][0]["stops"][0]["id"] == "place_004"
         assert result["days"][0]["stops"][0]["name"] == "Al-Azhar Park"
-        # Unchanged stop preserved
+        # The why_recommended from the operation should be set
+        assert "cultural shows" in result["days"][0]["stops"][0].get("why_recommended", "")
+        # Day 1 stop 1 unchanged
         assert result["days"][0]["stops"][1]["id"] == "place_003"
-        assert result["days"][0]["stops"][1]["name"] == "Pyramids of Giza"
-        # Day 2 unmodified
-        assert result["days"][1]["stops"][0]["id"] == "place_004"  # Al-Azhar Park was also in Day 2 — but wait, we swapped Day 1 stop 0 for it
-        # Actually the modifier returned Al-Azhar Park in Day 1 stop 0.
-        # Day 2 still has Al-Azhar Park as stop 0. That's fine — the modifier
-        # just replaced the first day's first stop with Al-Azhar Park.
+        # Day 2 entirely unchanged
+        assert result["days"][1]["stops"][0]["id"] == "place_004"
+        assert result["days"][1]["stops"][1]["id"] == "rest_001"
 
     @pytest.mark.asyncio
     async def test_swap_restaurant(self):
         """
         "Swap Abu Shukri for a different restaurant"
-        → rest_001 replaced with rest_002 (Nubia Restaurant)
+        → rest_001 replaced with rest_002.
         """
-        modified = copy.deepcopy(BASE_ITINERARY)
-        modified["_modifier_note"] = "Swapped Abu Shukri for Nubia Restaurant for variety"
-        modified["days"][1]["stops"][1] = {
-            "id": "rest_002",
-            "name": "Nubia Restaurant",
-            "category": "restaurant",
-            "sub_category": "street food",
-            "lat": 30.0458, "lon": 31.2360,
-            "cuisine_type": "local cuisine",
-            "interest_tags": ["food"],
-            "why_recommended": "Great local cuisine with a different menu",
-            "estimated_duration_minutes": 60,
-            "suggested_time_of_day": "afternoon",
-        }
+        operation = SwapOperation(
+            remove_place_id="rest_001",
+            add_place_id="rest_002",
+            day_number=2,
+            new_why_recommended="Great variety of local dishes",
+        )
+
+        async def _mock_invoke(*args, **kwargs):
+            from ai_engine.agents.operations import ModifierResponse
+            return ModifierResponse(operation=operation, note="Swapped restaurant")
 
         with patch(
             "ai_engine.agents.itinerary_modifier_agent.invoke_with_fallback",
-            return_value=_make_mock_response(modified),
+            side_effect=_mock_invoke,
         ):
             result = await run_itinerary_modifier(
                 current_itinerary=BASE_ITINERARY,
@@ -232,35 +213,20 @@ class TestSwapOperation:
 class TestRemoveOperation:
 
     @pytest.mark.asyncio
-    async def test_remove_stop_mid_day(self):
+    async def test_remove_stop_from_day(self):
         """
         "Remove Al-Azhar Park from Day 2"
-        → place_004 removed, remaining stop (Abu Shukri) has no
-          travel_time_to_next since it's now the last stop.
+        → place_004 removed, rest_001 becomes the only stop.
         """
-        modified = copy.deepcopy(BASE_ITINERARY)
-        modified["_modifier_note"] = "Removed Al-Azhar Park from Day 2"
-        # Remove Day 2 stop 0 (Al-Azhar Park), keep only Abu Shukri
-        modified["days"][1]["stops"] = [
-            {
-                "id": "rest_001",
-                "name": "Abu Shukri",
-                "category": "restaurant",
-                "sub_category": "local cuisine",
-                "lat": 30.0464, "lon": 31.2325,
-                "cuisine_type": "local cuisine",
-                "interest_tags": ["food"],
-                "why_recommended": "Authentic Egyptian food",
-                "estimated_duration_minutes": 60,
-                "suggested_time_of_day": "afternoon",
-            },
-        ]
-        # Update theme to reflect the change
-        modified["days"][1]["theme"] = "Culinary Experience"
+        operation = RemoveOperation(place_id="place_004")
+
+        async def _mock_invoke(*args, **kwargs):
+            from ai_engine.agents.operations import ModifierResponse
+            return ModifierResponse(operation=operation, note="Removed Al-Azhar Park")
 
         with patch(
             "ai_engine.agents.itinerary_modifier_agent.invoke_with_fallback",
-            return_value=_make_mock_response(modified),
+            side_effect=_mock_invoke,
         ):
             result = await run_itinerary_modifier(
                 current_itinerary=BASE_ITINERARY,
@@ -271,36 +237,26 @@ class TestRemoveOperation:
 
         assert len(result["days"][1]["stops"]) == 1
         assert result["days"][1]["stops"][0]["id"] == "rest_001"
+        # No travel time on the only remaining stop
+        assert "travel_time_to_next_minutes" not in result["days"][1]["stops"][0]
         # Day 1 unchanged
         assert len(result["days"][0]["stops"]) == 2
-        assert result["days"][0]["stops"][0]["id"] == "place_001"
 
     @pytest.mark.asyncio
-    async def test_remove_first_stop_reconnects_remaining(self):
+    async def test_remove_first_stop_reconnects(self):
         """
         "Remove the Egyptian Museum from Day 1"
         → place_001 removed, Pyramids becomes the only stop.
         """
-        modified = copy.deepcopy(BASE_ITINERARY)
-        modified["_modifier_note"] = "Removed Egyptian Museum from Day 1"
-        modified["days"][0]["stops"] = [
-            {
-                "id": "place_003",
-                "name": "Pyramids of Giza",
-                "category": "attractions",
-                "sub_category": "historic",
-                "lat": 29.9792, "lon": 31.1342,
-                "cuisine_type": "",
-                "interest_tags": ["history", "architecture", "heritage"],
-                "why_recommended": "Iconic ancient wonder",
-                "estimated_duration_minutes": 180,
-                "suggested_time_of_day": "afternoon",
-            },
-        ]
+        operation = RemoveOperation(place_id="place_001")
+
+        async def _mock_invoke(*args, **kwargs):
+            from ai_engine.agents.operations import ModifierResponse
+            return ModifierResponse(operation=operation, note="Removed museum")
 
         with patch(
             "ai_engine.agents.itinerary_modifier_agent.invoke_with_fallback",
-            return_value=_make_mock_response(modified),
+            side_effect=_mock_invoke,
         ):
             result = await run_itinerary_modifier(
                 current_itinerary=BASE_ITINERARY,
@@ -311,6 +267,7 @@ class TestRemoveOperation:
 
         assert len(result["days"][0]["stops"]) == 1
         assert result["days"][0]["stops"][0]["id"] == "place_003"
+        # No travel time on the only stop left
         assert "travel_time_to_next_minutes" not in result["days"][0]["stops"][0]
 
 
@@ -324,78 +281,57 @@ class TestAddOperation:
     @pytest.mark.asyncio
     async def test_add_evening_stop(self):
         """
-        "Add a rooftop bar after dinner on Day 1"
-        → New stop inserted after the last Day 1 stop.
+        "Add evening entertainment on Day 1"
+        → place_002 (Khan El Khalili) appended to Day 1.
         """
-        modified = copy.deepcopy(BASE_ITINERARY)
-        modified["_modifier_note"] = "Added evening entertainment to Day 1"
-        # Add a new evening stop after Pyramids
-        modified["days"][0]["stops"][0] = dict(BASE_ITINERARY["days"][0]["stops"][0])
-        modified["days"][0]["stops"][0]["travel_time_to_next_minutes"] = 15.0
-        modified["days"][0]["stops"][0]["transport_mode"] = "driving"
-        modified["days"][0]["stops"].append({
-            "id": "place_002",  # Khan El Khalili — closest to a "rooftop bar" vibe in the pool
-            "name": "Khan El Khalili",
-            "category": "attractions",
-            "sub_category": "market",
-            "lat": 30.0478, "lon": 31.2336,
-            "cuisine_type": "",
-            "interest_tags": ["shopping", "history", "market"],
-            "why_recommended": "Evening visit to this historic market offers lively entertainment",
-            "estimated_duration_minutes": 90,
-            "suggested_time_of_day": "evening",
-        })
+        operation = AddOperation(
+            day_number=1,
+            suggested_time_of_day="evening",
+            add_place_id="place_002",
+            why_recommended="Evening market visit with lively atmosphere",
+        )
+
+        async def _mock_invoke(*args, **kwargs):
+            from ai_engine.agents.operations import ModifierResponse
+            return ModifierResponse(operation=operation, note="Added evening activity")
 
         with patch(
             "ai_engine.agents.itinerary_modifier_agent.invoke_with_fallback",
-            return_value=_make_mock_response(modified),
+            side_effect=_mock_invoke,
         ):
             result = await run_itinerary_modifier(
                 current_itinerary=BASE_ITINERARY,
-                modification_request="Add a rooftop bar or evening entertainment after the Pyramids on Day 1",
+                modification_request="Add evening entertainment on Day 1",
                 available_places=MOCK_PLACES,
                 preferences=PREFERENCES,
             )
 
         assert len(result["days"][0]["stops"]) == 3
-        # Last stop should be the new addition
-        added_stop = result["days"][0]["stops"][-1]
-        assert added_stop["suggested_time_of_day"] == "evening"
-        # The new stop should have reattached metadata (address, photos, etc.)
-        # Since place_002 is in MOCK_PLACES and NOT in used_ids initially,
-        # the metadata reattachment loop will fill it from place_index.
-        # But our mock places don't have address/photos set, so they won't be filled.
-        # That's fine — the reattachment logic is verified by the id check.
-        assert added_stop["id"] == "place_002"
+        added = result["days"][0]["stops"][-1]
+        assert added["id"] == "place_002"
+        assert added["name"] == "Khan El Khalili"
+        assert added["suggested_time_of_day"] == "evening"
 
     @pytest.mark.asyncio
     async def test_add_morning_activity(self):
         """
         "Add a morning activity on Day 2 before the park"
-        → New stop inserted at the beginning of Day 2.
+        → place_002 inserted at the beginning of Day 2.
         """
-        modified = copy.deepcopy(BASE_ITINERARY)
-        modified["_modifier_note"] = "Added morning activity to Day 2"
-        # Insert Khan El Khalili before Al-Azhar Park
-        modified["days"][1]["stops"].insert(0, {
-            "id": "place_002",
-            "name": "Khan El Khalili",
-            "category": "attractions",
-            "sub_category": "market",
-            "lat": 30.0478, "lon": 31.2336,
-            "cuisine_type": "",
-            "interest_tags": ["shopping", "history", "market"],
-            "why_recommended": "Start your day exploring this vibrant market",
-            "estimated_duration_minutes": 90,
-            "suggested_time_of_day": "morning",
-        })
-        # Update travel time from new stop to Al-Azhar Park
-        modified["days"][1]["stops"][0]["travel_time_to_next_minutes"] = 8.0
-        modified["days"][1]["stops"][0]["transport_mode"] = "walking"
+        operation = AddOperation(
+            day_number=2,
+            suggested_time_of_day="morning",
+            add_place_id="place_002",
+            why_recommended="Start the day with market exploration",
+        )
+
+        async def _mock_invoke(*args, **kwargs):
+            from ai_engine.agents.operations import ModifierResponse
+            return ModifierResponse(operation=operation, note="Added morning market visit")
 
         with patch(
             "ai_engine.agents.itinerary_modifier_agent.invoke_with_fallback",
-            return_value=_make_mock_response(modified),
+            side_effect=_mock_invoke,
         ):
             result = await run_itinerary_modifier(
                 current_itinerary=BASE_ITINERARY,
@@ -405,8 +341,12 @@ class TestAddOperation:
             )
 
         assert len(result["days"][1]["stops"]) == 3
-        # First stop should be the new addition
-        assert result["days"][1]["stops"][0]["id"] == "place_002"
+        # The new morning stop is inserted AFTER the existing morning stop
+        # (Al-Azhar Park at index 0), so place_002 should be at index 1
+        assert result["days"][1]["stops"][1]["id"] == "place_002"
+        assert result["days"][1]["stops"][1]["suggested_time_of_day"] == "morning"
+        # Existing morning stop still at index 0
+        assert result["days"][1]["stops"][0]["id"] == "place_004"
         assert result["days"][1]["stops"][0]["suggested_time_of_day"] == "morning"
 
 
@@ -418,28 +358,24 @@ class TestAddOperation:
 class TestChangeHotelOperation:
 
     @pytest.mark.asyncio
-    async def test_change_hotel_to_cheaper_option(self):
+    async def test_change_hotel(self):
         """
         "Change the hotel to something cheaper"
-        → hotel_001 (Marriott Mena House, 4.6 stars) replaced with
-          hotel_002 (Steigenberger Tahrir, 4.3 stars, boutique).
+        → hotel_001 replaced with hotel_002.
         """
-        modified = copy.deepcopy(BASE_ITINERARY)
-        modified["_modifier_note"] = "Changed hotel to Steigenberger Tahrir for a more affordable option"
-        modified["accommodation_suggestions"] = [
-            {
-                "id": "hotel_002",
-                "name": "Steigenberger Tahrir",
-                "sub_category": "boutique hotel",
-                "lat": 30.0429, "lon": 31.2347,
-                "why_recommended": "More affordable boutique hotel in downtown Cairo",
-                "rating": 4.3,
-            },
-        ]
+        operation = ChangeHotelOperation(
+            old_hotel_id="hotel_001",
+            new_hotel_id="hotel_002",
+            why_recommended="More affordable downtown location",
+        )
+
+        async def _mock_invoke(*args, **kwargs):
+            from ai_engine.agents.operations import ModifierResponse
+            return ModifierResponse(operation=operation, note="Changed to a cheaper hotel")
 
         with patch(
             "ai_engine.agents.itinerary_modifier_agent.invoke_with_fallback",
-            return_value=_make_mock_response(modified),
+            side_effect=_mock_invoke,
         ):
             result = await run_itinerary_modifier(
                 current_itinerary=BASE_ITINERARY,
@@ -455,26 +391,24 @@ class TestChangeHotelOperation:
         assert len(result["days"]) == 2
 
     @pytest.mark.asyncio
-    async def test_add_second_hotel_option(self):
+    async def test_add_second_hotel(self):
         """
         "Add another hotel option near downtown"
-        → Second hotel added alongside the existing one.
+        → Second hotel appended (old_hotel_id is None).
         """
-        modified = copy.deepcopy(BASE_ITINERARY)
-        modified["_modifier_note"] = "Added Steigenberger Tahrir as a downtown hotel option"
-        modified["accommodation_suggestions"] = list(BASE_ITINERARY["accommodation_suggestions"])
-        modified["accommodation_suggestions"].append({
-            "id": "hotel_002",
-            "name": "Steigenberger Tahrir",
-            "sub_category": "boutique hotel",
-            "lat": 30.0429, "lon": 31.2347,
-            "why_recommended": "Convenient downtown location near major attractions",
-            "rating": 4.3,
-        })
+        operation = ChangeHotelOperation(
+            old_hotel_id=None,
+            new_hotel_id="hotel_002",
+            why_recommended="Convenient downtown location",
+        )
+
+        async def _mock_invoke(*args, **kwargs):
+            from ai_engine.agents.operations import ModifierResponse
+            return ModifierResponse(operation=operation, note="Added downtown hotel option")
 
         with patch(
             "ai_engine.agents.itinerary_modifier_agent.invoke_with_fallback",
-            return_value=_make_mock_response(modified),
+            side_effect=_mock_invoke,
         ):
             result = await run_itinerary_modifier(
                 current_itinerary=BASE_ITINERARY,
@@ -496,27 +430,23 @@ class TestChangeHotelOperation:
 class TestReorderOperation:
 
     @pytest.mark.asyncio
-    async def test_reverse_stops_order_within_day(self):
+    async def test_reverse_stops_within_day(self):
         """
         "Reverse the order of stops on Day 1"
-        → Pyramids (afternoon) comes first, Egyptian Museum (morning) comes second.
-          Travel times are recomputed accordingly.
+        → Pyramids comes first, Egyptian Museum second.
         """
-        modified = copy.deepcopy(BASE_ITINERARY)
-        modified["_modifier_note"] = "Reversed Day 1 stops — Pyramids first, then Museum"
-        # Reverse the two stops
-        stops = list(modified["days"][0]["stops"])
-        modified["days"][0]["stops"] = [stops[1], stops[0]]
-        # Update travel time on the new first stop
-        modified["days"][0]["stops"][0]["travel_time_to_next_minutes"] = 20.0
-        modified["days"][0]["stops"][0]["transport_mode"] = "driving"
-        # Remove travel time from new last stop
-        modified["days"][0]["stops"][1].pop("travel_time_to_next_minutes", None)
-        modified["days"][0]["stops"][1].pop("transport_mode", None)
+        operation = ReorderOperation(
+            day_number=1,
+            new_order=["place_003", "place_001"],
+        )
+
+        async def _mock_invoke(*args, **kwargs):
+            from ai_engine.agents.operations import ModifierResponse
+            return ModifierResponse(operation=operation, note="Reversed Day 1")
 
         with patch(
             "ai_engine.agents.itinerary_modifier_agent.invoke_with_fallback",
-            return_value=_make_mock_response(modified),
+            side_effect=_mock_invoke,
         ):
             result = await run_itinerary_modifier(
                 current_itinerary=BASE_ITINERARY,
@@ -525,78 +455,15 @@ class TestReorderOperation:
                 preferences=PREFERENCES,
             )
 
-        # Day 1 stops are reversed
-        assert result["days"][0]["stops"][0]["id"] == "place_003"  # Pyramids first
-        assert result["days"][0]["stops"][0]["name"] == "Pyramids of Giza"
-        assert result["days"][0]["stops"][1]["id"] == "place_001"  # Museum second
-        assert result["days"][0]["stops"][1]["name"] == "Egyptian Museum"
-        # Travel time on first stop preserved
-        assert result["days"][0]["stops"][0]["travel_time_to_next_minutes"] == 20.0
-        # Last stop has no travel time
+        # Day 1 stops reversed
+        assert result["days"][0]["stops"][0]["id"] == "place_003"
+        assert result["days"][0]["stops"][1]["id"] == "place_001"
+        # First stop has travel time, last doesn't
+        assert "travel_time_to_next_minutes" in result["days"][0]["stops"][0]
         assert "travel_time_to_next_minutes" not in result["days"][0]["stops"][1]
         # Day 2 unchanged
         assert result["days"][1]["stops"][0]["id"] == "place_004"
         assert result["days"][1]["stops"][1]["id"] == "rest_001"
-
-    @pytest.mark.asyncio
-    async def test_move_stop_to_different_slot(self):
-        """
-        "Move the lunch restaurant to be the first stop on Day 2"
-        → rest_001 (Abu Shukri) becomes stop 0, place_004 (Al-Azhar Park) moves to stop 1.
-        """
-        modified = copy.deepcopy(BASE_ITINERARY)
-        modified["_modifier_note"] = "Moved Abu Shukri to first slot on Day 2"
-        # Swap the two stops in Day 2
-        modified["days"][1]["stops"] = [
-            {
-                "id": "rest_001",
-                "name": "Abu Shukri",
-                "category": "restaurant",
-                "sub_category": "local cuisine",
-                "lat": 30.0464, "lon": 31.2325,
-                "cuisine_type": "local cuisine",
-                "interest_tags": ["food"],
-                "why_recommended": "Authentic Egyptian food",
-                "estimated_duration_minutes": 60,
-                "suggested_time_of_day": "morning",
-                "travel_time_to_next_minutes": 5.0,
-                "transport_mode": "walking",
-            },
-            {
-                "id": "place_004",
-                "name": "Al-Azhar Park",
-                "category": "attractions",
-                "sub_category": "park",
-                "lat": 30.0436, "lon": 31.2496,
-                "cuisine_type": "",
-                "interest_tags": ["nature", "parks", "outdoors"],
-                "why_recommended": "Beautiful green space",
-                "estimated_duration_minutes": 90,
-                "suggested_time_of_day": "afternoon",
-            },
-        ]
-
-        with patch(
-            "ai_engine.agents.itinerary_modifier_agent.invoke_with_fallback",
-            return_value=_make_mock_response(modified),
-        ):
-            result = await run_itinerary_modifier(
-                current_itinerary=BASE_ITINERARY,
-                modification_request="Move Abu Shukri to be the first stop on Day 2",
-                available_places=MOCK_PLACES,
-                preferences=PREFERENCES,
-            )
-
-        # Day 2 stops are swapped
-        assert result["days"][1]["stops"][0]["id"] == "rest_001"
-        assert result["days"][1]["stops"][0]["name"] == "Abu Shukri"
-        assert result["days"][1]["stops"][0]["suggested_time_of_day"] == "morning"
-        assert result["days"][1]["stops"][1]["id"] == "place_004"
-        assert result["days"][1]["stops"][1]["name"] == "Al-Azhar Park"
-        assert result["days"][1]["stops"][1]["suggested_time_of_day"] == "afternoon"
-        # Day 1 unchanged
-        assert result["days"][0]["stops"][0]["id"] == "place_001"
-        assert result["days"][0]["stops"][1]["id"] == "place_003"
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -608,17 +475,19 @@ class TestReThemeOperation:
 
     @pytest.mark.asyncio
     async def test_rename_day_theme(self):
-        """
-        "Change Day 1 theme to 'Pyramids and Pharaohs'"
-        → Day 1 theme updated, everything else preserved.
-        """
-        modified = copy.deepcopy(BASE_ITINERARY)
-        modified["_modifier_note"] = "Updated Day 1 theme to 'Pyramids and Pharaohs'"
-        modified["days"][0]["theme"] = "Pyramids and Pharaohs"
+        """Update Day 1 theme string."""
+        operation = ReThemeOperation(
+            day_number=1,
+            new_theme="Pyramids and Pharaohs",
+        )
+
+        async def _mock_invoke(*args, **kwargs):
+            from ai_engine.agents.operations import ModifierResponse
+            return ModifierResponse(operation=operation, note="Updated Day 1 theme")
 
         with patch(
             "ai_engine.agents.itinerary_modifier_agent.invoke_with_fallback",
-            return_value=_make_mock_response(modified),
+            side_effect=_mock_invoke,
         ):
             result = await run_itinerary_modifier(
                 current_itinerary=BASE_ITINERARY,
@@ -633,37 +502,6 @@ class TestReThemeOperation:
         # Stops unchanged
         assert result["days"][0]["stops"][0]["id"] == "place_001"
         assert result["days"][0]["stops"][1]["id"] == "place_003"
-        # Accommodation unchanged
-        assert result["accommodation_suggestions"][0]["id"] == "hotel_001"
-
-    @pytest.mark.asyncio
-    async def test_rename_all_day_themes(self):
-        """
-        "Give both days more exciting themes"
-        → Both day themes updated, all stops and accommodation preserved.
-        """
-        modified = copy.deepcopy(BASE_ITINERARY)
-        modified["_modifier_note"] = "Updated both day themes"
-        modified["days"][0]["theme"] = "Ancient Wonders"
-        modified["days"][1]["theme"] = "Flavors of Cairo"
-
-        with patch(
-            "ai_engine.agents.itinerary_modifier_agent.invoke_with_fallback",
-            return_value=_make_mock_response(modified),
-        ):
-            result = await run_itinerary_modifier(
-                current_itinerary=BASE_ITINERARY,
-                modification_request="Give both days more exciting themes",
-                available_places=MOCK_PLACES,
-                preferences=PREFERENCES,
-            )
-
-        assert result["days"][0]["theme"] == "Ancient Wonders"
-        assert result["days"][1]["theme"] == "Flavors of Cairo"
-        # Stops entirely unchanged
-        assert len(result["days"][0]["stops"]) == 2
-        assert len(result["days"][1]["stops"]) == 2
-        assert result["accommodation_suggestions"][0]["id"] == "hotel_001"
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -674,73 +512,8 @@ class TestReThemeOperation:
 class TestErrorHandling:
 
     @pytest.mark.asyncio
-    async def test_invalid_json_falls_back_to_original(self):
-        """
-        LLM returns invalid JSON → modifier returns original itinerary
-        unchanged (same object).
-        """
-        mock_response = MagicMock()
-        mock_response.content = "not valid json at all {{ broken"
-
-        with patch(
-            "ai_engine.agents.itinerary_modifier_agent.invoke_with_fallback",
-            return_value=mock_response,
-        ):
-            result = await run_itinerary_modifier(
-                current_itinerary=BASE_ITINERARY,
-                modification_request="swap everything",
-                available_places=MOCK_PLACES,
-                preferences=PREFERENCES,
-            )
-
-        assert result is BASE_ITINERARY  # same object returned (identity match)
-
-    @pytest.mark.asyncio
-    async def test_empty_days_falls_back_to_original(self):
-        """
-        LLM returns valid JSON but with empty days → modifier falls back.
-        """
-        modified = copy.deepcopy(BASE_ITINERARY)
-        modified["days"] = []  # invalid — empty days
-
-        with patch(
-            "ai_engine.agents.itinerary_modifier_agent.invoke_with_fallback",
-            return_value=_make_mock_response(modified),
-        ):
-            result = await run_itinerary_modifier(
-                current_itinerary=BASE_ITINERARY,
-                modification_request="remove everything",
-                available_places=MOCK_PLACES,
-                preferences=PREFERENCES,
-            )
-
-        assert result is BASE_ITINERARY  # same object
-
-    @pytest.mark.asyncio
-    async def test_missing_days_key_falls_back_to_original(self):
-        """
-        LLM returns JSON without 'days' key → modifier falls back.
-        """
-        bad_response = {"destination": "Cairo", "duration_days": 2}  # no 'days'
-
-        with patch(
-            "ai_engine.agents.itinerary_modifier_agent.invoke_with_fallback",
-            return_value=_make_mock_response(bad_response),
-        ):
-            result = await run_itinerary_modifier(
-                current_itinerary=BASE_ITINERARY,
-                modification_request="change everything",
-                available_places=MOCK_PLACES,
-                preferences=PREFERENCES,
-            )
-
-        assert result is BASE_ITINERARY
-
-    @pytest.mark.asyncio
     async def test_llm_exception_falls_back_to_original(self):
-        """
-        LLM raises an exception → modifier falls back to original.
-        """
+        """invoke_with_fallback raises → returns original itinerary."""
         with patch(
             "ai_engine.agents.itinerary_modifier_agent.invoke_with_fallback",
             side_effect=Exception("API timeout"),
@@ -756,10 +529,7 @@ class TestErrorHandling:
 
     @pytest.mark.asyncio
     async def test_empty_modification_request_returns_early(self):
-        """
-        Empty modification request → returns original immediately
-        without calling LLM.
-        """
+        """Empty request → returns original without calling LLM."""
         with patch(
             "ai_engine.agents.itinerary_modifier_agent.invoke_with_fallback",
         ) as mock_invoke:
@@ -771,13 +541,11 @@ class TestErrorHandling:
             )
 
         assert result is BASE_ITINERARY
-        mock_invoke.assert_not_called()  # LLM never called
+        mock_invoke.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_none_itinerary_returns_early(self):
-        """
-        None itinerary → returns None immediately without calling LLM.
-        """
+        """None itinerary → returns None without calling LLM."""
         with patch(
             "ai_engine.agents.itinerary_modifier_agent.invoke_with_fallback",
         ) as mock_invoke:
@@ -791,101 +559,37 @@ class TestErrorHandling:
         assert result is None
         mock_invoke.assert_not_called()
 
+    @pytest.mark.asyncio
+    async def test_invalid_operation_returns_original(self):
+        """
+        When the LLM outputs an invalid operation (e.g. place not in pool),
+        apply_operation logs a warning and returns the itinerary unchanged.
+        """
+        operation = SwapOperation(
+            remove_place_id="place_001",
+            add_place_id="nonexistent_place",
+            day_number=1,
+            new_why_recommended="",
+        )
 
-# ═══════════════════════════════════════════════════════════════════════════
-# 8. _trim_for_modifier Helper
-# ═══════════════════════════════════════════════════════════════════════════
+        async def _mock_invoke(*args, **kwargs):
+            from ai_engine.agents.operations import ModifierResponse
+            return ModifierResponse(operation=operation, note="Attempted swap")
 
+        with patch(
+            "ai_engine.agents.itinerary_modifier_agent.invoke_with_fallback",
+            side_effect=_mock_invoke,
+        ):
+            result = await run_itinerary_modifier(
+                current_itinerary=BASE_ITINERARY,
+                modification_request="swap with nonexistent place",
+                available_places=MOCK_PLACES,
+                preferences=PREFERENCES,
+            )
 
-class TestTrimForModifier:
-
-    def test_trims_attraction(self):
-        """Attractions are trimmed to essential fields."""
-        place = {
-            "id": "place_001",
-            "name": "Egyptian Museum",
-            "category": "attractions",
-            "sub_category": "museum",
-            "subcategory": "museum",
-            "lat": 30.0478,
-            "lon": 31.2336,
-            "rating": 4.7,
-            "popularity_score": 90,
-            "extra_field": "should be removed",
-        }
-        trimmed = _trim_for_modifier(place)
-
-        assert trimmed["id"] == "place_001"
-        assert trimmed["name"] == "Egyptian Museum"
-        assert trimmed["category"] == "attractions"
-        assert trimmed["lat"] == 30.0478
-        assert "extra_field" not in trimmed
-        # cuisine_type should not be present for non-restaurants
-        assert "cuisine_type" not in trimmed
-
-    def test_trims_restaurant_includes_cuisine(self):
-        """Restaurants keep cuisine_type."""
-        place = {
-            "id": "rest_001",
-            "name": "Abu Shukri",
-            "category": "restaurant",
-            "sub_category": "local cuisine",
-            "lat": 30.0464,
-            "lon": 31.2325,
-            "rating": 4.5,
-            "popularity_score": 75,
-            "cuisine_type": "local cuisine",
-        }
-        trimmed = _trim_for_modifier(place)
-
-        assert trimmed["cuisine_type"] == "local cuisine"
-
-    def test_trims_hotel_includes_accommodation_type(self):
-        """Hotels keep accommodation_type and amenities (capped at 3)."""
-        place = {
-            "id": "hotel_001",
-            "name": "Marriott Mena House",
-            "category": "hotel",
-            "sub_category": "luxury hotel",
-            "lat": 29.9758,
-            "lon": 31.1334,
-            "rating": 4.6,
-            "popularity_score": 80,
-            "accommodation_type": "hotel",
-            "amenities": ["pool", "gym", "spa", "restaurant", "bar"],
-        }
-        trimmed = _trim_for_modifier(place)
-
-        assert trimmed["accommodation_type"] == "hotel"
-        assert trimmed["amenities"] == ["pool", "gym", "spa"]  # capped at 3
-
-    def test_falls_back_to_subcategory_if_sub_category_missing(self):
-        """Uses 'subcategory' if 'sub_category' is missing."""
-        place = {
-            "id": "place_001",
-            "name": "Test",
-            "category": "attractions",
-            "subcategory": "museum",  # not sub_category
-            "lat": 30.0,
-            "lon": 31.0,
-            "rating": 4.0,
-            "popularity_score": 50,
-        }
-        trimmed = _trim_for_modifier(place)
-        assert trimmed["sub_category"] == "museum"
-
-    def test_empty_amenities(self):
-        """Empty amenities list stays empty."""
-        place = {
-            "id": "hotel_001",
-            "name": "Test Hotel",
-            "category": "hotel",
-            "sub_category": "hotel",
-            "lat": 30.0,
-            "lon": 31.0,
-            "rating": 4.0,
-            "popularity_score": 50,
-            "amenities": [],
-        }
-        trimmed = _trim_for_modifier(place)
-        assert trimmed["amenities"] == []
+        # The operation doesn't have a matching place in the pool,
+        # but the itinerary itself shouldn't be the same object since
+        # apply_operation creates a deep copy. However, the content
+        # should be identical.
+        assert result is not BASE_ITINERARY
+        assert result["days"][0]["stops"][0]["id"] == "place_001"  # unchanged

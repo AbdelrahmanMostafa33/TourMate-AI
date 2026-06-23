@@ -87,12 +87,14 @@ class TestSlotFillingToPipeline:
                 "duration_days": 3,
                 "days": [{"day_number": 1, "theme": "Explore", "stops": []}],
                 "accommodation_suggestions": [],
-            }
+            },
+            "is_valid": True,
         }
 
         from ai_engine.chat.conversation_agent import handle_chat
 
-        # Turn 1: destination + duration (partial — still missing budget, style, etc.)
+        # Turn 1: destination + duration → safety override with fill_defaults()
+        # triggers pipeline immediately (destination+duration = complete, defaults fill rest)
         mock_route.return_value = _make_result(
             "ask_clarification",
             response="Great choice! What's your budget and travel style?",
@@ -100,7 +102,10 @@ class TestSlotFillingToPipeline:
             duration_days=3,
         )
         result1 = await handle_chat("user1", "I want to visit Cairo for 3 days")
-        assert result1["phase"] == "slot_filling"
+        # Pipeline runs immediately because destination + duration + defaults
+        # satisfy is_complete().  Turn 2 below adjusts preferences.
+        assert result1["response_type"] == "itinerary"
+        assert mock_graph.ainvoke.called
 
         # Turn 2: budget + style + pace + interests + food + accommodation → complete → pipeline runs
         mock_route.return_value = _make_result(
@@ -136,7 +141,8 @@ class TestSlotFillingToPipeline:
                 "duration_days": 5,
                 "days": [{"day_number": 1, "stops": []}],
                 "accommodation_suggestions": [],
-            }
+            },
+            "is_valid": True,
         }
 
         from ai_engine.chat.conversation_agent import handle_chat
@@ -335,7 +341,8 @@ class TestItineraryReviewPhase:
             "optimized_itinerary": {
                 "days": [{"day_number": 1, "stops": []}],
                 "accommodation_suggestions": [],
-            }
+            },
+            "is_valid": True,
         }
 
         from ai_engine.chat.conversation_agent import handle_chat
@@ -380,7 +387,8 @@ class TestItineraryReviewPhase:
             "optimized_itinerary": {
                 "days": [{"day_number": 1, "stops": []}],
                 "accommodation_suggestions": [],
-            }
+            },
+            "is_valid": True,
         }
 
         from ai_engine.chat.conversation_agent import handle_chat
@@ -436,7 +444,8 @@ class TestNewTripAfterCompletion:
             "optimized_itinerary": {
                 "days": [{"day_number": 1, "stops": []}],
                 "accommodation_suggestions": [],
-            }
+            },
+            "is_valid": True,
         }
 
         from ai_engine.chat.conversation_agent import handle_chat

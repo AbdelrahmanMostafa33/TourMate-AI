@@ -128,12 +128,12 @@ return error(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeWhen<TResult extends Object?>({TResult Function()?  initial,TResult Function()?  loading,TResult Function( List<PlaceModel> places,  int total,  bool isLoadingMore,  String? selectedCity,  String? selectedCategory,  Set<String> savedPlaceIds)?  loaded,TResult Function( String message)?  error,required TResult orElse(),}) {final _that = this;
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>({TResult Function()?  initial,TResult Function()?  loading,TResult Function( List<PlaceModel> places,  int total,  bool isLoadingMore,  bool isLoadingResults,  String? selectedCity,  String? selectedCategory,  Set<String> savedPlaceIds)?  loaded,TResult Function( String message)?  error,required TResult orElse(),}) {final _that = this;
 switch (_that) {
 case _Initial() when initial != null:
 return initial();case _Loading() when loading != null:
 return loading();case _Loaded() when loaded != null:
-return loaded(_that.places,_that.total,_that.isLoadingMore,_that.selectedCity,_that.selectedCategory,_that.savedPlaceIds);case _Error() when error != null:
+return loaded(_that.places,_that.total,_that.isLoadingMore,_that.isLoadingResults,_that.selectedCity,_that.selectedCategory,_that.savedPlaceIds);case _Error() when error != null:
 return error(_that.message);case _:
   return orElse();
 
@@ -152,12 +152,12 @@ return error(_that.message);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult when<TResult extends Object?>({required TResult Function()  initial,required TResult Function()  loading,required TResult Function( List<PlaceModel> places,  int total,  bool isLoadingMore,  String? selectedCity,  String? selectedCategory,  Set<String> savedPlaceIds)  loaded,required TResult Function( String message)  error,}) {final _that = this;
+@optionalTypeArgs TResult when<TResult extends Object?>({required TResult Function()  initial,required TResult Function()  loading,required TResult Function( List<PlaceModel> places,  int total,  bool isLoadingMore,  bool isLoadingResults,  String? selectedCity,  String? selectedCategory,  Set<String> savedPlaceIds)  loaded,required TResult Function( String message)  error,}) {final _that = this;
 switch (_that) {
 case _Initial():
 return initial();case _Loading():
 return loading();case _Loaded():
-return loaded(_that.places,_that.total,_that.isLoadingMore,_that.selectedCity,_that.selectedCategory,_that.savedPlaceIds);case _Error():
+return loaded(_that.places,_that.total,_that.isLoadingMore,_that.isLoadingResults,_that.selectedCity,_that.selectedCategory,_that.savedPlaceIds);case _Error():
 return error(_that.message);case _:
   throw StateError('Unexpected subclass');
 
@@ -175,12 +175,12 @@ return error(_that.message);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>({TResult? Function()?  initial,TResult? Function()?  loading,TResult? Function( List<PlaceModel> places,  int total,  bool isLoadingMore,  String? selectedCity,  String? selectedCategory,  Set<String> savedPlaceIds)?  loaded,TResult? Function( String message)?  error,}) {final _that = this;
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>({TResult? Function()?  initial,TResult? Function()?  loading,TResult? Function( List<PlaceModel> places,  int total,  bool isLoadingMore,  bool isLoadingResults,  String? selectedCity,  String? selectedCategory,  Set<String> savedPlaceIds)?  loaded,TResult? Function( String message)?  error,}) {final _that = this;
 switch (_that) {
 case _Initial() when initial != null:
 return initial();case _Loading() when loading != null:
 return loading();case _Loaded() when loaded != null:
-return loaded(_that.places,_that.total,_that.isLoadingMore,_that.selectedCity,_that.selectedCategory,_that.savedPlaceIds);case _Error() when error != null:
+return loaded(_that.places,_that.total,_that.isLoadingMore,_that.isLoadingResults,_that.selectedCity,_that.selectedCategory,_that.savedPlaceIds);case _Error() when error != null:
 return error(_that.message);case _:
   return null;
 
@@ -257,7 +257,7 @@ String toString() {
 
 
 class _Loaded implements ExploreState {
-  const _Loaded({required final  List<PlaceModel> places, required this.total, required this.isLoadingMore, this.selectedCity, this.selectedCategory, final  Set<String> savedPlaceIds = const <String>{}}): _places = places,_savedPlaceIds = savedPlaceIds;
+  const _Loaded({required final  List<PlaceModel> places, required this.total, required this.isLoadingMore, this.isLoadingResults = false, this.selectedCity, this.selectedCategory, final  Set<String> savedPlaceIds = const <String>{}}): _places = places,_savedPlaceIds = savedPlaceIds;
   
 
  final  List<PlaceModel> _places;
@@ -269,6 +269,7 @@ class _Loaded implements ExploreState {
 
  final  int total;
  final  bool isLoadingMore;
+@JsonKey() final  bool isLoadingResults;
  final  String? selectedCity;
  final  String? selectedCategory;
  final  Set<String> _savedPlaceIds;
@@ -289,16 +290,16 @@ _$LoadedCopyWith<_Loaded> get copyWith => __$LoadedCopyWithImpl<_Loaded>(this, _
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is _Loaded&&const DeepCollectionEquality().equals(other._places, _places)&&(identical(other.total, total) || other.total == total)&&(identical(other.isLoadingMore, isLoadingMore) || other.isLoadingMore == isLoadingMore)&&(identical(other.selectedCity, selectedCity) || other.selectedCity == selectedCity)&&(identical(other.selectedCategory, selectedCategory) || other.selectedCategory == selectedCategory)&&const DeepCollectionEquality().equals(other._savedPlaceIds, _savedPlaceIds));
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is _Loaded&&const DeepCollectionEquality().equals(other._places, _places)&&(identical(other.total, total) || other.total == total)&&(identical(other.isLoadingMore, isLoadingMore) || other.isLoadingMore == isLoadingMore)&&(identical(other.isLoadingResults, isLoadingResults) || other.isLoadingResults == isLoadingResults)&&(identical(other.selectedCity, selectedCity) || other.selectedCity == selectedCity)&&(identical(other.selectedCategory, selectedCategory) || other.selectedCategory == selectedCategory)&&const DeepCollectionEquality().equals(other._savedPlaceIds, _savedPlaceIds));
 }
 
 
 @override
-int get hashCode => Object.hash(runtimeType,const DeepCollectionEquality().hash(_places),total,isLoadingMore,selectedCity,selectedCategory,const DeepCollectionEquality().hash(_savedPlaceIds));
+int get hashCode => Object.hash(runtimeType,const DeepCollectionEquality().hash(_places),total,isLoadingMore,isLoadingResults,selectedCity,selectedCategory,const DeepCollectionEquality().hash(_savedPlaceIds));
 
 @override
 String toString() {
-  return 'ExploreState.loaded(places: $places, total: $total, isLoadingMore: $isLoadingMore, selectedCity: $selectedCity, selectedCategory: $selectedCategory, savedPlaceIds: $savedPlaceIds)';
+  return 'ExploreState.loaded(places: $places, total: $total, isLoadingMore: $isLoadingMore, isLoadingResults: $isLoadingResults, selectedCity: $selectedCity, selectedCategory: $selectedCategory, savedPlaceIds: $savedPlaceIds)';
 }
 
 
@@ -309,7 +310,7 @@ abstract mixin class _$LoadedCopyWith<$Res> implements $ExploreStateCopyWith<$Re
   factory _$LoadedCopyWith(_Loaded value, $Res Function(_Loaded) _then) = __$LoadedCopyWithImpl;
 @useResult
 $Res call({
- List<PlaceModel> places, int total, bool isLoadingMore, String? selectedCity, String? selectedCategory, Set<String> savedPlaceIds
+ List<PlaceModel> places, int total, bool isLoadingMore, bool isLoadingResults, String? selectedCity, String? selectedCategory, Set<String> savedPlaceIds
 });
 
 
@@ -326,11 +327,12 @@ class __$LoadedCopyWithImpl<$Res>
 
 /// Create a copy of ExploreState
 /// with the given fields replaced by the non-null parameter values.
-@pragma('vm:prefer-inline') $Res call({Object? places = null,Object? total = null,Object? isLoadingMore = null,Object? selectedCity = freezed,Object? selectedCategory = freezed,Object? savedPlaceIds = null,}) {
+@pragma('vm:prefer-inline') $Res call({Object? places = null,Object? total = null,Object? isLoadingMore = null,Object? isLoadingResults = null,Object? selectedCity = freezed,Object? selectedCategory = freezed,Object? savedPlaceIds = null,}) {
   return _then(_Loaded(
 places: null == places ? _self._places : places // ignore: cast_nullable_to_non_nullable
 as List<PlaceModel>,total: null == total ? _self.total : total // ignore: cast_nullable_to_non_nullable
 as int,isLoadingMore: null == isLoadingMore ? _self.isLoadingMore : isLoadingMore // ignore: cast_nullable_to_non_nullable
+as bool,isLoadingResults: null == isLoadingResults ? _self.isLoadingResults : isLoadingResults // ignore: cast_nullable_to_non_nullable
 as bool,selectedCity: freezed == selectedCity ? _self.selectedCity : selectedCity // ignore: cast_nullable_to_non_nullable
 as String?,selectedCategory: freezed == selectedCategory ? _self.selectedCategory : selectedCategory // ignore: cast_nullable_to_non_nullable
 as String?,savedPlaceIds: null == savedPlaceIds ? _self._savedPlaceIds : savedPlaceIds // ignore: cast_nullable_to_non_nullable

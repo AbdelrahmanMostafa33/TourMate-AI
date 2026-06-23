@@ -209,12 +209,17 @@ def _trim_for_prompt(place: dict) -> dict:
 
 
 
-async def run_planning_agent(state: TripState) -> TripState:
+async def run_planning_agent(state: TripState, on_retry=None) -> TripState:
     """
     Main Planning Agent workflow.
 
     Now receives pre-ranked candidates from the Ranking Agent
     instead of doing its own candidate selection.
+
+    Args:
+        state:    LangGraph workflow state.
+        on_retry: Optional async callback ``(attempt, max, reason)`` for
+                  reporting intermediate progress during LLM retries.
     """
 
     # ── Clear stale state from previous retries ────────────────────────
@@ -318,6 +323,7 @@ Generate the itinerary now.
 
             response: ItineraryPlan = await invoke_with_fallback(
                 "planner", attempt_messages, structured_output=ItineraryPlan,
+                on_retry=on_retry,
             )
 
             # Convert Pydantic model to plain dict for downstream processing.
@@ -342,6 +348,13 @@ Generate the itinerary now.
                 "[Planner] Attempt %d/%d failed: %s",
                 attempt, max_planner_attempts, last_planner_error,
             )
+            # Report retry via the callback if available
+            # (distinct from LLM-level retries handled by invoke_with_fallback)
+            if on_retry:
+                await on_retry(
+                    attempt, max_planner_attempts,
+                    f"Adjusting itinerary plan (attempt {attempt}/{max_planner_attempts})"
+                )
             if attempt == max_planner_attempts:
                 logger.error(
                     "[Planner] All %d attempts exhausted: %s",

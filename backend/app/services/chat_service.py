@@ -316,27 +316,27 @@ class ChatService:
                 profile_id=str(uuid.uuid4()),
                 trip_id=trip.trip_id,
             )
-            # ── Map string values → Enum instances ─────────────────────
+            # ── Map string values (validate via enums, store as strings) ──
             budget_val = profile_data.get("budget_level")
             if budget_val:
                 try:
-                    profile.budget_level = BudgetLevel(budget_val)
+                    profile.budget_level = BudgetLevel(budget_val).value
                 except (ValueError, TypeError):
-                    pass
+                    profile.budget_level = str(budget_val)
 
             style_val = profile_data.get("travel_style")
             if style_val:
                 try:
-                    profile.travel_style = TravelStyle(style_val)
+                    profile.travel_style = TravelStyle(style_val).value
                 except (ValueError, TypeError):
-                    pass
+                    profile.travel_style = str(style_val)
 
             pace_val = profile_data.get("pace")
             if pace_val:
                 try:
-                    profile.pace = TripPace(pace_val)
+                    profile.pace = TripPace(pace_val).value
                 except (ValueError, TypeError):
-                    pass
+                    profile.pace = str(pace_val)
 
             # ── Map list fields ────────────────────────────────────────
             if profile_data.get("interests"):

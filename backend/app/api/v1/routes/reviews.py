@@ -3,10 +3,12 @@ import uuid
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
+from sqlalchemy.orm import selectinload
 
 from app.core.database import get_db
 from app.core.security import get_current_user
 from app.models.review import Review
+from app.models.user import User
 from app.schemas.review import ReviewCreate, ReviewUpdate, ReviewResponse
 
 router = APIRouter()
@@ -74,13 +76,16 @@ async def get_reviews_for_place(
     place_id: str,
     db: AsyncSession = Depends(get_db),
 ):
-    # ── Fetch reviews ──────────────────────────────────────────────────
+    # ── Fetch reviews with user data ───────────────────────────────────
+    # Eager-load the user relationship so we can access full_name without
+    # a separate query per review.
     result = await db.execute(
         select(Review)
+        .options(selectinload(Review.user))
         .where(Review.place_id == place_id)
         .order_by(Review.review_date.desc())
     )
-    reviews = result.scalars().all()
+    reviews = result.scalars().unique().all()
 
     # ── Compute average rating ─────────────────────────────────────────
     avg_result = await db.execute(
@@ -90,8 +95,8 @@ async def get_reviews_for_place(
     avg_rating, total_count = avg_result.one()
 
     return {
-        "place_id":    place_id,
-        "total_reviews": total_count,
+        "place_id":       place_id,
+        "total_reviews":  total_count,
         "average_rating": round(float(avg_rating), 2) if avg_rating else None,
         "reviews": [
             {
@@ -102,6 +107,7 @@ async def get_reviews_for_place(
                 "comment":     r.comment,
                 "review_date": r.review_date,
                 "likes_count": r.likes_count,
+                "user_name":   r.user.full_name if r.user else None,
             }
             for r in reviews
         ],

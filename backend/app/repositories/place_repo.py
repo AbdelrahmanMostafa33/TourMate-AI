@@ -306,6 +306,10 @@ class PlaceRepository(BaseRepository):
             result = await self.session.execute(q)
             all_places.extend(result.scalars().unique().all())
 
+        # Final sort: return places sorted by popularity_score descending
+        # so the overall result is well-ordered even though we collected
+        # top K per subcategory/cuisine/accommodation type.
+        all_places.sort(key=lambda p: p.popularity_score or 0, reverse=True)
         return [self._place_to_dict(p) for p in all_places]
 
     def _place_to_dict(self, place: Place) -> dict:

@@ -1,3 +1,4 @@
+import '../../../../core/errors/api_result.dart';
 import '../../../../core/network/api_services.dart';
 import '../models/create_trip_request.dart';
 import '../models/trip_summary_model.dart';
@@ -7,19 +8,30 @@ class TripsRepository {
 
   TripsRepository(this.api);
 
-  Future<List<TripSummaryModel>> getTrips() async {
+  Future<ApiResult<List<TripSummaryModel>>> getTrips() async {
     try {
-      return await api.getTrips();
+      final trips = await api.getTrips();
+      return ApiResult.success(trips);
     } catch (e) {
-      throw Exception("Failed to load trips: $e");
+      return ApiResult.failure(e.toString());
     }
   }
 
-  Future<void> createTrip(CreateTripRequest request) async {
+  Future<ApiResult<void>> createTrip(CreateTripRequest request) async {
     try {
       await api.createTrip(request.toJson());
+      return const ApiResult.success(null);
     } catch (e) {
-      throw Exception("Failed to create trip: $e");
+      return ApiResult.failure(e.toString());
+    }
+  }
+
+  Future<ApiResult<void>> deleteTrip(String tripId) async {
+    try {
+      await api.deleteTrip(tripId);
+      return const ApiResult.success(null);
+    } catch (e) {
+      return ApiResult.failure(e.toString());
     }
   }
 }

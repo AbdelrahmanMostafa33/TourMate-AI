@@ -1,7 +1,8 @@
+import 'package:equatable/equatable.dart';
 import 'package:latlong2/latlong.dart' show LatLng;
 
 /// Full trip detail including itineraries, days, and stops.
-class TripDetailModel {
+class TripDetailModel extends Equatable {
   final String tripId;
   final String? tripName;
   final String destination;
@@ -15,7 +16,7 @@ class TripDetailModel {
   final String? autoMessage;
   final List<ItineraryDetail> itineraries;
 
-  TripDetailModel({
+  const TripDetailModel({
     required this.tripId,
     this.tripName,
     required this.destination,
@@ -30,16 +31,24 @@ class TripDetailModel {
     this.itineraries = const [],
   });
 
-  /// Computed duration in days.
+  /// Computed duration in days — prefer actual itinerary days count,
+  /// fall back to date-range calculation, then to itineraries.length.
   int get durationDays {
-    if (startDate == null || endDate == null) return 0;
-    try {
-      final start = DateTime.parse(startDate!);
-      final end = DateTime.parse(endDate!);
-      return end.difference(start).inDays + 1;
-    } catch (_) {
-      return 0;
+    // First try: count actual itinerary days (most accurate).
+    final itineraryDayCount = itineraries.fold<int>(0, (sum, i) => sum + i.days.length);
+    if (itineraryDayCount > 0) return itineraryDayCount;
+
+    // Second try: compute from start/end dates.
+    if (startDate != null && endDate != null) {
+      try {
+        final start = DateTime.parse(startDate!);
+        final end = DateTime.parse(endDate!);
+        return end.difference(start).inDays + 1;
+      } catch (_) {}
     }
+
+    // Last resort: number of itineraries (each is one "version").
+    return itineraries.length;
   }
 
   /// All stops across all days of all itineraries.
@@ -81,10 +90,47 @@ class TripDetailModel {
           [],
     );
   }
+
+  TripDetailModel copyWith({
+    String? tripId,
+    String? tripName,
+    String? destination,
+    String? startDate,
+    String? endDate,
+    int? numberOfTravelers,
+    String? status,
+    String? createdAt,
+    String? updatedAt,
+    String? approvedAt,
+    String? autoMessage,
+    List<ItineraryDetail>? itineraries,
+  }) {
+    return TripDetailModel(
+      tripId: tripId ?? this.tripId,
+      tripName: tripName ?? this.tripName,
+      destination: destination ?? this.destination,
+      startDate: startDate ?? this.startDate,
+      endDate: endDate ?? this.endDate,
+      numberOfTravelers: numberOfTravelers ?? this.numberOfTravelers,
+      status: status ?? this.status,
+      createdAt: createdAt ?? this.createdAt,
+      updatedAt: updatedAt ?? this.updatedAt,
+      approvedAt: approvedAt ?? this.approvedAt,
+      autoMessage: autoMessage ?? this.autoMessage,
+      itineraries: itineraries ?? this.itineraries,
+    );
+  }
+
+  @override
+  List<Object?> get props => [
+        tripId, tripName, destination, startDate, endDate,
+        numberOfTravelers, status, createdAt, updatedAt,
+        approvedAt, autoMessage, itineraries,
+      ];
 }
 
 /// An itinerary version within a trip.
-class ItineraryDetail {
+class ItineraryDetail extends Equatable {
   final String itineraryId;
   final int versionNumber;
   final String? description;
@@ -93,7 +139,7 @@ class ItineraryDetail {
   final String? updatedAt;
   final List<DayDetail> days;
 
-  ItineraryDetail({
+  const ItineraryDetail({
     required this.itineraryId,
     required this.versionNumber,
     this.description,
@@ -117,10 +163,36 @@ class ItineraryDetail {
           [],
     );
   }
+
+  ItineraryDetail copyWith({
+    String? itineraryId,
+    int? versionNumber,
+    String? description,
+    String? status,
+    String? createdAt,
+    String? updatedAt,
+    List<DayDetail>? days,
+  }) {
+    return ItineraryDetail(
+      itineraryId: itineraryId ?? this.itineraryId,
+      versionNumber: versionNumber ?? this.versionNumber,
+      description: description ?? this.description,
+      status: status ?? this.status,
+      createdAt: createdAt ?? this.createdAt,
+      updatedAt: updatedAt ?? this.updatedAt,
+      days: days ?? this.days,
+    );
+  }
+
+  @override
+  List<Object?> get props => [
+        itineraryId, versionNumber, description,
+        status, createdAt, updatedAt, days,
+      ];
 }
 
 /// A single day within an itinerary.
-class DayDetail {
+class DayDetail extends Equatable {
   final String dayId;
   final int dayNumber;
   final String? date;
@@ -128,7 +200,7 @@ class DayDetail {
   final String? description;
   final List<StopDetail> stops;
 
-  DayDetail({
+  const DayDetail({
     required this.dayId,
     required this.dayNumber,
     this.date,
@@ -150,10 +222,33 @@ class DayDetail {
           [],
     );
   }
+
+  DayDetail copyWith({
+    String? dayId,
+    int? dayNumber,
+    String? date,
+    String? theme,
+    String? description,
+    List<StopDetail>? stops,
+  }) {
+    return DayDetail(
+      dayId: dayId ?? this.dayId,
+      dayNumber: dayNumber ?? this.dayNumber,
+      date: date ?? this.date,
+      theme: theme ?? this.theme,
+      description: description ?? this.description,
+      stops: stops ?? this.stops,
+    );
+  }
+
+  @override
+  List<Object?> get props => [
+        dayId, dayNumber, date, theme, description, stops,
+      ];
 }
 
 /// A stop (place visit) within a day.
-class StopDetail {
+class StopDetail extends Equatable {
   final String stopId;
   final String? placeId;
   final String? name;
@@ -178,7 +273,7 @@ class StopDetail {
   final String? userNotes;
   final String status;
 
-  StopDetail({
+  const StopDetail({
     required this.stopId,
     this.placeId,
     this.name,
@@ -237,6 +332,67 @@ class StopDetail {
       status: json['status'] as String? ?? 'planned',
     );
   }
+
+  StopDetail copyWith({
+    String? stopId,
+    String? placeId,
+    String? name,
+    String? category,
+    String? subCategory,
+    double? lat,
+    double? lon,
+    double? rating,
+    String? address,
+    String? photoUrl,
+    String? description,
+    String? phone,
+    String? website,
+    String? mapsLink,
+    int? durationMinutes,
+    int? orderInDay,
+    String? timeOfDay,
+    int? minutesFromPrevStop,
+    String? travelMode,
+    double? estimatedCost,
+    String? aiNotes,
+    String? userNotes,
+    String? status,
+  }) {
+    return StopDetail(
+      stopId: stopId ?? this.stopId,
+      placeId: placeId ?? this.placeId,
+      name: name ?? this.name,
+      category: category ?? this.category,
+      subCategory: subCategory ?? this.subCategory,
+      lat: lat ?? this.lat,
+      lon: lon ?? this.lon,
+      rating: rating ?? this.rating,
+      address: address ?? this.address,
+      photoUrl: photoUrl ?? this.photoUrl,
+      description: description ?? this.description,
+      phone: phone ?? this.phone,
+      website: website ?? this.website,
+      mapsLink: mapsLink ?? this.mapsLink,
+      durationMinutes: durationMinutes ?? this.durationMinutes,
+      orderInDay: orderInDay ?? this.orderInDay,
+      timeOfDay: timeOfDay ?? this.timeOfDay,
+      minutesFromPrevStop: minutesFromPrevStop ?? this.minutesFromPrevStop,
+      travelMode: travelMode ?? this.travelMode,
+      estimatedCost: estimatedCost ?? this.estimatedCost,
+      aiNotes: aiNotes ?? this.aiNotes,
+      userNotes: userNotes ?? this.userNotes,
+      status: status ?? this.status,
+    );
+  }
+
+  @override
+  List<Object?> get props => [
+        stopId, placeId, name, category, subCategory,
+        lat, lon, rating, address, photoUrl, description,
+        phone, website, mapsLink, durationMinutes, orderInDay,
+        timeOfDay, minutesFromPrevStop, travelMode,
+        estimatedCost, aiNotes, userNotes, status,
+      ];
 
   static String? _serializeTimeOfDay(dynamic tod) {
     if (tod == null) return null;

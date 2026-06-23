@@ -119,11 +119,15 @@ def _run_programmatic_checks(itinerary: dict) -> list[str]:
     return issues
 
 
-async def run_validation_agent(state: TripState) -> TripState:
+async def run_validation_agent(state: TripState, on_retry=None) -> TripState:
     """
     Two-layer validation:
     1. Programmatic checks (deterministic)
     2. LLM quality review (subjective)
+
+    Args:
+        state:    LangGraph workflow state.
+        on_retry: Optional async callback for reporting intermediate LLM retries.
     """
     optimized = state.get("optimized_itinerary")
     user_message = state.get("user_message", "")
@@ -176,7 +180,7 @@ Validate the itinerary now.
     ]
 
     try:
-        response = await invoke_with_fallback("validator", messages)
+        response = await invoke_with_fallback("validator", messages, on_retry=on_retry)
         raw = response.content.strip()
         fence = re.search(r"```(?:json)?\s*\n?(.*?)\n?\s*```", raw, re.DOTALL)
         if fence:

@@ -174,6 +174,31 @@ async def get_trip(
 
 
 # ═════════════════════════════════════════════════════════════════════════════
+# DELETE /trips/{trip_id}
+# ═════════════════════════════════════════════════════════════════════════════
+
+@router.delete("/{trip_id}")
+async def delete_trip(
+    trip_id:      str,
+    current_user: dict         = Depends(get_current_user),
+    db:           AsyncSession = Depends(get_db),
+):
+    result = await db.execute(
+        select(Trip).where(
+            Trip.trip_id == trip_id,
+            Trip.user_id == current_user["uid"],
+        )
+    )
+    trip = result.scalar_one_or_none()
+    if not trip:
+        raise HTTPException(status_code=404, detail="Trip not found")
+
+    await db.delete(trip)
+    await db.commit()
+    return {"message": "Trip deleted successfully"}
+
+
+# ═════════════════════════════════════════════════════════════════════════════
 # GET /trips/{trip_id}/itinerary
 # ═════════════════════════════════════════════════════════════════════════════
 

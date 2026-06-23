@@ -1,4 +1,6 @@
-class UserResponse {
+import 'package:equatable/equatable.dart';
+
+class UserResponse extends Equatable {
   final String userId;
   final String? fullName;
   final String email;
@@ -8,7 +10,7 @@ class UserResponse {
   final String? travelerPersona;
   final String? updatedAt;
 
-  UserResponse({
+  const UserResponse({
     required this.userId,
     this.fullName,
     required this.email,
@@ -31,4 +33,32 @@ class UserResponse {
       updatedAt: json['updated_at'],
     );
   }
+
+  UserResponse copyWith({
+    String? userId,
+    String? fullName,
+    String? email,
+    String? phoneNumber,
+    String? registrationDate,
+    String? homeCity,
+    String? travelerPersona,
+    String? updatedAt,
+  }) {
+    return UserResponse(
+      userId: userId ?? this.userId,
+      fullName: fullName ?? this.fullName,
+      email: email ?? this.email,
+      phoneNumber: phoneNumber ?? this.phoneNumber,
+      registrationDate: registrationDate ?? this.registrationDate,
+      homeCity: homeCity ?? this.homeCity,
+      travelerPersona: travelerPersona ?? this.travelerPersona,
+      updatedAt: updatedAt ?? this.updatedAt,
+    );
+  }
+
+  @override
+  List<Object?> get props => [
+        userId, fullName, email, phoneNumber,
+        registrationDate, homeCity, travelerPersona, updatedAt,
+      ];
 }

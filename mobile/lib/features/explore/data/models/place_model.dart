@@ -1,4 +1,6 @@
-class PlaceModel {
+import 'package:equatable/equatable.dart';
+
+class PlaceModel extends Equatable {
   final String placeId;
   final String name;
   final String category;
@@ -22,7 +24,7 @@ class PlaceModel {
   final String? website;
   final String? mapsLink;
 
-  PlaceModel({
+  const PlaceModel({
     required this.placeId,
     required this.name,
     required this.category,
@@ -106,4 +108,63 @@ class PlaceModel {
       mapsLink: json['maps_link'] as String?,
     );
   }
+
+  PlaceModel copyWith({
+    String? placeId,
+    String? name,
+    String? category,
+    String? description,
+    double? rating,
+    int? reviewCount,
+    double? popularityScore,
+    List<String>? photoUrls,
+    String? address,
+    String? city,
+    String? country,
+    double? lat,
+    double? lng,
+    double? entryFee,
+    double? nightlyRate,
+    int? starClass,
+    int? priceLevel,
+    String? cuisineType,
+    String? accommodationType,
+    String? phone,
+    String? website,
+    String? mapsLink,
+  }) {
+    return PlaceModel(
+      placeId: placeId ?? this.placeId,
+      name: name ?? this.name,
+      category: category ?? this.category,
+      description: description ?? this.description,
+      rating: rating ?? this.rating,
+      reviewCount: reviewCount ?? this.reviewCount,
+      popularityScore: popularityScore ?? this.popularityScore,
+      photoUrls: photoUrls ?? this.photoUrls,
+      address: address ?? this.address,
+      city: city ?? this.city,
+      country: country ?? this.country,
+      lat: lat ?? this.lat,
+      lng: lng ?? this.lng,
+      entryFee: entryFee ?? this.entryFee,
+      nightlyRate: nightlyRate ?? this.nightlyRate,
+      starClass: starClass ?? this.starClass,
+      priceLevel: priceLevel ?? this.priceLevel,
+      cuisineType: cuisineType ?? this.cuisineType,
+      accommodationType: accommodationType ?? this.accommodationType,
+      phone: phone ?? this.phone,
+      website: website ?? this.website,
+      mapsLink: mapsLink ?? this.mapsLink,
+    );
+  }
+
+  @override
+  List<Object?> get props => [
+        placeId, name, category, description, rating,
+        reviewCount, popularityScore, photoUrls, address,
+        city, country, lat, lng, entryFee, nightlyRate,
+        starClass, priceLevel, cuisineType, accommodationType,
+        phone, website, mapsLink,
+      ];
 }

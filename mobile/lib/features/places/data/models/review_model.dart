@@ -1,5 +1,7 @@
+import 'package:equatable/equatable.dart';
+
 /// A single review for a place.
-class ReviewModel {
+class ReviewModel extends Equatable {
   final String reviewId;
   final String userId;
   final String placeId;
@@ -9,7 +11,7 @@ class ReviewModel {
   final int likesCount;
   final String? userName;
 
-  ReviewModel({
+  const ReviewModel({
     required this.reviewId,
     required this.userId,
     required this.placeId,
@@ -20,8 +22,12 @@ class ReviewModel {
     this.userName,
   });
 
-  String get displayName =>
-      userName ?? 'User ${userId.length > 6 ? userId.substring(0, 6) : userId}';
+  /// Display name — uses `userName` (mapped from backend's `user_name` =
+  /// user's full_name) when available, otherwise falls back to a short ID.
+  String get displayName {
+    if (userName != null && userName!.trim().isNotEmpty) return userName!;
+    return 'User ${userId.length > 6 ? userId.substring(0, 6) : userId}';
+  }
 
   String get initials {
     if (userName != null && userName!.isNotEmpty) {
@@ -46,16 +52,44 @@ class ReviewModel {
       userName: json['user_name'] as String?,
     );
   }
+
+  ReviewModel copyWith({
+    String? reviewId,
+    String? userId,
+    String? placeId,
+    int? rating,
+    String? comment,
+    String? reviewDate,
+    int? likesCount,
+    String? userName,
+  }) {
+    return ReviewModel(
+      reviewId: reviewId ?? this.reviewId,
+      userId: userId ?? this.userId,
+      placeId: placeId ?? this.placeId,
+      rating: rating ?? this.rating,
+      comment: comment ?? this.comment,
+      reviewDate: reviewDate ?? this.reviewDate,
+      likesCount: likesCount ?? this.likesCount,
+      userName: userName ?? this.userName,
+    );
+  }
+
+  @override
+  List<Object?> get props => [
+        reviewId, userId, placeId, rating, comment,
+        reviewDate, likesCount, userName,
+      ];
 }
 
 /// Summary of reviews for a place returned by GET /reviews/place/{id}.
-class PlaceReviewsResponse {
+class PlaceReviewsResponse extends Equatable {
   final String placeId;
   final int totalReviews;
   final double? averageRating;
   final List<ReviewModel> reviews;
 
-  PlaceReviewsResponse({
+  const PlaceReviewsResponse({
     required this.placeId,
     required this.totalReviews,
     this.averageRating,
@@ -73,4 +107,21 @@ class PlaceReviewsResponse {
           [],
     );
   }
+
+  PlaceReviewsResponse copyWith({
+    String? placeId,
+    int? totalReviews,
+    double? averageRating,
+    List<ReviewModel>? reviews,
+  }) {
+    return PlaceReviewsResponse(
+      placeId: placeId ?? this.placeId,
+      totalReviews: totalReviews ?? this.totalReviews,
+      averageRating: averageRating ?? this.averageRating,
+      reviews: reviews ?? this.reviews,
+    );
+  }
+
+  @override
+  List<Object?> get props => [placeId, totalReviews, averageRating, reviews];
 }

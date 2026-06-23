@@ -4,6 +4,14 @@ import 'package:retrofit/retrofit.dart';
 import '../../features/auth/data/models/full_profile_response.dart';
 import '../../features/auth/data/models/register_request.dart';
 import '../../features/auth/data/models/user_response.dart';
+import '../../features/chat/data/models/chat_history_message.dart';
+import '../../features/chat/data/models/chat_session_response.dart';
+import '../../features/explore/data/models/explore_filters_response.dart';
+import '../../features/explore/data/models/explore_places_response.dart';
+import '../../features/explore/data/models/place_model.dart';
+import '../../features/places/data/models/review_model.dart';
+import '../../features/saved/data/models/saved_place_item.dart';
+import '../../features/trips/data/models/trip_detail_model.dart';
 import '../../features/trips/data/models/trip_summary_model.dart';
 
 part 'api_services.g.dart';
@@ -14,44 +22,44 @@ abstract class ApiServices {
   factory ApiServices(Dio dio) = _ApiServices;
 
   /// LOGIN
-  @POST("/v1/auth/login")
+  @POST("/api/v1/auth/login")
   Future<UserResponse> login();
 
   /// REGISTER
-  @POST("/v1/auth/register")
+  @POST("/api/v1/auth/register")
   Future<UserResponse> register(
       @Body() RegisterRequest body,
       );
 
   /// GET PROFILE
-  @GET("/v1/users/profile/full")
+  @GET("/api/v1/users/profile/full")
   Future<FullProfileResponse> getProfile();
 
   /// UPDATE PROFILE
-  @PUT("/v1/users/profile")
+  @PUT("/api/v1/users/profile")
   Future<FullProfileResponse> updateProfile(
       @Body() Map<String, dynamic> body,
       );
 
   /// GET ALL TRIPS
-  @GET("/v1/trips/")
+  @GET("/api/v1/trips/")
   Future<List<TripSummaryModel>> getTrips();
 
   /// CREATE TRIP
-  @POST("/v1/trips/")
+  @POST("/api/v1/trips/")
   Future<void> createTrip(
       @Body() Map<String, dynamic> body,
       );
 
   /// GET TRIP DETAIL (includes itineraries, days, stops)
-  @GET("/v1/trips/{trip_id}")
-  Future<Map<String, dynamic>> getTripDetail(
+  @GET("/api/v1/trips/{trip_id}")
+  Future<TripDetailModel> getTripDetail(
       @Path('trip_id') String tripId,
       );
 
   /// EXPLORE PLACES
-  @GET("/v1/places/explore")
-  Future<dynamic> explorePlaces(
+  @GET("/api/v1/places/explore")
+  Future<ExplorePlacesResponse> explorePlaces(
       @Query('city') String? city,
       @Query('country') String? country,
       @Query('category') String? category,
@@ -60,56 +68,78 @@ abstract class ApiServices {
       );
 
   /// GET PLACE DETAIL
-  @GET("/v1/places/{place_id}")
-  Future<Map<String, dynamic>> getPlaceDetail(
+  @GET("/api/v1/places/{place_id}")
+  Future<PlaceModel> getPlaceDetail(
       @Path('place_id') String placeId,
       );
 
   /// GET EXPLORE FILTERS (cities + categories)
-  @GET("/v1/places/explore/filters")
-  Future<Map<String, dynamic>> getExploreFilters(
+  @GET("/api/v1/places/explore/filters")
+  Future<ExploreFiltersResponse> getExploreFilters(
       @Query('q') String? q,
       @Query('limit') int? limit,
       );
 
+  /// SEMANTIC SEARCH PLACES (using embeddings)
+  @POST("/api/v1/places/search/semantic")
+  Future<ExplorePlacesResponse> semanticSearchPlaces(
+      @Body() Map<String, dynamic> body,
+      );
+
   /// SAVE A PLACE
-  @POST("/v1/saved-places/")
-  Future<Map<String, dynamic>> savePlace(
+  @POST("/api/v1/saved-places/")
+  Future<void> savePlace(
       @Body() Map<String, dynamic> body,
       );
 
   /// UN-SAVE A PLACE BY SAVED PLACE ID
-  @DELETE("/v1/saved-places/{saved_place_id}")
-  Future<Map<String, dynamic>> unsavePlace(
+  @DELETE("/api/v1/saved-places/{saved_place_id}")
+  Future<void> unsavePlace(
       @Path('saved_place_id') String savedPlaceId,
       );
 
   /// GET ALL SAVED PLACES (includes full place data)
-  @GET("/v1/saved-places/")
-  Future<dynamic> getSavedPlaces();
+  @GET("/api/v1/saved-places/")
+  Future<List<SavedPlaceItem>> getSavedPlaces();
 
   /// GET REVIEWS FOR A PLACE
-  @GET("/v1/reviews/place/{place_id}")
-  Future<Map<String, dynamic>> getPlaceReviews(
+  @GET("/api/v1/reviews/place/{place_id}")
+  Future<PlaceReviewsResponse> getPlaceReviews(
       @Path('place_id') String placeId,
       );
 
   /// CREATE A REVIEW
-  @POST("/v1/reviews/")
-  Future<Map<String, dynamic>> createReview(
+  @POST("/api/v1/reviews/")
+  Future<void> createReview(
       @Body() Map<String, dynamic> body,
       );
 
   /// UPDATE A REVIEW
-  @PUT("/v1/reviews/{review_id}")
-  Future<Map<String, dynamic>> updateReview(
+  @PUT("/api/v1/reviews/{review_id}")
+  Future<void> updateReview(
       @Path('review_id') String reviewId,
       @Body() Map<String, dynamic> body,
       );
 
   /// DELETE A REVIEW
-  @DELETE("/v1/reviews/{review_id}")
-  Future<Map<String, dynamic>> deleteReview(
+  @DELETE("/api/v1/reviews/{review_id}")
+  Future<void> deleteReview(
       @Path('review_id') String reviewId,
       );
+
+  /// DELETE A TRIP
+  @DELETE("/api/v1/trips/{trip_id}")
+  Future<void> deleteTrip(
+      @Path('trip_id') String tripId,
+      );
+
+  /// LIST ALL CHAT SESSIONS (conversation history)
+  @GET("/api/v1/chats/")
+  Future<List<ChatSessionResponse>> getChatSessions();
+
+  /// GET CHAT HISTORY for a specific trip
+  @GET("/api/v1/chat/{trip_id}/history")
+  Future<List<ChatHistoryMessage>> getChatHistory(
+    @Path('trip_id') String tripId,
+  );
 }

@@ -1,6 +1,4 @@
-import 'dart:math' as math;
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart' as latlong;
@@ -19,29 +17,12 @@ class TripDetailScreen extends StatefulWidget {
   State<TripDetailScreen> createState() => _TripDetailScreenState();
 }
 
-class _TripDetailScreenState extends State<TripDetailScreen>
-    with SingleTickerProviderStateMixin {
-  late TabController _tabController;
-  int _currentTabIndex = 0;
-
-  @override
-  void initState() {
-    super.initState();
-    _tabController = TabController(length: 2, vsync: this);
-    _tabController.addListener(() {
-      if (!_tabController.indexIsChanging) {
-        setState(() {
-          _currentTabIndex = _tabController.index;
-        });
-      }
-    });
-  }
-
-  @override
-  void dispose() {
-    _tabController.dispose();
-    super.dispose();
-  }
+class _TripDetailScreenState extends State<TripDetailScreen> {
+  // Map popup state
+  final MapController _mapController = MapController();
+  int? _selectedStopIndex;
+  StopDetail? _selectedStop;
+  bool _showPopupAnimation = false;
 
   @override
   Widget build(BuildContext context) {
@@ -112,125 +93,106 @@ class _TripDetailScreenState extends State<TripDetailScreen>
   }
 
   Widget _buildContent(BuildContext context, TripDetailModel trip) {
-    return CustomScrollView(
-      slivers: [
-        // ── Sliver App Bar ──────────────────────────────
-        _buildSliverAppBar(trip),
+    return Column(
+      children: [
+        // ── Header ─────────────────────────────────────
+        _buildHeader(trip),
 
-        // ── Body ─────────────────────────────────────────
-        SliverToBoxAdapter(
-          child: Column(
-            children: [
-              // Trip header card
-              _buildTripHeader(trip),
+        // ── Trip header card ─────────────────────────────
+        _buildTripHeader(trip),
 
-              // Tabs: Itinerary | Map
-              if (trip.itineraries.isNotEmpty) ...[
-                _buildTabBar(),
-                _buildTabContent(trip),
-              ] else ...[
-                const SizedBox(height: 60),
-                _buildEmptyItinerary(),
-              ],
-
-              const SizedBox(height: 32),
-            ],
-          ),
-        ),
-      ],
-    );
-  }
-
-  // ── Sliver AppBar ─────────────────────────────────────────────────────────
-
-  Widget _buildSliverAppBar(TripDetailModel trip) {
-    return SliverAppBar(
-      expandedHeight: 120,
-      pinned: true,
-      stretch: true,
-      backgroundColor: Colors.white,
-      surfaceTintColor: Colors.white,
-      systemOverlayStyle: const SystemUiOverlayStyle(
-        statusBarIconBrightness: Brightness.dark,
-      ),
-      leading: IconButton(
-        icon: Container(
-          padding: const EdgeInsets.all(8),
-          decoration: BoxDecoration(
-            color: Colors.white.withValues(alpha: 0.9),
-            shape: BoxShape.circle,
-          ),
-          child: const Icon(Icons.arrow_back_rounded, color: Colors.black),
-        ),
-        onPressed: () => Navigator.pop(context),
-      ),
-      actions: [
-        IconButton(
-          icon: Container(
-            padding: const EdgeInsets.all(8),
-            decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.9),
-              shape: BoxShape.circle,
-            ),
-            child: const Icon(Icons.share_outlined, color: Colors.black, size: 20),
-          ),
-          onPressed: () {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('Share coming soon')),
-            );
-          },
-        ),
-        const SizedBox(width: 8),
-      ],
-      flexibleSpace: FlexibleSpaceBar(
-        background: Container(
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topCenter,
-              end: Alignment.bottomCenter,
-              colors: [
-                Colors.grey.shade100,
-                Colors.white,
-              ],
-            ),
-          ),
-          child: SafeArea(
-            child: Padding(
-              padding: const EdgeInsets.only(top: 60, left: 20, right: 20),
+        // ── Tabs: Itinerary | Map ────────────────────────
+        if (trip.itineraries.isNotEmpty) ...[
+          Expanded(
+            child: DefaultTabController(
+              length: 2,
               child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisAlignment: MainAxisAlignment.end,
                 children: [
-                  Text(
-                    trip.tripName ?? trip.destination,
-                    style: const TextStyle(
-                      fontSize: 26,
-                      fontWeight: FontWeight.w800,
-                      color: Colors.black,
-                    ),
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  const SizedBox(height: 4),
-                  Row(
-                    children: [
-                      Icon(Icons.location_on_outlined,
-                          size: 14, color: Colors.grey[500]),
-                      const SizedBox(width: 4),
-                      Text(
-                        trip.destination,
-                        style: TextStyle(
-                          fontSize: 14,
-                          color: Colors.grey[600],
-                        ),
-                      ),
-                    ],
-                  ),
+                  _buildTabBar(),
+                  Expanded(child: _buildTabContent(trip)),
                 ],
               ),
             ),
           ),
-        ),
+        ] else ...[
+          Expanded(child: _buildEmptyItinerary()),
+        ],
+      ],
+    );
+  }
+
+  // ── Header with back button, trip name, destination ────────────────────
+
+  Widget _buildHeader(TripDetailModel trip) {
+    return Container(
+      padding: EdgeInsets.only(
+        top: MediaQuery.of(context).padding.top + 8,
+        left: 8,
+        right: 8,
+        bottom: 4,
+      ),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.05),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          IconButton(
+            icon: const Icon(Icons.arrow_back_rounded, color: Colors.black),
+            onPressed: () => Navigator.pop(context),
+          ),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  trip.tripName ?? trip.destination,
+                  style: const TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.w800,
+                    color: Colors.black,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                Row(
+                  children: [
+                    Icon(Icons.location_on_outlined,
+                        size: 13, color: Colors.grey[500]),
+                    const SizedBox(width: 3),
+                    Text(
+                      trip.destination,
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: Colors.grey[600],
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          // Continue Chat button
+          IconButton(
+            icon: const Icon(Icons.chat_bubble_outline,
+                color: Colors.black, size: 20),
+            tooltip: 'Continue chat',
+            onPressed: () => _continueChat(context, trip),
+          ),
+          // Delete button
+          IconButton(
+            icon: const Icon(Icons.delete_outline,
+                color: Colors.red, size: 20),
+            tooltip: 'Delete trip',
+            onPressed: () => _confirmDelete(context, trip),
+          ),
+        ],
       ),
     );
   }
@@ -505,7 +467,6 @@ class _TripDetailScreenState extends State<TripDetailScreen>
           borderRadius: BorderRadius.circular(12),
         ),
         child: TabBar(
-          controller: _tabController,
           indicator: BoxDecoration(
             color: Colors.black,
             borderRadius: BorderRadius.circular(10),
@@ -533,31 +494,13 @@ class _TripDetailScreenState extends State<TripDetailScreen>
   }
 
   Widget _buildTabContent(TripDetailModel trip) {
-    return SizedBox(
-      height: _currentTabIndex == 0
-          ? _calculateItineraryHeight(trip)
-          : MediaQuery.of(context).size.height * 0.65,
-      child: TabBarView(
-        controller: _tabController,
-        children: [
-          _buildItineraryTab(trip),
-          _buildMapTab(trip),
-        ],
-      ),
+    return TabBarView(
+      physics: const BouncingScrollPhysics(),
+      children: [
+        _buildItineraryTab(trip),
+        _buildMapTab(trip),
+      ],
     );
-  }
-
-  double _calculateItineraryHeight(TripDetailModel trip) {
-    // Rough estimate — enough to avoid overflow in the sliver.
-    double height = 0;
-    for (final itin in trip.itineraries) {
-      for (final day in itin.days) {
-        height += 40; // Day header
-        height += day.stops.length * 120.0; // ~120 per stop card
-        height += 20; // spacing
-      }
-    }
-    return math.max(height, 400);
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
@@ -608,47 +551,61 @@ class _TripDetailScreenState extends State<TripDetailScreen>
 
     return Column(
       children: [
-        // Map
+        // Map with popup overlay
         Expanded(
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(16),
-            child: FlutterMap(
-              options: MapOptions(
-                initialCenter: center,
-                initialZoom: 12,
-                minZoom: 4,
-                maxZoom: 18,
+          child: Stack(
+            children: [
+              ClipRRect(
+                borderRadius: BorderRadius.circular(16),
+                child: FlutterMap(
+                  mapController: _mapController,
+                  options: MapOptions(
+                    initialCenter: center,
+                    initialZoom: 12,
+                    minZoom: 4,
+                    maxZoom: 18,
+                    onTap: (tapPos, latLng) => _hidePopup(),
+                  ),
+                  children: [
+                    TileLayer(
+                      urlTemplate:
+                          'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                      userAgentPackageName: 'com.tourmate.app',
+                    ),
+                    MarkerLayer(
+                      markers: stops.asMap().entries.map((entry) {
+                        final index = entry.key;
+                        final stop = entry.value;
+                        final isSelected = _selectedStopIndex == index;
+                        return Marker(
+                          point: latlong.LatLng(stop.lat!, stop.lon!),
+                          width: isSelected ? 48 : 40,
+                          height: isSelected ? 56 : 48,
+                          child: GestureDetector(
+                            onTap: () => _showPopup(index, stop),
+                            child: _MapMarker(
+                              index: index + 1,
+                              stop: stop,
+                              isSelected: isSelected,
+                            ),
+                          ),
+                        );
+                      }).toList(),
+                    ),
+                  ],
+                ),
               ),
-              children: [
-                TileLayer(
-                  urlTemplate:
-                      'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-                  userAgentPackageName: 'com.tourmate.app',
-                ),
-                MarkerLayer(
-                  markers: stops.asMap().entries.map((entry) {
-                    final index = entry.key;
-                    final stop = entry.value;
-                    return Marker(
-                      point: latlong.LatLng(stop.lat!, stop.lon!),
-                      width: 40,
-                      height: 40,
-                      child: _MapMarker(
-                        index: index + 1,
-                        stop: stop,
-                        onTap: () => _showStopInfo(context, stop),
-                      ),
-                    );
-                  }).toList(),
-                ),
-              ],
-            ),
+
+              // Inline popup card
+              if (_selectedStopIndex != null && _selectedStop != null)
+                _buildMapPopup(stops),
+            ],
           ),
         ),
 
         // Legend / stop list
         Container(
-          height: 120,
+          height: 110,
           width: double.infinity,
           margin: const EdgeInsets.only(top: 8),
           child: ListView.builder(
@@ -657,16 +614,20 @@ class _TripDetailScreenState extends State<TripDetailScreen>
             itemCount: stops.length,
             itemBuilder: (context, index) {
               final stop = stops[index];
+              final isSelected = _selectedStopIndex == index;
               return GestureDetector(
-                onTap: () => _showStopInfo(context, stop),
-                child: Container(
+                onTap: () => _showPopup(index, stop),
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 200),
                   width: 140,
                   margin: const EdgeInsets.symmetric(horizontal: 4),
                   padding: const EdgeInsets.all(10),
                   decoration: BoxDecoration(
-                    color: Colors.grey.shade50,
+                    color: isSelected ? Colors.black : Colors.grey.shade50,
                     borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: Colors.grey.shade200),
+                    border: Border.all(
+                      color: isSelected ? Colors.black : Colors.grey.shade200,
+                    ),
                   ),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -678,14 +639,14 @@ class _TripDetailScreenState extends State<TripDetailScreen>
                             width: 20,
                             height: 20,
                             decoration: BoxDecoration(
-                              color: Colors.black,
+                              color: isSelected ? Colors.white : Colors.black,
                               shape: BoxShape.circle,
                             ),
                             alignment: Alignment.center,
                             child: Text(
                               '${index + 1}',
-                              style: const TextStyle(
-                                color: Colors.white,
+                              style: TextStyle(
+                                color: isSelected ? Colors.black : Colors.white,
                                 fontSize: 10,
                                 fontWeight: FontWeight.bold,
                               ),
@@ -695,9 +656,10 @@ class _TripDetailScreenState extends State<TripDetailScreen>
                           Expanded(
                             child: Text(
                               stop.name ?? 'Stop ${index + 1}',
-                              style: const TextStyle(
+                              style: TextStyle(
                                 fontSize: 12,
                                 fontWeight: FontWeight.w600,
+                                color: isSelected ? Colors.white : Colors.black,
                               ),
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
@@ -711,7 +673,7 @@ class _TripDetailScreenState extends State<TripDetailScreen>
                           _categoryLabel(stop.category!),
                           style: TextStyle(
                             fontSize: 10,
-                            color: Colors.grey[500],
+                            color: isSelected ? Colors.grey[300] : Colors.grey[500],
                           ),
                         ),
                       ],
@@ -726,14 +688,212 @@ class _TripDetailScreenState extends State<TripDetailScreen>
     );
   }
 
-  void _showStopInfo(BuildContext context, StopDetail stop) {
-    showModalBottomSheet(
-      context: context,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+  Widget _buildMapPopup(List<StopDetail> stops) {
+    final stop = _selectedStop!;
+    final index = _selectedStopIndex!;
+
+    return Positioned(
+      left: 16,
+      right: 16,
+      bottom: 12,
+      child: GestureDetector(
+        onTap: () {
+          if (stop.placeId != null && stop.placeId!.isNotEmpty) {
+            Navigator.of(context).pushNamed('/place-detail', arguments: stop.placeId);
+          }
+        },
+        child: AnimatedOpacity(
+          opacity: _showPopupAnimation ? 1.0 : 0.0,
+          duration: const Duration(milliseconds: 200),
+          child: Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(16),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.15),
+                  blurRadius: 12,
+                  offset: const Offset(0, 4),
+                ),
+              ],
+            ),
+            child: Row(
+              children: [
+                // Stop number badge
+                Container(
+                  width: 36,
+                  height: 36,
+                  decoration: BoxDecoration(
+                    color: _markerColor(stop.category),
+                    shape: BoxShape.circle,
+                  ),
+                  alignment: Alignment.center,
+                  child: Text(
+                    '${index + 1}',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 14,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                // Info
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        stop.name ?? 'Stop ${index + 1}',
+                        style: const TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w700,
+                          color: Colors.black,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      const SizedBox(height: 2),
+                      Row(
+                        children: [
+                          if (stop.category != null) ...[
+                            Text(
+                              _categoryLabel(stop.category!),
+                              style: TextStyle(fontSize: 11, color: Colors.grey[500]),
+                            ),
+                            const SizedBox(width: 8),
+                          ],
+                          if (stop.rating != null) ...[
+                            Icon(Icons.star_rounded, size: 12, color: Colors.amber[700]),
+                            const SizedBox(width: 2),
+                            Text(
+                              stop.rating!.toStringAsFixed(1),
+                              style: TextStyle(
+                                fontSize: 11,
+                                color: Colors.grey[600],
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ],
+                          const SizedBox(width: 8),
+                          if (stop.durationMinutes != null && stop.durationMinutes! > 0)
+                            Text(
+                              '${stop.durationMinutes} min',
+                              style: TextStyle(fontSize: 11, color: Colors.grey[500]),
+                            ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+                // Arrow icon
+                Icon(Icons.chevron_right_rounded, color: Colors.grey[400]),
+              ],
+            ),
+          ),
+        ),
       ),
-      builder: (_) => _StopInfoSheet(stop: stop),
     );
+  }
+
+  void _showPopup(int index, StopDetail stop) {
+    setState(() {
+      _selectedStopIndex = index;
+      _selectedStop = stop;
+      _showPopupAnimation = false;
+    });
+    // Trigger fade-in after one frame
+    Future.delayed(const Duration(milliseconds: 50), () {
+      if (mounted) setState(() => _showPopupAnimation = true);
+    });
+  }
+
+  void _hidePopup() {
+    setState(() {
+      _showPopupAnimation = false;
+    });
+    Future.delayed(const Duration(milliseconds: 200), () {
+      if (mounted) {
+        setState(() {
+          _selectedStopIndex = null;
+          _selectedStop = null;
+        });
+      }
+    });
+  }
+  /// Navigate to the chat screen connected to this trip.
+  /// Uses pushNamed (not pushReplacementNamed) so pressing back in chat
+  /// returns to this trip detail screen.
+  void _continueChat(BuildContext context, TripDetailModel trip) {
+    Navigator.pushNamed(
+      context,
+      '/chat',
+      arguments: {
+        'trip_id': trip.tripId,
+      },
+    );
+  }
+
+  /// Show confirmation dialog before deleting the trip.
+  Future<void> _confirmDelete(BuildContext context, TripDetailModel trip) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(20),
+        ),
+        title: const Text("Delete Trip"),
+        content: Text(
+          'Are you sure you want to delete your trip to ${trip.destination}?\n\nThis action cannot be undone.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text("Cancel", style: TextStyle(color: Colors.grey)),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text(
+              "Delete",
+              style: TextStyle(
+                color: Colors.red,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+    if (!context.mounted) return;
+
+    final cubit = context.read<TripDetailCubit>();
+    String? error;
+    try {
+      await cubit.deleteTrip(trip.tripId);
+    } catch (e) {
+      error = e.toString();
+    }
+
+    if (!context.mounted) return;
+
+    if (error != null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(error),
+          backgroundColor: Colors.red,
+          duration: const Duration(seconds: 5),
+        ),
+      );
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Trip deleted')),
+      );
+      Navigator.pop(context);
+    }
   }
 }
 
@@ -1251,6 +1411,22 @@ String _categoryLabel(String category) {
   }
 }
 
+Color _markerColor(String? category) {
+  if (category == null) return Colors.black;
+  switch (category.toLowerCase()) {
+    case 'hotel':
+      return const Color(0xFF2D3436);
+    case 'restaurant':
+      return const Color(0xFFE17055);
+    case 'attraction':
+      return const Color(0xFF0984E3);
+    case 'cafe':
+      return const Color(0xFF00B894);
+    default:
+      return Colors.black;
+  }
+}
+
 // ═════════════════════════════════════════════════════════════════════════════
 // MAP MARKER
 // ═════════════════════════════════════════════════════════════════════════════
@@ -1258,295 +1434,66 @@ String _categoryLabel(String category) {
 class _MapMarker extends StatelessWidget {
   final int index;
   final StopDetail stop;
-  final VoidCallback onTap;
+  final bool isSelected;
 
   const _MapMarker({
     required this.index,
     required this.stop,
-    required this.onTap,
+    this.isSelected = false,
   });
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          // Marker circle
-          Container(
-            padding: const EdgeInsets.all(6),
-            decoration: BoxDecoration(
-              color: _markerColor(stop.category),
-              shape: BoxShape.circle,
-              border: Border.all(color: Colors.white, width: 2),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.2),
-                  blurRadius: 6,
-                  offset: const Offset(0, 2),
-                ),
-              ],
+    final color = _markerColor(stop.category);
+    final size = isSelected ? 14.0 : 11.0;
+
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        // Marker circle
+        AnimatedContainer(
+          duration: const Duration(milliseconds: 200),
+          padding: EdgeInsets.all(isSelected ? 8 : 6),
+          decoration: BoxDecoration(
+            color: color,
+            shape: BoxShape.circle,
+            border: Border.all(
+              color: isSelected ? Colors.amber : Colors.white,
+              width: isSelected ? 3 : 2,
             ),
-            child: Text(
-              '$index',
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 11,
-                fontWeight: FontWeight.bold,
+            boxShadow: [
+              BoxShadow(
+                color: (isSelected ? color.withValues(alpha: 0.5) : Colors.black.withValues(alpha: 0.2)),
+                blurRadius: isSelected ? 10 : 6,
+                offset: const Offset(0, 2),
               ),
-            ),
-          ),
-          // Pointer arrow
-          Container(
-            width: 0,
-            height: 0,
-            decoration: BoxDecoration(
-              border: Border(
-                top: BorderSide(
-                  color: _markerColor(stop.category),
-                  width: 6,
-                ),
-                left: const BorderSide(color: Colors.transparent, width: 5),
-                right: const BorderSide(color: Colors.transparent, width: 5),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Color _markerColor(String? category) {
-    if (category == null) return Colors.black;
-    switch (category.toLowerCase()) {
-      case 'hotel':
-        return const Color(0xFF2D3436);
-      case 'restaurant':
-        return const Color(0xFFE17055);
-      case 'attraction':
-        return const Color(0xFF0984E3);
-      case 'cafe':
-        return const Color(0xFF00B894);
-      default:
-        return Colors.black;
-    }
-  }
-}
-
-// ═════════════════════════════════════════════════════════════════════════════
-// STOP INFO BOTTOM SHEET
-// ═════════════════════════════════════════════════════════════════════════════
-
-class _StopInfoSheet extends StatelessWidget {
-  final StopDetail stop;
-
-  const _StopInfoSheet({required this.stop});
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(24, 20, 24, 32),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Handle
-          Center(
-            child: Container(
-              width: 40,
-              height: 4,
-              decoration: BoxDecoration(
-                color: Colors.grey.shade300,
-                borderRadius: BorderRadius.circular(2),
-              ),
-            ),
-          ),
-          const SizedBox(height: 20),
-
-          // Name + category
-          Row(
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      stop.name ?? 'Stop',
-                      style: const TextStyle(
-                        fontSize: 20,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                    if (stop.category != null) ...[
-                      const SizedBox(height: 4),
-                      Text(
-                        _categoryLabel(stop.category!),
-                        style: TextStyle(
-                          fontSize: 14,
-                          color: Colors.grey[500],
-                        ),
-                      ),
-                    ],
-                  ],
-                ),
-              ),
-              if (stop.rating != null)
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 10,
-                    vertical: 6,
-                  ),
-                  decoration: BoxDecoration(
-                    color: Colors.amber.shade50,
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(Icons.star_rounded,
-                          size: 16, color: Colors.amber[700]),
-                      const SizedBox(width: 4),
-                      Text(
-                        stop.rating!.toStringAsFixed(1),
-                        style: TextStyle(
-                          fontWeight: FontWeight.w700,
-                          color: Colors.amber[800],
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
             ],
           ),
-
-          const SizedBox(height: 16),
-
-          // Info chips
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: [
-              if (stop.durationMinutes != null && stop.durationMinutes! > 0)
-                _sheetChip(Icons.timer_outlined, '${stop.durationMinutes} min'),
-              if (stop.timeOfDay != null)
-                _sheetChip(
-                  Icons.schedule_outlined,
-                  stop.timeOfDay!.substring(0, 1).toUpperCase() +
-                      stop.timeOfDay!.substring(1),
-                ),
-              if (stop.estimatedCost != null && stop.estimatedCost! > 0)
-                _sheetChip(
-                  Icons.attach_money,
-                  '\$${stop.estimatedCost!.toStringAsFixed(0)}',
-                ),
-              if (stop.travelMode != null)
-                _sheetChip(
-                  Icons.directions,
-                  stop.travelMode!.substring(0, 1).toUpperCase() +
-                      stop.travelMode!.substring(1),
-                ),
-            ],
+          child: Text(
+            '$index',
+            style: TextStyle(
+              color: Colors.white,
+              fontSize: size,
+              fontWeight: FontWeight.bold,
+            ),
           ),
-
-          // AI notes
-          if (stop.aiNotes != null && stop.aiNotes!.isNotEmpty) ...[
-            const SizedBox(height: 16),
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(14),
-              decoration: BoxDecoration(
-                color: Colors.indigo.shade50,
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: Colors.indigo.shade100),
+        ),
+        // Pointer arrow
+        Container(
+          width: 0,
+          height: 0,
+          decoration: BoxDecoration(
+            border: Border(
+              top: BorderSide(
+                color: color,
+                width: isSelected ? 8 : 6,
               ),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Icon(Icons.auto_awesome, size: 16, color: Colors.indigo[400]),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      stop.aiNotes!,
-                      style: TextStyle(
-                        fontSize: 13,
-                        color: Colors.indigo[700],
-                        height: 1.4,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
+              left: const BorderSide(color: Colors.transparent, width: 5),
+              right: const BorderSide(color: Colors.transparent, width: 5),
             ),
-          ],
-
-          // Address
-          if (stop.address != null && stop.address!.isNotEmpty) ...[
-            const SizedBox(height: 12),
-            Row(
-              children: [
-                Icon(Icons.location_on_outlined,
-                    size: 16, color: Colors.grey[500]),
-                const SizedBox(width: 6),
-                Expanded(
-                  child: Text(
-                    stop.address!,
-                    style: TextStyle(color: Colors.grey[600], fontSize: 13),
-                  ),
-                ),
-              ],
-            ),
-          ],
-
-          const SizedBox(height: 20),
-
-          // View details button
-          if (stop.placeId != null && stop.placeId!.isNotEmpty)
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton.icon(
-                onPressed: () {
-                  Navigator.pop(context);
-                  Navigator.of(context).pushNamed(
-                    '/place-detail',
-                    arguments: stop.placeId,
-                  );
-                },
-                icon: const Icon(Icons.open_in_new, size: 18),
-                label: const Text('View Place Details'),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.black,
-                  foregroundColor: Colors.white,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  padding: const EdgeInsets.symmetric(vertical: 14),
-                ),
-              ),
-            ),
-        ],
-      ),
-    );
-  }
-
-  Widget _sheetChip(IconData icon, String label) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-      decoration: BoxDecoration(
-        color: Colors.grey.shade100,
-        borderRadius: BorderRadius.circular(10),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, size: 14, color: Colors.grey[600]),
-          const SizedBox(width: 4),
-          Text(
-            label,
-            style: TextStyle(fontSize: 12, color: Colors.grey[700]),
           ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 }

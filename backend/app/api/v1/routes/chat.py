@@ -586,35 +586,47 @@ async def websocket_new_chat(
                     ai_result = {"itinerary": action.get("data", {})}
                     if profile_data_from_ai:
                         ai_result["profile"] = profile_data_from_ai
-                    created = await svc.create_trip_from_ai_result(
-                        user_id,
-                        ai_result,
-                    )
-
-                    trip         = created["trip"]
-                    conversation = created["conversation"]
-
-                    for msg in pending_messages:
-                        await svc.save_message(
-                            conversation_id=conversation.conversation_id,
-                            sender="user" if msg["role"] == "user" else "agent",
-                            content=msg["content"],
+                    try:
+                        created = await svc.create_trip_from_ai_result(
+                            user_id,
+                            ai_result,
                         )
-                    pending_messages = []
 
-                    await db.commit()
+                        trip         = created["trip"]
+                        conversation = created["conversation"]
 
-                    await manager.send(ws_key, {
-                        "type":         "trip_created",
-                        "trip_id":      trip.trip_id,
-                        "itinerary_id": created["itinerary"].itinerary_id,
-                    })
+                        for msg in pending_messages:
+                            await svc.save_message(
+                                conversation_id=conversation.conversation_id,
+                                sender="user" if msg["role"] == "user" else "agent",
+                                content=msg["content"],
+                            )
+                        pending_messages = []
 
-                    profile_data = await get_profile_data(user_id, trip.trip_id, db)
+                        await db.commit()
 
-                    manager.disconnect(ws_key)
-                    ws_key = trip.trip_id
-                    await manager.connect_existing(ws_key, websocket)
+                        await manager.send(ws_key, {
+                            "type":         "trip_created",
+                            "trip_id":      trip.trip_id,
+                            "itinerary_id": created["itinerary"].itinerary_id,
+                        })
+
+                        profile_data = await get_profile_data(user_id, trip.trip_id, db)
+
+                        manager.disconnect(ws_key)
+                        ws_key = trip.trip_id
+                        await manager.connect_existing(ws_key, websocket)
+
+                    except Exception as create_exc:
+                        logger.exception(
+                            "[ChatRoutes] Failed to create trip from AI result: %s",
+                            create_exc,
+                        )
+                        await db.rollback()
+                        await manager.send(ws_key, {
+                            "type": "error",
+                            "data": "Failed to save trip. Please try again.",
+                        })
 
                     break
 

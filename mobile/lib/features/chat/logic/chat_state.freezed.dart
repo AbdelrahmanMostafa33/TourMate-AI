@@ -128,12 +128,12 @@ return error(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeWhen<TResult extends Object?>({TResult Function()?  initial,TResult Function()?  loading,TResult Function( List<ChatMessage> messages,  bool isTyping,  int refreshToken)?  connected,TResult Function( String message)?  error,required TResult orElse(),}) {final _that = this;
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>({TResult Function()?  initial,TResult Function()?  loading,TResult Function( List<ChatMessage> messages,  bool isTyping,  int refreshToken,  bool isReconnecting)?  connected,TResult Function( String message)?  error,required TResult orElse(),}) {final _that = this;
 switch (_that) {
 case _Initial() when initial != null:
 return initial();case _Loading() when loading != null:
 return loading();case _Connected() when connected != null:
-return connected(_that.messages,_that.isTyping,_that.refreshToken);case _Error() when error != null:
+return connected(_that.messages,_that.isTyping,_that.refreshToken,_that.isReconnecting);case _Error() when error != null:
 return error(_that.message);case _:
   return orElse();
 
@@ -152,12 +152,12 @@ return error(_that.message);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult when<TResult extends Object?>({required TResult Function()  initial,required TResult Function()  loading,required TResult Function( List<ChatMessage> messages,  bool isTyping,  int refreshToken)  connected,required TResult Function( String message)  error,}) {final _that = this;
+@optionalTypeArgs TResult when<TResult extends Object?>({required TResult Function()  initial,required TResult Function()  loading,required TResult Function( List<ChatMessage> messages,  bool isTyping,  int refreshToken,  bool isReconnecting)  connected,required TResult Function( String message)  error,}) {final _that = this;
 switch (_that) {
 case _Initial():
 return initial();case _Loading():
 return loading();case _Connected():
-return connected(_that.messages,_that.isTyping,_that.refreshToken);case _Error():
+return connected(_that.messages,_that.isTyping,_that.refreshToken,_that.isReconnecting);case _Error():
 return error(_that.message);case _:
   throw StateError('Unexpected subclass');
 
@@ -175,12 +175,12 @@ return error(_that.message);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>({TResult? Function()?  initial,TResult? Function()?  loading,TResult? Function( List<ChatMessage> messages,  bool isTyping,  int refreshToken)?  connected,TResult? Function( String message)?  error,}) {final _that = this;
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>({TResult? Function()?  initial,TResult? Function()?  loading,TResult? Function( List<ChatMessage> messages,  bool isTyping,  int refreshToken,  bool isReconnecting)?  connected,TResult? Function( String message)?  error,}) {final _that = this;
 switch (_that) {
 case _Initial() when initial != null:
 return initial();case _Loading() when loading != null:
 return loading();case _Connected() when connected != null:
-return connected(_that.messages,_that.isTyping,_that.refreshToken);case _Error() when error != null:
+return connected(_that.messages,_that.isTyping,_that.refreshToken,_that.isReconnecting);case _Error() when error != null:
 return error(_that.message);case _:
   return null;
 
@@ -257,7 +257,7 @@ String toString() {
 
 
 class _Connected implements ChatState {
-  const _Connected({required final  List<ChatMessage> messages, required this.isTyping, this.refreshToken = 0}): _messages = messages;
+  const _Connected({required final  List<ChatMessage> messages, required this.isTyping, this.refreshToken = 0, this.isReconnecting = false}): _messages = messages;
   
 
  final  List<ChatMessage> _messages;
@@ -269,6 +269,7 @@ class _Connected implements ChatState {
 
  final  bool isTyping;
 @JsonKey() final  int refreshToken;
+@JsonKey() final  bool isReconnecting;
 
 /// Create a copy of ChatState
 /// with the given fields replaced by the non-null parameter values.
@@ -280,16 +281,16 @@ _$ConnectedCopyWith<_Connected> get copyWith => __$ConnectedCopyWithImpl<_Connec
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is _Connected&&const DeepCollectionEquality().equals(other._messages, _messages)&&(identical(other.isTyping, isTyping) || other.isTyping == isTyping)&&(identical(other.refreshToken, refreshToken) || other.refreshToken == refreshToken));
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is _Connected&&const DeepCollectionEquality().equals(other._messages, _messages)&&(identical(other.isTyping, isTyping) || other.isTyping == isTyping)&&(identical(other.refreshToken, refreshToken) || other.refreshToken == refreshToken)&&(identical(other.isReconnecting, isReconnecting) || other.isReconnecting == isReconnecting));
 }
 
 
 @override
-int get hashCode => Object.hash(runtimeType,const DeepCollectionEquality().hash(_messages),isTyping,refreshToken);
+int get hashCode => Object.hash(runtimeType,const DeepCollectionEquality().hash(_messages),isTyping,refreshToken,isReconnecting);
 
 @override
 String toString() {
-  return 'ChatState.connected(messages: $messages, isTyping: $isTyping, refreshToken: $refreshToken)';
+  return 'ChatState.connected(messages: $messages, isTyping: $isTyping, refreshToken: $refreshToken, isReconnecting: $isReconnecting)';
 }
 
 
@@ -300,7 +301,7 @@ abstract mixin class _$ConnectedCopyWith<$Res> implements $ChatStateCopyWith<$Re
   factory _$ConnectedCopyWith(_Connected value, $Res Function(_Connected) _then) = __$ConnectedCopyWithImpl;
 @useResult
 $Res call({
- List<ChatMessage> messages, bool isTyping, int refreshToken
+ List<ChatMessage> messages, bool isTyping, int refreshToken, bool isReconnecting
 });
 
 
@@ -317,12 +318,13 @@ class __$ConnectedCopyWithImpl<$Res>
 
 /// Create a copy of ChatState
 /// with the given fields replaced by the non-null parameter values.
-@pragma('vm:prefer-inline') $Res call({Object? messages = null,Object? isTyping = null,Object? refreshToken = null,}) {
+@pragma('vm:prefer-inline') $Res call({Object? messages = null,Object? isTyping = null,Object? refreshToken = null,Object? isReconnecting = null,}) {
   return _then(_Connected(
 messages: null == messages ? _self._messages : messages // ignore: cast_nullable_to_non_nullable
 as List<ChatMessage>,isTyping: null == isTyping ? _self.isTyping : isTyping // ignore: cast_nullable_to_non_nullable
 as bool,refreshToken: null == refreshToken ? _self.refreshToken : refreshToken // ignore: cast_nullable_to_non_nullable
-as int,
+as int,isReconnecting: null == isReconnecting ? _self.isReconnecting : isReconnecting // ignore: cast_nullable_to_non_nullable
+as bool,
   ));
 }
 

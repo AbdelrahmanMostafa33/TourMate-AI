@@ -1,6 +1,5 @@
 import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../../../core/network/api_services.dart';
-import '../data/models/trip_detail_model.dart';
 import 'trip_detail_state.dart';
 
 class TripDetailCubit extends Cubit<TripDetailState> {
@@ -12,11 +11,16 @@ class TripDetailCubit extends Cubit<TripDetailState> {
   Future<void> fetchTripDetail(String tripId) async {
     emit(const TripDetailState.loading());
     try {
-      final json = await _api.getTripDetail(tripId);
-      final trip = TripDetailModel.fromJson(json);
+      final trip = await _api.getTripDetail(tripId);
       emit(TripDetailState.loaded(trip));
     } catch (e) {
       emit(TripDetailState.error(e.toString()));
     }
+  }
+
+  /// Delete a trip by ID. Lets the exception propagate so the
+  /// caller (screen) can show the actual error message via snackbar.
+  Future<void> deleteTrip(String tripId) async {
+    await _api.deleteTrip(tripId);
   }
 }

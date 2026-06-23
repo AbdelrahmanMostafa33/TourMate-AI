@@ -172,12 +172,53 @@ async def _process_message_inner(
     state.add_user_message(effective_message, metadata={"action": router_result.action})
 
     # ─────────────────────────────────────────────────────────────
+    # HANDLE COMPLETED STATE FIRST:
+    # If a new trip starts after finishing a previous one, reset the
+    # state BEFORE the safety override and action branching so that
+    # the fresh slots are used for downstream decisions.
+    # ─────────────────────────────────────────────────────────────
+    action = router_result.action
+
+    if state.phase == ConversationPhase.COMPLETED and action in (
+        "plan_trip", "ask_clarification"
+    ):
+        state.reset_for_new_trip()
+
+        # Re-apply newly extracted data onto fresh slots
+        state.slots.merge(router_result.extracted)
+
+        # Fill smart defaults for any unset non-mandatory slots
+        state.slots.fill_defaults()
+
+        # If enough info → generate new itinerary
+        if state.slots.is_complete():
+            state.transition_to(ConversationPhase.PLAN_GENERATION)
+            state.plan_started_at = datetime.now(timezone.utc).isoformat()
+
+            response = await _handle_plan_trip(
+                user_id,
+                effective_message,
+                router_result.extracted,
+                image_features,
+                token,
+                state
+            )
+        else:
+            state.transition_to(ConversationPhase.SLOT_FILLING)
+
+            response = {
+                "response_type": "clarification",
+                "message": router_result.response,
+                "itinerary": None,
+                "image_features": image_features,
+            }
+
+    # ─────────────────────────────────────────────────────────────
     # SAFETY OVERRIDE:
     # If router says "ask_clarification" BUT we already have all slots,
     # we override to "plan_trip" to avoid blocking itinerary generation
     # ─────────────────────────────────────────────────────────────
-    action = router_result.action
-    if action == "ask_clarification" and state.slots.is_complete():
+    elif action == "ask_clarification" and state.slots.is_complete():
         action = "plan_trip"
 
     # Track which field we're asking about so the next turn can disambiguate
@@ -307,42 +348,6 @@ async def _process_message_inner(
             "itinerary": None,
             "image_features": image_features,
         }
-
-    # ─────────────────────────────────────────────────────────────
-    # HANDLE COMPLETED STATE:
-    # If a new trip starts after finishing previous one
-    # ─────────────────────────────────────────────────────────────
-    if state.phase == ConversationPhase.COMPLETED and action in ("plan_trip", "ask_clarification"):
-        state.reset_for_new_trip()
-
-        # Re-apply newly extracted data
-        state.slots.merge(router_result.extracted)
-
-        # Fill smart defaults for any unset non-mandatory slots
-        state.slots.fill_defaults()
-
-        # If enough info → generate new itinerary
-        if state.slots.is_complete():
-            state.transition_to(ConversationPhase.PLAN_GENERATION)
-            state.plan_started_at = datetime.now(timezone.utc).isoformat()
-
-            response = await _handle_plan_trip(
-                user_id,
-                effective_message,
-                router_result.extracted,
-                image_features,
-                token,
-                state
-            )
-        else:
-            state.transition_to(ConversationPhase.SLOT_FILLING)
-
-            response = {
-                "response_type": "clarification",
-                "message": router_result.response,
-                "itinerary": None,
-                "image_features": image_features,
-            }
 
     # ─────────────────────────────────────────────────────────────
     # FINAL STATE UPDATES
@@ -556,10 +561,14 @@ async def handle_chat_stream(user_id, user_message, image_bytes=None, token=None
 
 
 async def _stream_text(text: str):
-    """Yield word-by-word chunks for streaming responses."""
+    """Yield word-by-word chunks for streaming responses, preserving newlines."""
 
-    for word in text.split():
-        yield {"type": "text", "content": word + " "}
+    lines = text.split("\n")
+    for i, line in enumerate(lines):
+        for word in line.split():
+            yield {"type": "text", "content": word + " "}
+        if i < len(lines) - 1:
+            yield {"type": "text", "content": "\n"}
 
 
 def _build_profile_from_slots(slots: TripSlots, trip_id: str) -> dict:
@@ -592,8 +601,11 @@ def _has_real_modifications(mod: dict, orig: dict) -> bool:
     plus a ``_modifier_note`` saying "couldn't find X".  We need
     to distinguish that from a real edit.
 
-    Compares stop IDs in ORDER (to catch REORDER operations),
-    hotel accommodation types, and hotel IDs.
+    Compares:
+    - Stop IDs in ORDER (to catch REORDER operations)
+    - Day themes (to catch RE_THEME operations)
+    - Hotel accommodation types
+    - Hotel IDs
     """
     if mod is orig:
         return False
@@ -608,6 +620,20 @@ def _has_real_modifications(mod: dict, orig: dict) -> bool:
         for s in d.get("stops", []) if s.get("id")
     ]
     if orig_stop_ids != new_stop_ids:
+        return True
+
+    # Compare day themes (catches RE_THEME operations)
+    orig_themes = {
+        d.get("day_number"): d.get("theme")
+        for d in orig.get("days", [])
+        if d.get("day_number") is not None
+    }
+    new_themes = {
+        d.get("day_number"): d.get("theme")
+        for d in mod.get("days", [])
+        if d.get("day_number") is not None
+    }
+    if orig_themes != new_themes:
         return True
 
     # Compare hotel accommodation types
@@ -742,11 +768,11 @@ def _build_conversation_context(state) -> str:
 
 
 def _format_itinerary(itinerary: dict) -> str:
-    """Convert a structured itinerary dict into a human-readable text message.
+    """Convert a structured itinerary dict into a clean, user-friendly message.
 
     The itinerary is produced by the LangGraph pipeline as a nested dict with
     days, stops, and accommodation suggestions.  This function formats it into
-    a readable summary suitable for displaying in chat.
+    a well-structured summary suitable for displaying in a mobile chat UI.
     """
     if not itinerary:
         return "I wasn't able to generate a complete itinerary. Please try again."
@@ -756,7 +782,7 @@ def _format_itinerary(itinerary: dict) -> str:
     days = itinerary.get("days", [])
     hotels = itinerary.get("accommodation_suggestions", [])
 
-    lines.append(f"🌍 Here's your {len(days)}-day itinerary for {destination}!")
+    lines.append(f"✨ Here's your personalized {len(days)}-day itinerary for {destination}!")
     lines.append("")
 
     for day in days:
@@ -764,66 +790,63 @@ def _format_itinerary(itinerary: dict) -> str:
         theme = day.get("theme", "")
         stops = day.get("stops", [])
 
-        header = f"📅 Day {day_num}"
+        # Day header with emoji
+        header = f"🗓 Day {day_num}"
         if theme:
             header += f" — {theme}"
         lines.append(header)
-        lines.append("-" * 40)
 
-        for stop in stops:
+        # List each stop as a clean, readable entry
+        for idx, stop in enumerate(stops, 1):
             name = stop.get("name", "Unknown")
             time_slot = stop.get("suggested_time_of_day", "")
             duration = stop.get("estimated_duration_minutes", 0)
             why = stop.get("why_recommended", "")
-            travel = stop.get("travel_time_to_next_minutes")
-            mode = stop.get("transport_mode", "")
+            rating = stop.get("rating")
+            cat = stop.get("category", "")
 
-            # Time-of-day emoji
-            time_emoji = {"morning": "🌅", "afternoon": "☀️", "evening": "🌙"}.get(time_slot, "📍")
+            # Time-of-day label
+            time_emoji = {
+                "morning": "🌅",
+                "afternoon": "☀️",
+                "evening": "🌙",
+            }.get(time_slot, "📍")
             time_label = time_slot.capitalize() if time_slot else ""
 
-            line = f"  {time_emoji} {name}"
+            # Stop line: name + time + duration
+            parts = [f"  {time_emoji} {name}"]
             if time_label:
-                line += f" ({time_label})"
+                parts.append(f"({time_label})")
             if duration:
-                line += f" — {duration} min"
-            lines.append(line)
+                parts.append(f"{duration} min")
+            lines.append(" • ".join(parts))
 
-            if why:
-                lines.append(f"    💡 {why}")
-
-            # Place details: category, rating, coordinates, address
-            cat = stop.get("category", "")
-            sub = stop.get("sub_category", "")
-            lat = stop.get("lat")
-            lon = stop.get("lon")
-            rating = stop.get("rating")
-            addr = stop.get("address", "")
-            details = []
-            if cat or sub:
-                details.append(f"{cat}/{sub}" if sub else cat)
+            # Category + rating as a short detail line
+            detail_bits = []
+            if cat:
+                detail_bits.append(cat.capitalize())
             if rating:
-                details.append(f"{rating}")
-            if lat and lon:
-                details.append(f"{lat}, {lon}")
-            if details:
-                lines.append(f"    📍 {', '.join(details)}")
-            if addr:
-                lines.append(f"    📫 {addr}")
+                detail_bits.append(f"⭐ {rating}")
+            if detail_bits:
+                sep = " · "
+                lines.append(f"    {sep.join(detail_bits)}")
 
-            if travel is not None and travel > 0:
-                mode_emoji = "🚶" if mode == "walking" else "🚗"
-                lines.append(f"    {mode_emoji} {travel:.0f} min to next stop")
+            # Why recommended — only show if meaningful and short
+            if why:
+                # Trim long explanations to keep chat readable
+                short_why = why if len(why) <= 80 else why[:77] + "..."
+                lines.append(f"    💡 {short_why}")
 
         lines.append("")
 
+    # Accommodation suggestions — compact format
     if hotels:
-        lines.append("🏨 Accommodation Suggestions:")
+        lines.append("🏨 Where to Stay")
         for hotel in hotels:
             name = hotel.get("name", "Unknown")
             acc_type = hotel.get("accommodation_type", "")
-            why = hotel.get("why_recommended", "")
             rating = hotel.get("rating", 0)
+            why = hotel.get("why_recommended", "")
 
             line = f"  • {name}"
             if acc_type:
@@ -832,10 +855,11 @@ def _format_itinerary(itinerary: dict) -> str:
                 line += f" ⭐ {rating}"
             lines.append(line)
             if why:
-                lines.append(f"    💡 {why}")
-        lines.append("")
+                short_why = why if len(why) <= 60 else why[:57] + "..."
+                lines.append(f"    💡 {short_why}")
 
-    lines.append("You can ask me to modify any part of this itinerary, or approve it to proceed!")
+    lines.append("")
+    lines.append("💡 You can ask me to modify any part of this itinerary, or say 'approve' to save it!")
     return "\n".join(lines)
 
 

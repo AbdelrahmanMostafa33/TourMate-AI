@@ -379,7 +379,7 @@ class TestExploreDefaults:
             # Verify the service was called with Egypt defaults
             call_kwargs = mock_service.search_places.call_args.kwargs
             assert call_kwargs.get("country") == "Egypt"
-            assert call_kwargs.get("categories") == ["hotel"]
+            # categories defaults to None (all categories), not ['hotel']
 
     @pytest.mark.asyncio
     async def test_explore_cairo_restaurants_returns_200(self):

@@ -3,7 +3,7 @@
 // ignore_for_file: type=lint
 // ignore_for_file: unused_element, deprecated_member_use, deprecated_member_use_from_same_package, use_function_type_syntax_for_parameters, unnecessary_const, avoid_init_to_null, invalid_override_different_default_values_named, prefer_expression_function_bodies, annotate_overrides, invalid_annotation_target, unnecessary_question_mark
 
-part of 'quiz_state.dart';
+part of 'saved_state.dart';
 
 // **************************************************************************
 // FreezedGenerator
@@ -12,7 +12,7 @@ part of 'quiz_state.dart';
 // dart format off
 T _$identity<T>(T value) => value;
 /// @nodoc
-mixin _$QuizState {
+mixin _$SavedState {
 
 
 
@@ -20,7 +20,7 @@ mixin _$QuizState {
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is QuizState);
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is SavedState);
 }
 
 
@@ -29,20 +29,20 @@ int get hashCode => runtimeType.hashCode;
 
 @override
 String toString() {
-  return 'QuizState()';
+  return 'SavedState()';
 }
 
 
 }
 
 /// @nodoc
-class $QuizStateCopyWith<$Res>  {
-$QuizStateCopyWith(QuizState _, $Res Function(QuizState) __);
+class $SavedStateCopyWith<$Res>  {
+$SavedStateCopyWith(SavedState _, $Res Function(SavedState) __);
 }
 
 
-/// Adds pattern-matching-related methods to [QuizState].
-extension QuizStatePatterns on QuizState {
+/// Adds pattern-matching-related methods to [SavedState].
+extension SavedStatePatterns on SavedState {
 /// A variant of `map` that fallback to returning `orElse`.
 ///
 /// It is equivalent to doing:
@@ -55,14 +55,13 @@ extension QuizStatePatterns on QuizState {
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeMap<TResult extends Object?>({TResult Function( _Initial value)?  initial,TResult Function( _Loading value)?  loading,TResult Function( _Success value)?  success,TResult Function( _SkipSuccess value)?  skipSuccess,TResult Function( _Error value)?  error,required TResult orElse(),}){
+@optionalTypeArgs TResult maybeMap<TResult extends Object?>({TResult Function( _Initial value)?  initial,TResult Function( _Loading value)?  loading,TResult Function( _Loaded value)?  loaded,TResult Function( _Error value)?  error,required TResult orElse(),}){
 final _that = this;
 switch (_that) {
 case _Initial() when initial != null:
 return initial(_that);case _Loading() when loading != null:
-return loading(_that);case _Success() when success != null:
-return success(_that);case _SkipSuccess() when skipSuccess != null:
-return skipSuccess(_that);case _Error() when error != null:
+return loading(_that);case _Loaded() when loaded != null:
+return loaded(_that);case _Error() when error != null:
 return error(_that);case _:
   return orElse();
 
@@ -81,14 +80,13 @@ return error(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult map<TResult extends Object?>({required TResult Function( _Initial value)  initial,required TResult Function( _Loading value)  loading,required TResult Function( _Success value)  success,required TResult Function( _SkipSuccess value)  skipSuccess,required TResult Function( _Error value)  error,}){
+@optionalTypeArgs TResult map<TResult extends Object?>({required TResult Function( _Initial value)  initial,required TResult Function( _Loading value)  loading,required TResult Function( _Loaded value)  loaded,required TResult Function( _Error value)  error,}){
 final _that = this;
 switch (_that) {
 case _Initial():
 return initial(_that);case _Loading():
-return loading(_that);case _Success():
-return success(_that);case _SkipSuccess():
-return skipSuccess(_that);case _Error():
+return loading(_that);case _Loaded():
+return loaded(_that);case _Error():
 return error(_that);case _:
   throw StateError('Unexpected subclass');
 
@@ -106,14 +104,13 @@ return error(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult? mapOrNull<TResult extends Object?>({TResult? Function( _Initial value)?  initial,TResult? Function( _Loading value)?  loading,TResult? Function( _Success value)?  success,TResult? Function( _SkipSuccess value)?  skipSuccess,TResult? Function( _Error value)?  error,}){
+@optionalTypeArgs TResult? mapOrNull<TResult extends Object?>({TResult? Function( _Initial value)?  initial,TResult? Function( _Loading value)?  loading,TResult? Function( _Loaded value)?  loaded,TResult? Function( _Error value)?  error,}){
 final _that = this;
 switch (_that) {
 case _Initial() when initial != null:
 return initial(_that);case _Loading() when loading != null:
-return loading(_that);case _Success() when success != null:
-return success(_that);case _SkipSuccess() when skipSuccess != null:
-return skipSuccess(_that);case _Error() when error != null:
+return loading(_that);case _Loaded() when loaded != null:
+return loaded(_that);case _Error() when error != null:
 return error(_that);case _:
   return null;
 
@@ -131,13 +128,12 @@ return error(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeWhen<TResult extends Object?>({TResult Function()?  initial,TResult Function()?  loading,TResult Function( PersonaResponse data)?  success,TResult Function()?  skipSuccess,TResult Function( String message)?  error,required TResult orElse(),}) {final _that = this;
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>({TResult Function()?  initial,TResult Function()?  loading,TResult Function( List<SavedPlaceItem> items)?  loaded,TResult Function( String message)?  error,required TResult orElse(),}) {final _that = this;
 switch (_that) {
 case _Initial() when initial != null:
 return initial();case _Loading() when loading != null:
-return loading();case _Success() when success != null:
-return success(_that.data);case _SkipSuccess() when skipSuccess != null:
-return skipSuccess();case _Error() when error != null:
+return loading();case _Loaded() when loaded != null:
+return loaded(_that.items);case _Error() when error != null:
 return error(_that.message);case _:
   return orElse();
 
@@ -156,13 +152,12 @@ return error(_that.message);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult when<TResult extends Object?>({required TResult Function()  initial,required TResult Function()  loading,required TResult Function( PersonaResponse data)  success,required TResult Function()  skipSuccess,required TResult Function( String message)  error,}) {final _that = this;
+@optionalTypeArgs TResult when<TResult extends Object?>({required TResult Function()  initial,required TResult Function()  loading,required TResult Function( List<SavedPlaceItem> items)  loaded,required TResult Function( String message)  error,}) {final _that = this;
 switch (_that) {
 case _Initial():
 return initial();case _Loading():
-return loading();case _Success():
-return success(_that.data);case _SkipSuccess():
-return skipSuccess();case _Error():
+return loading();case _Loaded():
+return loaded(_that.items);case _Error():
 return error(_that.message);case _:
   throw StateError('Unexpected subclass');
 
@@ -180,13 +175,12 @@ return error(_that.message);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>({TResult? Function()?  initial,TResult? Function()?  loading,TResult? Function( PersonaResponse data)?  success,TResult? Function()?  skipSuccess,TResult? Function( String message)?  error,}) {final _that = this;
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>({TResult? Function()?  initial,TResult? Function()?  loading,TResult? Function( List<SavedPlaceItem> items)?  loaded,TResult? Function( String message)?  error,}) {final _that = this;
 switch (_that) {
 case _Initial() when initial != null:
 return initial();case _Loading() when loading != null:
-return loading();case _Success() when success != null:
-return success(_that.data);case _SkipSuccess() when skipSuccess != null:
-return skipSuccess();case _Error() when error != null:
+return loading();case _Loaded() when loaded != null:
+return loaded(_that.items);case _Error() when error != null:
 return error(_that.message);case _:
   return null;
 
@@ -198,7 +192,7 @@ return error(_that.message);case _:
 /// @nodoc
 
 
-class _Initial implements QuizState {
+class _Initial implements SavedState {
   const _Initial();
   
 
@@ -218,7 +212,7 @@ int get hashCode => runtimeType.hashCode;
 
 @override
 String toString() {
-  return 'QuizState.initial()';
+  return 'SavedState.initial()';
 }
 
 
@@ -230,7 +224,7 @@ String toString() {
 /// @nodoc
 
 
-class _Loading implements QuizState {
+class _Loading implements SavedState {
   const _Loading();
   
 
@@ -250,7 +244,7 @@ int get hashCode => runtimeType.hashCode;
 
 @override
 String toString() {
-  return 'QuizState.loading()';
+  return 'SavedState.loading()';
 }
 
 
@@ -262,43 +256,49 @@ String toString() {
 /// @nodoc
 
 
-class _Success implements QuizState {
-  const _Success(this.data);
+class _Loaded implements SavedState {
+  const _Loaded(final  List<SavedPlaceItem> items): _items = items;
   
 
- final  PersonaResponse data;
+ final  List<SavedPlaceItem> _items;
+ List<SavedPlaceItem> get items {
+  if (_items is EqualUnmodifiableListView) return _items;
+  // ignore: implicit_dynamic_type
+  return EqualUnmodifiableListView(_items);
+}
 
-/// Create a copy of QuizState
+
+/// Create a copy of SavedState
 /// with the given fields replaced by the non-null parameter values.
 @JsonKey(includeFromJson: false, includeToJson: false)
 @pragma('vm:prefer-inline')
-_$SuccessCopyWith<_Success> get copyWith => __$SuccessCopyWithImpl<_Success>(this, _$identity);
+_$LoadedCopyWith<_Loaded> get copyWith => __$LoadedCopyWithImpl<_Loaded>(this, _$identity);
 
 
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is _Success&&(identical(other.data, data) || other.data == data));
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is _Loaded&&const DeepCollectionEquality().equals(other._items, _items));
 }
 
 
 @override
-int get hashCode => Object.hash(runtimeType,data);
+int get hashCode => Object.hash(runtimeType,const DeepCollectionEquality().hash(_items));
 
 @override
 String toString() {
-  return 'QuizState.success(data: $data)';
+  return 'SavedState.loaded(items: $items)';
 }
 
 
 }
 
 /// @nodoc
-abstract mixin class _$SuccessCopyWith<$Res> implements $QuizStateCopyWith<$Res> {
-  factory _$SuccessCopyWith(_Success value, $Res Function(_Success) _then) = __$SuccessCopyWithImpl;
+abstract mixin class _$LoadedCopyWith<$Res> implements $SavedStateCopyWith<$Res> {
+  factory _$LoadedCopyWith(_Loaded value, $Res Function(_Loaded) _then) = __$LoadedCopyWithImpl;
 @useResult
 $Res call({
- PersonaResponse data
+ List<SavedPlaceItem> items
 });
 
 
@@ -306,19 +306,19 @@ $Res call({
 
 }
 /// @nodoc
-class __$SuccessCopyWithImpl<$Res>
-    implements _$SuccessCopyWith<$Res> {
-  __$SuccessCopyWithImpl(this._self, this._then);
+class __$LoadedCopyWithImpl<$Res>
+    implements _$LoadedCopyWith<$Res> {
+  __$LoadedCopyWithImpl(this._self, this._then);
 
-  final _Success _self;
-  final $Res Function(_Success) _then;
+  final _Loaded _self;
+  final $Res Function(_Loaded) _then;
 
-/// Create a copy of QuizState
+/// Create a copy of SavedState
 /// with the given fields replaced by the non-null parameter values.
-@pragma('vm:prefer-inline') $Res call({Object? data = null,}) {
-  return _then(_Success(
-null == data ? _self.data : data // ignore: cast_nullable_to_non_nullable
-as PersonaResponse,
+@pragma('vm:prefer-inline') $Res call({Object? items = null,}) {
+  return _then(_Loaded(
+null == items ? _self._items : items // ignore: cast_nullable_to_non_nullable
+as List<SavedPlaceItem>,
   ));
 }
 
@@ -328,45 +328,13 @@ as PersonaResponse,
 /// @nodoc
 
 
-class _SkipSuccess implements QuizState {
-  const _SkipSuccess();
-  
-
-
-
-
-
-
-@override
-bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is _SkipSuccess);
-}
-
-
-@override
-int get hashCode => runtimeType.hashCode;
-
-@override
-String toString() {
-  return 'QuizState.skipSuccess()';
-}
-
-
-}
-
-
-
-
-/// @nodoc
-
-
-class _Error implements QuizState {
+class _Error implements SavedState {
   const _Error(this.message);
   
 
  final  String message;
 
-/// Create a copy of QuizState
+/// Create a copy of SavedState
 /// with the given fields replaced by the non-null parameter values.
 @JsonKey(includeFromJson: false, includeToJson: false)
 @pragma('vm:prefer-inline')
@@ -385,14 +353,14 @@ int get hashCode => Object.hash(runtimeType,message);
 
 @override
 String toString() {
-  return 'QuizState.error(message: $message)';
+  return 'SavedState.error(message: $message)';
 }
 
 
 }
 
 /// @nodoc
-abstract mixin class _$ErrorCopyWith<$Res> implements $QuizStateCopyWith<$Res> {
+abstract mixin class _$ErrorCopyWith<$Res> implements $SavedStateCopyWith<$Res> {
   factory _$ErrorCopyWith(_Error value, $Res Function(_Error) _then) = __$ErrorCopyWithImpl;
 @useResult
 $Res call({
@@ -411,7 +379,7 @@ class __$ErrorCopyWithImpl<$Res>
   final _Error _self;
   final $Res Function(_Error) _then;
 
-/// Create a copy of QuizState
+/// Create a copy of SavedState
 /// with the given fields replaced by the non-null parameter values.
 @pragma('vm:prefer-inline') $Res call({Object? message = null,}) {
   return _then(_Error(

@@ -211,19 +211,6 @@ class _ProfileView extends StatelessWidget {
         _sectionHeader("Settings"),
         const SizedBox(height: 12),
 
-        // Retake Quiz
-        _settingsTile(
-          context,
-          icon: Icons.quiz_outlined,
-          title: "Retake Onboarding Quiz",
-          subtitle: "Update your travel preferences",
-          onTap: () {
-            Navigator.pushNamed(context, "/quiz");
-          },
-        ),
-
-        const SizedBox(height: 8),
-
         // Logout
         _settingsTile(
           context,

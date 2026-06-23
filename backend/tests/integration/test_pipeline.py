@@ -260,9 +260,10 @@ class TestErrorPropagation:
     @pytest.mark.asyncio
     @patch("ai_engine.agents.planning_agent.invoke_with_fallback")
     async def test_invalid_json_from_planner_sets_error(self, mock_plan_llm):
-        """Planning Agent returns invalid JSON → error state set."""
-        mock_plan_llm.return_value = MagicMock()
-        mock_plan_llm.return_value.content = "not valid json at all"
+        """Planning Agent returns empty itinerary → error state set."""
+        mock_response = MagicMock()
+        mock_response.model_dump.return_value = {"days": []}
+        mock_plan_llm.return_value = mock_response
 
         state = build_pipeline_state()
 

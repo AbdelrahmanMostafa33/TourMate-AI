@@ -1,6 +1,5 @@
 import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../../core/network/api_services.dart';
-import '../data/models/review_model.dart';
 import 'reviews_state.dart';
 
 class ReviewsCubit extends Cubit<ReviewsState> {
@@ -16,8 +15,7 @@ class ReviewsCubit extends Cubit<ReviewsState> {
     final prevFilter = _getFilter();
     emit(const ReviewsState.loading());
     try {
-      final json = await _api.getPlaceReviews(placeId);
-      final data = PlaceReviewsResponse.fromJson(json);
+      final data = await _api.getPlaceReviews(placeId);
       emit(ReviewsState.loaded(
         data: data,
         sortBy: prevSort,

@@ -21,7 +21,6 @@ class MainShell extends StatefulWidget {
 
 class _MainShellState extends State<MainShell> {
   int currentIndex = 0;
-  int _savedTabCounter = 0;
 
   @override
   Widget build(BuildContext context) {
@@ -32,22 +31,12 @@ class _MainShellState extends State<MainShell> {
       ],
       child: Builder(
         builder: (context) {
-          final pages = [
-            const ChatScreen(),
-            const TripsScreen(),
-            const ExploreScreen(),
-            SavedScreen(key: ValueKey(_savedTabCounter)),
-            const ProfileScreen(),
-          ];
-
           return Scaffold(
             backgroundColor: Colors.white,
 
-            /// BODY
-            body: IndexedStack(
-              index: currentIndex,
-              children: pages,
-            ),
+            /// BODY — only build the active tab so off-screen widgets
+            /// (and their Cubits/WebSockets) are disposed.
+            body: _buildActivePage(context),
 
             /// NAVBAR
             bottomNavigationBar: Padding(
@@ -69,6 +58,30 @@ class _MainShellState extends State<MainShell> {
     );
   }
 
+  /// Returns only the active tab's widget. Unlike [IndexedStack], this
+  /// disposes off-screen widgets so their Cubits (and any open WebSockets)
+  /// are properly cleaned up when the user switches tabs.
+  Widget _buildActivePage(BuildContext context) {
+    switch (currentIndex) {
+      case 0:
+        return ChatScreen(
+          onTripCreated: () {
+            context.read<TripsCubit>().getTrips();
+          },
+        );
+      case 1:
+        return const TripsScreen();
+      case 2:
+        return const ExploreScreen();
+      case 3:
+        return const SavedScreen();
+      case 4:
+        return const ProfileScreen();
+      default:
+        return const SizedBox.shrink();
+    }
+  }
+
   Widget _navItem(IconData icon, String label, int index) {
     final isActive = currentIndex == index;
 
@@ -87,10 +100,6 @@ class _MainShellState extends State<MainShell> {
             /// 🔥 Refresh explore when opening Explore tab
             if (index == 2) {
               context.read<ExploreCubit>().init();
-            }
-            /// 🔥 Refresh saved places when opening Saved tab
-            if (index == 3) {
-              _savedTabCounter++;
             }
           },
           child: Column(

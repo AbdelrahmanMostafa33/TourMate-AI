@@ -114,7 +114,15 @@ async def planning_node(state: TripState) -> TripState:
                               f"Building your {state.get('duration_days', '?')}-day itinerary...")
 
     print(f"[Planner] Planning with {len(candidates)} candidates")
-    result = await run_planning_agent(state)
+
+    # Build a progress callback so invoke_with_fallback can report
+    # intermediate rate-limit retries to the Flutter UI.
+    async def _planner_retry_cb(attempt, max_retries, reason):
+        if pk:
+            await report_progress(pk, "Planner", "running",
+                f"{reason} ({attempt}/{max_retries})")
+
+    result = await run_planning_agent(state, on_retry=_planner_retry_cb)
 
     draft = result.get("draft_itinerary") or {}
     days = len(draft.get("days", []))
@@ -169,7 +177,14 @@ async def validation_node(state: TripState) -> TripState:
         await report_progress(pk, "Validator", "running", "Reviewing itinerary quality...")
 
     print(f"[Validator] Validating {days}-day itinerary...")
-    result = await run_validation_agent(state)
+
+    # Build a progress callback for LLM retry reporting
+    async def _validator_retry_cb(attempt, max_retries, reason):
+        if pk:
+            await report_progress(pk, "Validator", "running",
+                f"{reason} ({attempt}/{max_retries})")
+
+    result = await run_validation_agent(state, on_retry=_validator_retry_cb)
 
     if pk:
         is_valid = result.get("is_valid")

@@ -255,15 +255,118 @@ async def search_places(
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# GET /places/city/{city}
-# Simple city retrieval (backward compatible)
+# POST /places/search/semantic
+# Semantic search using embeddings
 # ═══════════════════════════════════════════════════════════════════════════════
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
-# GET /places/{place_id}
-# Returns full details for a single place
-# ═══════════════════════════════════════════════════════════════════════════════
+@router.post("/search/semantic")
+async def semantic_search_places(
+    request: dict,
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Semantic search using text embeddings and cosine similarity.
+
+    Takes a natural language query, embeds it, and returns places
+    ranked by semantic similarity to the query.
+
+    **Request body:**
+    - query: Natural language search query (e.g. "romantic dinner with sea view")
+    - city: Optional city filter
+    - category: Optional category filter
+    - limit: Max results (default 20)
+
+    **Returns:**
+    - places: List of places with similarity scores
+    - total: Total matching places
+    - query: The original query
+    """
+    from ai_engine.services.embedding_service import (
+        embed_query, cosine_similarity, build_query_text
+    )
+    from app.models.place import Place
+    from sqlalchemy.orm import selectinload
+    from sqlalchemy import select, and_, func, cast, String as SAString
+    import numpy as np
+
+    query_text = request.get("query", "").strip()
+    if not query_text:
+        raise HTTPException(status_code=400, detail="Query is required")
+
+    city_filter = request.get("city")
+    category_filter = request.get("category")
+    limit = request.get("limit", 20)
+
+    # Format query for embedding
+    formatted_query = f"task: search result | query: {query_text}"
+    query_vector = embed_query(formatted_query)
+
+    if query_vector is None:
+        raise HTTPException(
+            status_code=503,
+            detail="Embedding service unavailable. Please try again."
+        )
+
+    # Load all places with embeddings (optionally filtered by city/category)
+    filters = [
+        Place.embedding.isnot(None),
+    ]
+
+    if city_filter:
+        filters.append(func.lower(Place.city) == city_filter.lower().strip())
+
+    if category_filter:
+        cat_lower = category_filter.lower().strip()
+        cat_map = {
+            "attraction": "attraction", "attractions": "attraction",
+            "restaurant": "restaurant", "restaurants": "restaurant",
+            "hotel": "hotel", "hotels": "hotel",
+        }
+        if cat_lower in cat_map:
+            filters.append(
+                func.lower(cast(Place.category, SAString)) == cat_map[cat_lower]
+            )
+
+    stmt = (
+        select(Place)
+        .options(
+            selectinload(Place.attraction_details),
+            selectinload(Place.restaurant_details),
+            selectinload(Place.hotel_details),
+        )
+        .where(and_(*filters))
+    )
+
+    result = await db.execute(stmt)
+    places = result.scalars().unique().all()
+
+    # Compute similarity scores
+    repo = PlaceRepository(db)
+    scored_places = []
+    for place in places:
+        if place.embedding is not None:
+            try:
+                place_vector = list(place.embedding) if not isinstance(place.embedding, list) else place.embedding
+                score = cosine_similarity(query_vector, place_vector)
+                place_dict = repo._place_to_dict(place)
+                place_dict["similarity_score"] = round(score, 4)
+                scored_places.append(place_dict)
+            except Exception:
+                continue
+
+    # Sort by similarity score descending
+    scored_places.sort(key=lambda p: p.get("similarity_score", 0), reverse=True)
+
+    # Apply limit
+    total = len(scored_places)
+    scored_places = scored_places[:limit]
+
+    return {
+        "places": scored_places,
+        "total": total,
+        "query": query_text,
+    }
 
 
 @router.get("/{place_id}")

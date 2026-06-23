@@ -1,67 +1,57 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import '../../../../features/explore/data/models/place_model.dart';
 import '../../../../core/network/service_locator.dart';
 import '../../../../core/network/api_services.dart';
+import '../../../../features/explore/data/models/place_model.dart';
 import '../../data/models/review_model.dart';
+import '../../data/repository/places_repository.dart';
+import '../../logic/place_detail_cubit.dart';
+import '../../logic/place_detail_state.dart';
 import '../../logic/reviews_cubit.dart';
 import '../../logic/reviews_state.dart';
 import 'write_review_sheet.dart';
 
-class PlaceDetailScreen extends StatefulWidget {
+class PlaceDetailScreen extends StatelessWidget {
   final String placeId;
 
   const PlaceDetailScreen({super.key, required this.placeId});
 
   @override
-  State<PlaceDetailScreen> createState() => _PlaceDetailScreenState();
+  Widget build(BuildContext context) {
+    return BlocProvider(
+      create: (_) => PlaceDetailCubit(
+        locator<PlacesRepository>(),
+        placeId,
+      ),
+      child: _PlaceDetailView(placeId: placeId),
+    );
+  }
 }
 
-class _PlaceDetailScreenState extends State<PlaceDetailScreen> {
-  PlaceModel? _place;
-  bool _loading = true;
-  String? _error;
+class _PlaceDetailView extends StatelessWidget {
+  final String placeId;
 
-  @override
-  void initState() {
-    super.initState();
-    _loadPlace();
-  }
-
-  Future<void> _loadPlace() async {
-    try {
-      final api = locator<ApiServices>();
-      final data = await api.getPlaceDetail(widget.placeId);
-      if (mounted) {
-        setState(() {
-          _place = PlaceModel.fromJson(data);
-          _loading = false;
-        });
-      }
-    } catch (e) {
-      if (mounted) {
-        setState(() {
-          _error = e.toString();
-          _loading = false;
-        });
-      }
-    }
-  }
+  const _PlaceDetailView({required this.placeId});
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.white,
-      body: _loading
-          ? const Center(child: CircularProgressIndicator())
-          : _error != null
-              ? _buildError()
-              : _buildContent(),
+      body: BlocBuilder<PlaceDetailCubit, PlaceDetailState>(
+        builder: (context, state) {
+          return state.when(
+            initial: () => const Center(child: CircularProgressIndicator()),
+            loading: () => const Center(child: CircularProgressIndicator()),
+            error: (message) => _buildError(context, message),
+            loaded: (place) => _buildContent(context, place),
+          );
+        },
+      ),
     );
   }
 
-  Widget _buildError() {
+  Widget _buildError(BuildContext context, String message) {
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(24),
@@ -76,13 +66,13 @@ class _PlaceDetailScreenState extends State<PlaceDetailScreen> {
             ),
             const SizedBox(height: 8),
             Text(
-              _error!,
+              message,
               textAlign: TextAlign.center,
               style: TextStyle(color: Colors.grey[600]),
             ),
             const SizedBox(height: 24),
             ElevatedButton(
-              onPressed: _loadPlace,
+              onPressed: () => context.read<PlaceDetailCubit>().load(),
               style: ElevatedButton.styleFrom(
                 backgroundColor: Colors.black,
                 foregroundColor: Colors.white,
@@ -95,8 +85,7 @@ class _PlaceDetailScreenState extends State<PlaceDetailScreen> {
     );
   }
 
-  Widget _buildContent() {
-    final place = _place!;
+  Widget _buildContent(BuildContext context, PlaceModel place) {
     return CustomScrollView(
       slivers: [
         // ── Photo Header ─────────────────────────────────
@@ -496,7 +485,7 @@ class _PlaceDetailScreenState extends State<PlaceDetailScreen> {
   Widget _buildReviewsSection(PlaceModel place) {
     return BlocProvider(
       create: (_) =>
-          ReviewsCubit(locator<ApiServices>())..fetchReviews(widget.placeId),
+          ReviewsCubit(locator<ApiServices>())..fetchReviews(placeId),
       child: _ReviewsSection(place: place),
     );
   }

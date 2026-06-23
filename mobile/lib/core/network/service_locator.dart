@@ -4,16 +4,15 @@ import 'package:dio/dio.dart';
 import '../../features/auth/data/repository/profile_repository.dart';
 import '../../features/chat/data/datasource/chat_ws_service.dart';
 import '../../features/chat/data/repository/chat_repository.dart';
-import '../../features/quiz/data/repository/quiz_repository.dart';
 import '../../features/trips/data/repository/trips_repository.dart';
 import '../../features/explore/data/repository/explore_repository.dart';
+import '../../features/saved/data/repository/saved_repository.dart';
 import '../network/dio_factory.dart';
 import '../network/api_services.dart';
 
 import '../../features/auth/data/datasource/firebase_auth_service.dart';
 import '../../features/auth/data/repository/auth_repository.dart';
-
-// import '../../features/auth/data/repository/auth_repository.dart';
+import '../../features/places/data/repository/places_repository.dart';
 
 final locator = GetIt.instance;
 
@@ -49,12 +48,11 @@ Future<void> setupLocator() async {
         () => ProfileRepository(locator<ApiServices>()),
   );
 
-  locator.registerLazySingleton<QuizRepository>(
-        () => QuizRepository(),
-  );
-
   locator.registerLazySingleton(
-        () => ChatRepository(locator<ChatWebSocketService>()),
+        () => ChatRepository(
+          locator<ChatWebSocketService>(),
+          locator<ApiServices>(),
+        ),
   );
 
   locator.registerLazySingleton(
@@ -63,5 +61,13 @@ Future<void> setupLocator() async {
 
   locator.registerLazySingleton(
         () => ExploreRepository(locator<ApiServices>()),
+  );
+
+  locator.registerLazySingleton<SavedRepository>(
+        () => SavedRepository(locator<ApiServices>()),
+  );
+
+  locator.registerLazySingleton<PlacesRepository>(
+        () => PlacesRepository(locator<ApiServices>()),
   );
 }

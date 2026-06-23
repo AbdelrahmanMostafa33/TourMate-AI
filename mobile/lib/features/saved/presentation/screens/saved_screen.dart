@@ -1,52 +1,27 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
 
 import '../../../../core/network/service_locator.dart';
-import '../../../../core/network/api_services.dart';
-import '../../../explore/data/models/place_model.dart';
+import '../../../../features/explore/data/models/place_model.dart';
+import '../../data/models/saved_place_item.dart';
+import '../../data/repository/saved_repository.dart';
+import '../../logic/saved_cubit.dart';
+import '../../logic/saved_state.dart';
 
-class SavedScreen extends StatefulWidget {
+class SavedScreen extends StatelessWidget {
   const SavedScreen({super.key});
 
   @override
-  State<SavedScreen> createState() => _SavedScreenState();
+  Widget build(BuildContext context) {
+    return BlocProvider(
+      create: (_) => SavedCubit(locator<SavedRepository>())..load(),
+      child: const _SavedView(),
+    );
+  }
 }
 
-class _SavedScreenState extends State<SavedScreen> {
-  final ApiServices _api = locator<ApiServices>();
-  List<({String savedPlaceId, PlaceModel place})> _items = [];
-  bool _loading = true;
-  String? _error;
-
-  @override
-  void initState() {
-    super.initState();
-    _load();
-  }
-
-  Future<void> _load() async {
-    setState(() => _loading = true);
-    try {
-      final raw = await _api.getSavedPlaces();
-      final list = (raw as List<dynamic>).cast<Map<String, dynamic>>();
-      final items = list.map((e) {
-        final placeData = e['place'] as Map<String, dynamic>;
-        return (
-          savedPlaceId: e['saved_place_id'] as String? ?? '',
-          place: PlaceModel.fromJson(placeData),
-        );
-      }).toList();
-      if (mounted) setState(() { _items = items; _loading = false; });
-    } catch (e) {
-      if (mounted) setState(() { _error = e.toString(); _loading = false; });
-    }
-  }
-
-  Future<void> _unsave(String savedPlaceId) async {
-    try {
-      await _api.unsavePlace(savedPlaceId);
-      setState(() => _items.removeWhere((i) => i.savedPlaceId == savedPlaceId));
-    } catch (_) {}
-  }
+class _SavedView extends StatelessWidget {
+  const _SavedView();
 
   @override
   Widget build(BuildContext context) {
@@ -61,43 +36,50 @@ class _SavedScreenState extends State<SavedScreen> {
         ),
         centerTitle: false,
       ),
-      body: _buildBody(),
+      body: BlocBuilder<SavedCubit, SavedState>(
+        builder: (context, state) {
+          return state.when(
+            initial: () => const SizedBox(),
+            loading: () => const Center(child: CircularProgressIndicator(color: Colors.black)),
+            error: (message) => _buildError(context, message),
+            loaded: (items) => _buildLoaded(context, items),
+          );
+        },
+      ),
     );
   }
 
-  Widget _buildBody() {
-    if (_loading) {
-      return const Center(child: CircularProgressIndicator(color: Colors.black));
-    }
-    if (_error != null) {
-      return Center(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(Icons.cloud_off, size: 64, color: Colors.grey[300]),
-              const SizedBox(height: 16),
-              Text("Couldn't load saved places",
-                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.grey[800])),
-              const SizedBox(height: 8),
-              Text(_error!, textAlign: TextAlign.center, style: TextStyle(color: Colors.grey[600], fontSize: 13)),
-              const SizedBox(height: 24),
-              ElevatedButton(
-                onPressed: _load,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.black, foregroundColor: Colors.white,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                  padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-                ),
-                child: const Text('Try Again'),
+  Widget _buildError(BuildContext context, String message) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.cloud_off, size: 64, color: Colors.grey[300]),
+            const SizedBox(height: 16),
+            Text("Couldn't load saved places",
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.grey[800])),
+            const SizedBox(height: 8),
+            Text(message, textAlign: TextAlign.center, style: TextStyle(color: Colors.grey[600], fontSize: 13)),
+            const SizedBox(height: 24),
+            ElevatedButton(
+              onPressed: () => context.read<SavedCubit>().load(),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.black, foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
               ),
-            ],
-          ),
+              child: const Text('Try Again'),
+            ),
+          ],
         ),
-      );
-    }
-    if (_items.isEmpty) {
+      ),
+    );
+  }
+
+  Widget _buildLoaded(BuildContext context, List<SavedPlaceItem> items) {
+    if (items.isEmpty) {
       return Center(
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -113,15 +95,16 @@ class _SavedScreenState extends State<SavedScreen> {
         ),
       );
     }
+
     return RefreshIndicator(
       color: Colors.black,
-      onRefresh: _load,
+      onRefresh: () => context.read<SavedCubit>().refresh(),
       child: ListView.separated(
         padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
-        itemCount: _items.length,
+        itemCount: items.length,
         separatorBuilder: (_, _) => const SizedBox(height: 12),
         itemBuilder: (context, index) {
-          final item = _items[index];
+          final item = items[index];
           return _SavedPlaceCard(
             place: item.place,
             onTap: () {
@@ -129,7 +112,7 @@ class _SavedScreenState extends State<SavedScreen> {
                 Navigator.pushNamed(context, '/place-detail', arguments: item.place.placeId);
               }
             },
-            onUnsave: () => _unsave(item.savedPlaceId),
+            onUnsave: () => context.read<SavedCubit>().unsave(item.savedPlaceId),
           );
         },
       ),

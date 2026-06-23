@@ -16,11 +16,11 @@ class SignInScreen extends StatefulWidget {
 }
 
 class _SignInScreenState extends State<SignInScreen> {
-
   final emailController = TextEditingController();
   final passwordController = TextEditingController();
 
   bool loading = false;
+  bool _obscurePassword = true;
 
   Future<void> login() async {
     setState(() => loading = true);
@@ -29,22 +29,17 @@ class _SignInScreenState extends State<SignInScreen> {
       final firebase = locator<FirebaseAuthService>();
       final profileRepo = locator<ProfileRepository>();
       final authRepo = locator<AuthRepository>();
-      /// 1. Firebase login
-      await firebase.signIn(
-        emailController.text,
-        passwordController.text,
-      );
 
-      /// 2. Backend login (GET USER DATA)
+      await firebase.signIn(emailController.text, passwordController.text);
+
       await authRepo.login();
       final profile = await profileRepo.getProfile();
       if (!mounted) return;
 
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Login successful")),
+        const SnackBar(content: Text("Welcome back!")),
       );
 
-      /// 3. NAVIGATION LOGIC 🔥
       if (profile is Success) {
         Navigator.pushReplacementNamed(context, "/home");
       } else if (profile is Failure) {
@@ -55,7 +50,6 @@ class _SignInScreenState extends State<SignInScreen> {
           ),
         );
       }
-
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -69,24 +63,19 @@ class _SignInScreenState extends State<SignInScreen> {
   }
 
   Future<void> googleLogin() async {
-
     setState(() => loading = true);
 
     try {
-
       final firebase = locator<FirebaseAuthService>();
       final repo = locator<AuthRepository>();
 
       await firebase.signInWithGoogle();
-
       await repo.login();
 
-      if(!mounted) return;
+      if (!mounted) return;
 
-      /// Navigate to home
       Navigator.pushReplacementNamed(context, "/home");
-
-    } catch(e) {
+    } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(handleAuthError(e)),
@@ -99,167 +88,223 @@ class _SignInScreenState extends State<SignInScreen> {
   }
 
   @override
+  void dispose() {
+    emailController.dispose();
+    passwordController.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
-
     return Scaffold(
-
       body: Container(
-
-        padding: const EdgeInsets.symmetric(horizontal: 25),
-
+        width: double.infinity,
+        height: double.infinity,
         decoration: const BoxDecoration(
           gradient: LinearGradient(
-            colors: [
-              Color(0xff5e8b8f),
-              Color(0xffdcdcdc),
-            ],
+            colors: [Color(0xff5e8b8f), Color(0xffdcdcdc)],
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
           ),
         ),
-
         child: SafeArea(
-
-          child: Column(
-
-            mainAxisAlignment: MainAxisAlignment.center,
-
-            children: [
-
-              const Text(
-                "Sign In",
-                style: TextStyle(
-                  fontSize: 26,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-
-              const SizedBox(height: 20),
-
-              RichText(
-                text: TextSpan(
-                  style: const TextStyle(
-                    color: Colors.black,
-                    fontSize: 14,
+          child: Center(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.symmetric(horizontal: 28),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(18),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.2),
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: const Icon(
+                      Icons.travel_explore_rounded,
+                      size: 40,
+                      color: Colors.white,
+                    ),
                   ),
-                  children: [
-                    const TextSpan(text: "New to TourMate? "),
-                    TextSpan(
-                      text: "Sign up",
-                      style: const TextStyle(
-                        fontWeight: FontWeight.bold,
+                  const SizedBox(height: 28),
+                  const Text(
+                    "Welcome Back",
+                    style: TextStyle(
+                      fontSize: 30,
+                      fontWeight: FontWeight.w700,
+                      color: Colors.white,
+                      letterSpacing: -0.5,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    "Sign in to continue your journey",
+                    style: TextStyle(
+                      fontSize: 14,
+                      color: Colors.white.withValues(alpha: 0.8),
+                    ),
+                  ),
+                  const SizedBox(height: 36),
+                  CustomTextField(
+                    controller: emailController,
+                    hint: "Email address",
+                  ),
+                  const SizedBox(height: 14),
+                  _buildPasswordField(),
+                  const SizedBox(height: 28),
+                  SizedBox(
+                    width: double.infinity,
+                    height: 54,
+                    child: ElevatedButton(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.black,
+                        foregroundColor: Colors.white,
+                        elevation: 0,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(16),
+                        ),
                       ),
-                      recognizer: TapGestureRecognizer()
-                        ..onTap = () {
-                          Navigator.pushNamed(context, "/signup");
-                        },
-                    ),
-                  ],
-                ),
-              ),
-
-              const SizedBox(height: 30),
-
-              CustomTextField(
-                controller: emailController,
-                hint: "Email",
-              ),
-
-              const SizedBox(height: 15),
-
-              CustomTextField(
-                controller: passwordController,
-                hint: "Password",
-                isPassword: true,
-              ),
-
-              const SizedBox(height: 25),
-
-              SizedBox(
-                width: double.infinity,
-                height: 55,
-
-                child: ElevatedButton(
-
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.black,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(30),
+                      onPressed: loading ? null : login,
+                      child: loading
+                          ? const SizedBox(
+                              width: 22,
+                              height: 22,
+                              child: CircularProgressIndicator(
+                                color: Colors.white,
+                                strokeWidth: 2.5,
+                              ),
+                            )
+                          : const Text(
+                              "Sign In",
+                              style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
                     ),
                   ),
-
-                  onPressed: loading ? null : login,
-
-                  child: loading
-                      ? const CircularProgressIndicator(
-                      color: Colors.white)
-                      : const Text("Continue",
-                      style: TextStyle(fontSize: 16, color: Colors.white)
-                  ),
-                ),
-              ),
-
-              const SizedBox(height: 30),
-
-              /// Google Login Button
-              GestureDetector(
-                onTap: googleLogin,
-                child: Container(
-                  height: 55,
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(30),
-                    border: Border.all(color: Colors.grey.shade300),
-                  ),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
+                  const SizedBox(height: 20),
+                  Row(
                     children: [
-                      Image.asset('assets/images/google.png', height: 24, width: 24),
-                      const SizedBox(width: 10),
-                      const Text("Continue with Google"),
+                      Expanded(
+                        child: Divider(
+                          color: Colors.white.withValues(alpha: 0.3),
+                        ),
+                      ),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 16),
+                        child: Text(
+                          "or",
+                          style: TextStyle(
+                            fontSize: 13,
+                            color: Colors.white.withValues(alpha: 0.7),
+                          ),
+                        ),
+                      ),
+                      Expanded(
+                        child: Divider(
+                          color: Colors.white.withValues(alpha: 0.3),
+                        ),
+                      ),
                     ],
                   ),
-                ),
+                  const SizedBox(height: 20),
+                  SizedBox(
+                    width: double.infinity,
+                    height: 54,
+                    child: OutlinedButton(
+                      onPressed: loading ? null : googleLogin,
+                      style: OutlinedButton.styleFrom(
+                        backgroundColor: Colors.white,
+                        foregroundColor: Colors.black87,
+                        side: BorderSide.none,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                      ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Image.asset(
+                            'assets/images/google.png',
+                            height: 22,
+                            width: 22,
+                            errorBuilder: (_, _, _) =>
+                                const Icon(Icons.g_mobiledata, size: 28),
+                          ),
+                          const SizedBox(width: 10),
+                          const Text(
+                            "Continue with Google",
+                            style: TextStyle(
+                              fontSize: 15,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 28),
+                  RichText(
+                    text: TextSpan(
+                      style: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.8),
+                        fontSize: 14,
+                      ),
+                      children: [
+                        const TextSpan(text: "New to TourMate? "),
+                        TextSpan(
+                          text: "Create account",
+                          style: TextStyle(
+                            fontWeight: FontWeight.w700,
+                            color: Colors.white.withValues(alpha: 0.95),
+                            decoration: TextDecoration.underline,
+                          ),
+                          recognizer: TapGestureRecognizer()
+                            ..onTap = () {
+                              Navigator.pushNamed(context, "/signup");
+                            },
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 24),
+                ],
               ),
-
-              const SizedBox(height: 15),
-            ],
+            ),
           ),
         ),
       ),
     );
   }
 
-  Widget socialButton({
-    required IconData icon,
-    required String text,
-    required VoidCallback onTap,
-  }) {
-
-    return GestureDetector(
-
-      onTap: onTap,
-
-      child: Container(
-
-        height: 55,
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(30),
-        ),
-
-        child: Row(
-
-          mainAxisAlignment: MainAxisAlignment.center,
-
-          children: [
-
-            Icon(icon),
-
-            const SizedBox(width: 10),
-
-            Text(text),
-          ],
+  Widget _buildPasswordField() {
+    return Container(
+      height: 55,
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: TextField(
+        controller: passwordController,
+        obscureText: _obscurePassword,
+        decoration: InputDecoration(
+          hintText: "Password",
+          hintStyle: TextStyle(color: Colors.grey.shade400),
+          border: InputBorder.none,
+          contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+          suffixIcon: IconButton(
+            icon: Icon(
+              _obscurePassword
+                  ? Icons.visibility_off_outlined
+                  : Icons.visibility_outlined,
+              color: Colors.grey.shade500,
+              size: 22,
+            ),
+            onPressed: () {
+              setState(() => _obscurePassword = !_obscurePassword);
+            },
+          ),
         ),
       ),
     );

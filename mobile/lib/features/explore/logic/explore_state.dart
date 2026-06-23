@@ -13,6 +13,7 @@ class ExploreState with _$ExploreState {
     required List<PlaceModel> places,
     required int total,
     required bool isLoadingMore,
+    @Default(false) bool isLoadingResults,
     String? selectedCity,
     String? selectedCategory,
     @Default(<String>{}) Set<String> savedPlaceIds,
