@@ -131,7 +131,7 @@ class _PlaceDetailScreenState extends State<PlaceDetailScreen> {
                 ],
                 const SizedBox(height: 16),
                 _buildCategoryDetails(place),
-                if (place.lat != null && place.lon != null) ...[
+                if (place.lat != null && place.lng != null) ...[
                   const SizedBox(height: 16),
                   _buildLocationSection(place),
                 ],
@@ -340,7 +340,7 @@ class _PlaceDetailScreenState extends State<PlaceDetailScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  '${place.lat!.toStringAsFixed(4)}, ${place.lon!.toStringAsFixed(4)}',
+                  '${place.lat!.toStringAsFixed(4)}, ${place.lng!.toStringAsFixed(4)}',
                   style: TextStyle(fontSize: 13, color: Colors.grey[700]),
                 ),
                 const SizedBox(height: 2),
@@ -985,12 +985,11 @@ class _ReviewsSection extends StatelessWidget {
       ),
       builder: (ctx) => BlocProvider.value(
         value: context.read<ReviewsCubit>(),
-        child: WriteReviewSheet(
-          placeId: place.id,
-          onSubmit: ({required int rating, String? comment}) async {
+        child: WriteReviewSheet(              placeId: place.placeId,
+              onSubmit: ({required int rating, String? comment}) async {
             final cubit = context.read<ReviewsCubit>();
             final success = await cubit.submitReview(
-              placeId: place.id,
+              placeId: place.placeId,
               rating: rating,
               comment: comment,
             );
@@ -1028,7 +1027,7 @@ class _ReviewsSection extends StatelessWidget {
       builder: (ctx) => BlocProvider.value(
         value: context.read<ReviewsCubit>(),
         child: WriteReviewSheet(
-          placeId: place.id,
+          placeId: place.placeId,
           isEditing: true,
           initialRating: review.rating,
           initialComment: review.comment,

@@ -28,9 +28,7 @@ class _CreateTripView extends StatefulWidget {
 class _CreateTripViewState extends State<_CreateTripView> {
   final _cityController = TextEditingController();
   final _countryController = TextEditingController();
-  final _budgetController = TextEditingController();
   final _travelersController = TextEditingController();
-  final _preferencesController = TextEditingController();
 
   DateTime? _startDate;
   DateTime? _endDate;
@@ -39,9 +37,7 @@ class _CreateTripViewState extends State<_CreateTripView> {
   void dispose() {
     _cityController.dispose();
     _countryController.dispose();
-    _budgetController.dispose();
     _travelersController.dispose();
-    _preferencesController.dispose();
     super.dispose();
   }
 
@@ -80,18 +76,12 @@ class _CreateTripViewState extends State<_CreateTripView> {
     }
 
     final destination = country.isNotEmpty ? "$city, $country" : city;
-    final prefsText = _preferencesController.text.trim();
-    final preferences = prefsText.isNotEmpty
-        ? prefsText.split(',').map((e) => e.trim()).where((e) => e.isNotEmpty).toList()
-        : null;
 
     final request = CreateTripRequest(
       destination: destination,
       startDate: _startDate?.toIso8601String(),
       endDate: _endDate?.toIso8601String(),
-      budget: double.tryParse(_budgetController.text.trim()),
       numberOfTravelers: int.tryParse(_travelersController.text.trim()),
-      preferences: preferences,
     );
 
     context.read<TripsCubit>().createTrip(request);
@@ -231,37 +221,11 @@ class _CreateTripViewState extends State<_CreateTripView> {
                     /// ── Details ──────────────────────────────────
                     _sectionLabel("Details"),
                     const SizedBox(height: 10),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: _field(
-                            controller: _budgetController,
-                            hint: "Budget (\$)",
-                            keyboardType: TextInputType.number,
-                            prefixIcon: Icons.attach_money,
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: _field(
-                            controller: _travelersController,
-                            hint: "#Travelers",
-                            keyboardType: TextInputType.number,
-                            prefixIcon: Icons.people_outline,
-                          ),
-                        ),
-                      ],
-                    ),
-
-                    const SizedBox(height: 24),
-
-                    /// ── Preferences ──────────────────────────────
-                    _sectionLabel("Preferences"),
-                    const SizedBox(height: 10),
                     _field(
-                      controller: _preferencesController,
-                      hint: "e.g. beach, culture, food, adventure...",
-                      maxLines: 4,
+                      controller: _travelersController,
+                      hint: "#Travelers",
+                      keyboardType: TextInputType.number,
+                      prefixIcon: Icons.people_outline,
                     ),
 
                     const SizedBox(height: 32),

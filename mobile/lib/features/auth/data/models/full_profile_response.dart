@@ -7,12 +7,6 @@ class TripProfileData {
   final List<String>? interests;
   final List<String>? foodPreferences;
   final List<String>? accommodationPreferences;
-  final double? luxuryScore;
-  final double? cultureScore;
-  final double? adventureScore;
-  final double? shoppingScore;
-  final double? familyScore;
-  final double? confidence;
 
   TripProfileData({
     this.profileId,
@@ -23,12 +17,6 @@ class TripProfileData {
     this.interests,
     this.foodPreferences,
     this.accommodationPreferences,
-    this.luxuryScore,
-    this.cultureScore,
-    this.adventureScore,
-    this.shoppingScore,
-    this.familyScore,
-    this.confidence,
   });
 
   factory TripProfileData.fromJson(Map<String, dynamic> json) {
@@ -41,12 +29,6 @@ class TripProfileData {
       interests: (json['interests'] as List?)?.map((e) => e.toString()).toList(),
       foodPreferences: (json['food_preferences'] as List?)?.map((e) => e.toString()).toList(),
       accommodationPreferences: (json['accommodation_preferences'] as List?)?.map((e) => e.toString()).toList(),
-      luxuryScore: (json['luxury_score'] as num?)?.toDouble(),
-      cultureScore: (json['culture_score'] as num?)?.toDouble(),
-      adventureScore: (json['adventure_score'] as num?)?.toDouble(),
-      shoppingScore: (json['shopping_score'] as num?)?.toDouble(),
-      familyScore: (json['family_score'] as num?)?.toDouble(),
-      confidence: (json['confidence'] as num?)?.toDouble(),
     );
   }
 }

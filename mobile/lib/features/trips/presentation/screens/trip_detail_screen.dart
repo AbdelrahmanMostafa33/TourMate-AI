@@ -258,12 +258,6 @@ class _TripDetailScreenState extends State<TripDetailScreen>
                       ? '${trip.durationDays} day${trip.durationDays > 1 ? 's' : ''}'
                       : 'Flexible',
                 ),
-                const SizedBox(width: 12),
-                if (trip.budget != null)
-                  _headerInfoChip(
-                    Icons.attach_money,
-                    '\$${trip.budget!.toStringAsFixed(0)}',
-                  ),
                 const Spacer(),
                 _statusBadge(trip.status),
               ],

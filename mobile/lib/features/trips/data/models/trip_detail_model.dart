@@ -8,8 +8,6 @@ class TripDetailModel {
   final String? startDate;
   final String? endDate;
   final int numberOfTravelers;
-  final String? travelerGroupType;
-  final double? budget;
   final String status;
   final String? createdAt;
   final String? updatedAt;
@@ -24,8 +22,6 @@ class TripDetailModel {
     this.startDate,
     this.endDate,
     required this.numberOfTravelers,
-    this.travelerGroupType,
-    this.budget,
     required this.status,
     this.createdAt,
     this.updatedAt,
@@ -73,8 +69,6 @@ class TripDetailModel {
       startDate: json['start_date'] as String?,
       endDate: json['end_date'] as String?,
       numberOfTravelers: (json['number_of_travelers'] as num?)?.toInt() ?? 1,
-      travelerGroupType: json['traveler_group_type'] as String?,
-      budget: (json['budget'] as num?)?.toDouble(),
       status: json['status'] as String? ?? 'planning',
       createdAt: json['created_at'] as String?,
       updatedAt: json['updated_at'] as String?,
