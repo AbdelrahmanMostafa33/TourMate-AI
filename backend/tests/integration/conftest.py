@@ -102,66 +102,71 @@ def build_preference_llm_response(refinements: dict | None = None) -> MagicMock:
 def build_planning_llm_response(
     num_days: int = 2,
     num_stops_per_day: int = 3,
-) -> MagicMock:
-    """Build a mock response for invoke_with_fallback (planning itinerary)."""
-    days = []
+) -> "ItineraryPlan":
+    """
+    Build a mock response for invoke_with_fallback (planning itinerary).
+
+    Returns an actual ``ItineraryPlan`` Pydantic model instance because
+    the planning agent now uses ``with_structured_output(ItineraryPlan)``
+    instead of parsing raw LLM text output.
+    """
+    from ai_engine.schemas.planning_schema import ItineraryPlan, Day, Stop, AccommodationSuggestion
+
     place_ids = ["place_001", "place_002", "place_003", "place_004"]
     place_names = ["Egyptian Museum", "Khan El Khalili", "Pyramids of Giza", "Al-Azhar Park"]
     categories = ["attractions", "attractions", "attractions", "attractions"]
+    sub_categories = ["museum", "market", "historic", "park"]
 
+    days = []
     for day_num in range(1, num_days + 1):
         stops = []
         for i in range(num_stops_per_day):
             idx = (day_num - 1) * num_stops_per_day + i
-            pid = place_ids[idx % len(place_ids)]
-            pname = place_names[idx % len(place_names)]
-            cat = categories[idx % len(categories)]
-            stops.append({
-                "id": pid,
-                "name": pname,
-                "category": cat,
-                "sub_category": "museum",
-                "lat": 30.0478,
-                "lon": 31.2336,
-                "why_recommended": f"Great {cat} spot",
-                "estimated_duration_minutes": 90,
-                "suggested_time_of_day": ["morning", "afternoon", "evening"][i % 3],
-            })
-        days.append({
-            "day_number": day_num,
-            "theme": f"Day {day_num} Theme",
-            "stops": stops,
-        })
+            stops.append(Stop(
+                id=place_ids[idx % len(place_ids)],
+                name=place_names[idx % len(place_names)],
+                category=categories[idx % len(categories)],
+                sub_category=sub_categories[idx % len(sub_categories)],
+                interest_tags=["history", "art", "museum"],
+                lat=30.0478,
+                lon=31.2336,
+                why_recommended=f"Great {categories[idx % len(categories)]} spot",
+                estimated_duration_minutes=90,
+                suggested_time_of_day=["morning", "afternoon", "evening"][i % 3],  # type: ignore[arg-type]
+            ))
+        days.append(Day(
+            day_number=day_num,
+            theme=f"Day {day_num} Theme",
+            stops=stops,
+        ))
 
-    itinerary = {
-        "destination": "Cairo",
-        "duration_days": num_days,
-        "accommodation_suggestions": [
-            {
-                "id": "hotel_001",
-                "name": "Marriott Mena House",
-                "sub_category": "luxury hotel",
-                "lat": 29.9758,
-                "lon": 31.1334,
-                "why_recommended": "Luxury hotel near pyramids",
-                "rating": 4.6,
-            },
-            {
-                "id": "hotel_002",
-                "name": "Steigenberger Tahrir",
-                "sub_category": "boutique hotel",
-                "lat": 30.0429,
-                "lon": 31.2347,
-                "why_recommended": "Boutique hotel in downtown",
-                "rating": 4.3,
-            },
+    return ItineraryPlan(
+        destination="Cairo",
+        duration_days=num_days,
+        accommodation_suggestions=[
+            AccommodationSuggestion(
+                id="hotel_001",
+                name="Marriott Mena House",
+                sub_category="luxury hotel",
+                accommodation_type="hotel",
+                lat=29.9758,
+                lon=31.1334,
+                why_recommended="Luxury hotel near pyramids",
+                rating=4.6,
+            ),
+            AccommodationSuggestion(
+                id="hotel_002",
+                name="Steigenberger Tahrir",
+                sub_category="boutique hotel",
+                accommodation_type="hotel",
+                lat=30.0429,
+                lon=31.2347,
+                why_recommended="Boutique hotel in downtown",
+                rating=4.3,
+            ),
         ],
-        "days": days,
-    }
-
-    response = MagicMock()
-    response.content = json.dumps(itinerary)
-    return response
+        days=days,
+    )
 
 
 def build_validation_llm_response(

@@ -76,14 +76,16 @@ async def load_trip_profile(trip_id: str, token: str) -> TripProfile:
         # Preferred accommodation types.
         accommodation_preferences=data.get("accommodation_preferences", []),
 
-        # AI-generated preference scores with fallback defaults.
-        luxury_score=data.get("luxury_score", 0.5),
-        culture_score=data.get("culture_score", 0.5),
-        adventure_score=data.get("adventure_score", 0.5),
+        # Scoring fields: API no longer returns these, so defaults are used.
+        # They remain in the TypedDict as runtime values for agent computations
+        # and image signal enrichment (multimodal_fusion.py).
+        luxury_score=0.5,
+        culture_score=0.5,
+        adventure_score=0.5,
 
 
         # Confidence score representing profile reliability.
-        confidence=data.get("confidence", 0.0),
+        confidence=0.0,
 
         # Timestamp when the profile was first generated.
         generated_at=data.get("generated_at"),

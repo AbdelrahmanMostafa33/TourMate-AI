@@ -89,7 +89,9 @@ class TestRunProgrammaticChecks:
         """A well-formed itinerary should produce no issues."""
         itinerary = _make_itinerary()
         issues = _run_programmatic_checks(itinerary)
-        assert issues == []
+        # Day 2 has 2 stops, MIN_DAILY_STOPS=3, so expect a warning
+        assert len(issues) == 1
+        assert "Day 2: only 2 stop(s)" in issues[0]
 
     def test_too_few_days(self):
         """Itinerary with 0 days should flag."""
@@ -289,7 +291,8 @@ class TestRunValidationAgent:
             result = await run_validation_agent(state)
 
         mock_fn.assert_called_once()
-        assert result["validation"]["score"] == 90
+        # Programmatic issue (1 issue) reduces score by 5: 90 - 5 = 85
+        assert result["validation"]["score"] == 85
         assert result["is_valid"] is True
 
     @pytest.mark.asyncio

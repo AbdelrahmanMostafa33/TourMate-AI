@@ -29,8 +29,6 @@ def build_auto_message(data: TripCreate, delta: int) -> str:
         msg += f" from {data.start_date} to {data.end_date}"
     if data.number_of_travelers and data.number_of_travelers > 1:
         msg += f", for {data.number_of_travelers} travelers"
-    if data.budget:
-        msg += f", with a total budget of ${data.budget}"
     return msg
 
 
@@ -61,7 +59,6 @@ async def create_trip(
         start_date           = data.start_date,
         end_date             = data.end_date,
         number_of_travelers  = data.number_of_travelers,
-        budget               = data.budget,
     )
     db.add(trip)
     await db.flush()

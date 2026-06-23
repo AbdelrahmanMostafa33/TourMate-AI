@@ -33,9 +33,9 @@ def _seed_places_sync(conn) -> None:
     conn.execute(text("INSERT INTO hotel_details (place_id, star_class, nightly_rate, amenities, accommodation_type) VALUES ('h2', 2, 40.0, '[\"wifi\"]', 'hostel')"))
 
     # Attractions
-    conn.execute(text("INSERT INTO places (place_id, name, category, lat, lng, rating, popularity_score, review_count, city, country, address) VALUES ('a1', 'Egyptian Museum', 'attractions', 30.0478, 31.2336, 4.7, 95, 2000, 'Cairo', 'Egypt', 'Tahrir Square')"))
-    conn.execute(text("INSERT INTO places (place_id, name, category, lat, lng, rating, popularity_score, review_count, city, country, address) VALUES ('a2', 'Khan El Khalili', 'attractions', 30.0476, 31.2611, 4.5, 85, 1500, 'Cairo', 'Egypt', 'El Muezz St')"))
-    conn.execute(text("INSERT INTO places (place_id, name, category, lat, lng, rating, popularity_score, review_count, city, country, address) VALUES ('a3', 'Pyramids of Giza', 'attractions', 29.9792, 31.1342, 4.8, 100, 5000, 'Cairo', 'Egypt', 'Al Haram')"))
+    conn.execute(text("INSERT INTO places (place_id, name, category, lat, lng, rating, popularity_score, review_count, city, country, address) VALUES ('a1', 'Egyptian Museum', 'attraction', 30.0478, 31.2336, 4.7, 95, 2000, 'Cairo', 'Egypt', 'Tahrir Square')"))
+    conn.execute(text("INSERT INTO places (place_id, name, category, lat, lng, rating, popularity_score, review_count, city, country, address) VALUES ('a2', 'Khan El Khalili', 'attraction', 30.0476, 31.2611, 4.5, 85, 1500, 'Cairo', 'Egypt', 'El Muezz St')"))
+    conn.execute(text("INSERT INTO places (place_id, name, category, lat, lng, rating, popularity_score, review_count, city, country, address) VALUES ('a3', 'Pyramids of Giza', 'attraction', 29.9792, 31.1342, 4.8, 100, 5000, 'Cairo', 'Egypt', 'Al Haram')"))
     conn.execute(text("INSERT INTO attraction_details (place_id, subcategory, entry_fee) VALUES ('a1', 'museum', 50.0)"))
     conn.execute(text("INSERT INTO attraction_details (place_id, subcategory) VALUES ('a2', 'market')"))
     conn.execute(text("INSERT INTO attraction_details (place_id, subcategory) VALUES ('a3', 'historic monument')"))
@@ -45,7 +45,7 @@ def _seed_places_sync(conn) -> None:
     conn.execute(text("INSERT INTO restaurant_details (place_id, cuisine_type, avg_cost_per_person) VALUES ('r1', 'local cuisine', 15.0)"))
 
     # Alexandria
-    conn.execute(text("INSERT INTO places (place_id, name, category, lat, lng, rating, popularity_score, review_count, city, country, address) VALUES ('ax1', 'Bibliotheca Alexandrina', 'attractions', 31.2089, 29.9092, 4.6, 88, 1800, 'Alexandria', 'Egypt', 'Al Corniche')"))
+    conn.execute(text("INSERT INTO places (place_id, name, category, lat, lng, rating, popularity_score, review_count, city, country, address) VALUES ('ax1', 'Bibliotheca Alexandrina', 'attraction', 31.2089, 29.9092, 4.6, 88, 1800, 'Alexandria', 'Egypt', 'Al Corniche')"))
     conn.execute(text("INSERT INTO attraction_details (place_id, subcategory) VALUES ('ax1', 'museum')"))
 
 
@@ -127,7 +127,7 @@ class TestGetPlacesForCityE2E:
         places = await seeded_db("Cairo")
         categories = {p["category"] for p in places}
         assert "hotel" in categories
-        assert "attractions" in categories
+        assert "attraction" in categories
         assert "restaurant" in categories
 
 

@@ -245,7 +245,7 @@ class TestTrimForPrompt:
         candidate = _make_candidate()
         trimmed = _trim_for_prompt(candidate)
 
-        expected_keys = {"id", "name", "category", "sub_category", "interest_tags", "lat", "lon", "rating", "score"}
+        expected_keys = {"id", "name", "category", "sub_category", "interest_tags", "lat", "lon", "score"}
         assert set(trimmed.keys()) == expected_keys
 
     def test_hotel_includes_accommodation_type(self):
@@ -289,7 +289,7 @@ class TestTrimForPrompt:
         assert trimmed["category"] == "attractions"
         assert trimmed["lat"] == 30.0478
         assert trimmed["lon"] == 31.2336
-        assert trimmed["rating"] == 4.7
+        assert trimmed["score"] == 95.0
 
     def test_score_uses_popularity(self):
         candidate = _make_candidate(popularity_score=85)
@@ -300,7 +300,6 @@ class TestTrimForPrompt:
         candidate = {"id": "x", "name": "X", "category": "test", "lat": 0.0, "lon": 0.0}
         trimmed = _trim_for_prompt(candidate)
         assert trimmed["sub_category"] == ""
-        assert trimmed["rating"] == 0
         assert trimmed["score"] == 0.0
 
 
@@ -347,12 +346,15 @@ class TestPlanningAgentEdgeCases:
         state = _make_planning_state()
         mock_llm = MagicMock()
         mock_llm.content = "This is not JSON at all"
+        # structured_output path: invoke_with_fallback returns an object with model_dump()
+        # Simulate failure by raising during model_dump
+        mock_llm.model_dump.side_effect = ValueError("Invalid structured output")
 
         with patch("ai_engine.agents.planning_agent.invoke_with_fallback", return_value=mock_llm):
             result = await run_planning_agent(state)
 
         assert result["error"] is not None
-        assert "Planning Agent failed" in result["error"]
+        assert "failed" in result["error"].lower()
 
     @pytest.mark.asyncio
     async def test_llm_returns_markdown_wrapped_json(self):
@@ -360,7 +362,7 @@ class TestPlanningAgentEdgeCases:
         itinerary = _make_valid_itinerary()
         state = _make_planning_state()
         mock_llm = MagicMock()
-        mock_llm.content = f"```json\n{json.dumps(itinerary)}\n```"
+        mock_llm.model_dump.return_value = itinerary
 
         with patch("ai_engine.agents.planning_agent.invoke_with_fallback", return_value=mock_llm):
             result = await run_planning_agent(state)
@@ -375,7 +377,7 @@ class TestPlanningAgentEdgeCases:
         itinerary = _make_valid_itinerary()
         state = _make_planning_state()
         mock_llm = MagicMock()
-        mock_llm.content = json.dumps(itinerary)
+        mock_llm.model_dump.return_value = itinerary
 
         with patch("ai_engine.agents.planning_agent.invoke_with_fallback", return_value=mock_llm):
             result = await run_planning_agent(state)
@@ -391,7 +393,7 @@ class TestPlanningAgentEdgeCases:
         itinerary = _make_valid_itinerary()
         state = _make_planning_state(planning_attempts=0)
         mock_llm = MagicMock()
-        mock_llm.content = json.dumps(itinerary)
+        mock_llm.model_dump.return_value = itinerary
 
         with patch("ai_engine.agents.planning_agent.invoke_with_fallback", return_value=mock_llm):
             result = await run_planning_agent(state)
@@ -404,7 +406,7 @@ class TestPlanningAgentEdgeCases:
         itinerary = _make_valid_itinerary()
         state = _make_planning_state(planning_attempts=2)
         mock_llm = MagicMock()
-        mock_llm.content = json.dumps(itinerary)
+        mock_llm.model_dump.return_value = itinerary
 
         with patch("ai_engine.agents.planning_agent.invoke_with_fallback", return_value=mock_llm):
             result = await run_planning_agent(state)
@@ -418,7 +420,7 @@ class TestPlanningAgentEdgeCases:
         itinerary = _make_valid_itinerary()
         state = _make_planning_state(candidate_places=[full_place])
         mock_llm = MagicMock()
-        mock_llm.content = json.dumps(itinerary)
+        mock_llm.model_dump.return_value = itinerary
 
         with patch("ai_engine.agents.planning_agent.invoke_with_fallback", return_value=mock_llm):
             result = await run_planning_agent(state)
@@ -436,7 +438,7 @@ class TestPlanningAgentEdgeCases:
         itinerary = _make_valid_itinerary()
         state = _make_planning_state(candidate_places=[full_hotel])
         mock_llm = MagicMock()
-        mock_llm.content = json.dumps(itinerary)
+        mock_llm.model_dump.return_value = itinerary
 
         with patch("ai_engine.agents.planning_agent.invoke_with_fallback", return_value=mock_llm):
             result = await run_planning_agent(state)
@@ -452,7 +454,7 @@ class TestPlanningAgentEdgeCases:
         itinerary = _make_valid_itinerary()
         state = _make_planning_state(user_message="Romantic Cairo trip for 2")
         mock_llm = MagicMock()
-        mock_llm.content = json.dumps(itinerary)
+        mock_llm.model_dump.return_value = itinerary
 
         with patch("ai_engine.agents.planning_agent.invoke_with_fallback", return_value=mock_llm) as mock_fn:
             await run_planning_agent(state)
@@ -469,7 +471,7 @@ class TestPlanningAgentEdgeCases:
         candidates = [_make_candidate(id=f"c{i}") for i in range(5)]
         state = _make_planning_state(candidate_places=candidates)
         mock_llm = MagicMock()
-        mock_llm.content = json.dumps(itinerary)
+        mock_llm.model_dump.return_value = itinerary
 
         with patch("ai_engine.agents.planning_agent.invoke_with_fallback", return_value=mock_llm) as mock_fn:
             await run_planning_agent(state)
@@ -485,7 +487,7 @@ class TestPlanningAgentEdgeCases:
         itinerary = _make_valid_itinerary()
         state = _make_planning_state(profile=None)
         mock_llm = MagicMock()
-        mock_llm.content = json.dumps(itinerary)
+        mock_llm.model_dump.return_value = itinerary
 
         with patch("ai_engine.agents.planning_agent.invoke_with_fallback", return_value=mock_llm):
             result = await run_planning_agent(state)
@@ -497,10 +499,10 @@ class TestPlanningAgentEdgeCases:
     async def test_empty_itinerary_retries_then_errors(self):
         """LLM returns empty days → validation catches it, retries, then errors."""
         state = _make_planning_state()
-        mock_llm = MagicMock()
-        mock_llm.content = json.dumps({"destination": "Cairo", "days": [], "accommodation_suggestions": []})
+        mock_empty = MagicMock()
+        mock_empty.model_dump.side_effect = ValueError("Itinerary has empty 'days' array")
 
-        with patch("ai_engine.agents.planning_agent.invoke_with_fallback", return_value=mock_llm):
+        with patch("ai_engine.agents.planning_agent.invoke_with_fallback", return_value=mock_empty):
             result = await run_planning_agent(state)
 
         assert result["draft_itinerary"] is None
@@ -514,7 +516,7 @@ class TestPlanningAgentEdgeCases:
         # candidate_places has no matching IDs → hydration should skip gracefully
         state = _make_planning_state(candidate_places=[{"id": "other_123", "name": "Other", "category": "attractions", "lat": 30.0, "lon": 31.0}])
         mock_llm = MagicMock()
-        mock_llm.content = json.dumps(itinerary)
+        mock_llm.model_dump.return_value = itinerary
 
         with patch("ai_engine.agents.planning_agent.invoke_with_fallback", return_value=mock_llm):
             result = await run_planning_agent(state)
@@ -534,7 +536,7 @@ class TestPlanningAgentEdgeCases:
         itinerary = _make_valid_itinerary()
         state = _make_planning_state(candidate_places=[full_hotel])
         mock_llm = MagicMock()
-        mock_llm.content = json.dumps(itinerary)
+        mock_llm.model_dump.return_value = itinerary
 
         with patch("ai_engine.agents.planning_agent.invoke_with_fallback", return_value=mock_llm):
             result = await run_planning_agent(state)
