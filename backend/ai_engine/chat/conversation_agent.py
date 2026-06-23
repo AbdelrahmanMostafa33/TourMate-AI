@@ -748,7 +748,10 @@ async def _handle_modify_itinerary(
         preferences=preferences,
     )
 
-    if modified is not state.itinerary and modified.get("days"):
+    # Track whether the modifier actually applied the requested change
+    modifier_applied = modified is not state.itinerary and modified.get("days")
+
+    if modifier_applied:
         # Modifier succeeded — use the modified itinerary directly
         modifier_note = modified.get("_modifier_note", "")
         message = _format_itinerary(modified)
@@ -820,7 +823,7 @@ async def _handle_modify_itinerary(
         f"{state.slots.special_requests or ''} | Modification: {effective_message}"
     ).strip(" | ")
 
-    return await _handle_plan_trip(
+    result = await _handle_plan_trip(
         user_id,
         effective_message,
         extracted,
@@ -828,6 +831,19 @@ async def _handle_modify_itinerary(
         token,
         state,
     )
+
+    # If the modifier couldn't apply the specific change, append a
+    # fallback note so the user knows their request wasn't ignored.
+    if not modifier_applied:
+        message = result.get("message", "")
+        fallback_note = (
+            f"\n\n⚠️ Note: I couldn't find a place matching "
+            f"\"{effective_message}\" in the available options. "
+            "The itinerary above reflects the best available alternatives."
+        )
+        result["message"] = message + fallback_note
+
+    return result
 
 
 @traced(name="rerank_and_replan", tags=["conversation", "rerank"], metadata={"component": "conversation_agent"})

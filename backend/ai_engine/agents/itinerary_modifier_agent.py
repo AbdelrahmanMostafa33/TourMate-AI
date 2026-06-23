@@ -41,9 +41,11 @@ to change.
 
 **Available operations** — pick one or more:
 - **SWAP**: Replace an existing stop with a better one from the available pool.
-  Keep the same time slot and day position. Preserve `id`, `name`, `category`,
-  `sub_category`, `lat`, `lon`, etc. from the chosen place. Add a new
-  `why_recommended` explaining why this new place fits the user's request.
+  Keep the same time slot and day position. Copy the new place's `id`, `name`,
+  `category`, `sub_category`, `lat`, `lon`, and **`estimated_duration_minutes`**
+  from the available pool entry. Do NOT reuse the old stop's duration — each
+  place has its own intrinsic duration. Add a new `why_recommended` explaining
+  why this new place fits the user's request.
 - **REMOVE**: Delete a specific stop. If the removed stop was between other
   stops, reconnect the remaining stops by updating their
   `travel_time_to_next_minutes` and `transport_mode`.
@@ -199,6 +201,121 @@ def _trim_itinerary(itinerary: dict) -> dict:
     return trimmed
 
 
+# ── Category Detection ────────────────────────────────────────────────────
+
+
+_CATEGORY_KEYWORDS: dict[str, tuple[str | None, str | None]] = {
+    # Attractions by sub_category
+    "museum": ("attraction", "museums"),
+    "park": ("attraction", "parks"),
+    "shopping": ("attraction", "shopping"),
+    "nightlife": ("attraction", "nightlife"),
+    "history": ("attraction", "history"),
+    "nature": ("attraction", "nature"),
+    "religious": ("attraction", "religious"),
+    "sightseeing": ("attraction", "sightseeing"),
+    "sports": ("attraction", "sports"),
+    "wellness": ("attraction", "wellness"),
+    "entertainment": ("attraction", "entertainment"),
+    "family": ("attraction", "family"),
+    "beach": ("attraction", "nature"),
+    "garden": ("attraction", "parks"),
+    # Restaurants
+    "restaurant": ("restaurant", None),
+    "food": ("restaurant", None),
+    "eat": ("restaurant", None),
+    "breakfast": ("restaurant", None),
+    "lunch": ("restaurant", None),
+    "dinner": ("restaurant", None),
+    "cafe": ("restaurant", None),
+    "coffee": ("restaurant", None),
+    "bakery": ("restaurant", None),
+    "street food": ("restaurant", None),
+    # Hotels
+    "hotel": ("hotel", None),
+    "accommodation": ("hotel", None),
+    "stay": ("hotel", None),
+    "lodge": ("hotel", None),
+    "hostel": ("hotel", None),
+    "resort": ("hotel", None),
+}
+
+
+def _detect_category_from_request(modification_request: str) -> dict:
+    """
+    Detect what category/subcategory the user wants from the modification request
+    using simple keyword matching.
+
+    Returns a dict with zero or more of: ``category``, ``sub_category``.
+    Used to ensure relevant places survive pool trimming.
+
+    Example::
+        >>> _detect_category_from_request("add a museum to day 2")
+        {'category': 'attraction', 'sub_category': 'museums'}
+
+        >>> _detect_category_from_request("change the hotel")
+        {'category': 'hotel'}
+    """
+    request_lower = modification_request.lower()
+
+    for keyword, (cat, subcat) in _CATEGORY_KEYWORDS.items():
+        if keyword in request_lower:
+            result: dict[str, str] = {}
+            if cat:
+                result["category"] = cat
+            if subcat:
+                result["sub_category"] = subcat
+            return result
+
+    return {}
+
+
+def _reorder_pool_by_category(fresh_pool: list[dict], category_hints: dict) -> list[dict]:
+    """
+    Reorder *fresh_pool* so places matching *category_hints* come first.
+
+    This ensures that when the pool is capped or halved for token budget,
+    the places most relevant to the user's modification request survive.
+    """
+    if not category_hints:
+        return fresh_pool
+
+    cat = category_hints.get("category")
+    subcat = category_hints.get("sub_category")
+
+    matching: list[dict] = []
+    non_matching: list[dict] = []
+
+    for p in fresh_pool:
+        match = True
+        if cat and p.get("category") != cat:
+            match = False
+        if subcat and p.get("sub_category") != subcat:
+            match = False
+        if match:
+            matching.append(p)
+        else:
+            non_matching.append(p)
+
+    # Log how many matching places were found
+    if matching:
+        if subcat and cat:
+            label = f"{subcat} ({cat})"
+        elif cat:
+            label = cat
+        elif subcat:
+            label = subcat
+        else:
+            label = "unknown"
+        logger.info(
+            "[ModifierAgent] Category '%s' — %d matching place(s) in pool "
+            "(total pool: %d)",
+            label, len(matching), len(fresh_pool),
+        )
+
+    return matching + non_matching
+
+
 # ── Main entry point ─────────────────────────────────────────────────────────
 
 
@@ -237,6 +354,11 @@ async def run_itinerary_modifier(
     for hotel in current_itinerary.get("accommodation_suggestions", []):
         used_ids.add(hotel.get("id", ""))
     fresh_pool = [p for p in trimmed_pool if p["id"] not in used_ids]
+
+    # Detect category from modification request and promote matching places
+    # to the front so they survive the pool capping / halving below.
+    category_hints = _detect_category_from_request(modification_request)
+    fresh_pool = _reorder_pool_by_category(fresh_pool, category_hints)
 
     # Cap the pool to avoid blowing the token budget
     fresh_pool = fresh_pool[:60]
