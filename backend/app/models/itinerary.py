@@ -57,7 +57,7 @@ class ItineraryStop(Base):
     __tablename__ = "itinerary_stops"
 
     stop_id               = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
-    day_id                = Column(String, ForeignKey("days.day_id", ondelete="CASCADE"), nullable=False, index=True)
+    day_id                = Column(String, ForeignKey("itinerary_days.day_id", ondelete="CASCADE"), nullable=False, index=True)
     place_id              = Column(String, ForeignKey("places.place_id"), nullable=True)
     place_snapshot        = Column(JSON, nullable=True)       # snapshot of Place data at creation time
     duration_minutes      = Column(Integer, nullable=True)
