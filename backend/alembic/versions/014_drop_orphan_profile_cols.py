@@ -1,6 +1,6 @@
 """Drop orphaned shopping_score and family_score from trip_profiles.
 
-Revision ID: 014_drop_orphaned_profile_columns
+Revision ID: 014_drop_orphan_profile_cols
 Revises: 013_erd_sync
 Create Date: 2026-06-23
 
@@ -16,7 +16,7 @@ import sqlalchemy as sa
 
 
 # revision identifiers, used by Alembic.
-revision: str = "014_drop_orphaned_profile_columns"
+revision: str = "014_drop_orphan_profile_cols"
 down_revision: Union[str, None] = "013_erd_sync"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None

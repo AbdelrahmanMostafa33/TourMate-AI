@@ -37,7 +37,7 @@ class Itinerary(Base):
 # ─── Day ─────────────────────────────────────────────────────────────────────
 
 class Day(Base):
-    __tablename__ = "days"
+    __tablename__ = "itinerary_days"
 
     day_id          = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
     itinerary_id    = Column(String, ForeignKey("itineraries.itinerary_id", ondelete="CASCADE"), nullable=False, index=True)

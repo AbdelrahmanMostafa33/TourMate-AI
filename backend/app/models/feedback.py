@@ -12,7 +12,7 @@ from app.models.enums import FeedbackType
 
 
 class Feedback(Base):
-    __tablename__ = "feedbacks"
+    __tablename__ = "feedback"
 
     feedback_id   = Column(String, primary_key=True)
     user_id       = Column(String, ForeignKey("users.user_id"), nullable=False, index=True)
