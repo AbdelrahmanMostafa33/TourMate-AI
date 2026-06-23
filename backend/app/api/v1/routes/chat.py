@@ -237,7 +237,19 @@ async def process_message_stream(
     updated_actions = []
     stops_created = 0
     if actions:
-        await db.refresh(trip, ["itineraries"])
+        # *** التعديل: جيب الـ trip مع كل العلاقات دفعة واحدة بدل db.refresh ***
+        # عشان itinerary.days كانت بتعمل lazy load → crash في async context
+        result = await db.execute(
+            select(Trip)
+            .options(
+                selectinload(Trip.itineraries)
+                .selectinload(Itinerary.days)
+                .selectinload(Day.stops),
+                selectinload(Trip.conversation),
+            )
+            .where(Trip.trip_id == trip.trip_id)
+        )
+        trip = result.scalar_one()
 
         # Handle CREATE_TRIP for existing trips — update the itinerary
         # with new stops from the AI result instead of creating a new trip.

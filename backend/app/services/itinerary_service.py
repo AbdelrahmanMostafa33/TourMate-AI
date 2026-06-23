@@ -16,7 +16,7 @@ from datetime import date, timedelta
 from typing import Optional
 
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func
+from sqlalchemy import select, func, delete
 
 from app.repositories.itinerary_repo import ItineraryRepo
 from app.models.enums import TimeOfDay, TravelMode
@@ -94,13 +94,34 @@ class ItineraryService:
             if start_date:
                 day_date = start_date + timedelta(days=day_number - 1)
 
-            day = await self.repo.create_day(
-                itinerary_id=itinerary_id,
-                day_number=day_number,
-                date=day_date,
-                theme=theme,
+            # ── Get or Create Day ──────────────────────────────────────────
+            result = await self.db.execute(
+                select(DayModel)
+                .where(DayModel.itinerary_id == itinerary_id)
+                .where(DayModel.day_number == day_number)
             )
+            day = result.scalar_one_or_none()
 
+            if day:
+                # اليوم موجود — عدّل الـ theme بس
+                day.theme = theme
+                await self.db.flush()
+            else:
+                # اليوم مش موجود — أنشئ جديد
+                day = await self.repo.create_day(
+                    itinerary_id=itinerary_id,
+                    day_number=day_number,
+                    date=day_date,
+                    theme=theme,
+                )
+
+            # ── امسح الـ stops القديمة للـ day ده ─────────────────────────
+            await self.db.execute(
+                delete(StopModel).where(StopModel.day_id == day.day_id)
+            )
+            await self.db.flush()
+
+            # ── أضف الـ stops الجديدة ──────────────────────────────────────
             for order, stop_data in enumerate(stops):
                 time_of_day = _map_time_of_day(stop_data.get("suggested_time_of_day"))
                 travel_mode = _map_travel_mode(stop_data.get("transport_mode"))
