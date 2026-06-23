@@ -293,6 +293,92 @@ async def test_update_trip_status_success(mock_auth):
 
 @pytest.mark.asyncio
 @patch("app.api.v1.routes.trips.get_current_user")
+async def test_update_trip_status_sets_approved_at(mock_auth):
+    """PATCH /trips/{trip_id}/status should set approved_at when status → active."""
+    from app.api.v1.routes.trips import update_trip_status
+
+    mock_auth.return_value = make_current_user()
+    trip = make_mock_trip()
+
+    assert trip.approved_at is None
+
+    result = MagicMock()
+    result.scalar_one_or_none.return_value = trip
+
+    db = AsyncMock()
+    db.execute.return_value = result
+
+    body = TripStatusUpdate(status=TripStatus.active)
+    response = await update_trip_status(
+        trip_id="trip_001", body=body,
+        current_user=make_current_user(), db=db,
+    )
+
+    # approved_at should be set
+    assert trip.approved_at is not None
+    assert response["approved_at"] is not None
+
+
+@pytest.mark.asyncio
+@patch("app.api.v1.routes.trips.get_current_user")
+async def test_update_trip_status_does_not_overwrite_approved_at(mock_auth):
+    """PATCH /trips/{trip_id}/status should NOT overwrite existing approved_at."""
+    from app.api.v1.routes.trips import update_trip_status
+
+    mock_auth.return_value = make_current_user()
+    trip = make_mock_trip()
+
+    # Simulate already-approved trip
+    existing_approved_at = datetime(2026, 6, 1, 12, 0, 0)
+    trip.approved_at = existing_approved_at
+
+    result = MagicMock()
+    result.scalar_one_or_none.return_value = trip
+
+    db = AsyncMock()
+    db.execute.return_value = result
+
+    body = TripStatusUpdate(status=TripStatus.active)
+    await update_trip_status(
+        trip_id="trip_001", body=body,
+        current_user=make_current_user(), db=db,
+    )
+
+    # approved_at should remain unchanged
+    assert trip.approved_at == existing_approved_at
+
+
+@pytest.mark.asyncio
+@patch("app.api.v1.routes.trips.get_current_user")
+async def test_update_trip_status_non_active_does_not_set_approved_at(mock_auth):
+    """PATCH /trips/{trip_id}/status should NOT set approved_at for non-active status."""
+    from app.api.v1.routes.trips import update_trip_status
+
+    mock_auth.return_value = make_current_user()
+    trip = make_mock_trip()
+
+    assert trip.approved_at is None
+
+    result = MagicMock()
+    result.scalar_one_or_none.return_value = trip
+
+    db = AsyncMock()
+    db.execute.return_value = result
+
+    # Set status to planning (not active)
+    body = TripStatusUpdate(status=TripStatus.planning)
+    response = await update_trip_status(
+        trip_id="trip_001", body=body,
+        current_user=make_current_user(), db=db,
+    )
+
+    # approved_at should NOT be set
+    assert trip.approved_at is None
+    assert response["approved_at"] is None
+
+
+@pytest.mark.asyncio
+@patch("app.api.v1.routes.trips.get_current_user")
 async def test_update_trip_status_not_found(mock_auth):
     """PATCH /trips/{trip_id}/status should raise 404 when trip not found."""
     from fastapi import HTTPException

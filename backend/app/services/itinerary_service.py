@@ -209,6 +209,18 @@ class ItineraryService:
         existing = await self.repo.get_by_trip_id(trip_id)
         if existing:
             itinerary = existing
+            # Increment version when updating an existing itinerary
+            itinerary.version_number = (itinerary.version_number or 1) + 1
+            itinerary.updated_at = func.now()
+
+            # Touch TripProfile updated_at when itinerary changes
+            from app.models.profile import TripProfile
+            profile_result = await self.db.execute(
+                select(TripProfile).where(TripProfile.trip_id == trip_id)
+            )
+            profile = profile_result.scalar_one_or_none()
+            if profile:
+                profile.updated_at = func.now()
         else:
             itinerary = await self.repo.create_itinerary(trip_id)
 

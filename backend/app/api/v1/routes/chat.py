@@ -1,4 +1,6 @@
 import logging
+from datetime import datetime
+from typing import Optional
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, delete
@@ -10,6 +12,7 @@ logger = logging.getLogger(__name__)
 from app.core.database import get_db
 from app.core.firebase import verify_token
 from app.core.security import get_current_user
+from app.models.enums import TripStatus, ItineraryStatus
 from app.models.trip import Trip
 from app.models.itinerary import Itinerary, Day, ItineraryStop
 from app.models.chat import Conversation, Message
@@ -120,7 +123,55 @@ async def execute_actions(actions: list, trip: Trip, db: AsyncSession) -> list:
 
         updated_actions.append(action)
 
+    # Touch trip + trip_profile updated_at if any action modified the itinerary
+    if updated_actions:
+        trip.updated_at = datetime.utcnow()
+
+        profile_result = await db.execute(
+            select(TripProfile).where(TripProfile.trip_id == trip.trip_id)
+        )
+        for prof in profile_result.scalars().all():
+            prof.updated_at = datetime.utcnow()
+
     return updated_actions
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# Helper: تحديث TripProfile من بيانات AI
+# ═════════════════════════════════════════════════════════════════════════════
+
+def _update_profile_from_ai(profile: TripProfile, profile_data: dict) -> None:
+    """Map AI profile data dict onto a TripProfile ORM object."""
+    from app.models.enums import BudgetLevel, TravelStyle, TripPace
+
+    budget_val = profile_data.get("budget_level")
+    if budget_val is not None:
+        try:
+            profile.budget_level = BudgetLevel(budget_val)
+        except (ValueError, TypeError):
+            pass
+
+    style_val = profile_data.get("travel_style")
+    if style_val is not None:
+        try:
+            profile.travel_style = TravelStyle(style_val)
+        except (ValueError, TypeError):
+            pass
+
+    pace_val = profile_data.get("pace")
+    if pace_val is not None:
+        try:
+            profile.pace = TripPace(pace_val)
+        except (ValueError, TypeError):
+            pass
+
+    # List fields
+    if profile_data.get("interests"):
+        profile.interests = profile_data["interests"]
+    if profile_data.get("food_preferences"):
+        profile.food_preferences = profile_data["food_preferences"]
+    if profile_data.get("accommodation_preferences"):
+        profile.accommodation_preferences = profile_data["accommodation_preferences"]
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -175,8 +226,12 @@ async def process_message_stream(
     db:           AsyncSession,
     user_id:      str,
     token:        str,
-):
-    """Process a message with streaming token-by-token response."""
+    session_id:   Optional[str] = None,
+) -> Optional[str]:
+    """Process a message with streaming token-by-token response.
+
+    Returns the AI engine session_id for subsequent calls.
+    """
     svc = ChatService(db)
 
     # ── Save user message ─────────────────────────────────────────────────
@@ -190,6 +245,8 @@ async def process_message_stream(
     full_response = ""
     actions       = []
     ai_session_id = None
+    approve_action = None  # Track if this is an approval result
+    profile_from_ai = None  # Track profile data from the AI engine
 
     try:
         from ai_engine.chat.conversation_agent import handle_chat_stream
@@ -198,6 +255,7 @@ async def process_message_stream(
             user_id=user_id,
             user_message=user_text,
             token=token,
+            session_id=session_id,
         ):
             event_type = chunk.get("type")
 
@@ -213,13 +271,29 @@ async def process_message_stream(
             elif event_type == "phase":
                 await manager.send(ws_key, chunk)
 
+                # If phase is COMPLETED, this is an approval — update DB
+                phase = chunk.get("data", {}).get("phase")
+                if phase == "completed":
+                    approve_action = {
+                        "type": "APPROVE_TRIP",
+                    }
+
             elif event_type == "result":
                 result         = chunk.get("data", {})
                 result_message = result.get("message", "")
                 if result_message:
                     full_response = result_message
-                if result.get("itinerary"):
+
+                action_type = result.get("action", "create_trip")
+                if action_type == "approve_itinerary":
+                    approve_action = {
+                        "type": "APPROVE_TRIP",
+                    }
+                elif result.get("itinerary"):
                     actions = [{"type": "CREATE_TRIP", "data": result["itinerary"]}]
+                    # Capture profile data from the AI engine for TripProfile persistence
+                    if result.get("profile"):
+                        profile_from_ai = result["profile"]
 
             elif event_type == "done":
                 await manager.send(ws_key, {"type": "done", "data": None})
@@ -230,8 +304,49 @@ async def process_message_stream(
         full_response  = error_response["message"]
         actions        = []
         ai_session_id  = None
+        approve_action = None
         await manager.send(ws_key, {"type": "token", "data": full_response})
         await manager.send(ws_key, {"type": "done", "data": None})
+
+    # ── Handle APPROVE_TRIP action ───────────────────────────────────────
+    was_approved = False
+    if approve_action:
+        result = await db.execute(
+            select(Trip)
+            .options(
+                selectinload(Trip.itineraries)
+                .selectinload(Itinerary.days),
+                selectinload(Trip.conversation),
+                selectinload(Trip.trip_profiles),
+            )
+            .where(Trip.trip_id == trip.trip_id)
+        )
+        trip = result.scalar_one()
+
+        now = datetime.utcnow()
+
+        # Update trip: status → active, approved_at → now
+        # (updated_at is handled by onupdate=func.now() in the model)
+        trip.status = TripStatus.active
+        trip.approved_at = now
+
+        # Update itinerary: status → active
+        # (updated_at is handled by onupdate=func.now() in the model)
+        if trip.itineraries:
+            for itin in trip.itineraries:
+                itin.status = ItineraryStatus.active
+
+        # Touch trip_profile updated_at
+        if trip.trip_profiles:
+            for prof in trip.trip_profiles:
+                prof.updated_at = now
+
+        logger.info(
+            "[ChatRoutes] Trip %s approved — status=active, approved_at=%s",
+            trip.trip_id, trip.approved_at,
+        )
+
+        was_approved = True
 
     # ── Execute actions ──────────────────────────────────────────────────
     updated_actions = []
@@ -246,6 +361,7 @@ async def process_message_stream(
                 .selectinload(Itinerary.days)
                 .selectinload(Day.stops),
                 selectinload(Trip.conversation),
+                selectinload(Trip.trip_profiles),
             )
             .where(Trip.trip_id == trip.trip_id)
         )
@@ -259,6 +375,11 @@ async def process_message_stream(
             days_data = itinerary_data.get("days", [])
             if days_data and trip.itineraries:
                 itinerary = trip.itineraries[0]
+
+                # Increment version number when updating existing itinerary
+                # (updated_at is handled by onupdate=func.now() in the model)
+                itinerary.version_number = (itinerary.version_number or 1) + 1
+
                 from app.services.itinerary_service import ItineraryService
                 itin_svc = ItineraryService(db)
 
@@ -286,6 +407,38 @@ async def process_message_stream(
                     start_date=start_date,
                 )
                 await db.flush()
+
+                # Touch trip.updated_at when itinerary changes
+                trip.updated_at = datetime.utcnow()
+
+                # Touch trip_profile updated_at when itinerary changes
+                if trip.trip_profiles:
+                    for prof in trip.trip_profiles:
+                        prof.updated_at = datetime.utcnow()
+
+            # ── Persist TripProfile from AI profile data (always, regardless of days_data) ──
+            # The AI engine returns profile data in the result event.
+            # Create or update the TripProfile so it stays in sync with the AI engine.
+            if profile_from_ai:
+                existing_profile = trip.trip_profiles[0] if trip.trip_profiles else None
+                if existing_profile:
+                    _update_profile_from_ai(existing_profile, profile_from_ai)
+                    existing_profile.updated_at = datetime.utcnow()
+                else:
+                    new_profile = TripProfile(
+                        profile_id=str(uuid.uuid4()),
+                        trip_id=trip.trip_id,
+                    )
+                    _update_profile_from_ai(new_profile, profile_from_ai)
+                    db.add(new_profile)
+                    logger.info(
+                        "[ChatRoutes] Created TripProfile %s from AI result for trip %s",
+                        new_profile.profile_id, trip.trip_id,
+                    )
+
+                # Refresh local trip_profiles so subsequent code sees the profile
+                if not trip.trip_profiles:
+                    trip.trip_profiles = [existing_profile] if existing_profile else [new_profile]
 
         # Execute remaining non-CREATE_TRIP actions (ADD_ACTIVITY, etc.)
         remaining_actions = [a for a in actions if a.get("type") != "CREATE_TRIP"]
@@ -318,10 +471,16 @@ async def process_message_stream(
 
     await db.commit()
 
+    # ── Notify Flutter that trip was approved (after commit) ──────────────
+    if was_approved:
+        await manager.send(ws_key, {"type": "trip_approved"})
+
     # ── Notify Flutter of actions ─────────────────────────────────────────
     if updated_actions:
         await manager.send(ws_key, {"type": "actions", "data": updated_actions})
         await manager.send(ws_key, {"type": "itinerary_updated"})
+
+    return ai_session_id
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -353,6 +512,7 @@ async def websocket_new_chat(
         profile_data:     dict         = {}
         history_list:     list         = []
         pending_messages: list         = []
+        ai_session_id:    Optional[str] = None
 
         while True:
             data      = await websocket.receive_json()
@@ -369,7 +529,7 @@ async def websocket_new_chat(
             if trip and conversation:
                 lock = manager.get_lock(ws_key)
                 async with lock:
-                    await process_message_stream(
+                    ai_session_id = await process_message_stream(
                         user_text=user_text,
                         trip=trip,
                         conversation=conversation,
@@ -378,6 +538,7 @@ async def websocket_new_chat(
                         db=db,
                         user_id=user_id,
                         token=token,
+                        session_id=ai_session_id,
                     )
 
                 history_list.append({"role": "user", "content": user_text})
@@ -407,7 +568,11 @@ async def websocket_new_chat(
                 ):
                     event_type = chunk.get("type")
 
-                    if event_type == "text":
+                    if event_type == "session":
+                        session_data  = chunk.get("data", {})
+                        ai_session_id = session_data.get("session_id")
+
+                    elif event_type == "text":
                         content        = chunk.get("content", "")
                         full_response += content
                         await manager.send(ws_key, {"type": "token", "data": content})
@@ -536,6 +701,9 @@ async def websocket_chat(
     lock = manager.get_lock(trip_id)
 
     try:
+        # ── State for session_id propagation ──────────────────────────────
+        ai_session_id: Optional[str] = None
+
         # ── جيب الـ Trip ─────────────────────────────────────────────────
         result = await db.execute(
             select(Trip)
@@ -544,6 +712,7 @@ async def websocket_chat(
                 .selectinload(Itinerary.days)
                 .selectinload(Day.stops),
                 selectinload(Trip.conversation),
+                selectinload(Trip.trip_profiles),
             )
             .where(
                 Trip.trip_id == trip_id,
@@ -568,7 +737,7 @@ async def websocket_chat(
         # ══════════════════════════════════════════════════════════════════
         if auto_msg and auto_msg.strip():
             async with lock:
-                await process_message_stream(
+                ai_session_id = await process_message_stream(
                     user_text=auto_msg.strip(),
                     trip=trip,
                     conversation=conversation,
@@ -577,6 +746,7 @@ async def websocket_chat(
                     db=db,
                     user_id=user_id,
                     token=token,
+                    session_id=ai_session_id,
                 )
 
         # ── الـ Loop العادي ───────────────────────────────────────────────
@@ -587,7 +757,7 @@ async def websocket_chat(
                 continue
 
             async with lock:
-                await process_message_stream(
+                ai_session_id = await process_message_stream(
                     user_text=user_text,
                     trip=trip,
                     conversation=conversation,
@@ -596,6 +766,7 @@ async def websocket_chat(
                     db=db,
                     user_id=user_id,
                     token=token,
+                    session_id=ai_session_id,
                 )
 
     except WebSocketDisconnect:

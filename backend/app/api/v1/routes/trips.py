@@ -2,12 +2,13 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
-from datetime import timedelta
+from datetime import datetime, timedelta
 import uuid
 
 from app.core.database import get_db
 from app.core.security import get_current_user
 from app.models.trip import Trip
+from app.models.enums import TripStatus
 from app.models.itinerary import Itinerary, Day, ItineraryStop
 from app.models.chat import Conversation, Message
 from app.models.profile import TripProfile
@@ -221,8 +222,23 @@ async def update_trip_status(
         raise HTTPException(status_code=404, detail="Trip not found")
 
     trip.status = body.status
+
+    now = datetime.utcnow()
+
+    # Set approved_at when trip is approved (status → active)
+    if body.status == TripStatus.active and trip.approved_at is None:
+        trip.approved_at = now
+
+    # Touch TripProfile.updated_at when trip is approved
+    if body.status == TripStatus.active:
+        profile_result = await db.execute(
+            select(TripProfile).where(TripProfile.trip_id == trip_id)
+        )
+        for prof in profile_result.scalars().all():
+            prof.updated_at = now
+
     await db.commit()
-    return {"trip_id": trip_id, "status": trip.status}
+    return {"trip_id": trip_id, "status": trip.status, "approved_at": trip.approved_at}
 
 
 # ═════════════════════════════════════════════════════════════════════════════
