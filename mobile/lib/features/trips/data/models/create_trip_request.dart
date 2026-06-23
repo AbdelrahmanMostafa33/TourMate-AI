@@ -4,8 +4,6 @@ class CreateTripRequest {
   final String? startDate;
   final String? endDate;
   final int? numberOfTravelers;
-  final double? budget;
-  final List<String>? preferences;
 
   CreateTripRequest({
     required this.destination,
@@ -13,8 +11,6 @@ class CreateTripRequest {
     this.startDate,
     this.endDate,
     this.numberOfTravelers,
-    this.budget,
-    this.preferences,
   });
 
   Map<String, dynamic> toJson() {
@@ -24,8 +20,6 @@ class CreateTripRequest {
       if (startDate != null) 'start_date': startDate,
       if (endDate != null) 'end_date': endDate,
       if (numberOfTravelers != null) 'number_of_travelers': numberOfTravelers,
-      if (budget != null) 'budget': budget,
-      if (preferences != null) 'preferences': preferences,
     };
   }
 }

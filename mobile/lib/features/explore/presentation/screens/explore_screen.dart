@@ -97,8 +97,8 @@ class _ExploreScreenState extends State<ExploreScreen> {
                           delegate: SliverChildBuilderDelegate(
                             (context, index) => _PlaceCard(
                               place: places[index],
-                              isSaved: savedPlaceIds.contains(places[index].id),
-                              onToggleSave: () => cubit.toggleSave(places[index].id),
+                              isSaved: savedPlaceIds.contains(places[index].placeId),
+                              onToggleSave: () => cubit.toggleSave(places[index].placeId),
                             ),
                             childCount: places.length,
                           ),
@@ -348,11 +348,11 @@ class _PlaceCard extends StatelessWidget {
         child: InkWell(
           borderRadius: BorderRadius.circular(16),
           onTap: () {
-            if (place.id.isNotEmpty) {
+            if (place.placeId.isNotEmpty) {
               Navigator.pushNamed(
                 context,
                 '/place-detail',
-                arguments: place.id,
+                arguments: place.placeId,
               );
             }
           },

@@ -125,8 +125,8 @@ class _SavedScreenState extends State<SavedScreen> {
           return _SavedPlaceCard(
             place: item.place,
             onTap: () {
-              if (item.place.id.isNotEmpty) {
-                Navigator.pushNamed(context, '/place-detail', arguments: item.place.id);
+              if (item.place.placeId.isNotEmpty) {
+                Navigator.pushNamed(context, '/place-detail', arguments: item.place.placeId);
               }
             },
             onUnsave: () => _unsave(item.savedPlaceId),

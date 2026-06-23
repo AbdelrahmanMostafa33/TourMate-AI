@@ -400,7 +400,11 @@ _BASE_TRANSIENT_BACKOFF = 1.0  # seconds
 
 
 def _is_rate_limit_error(exc: Exception) -> bool:
-    """Check whether an exception is a rate-limit (429) error."""
+    """Check whether an exception is a rate-limit (429) error.
+
+    Also catches Google Gemini's 403 PERMISSION_DENIED errors which
+    are returned instead of 429 when the project exceeds its quota.
+    """
     msg = str(exc).lower()
     # Common 429 indicators across providers
     return any(
@@ -408,6 +412,8 @@ def _is_rate_limit_error(exc: Exception) -> bool:
         for kw in (
             "429", "rate limit", "ratelimit", "requests per",
             "tokens per", "quota", "too many requests",
+            # Google Gemini returns 403 PERMISSION_DENIED on quota exhaustion
+            "403", "permission_denied", "denied access",
         )
     )
 
