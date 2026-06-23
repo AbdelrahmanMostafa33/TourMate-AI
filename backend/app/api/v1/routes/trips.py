@@ -2,7 +2,8 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
-from datetime import datetime, timedelta
+from sqlalchemy.sql import func as sqlfunc
+from datetime import timedelta
 import uuid
 
 from app.core.database import get_db
@@ -223,19 +224,17 @@ async def update_trip_status(
 
     trip.status = body.status
 
-    now = datetime.utcnow()
-
-    # Set approved_at when trip is approved (status → active)
+    # Set approved_at when trip is approved (status → active) via DB now()
     if body.status == TripStatus.active and trip.approved_at is None:
-        trip.approved_at = now
+        trip.approved_at = sqlfunc.now()
 
-    # Touch TripProfile.updated_at when trip is approved
+    # Touch TripProfile.updated_at when trip is approved via DB now()
     if body.status == TripStatus.active:
         profile_result = await db.execute(
             select(TripProfile).where(TripProfile.trip_id == trip_id)
         )
         for prof in profile_result.scalars().all():
-            prof.updated_at = now
+            prof.updated_at = sqlfunc.now()
 
     await db.commit()
     return {"trip_id": trip_id, "status": trip.status, "approved_at": trip.approved_at}
@@ -252,7 +251,6 @@ async def get_trip_profile_endpoint(
     db:           AsyncSession = Depends(get_db),
 ):
     """Get the AI-generated trip profile for a specific trip."""
-    # ── Verify trip belongs to user ──────────────────────────────────
     result = await db.execute(
         select(Trip).where(
             Trip.trip_id == trip_id,
@@ -263,7 +261,6 @@ async def get_trip_profile_endpoint(
     if not trip:
         raise HTTPException(status_code=404, detail="Trip not found")
 
-    # ── Get or return 404 ────────────────────────────────────────────
     profile = await get_trip_profile(trip_id, db)
     if not profile:
         raise HTTPException(status_code=404, detail="Trip profile not found")
@@ -283,7 +280,6 @@ async def upsert_trip_profile_endpoint(
     db:           AsyncSession = Depends(get_db),
 ):
     """Create or update the trip profile (called by AI engine or user)."""
-    # ── Verify trip belongs to user ──────────────────────────────────
     result = await db.execute(
         select(Trip).where(
             Trip.trip_id == trip_id,
@@ -294,6 +290,5 @@ async def upsert_trip_profile_endpoint(
     if not trip:
         raise HTTPException(status_code=404, detail="Trip not found")
 
-    # ── Upsert profile ───────────────────────────────────────────────
     profile = await upsert_trip_profile(trip_id, data, db)
     return profile

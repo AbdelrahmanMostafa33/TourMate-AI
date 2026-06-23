@@ -124,14 +124,18 @@ async def execute_actions(actions: list, trip: Trip, db: AsyncSession) -> list:
         updated_actions.append(action)
 
     # Touch trip + trip_profile updated_at if any action modified the itinerary
+    # سيب onupdate=func.now() في الـ model يشتغل لوحده
     if updated_actions:
-        trip.updated_at = datetime.utcnow()
+        trip.updated_at = None  # trigger onupdate
+        # force SQLAlchemy to mark the column as dirty
+        from sqlalchemy.sql import func as sqlfunc
+        trip.updated_at = sqlfunc.now()
 
         profile_result = await db.execute(
             select(TripProfile).where(TripProfile.trip_id == trip.trip_id)
         )
         for prof in profile_result.scalars().all():
-            prof.updated_at = datetime.utcnow()
+            prof.updated_at = sqlfunc.now()
 
     return updated_actions
 
@@ -245,8 +249,8 @@ async def process_message_stream(
     full_response = ""
     actions       = []
     ai_session_id = None
-    approve_action = None  # Track if this is an approval result
-    profile_from_ai = None  # Track profile data from the AI engine
+    approve_action = None
+    profile_from_ai = None
 
     try:
         from ai_engine.chat.conversation_agent import handle_chat_stream
@@ -271,7 +275,6 @@ async def process_message_stream(
             elif event_type == "phase":
                 await manager.send(ws_key, chunk)
 
-                # If phase is COMPLETED, this is an approval — update DB
                 phase = chunk.get("data", {}).get("phase")
                 if phase == "completed":
                     approve_action = {
@@ -291,7 +294,6 @@ async def process_message_stream(
                     }
                 elif result.get("itinerary"):
                     actions = [{"type": "CREATE_TRIP", "data": result["itinerary"]}]
-                    # Capture profile data from the AI engine for TripProfile persistence
                     if result.get("profile"):
                         profile_from_ai = result["profile"]
 
@@ -323,27 +325,25 @@ async def process_message_stream(
         )
         trip = result.scalar_one()
 
-        now = datetime.utcnow()
+        from sqlalchemy.sql import func as sqlfunc
 
-        # Update trip: status → active, approved_at → now
-        # (updated_at is handled by onupdate=func.now() in the model)
-        trip.status = TripStatus.active
-        trip.approved_at = now
+        # Update trip: status → active, approved_at → now (Cairo via DB)
+        trip.status      = TripStatus.active
+        trip.approved_at = sqlfunc.now()
 
-        # Update itinerary: status → active
-        # (updated_at is handled by onupdate=func.now() in the model)
+        # Update itinerary: status → active (updated_at handled by onupdate)
         if trip.itineraries:
             for itin in trip.itineraries:
                 itin.status = ItineraryStatus.active
 
-        # Touch trip_profile updated_at
+        # Touch trip_profile updated_at (Cairo via DB)
         if trip.trip_profiles:
             for prof in trip.trip_profiles:
-                prof.updated_at = now
+                prof.updated_at = sqlfunc.now()
 
         logger.info(
-            "[ChatRoutes] Trip %s approved — status=active, approved_at=%s",
-            trip.trip_id, trip.approved_at,
+            "[ChatRoutes] Trip %s approved — status=active",
+            trip.trip_id,
         )
 
         was_approved = True
@@ -352,8 +352,6 @@ async def process_message_stream(
     updated_actions = []
     stops_created = 0
     if actions:
-        # *** التعديل: جيب الـ trip مع كل العلاقات دفعة واحدة بدل db.refresh ***
-        # عشان itinerary.days كانت بتعمل lazy load → crash في async context
         result = await db.execute(
             select(Trip)
             .options(
@@ -367,8 +365,6 @@ async def process_message_stream(
         )
         trip = result.scalar_one()
 
-        # Handle CREATE_TRIP for existing trips — update the itinerary
-        # with new stops from the AI result instead of creating a new trip.
         create_action = next((a for a in actions if a.get("type") == "CREATE_TRIP"), None)
         if create_action:
             itinerary_data = create_action.get("data", {})
@@ -376,21 +372,18 @@ async def process_message_stream(
             if days_data and trip.itineraries:
                 itinerary = trip.itineraries[0]
 
-                # Increment version number when updating existing itinerary
-                # (updated_at is handled by onupdate=func.now() in the model)
+                # Increment version (updated_at handled by onupdate)
                 itinerary.version_number = (itinerary.version_number or 1) + 1
 
                 from app.services.itinerary_service import ItineraryService
                 itin_svc = ItineraryService(db)
 
-                # Delete existing stops so we can replace with new ones
                 for day_obj in itinerary.days:
                     await db.execute(
                         delete(ItineraryStop).where(ItineraryStop.day_id == day_obj.day_id)
                     )
                 await db.flush()
 
-                # Create fresh stops from the AI result
                 start_date_raw = itinerary_data.get("start_date")
                 start_date = None
                 if start_date_raw:
@@ -408,22 +401,21 @@ async def process_message_stream(
                 )
                 await db.flush()
 
-                # Touch trip.updated_at when itinerary changes
-                trip.updated_at = datetime.utcnow()
+                # Touch trip.updated_at + profile.updated_at (Cairo via DB)
+                from sqlalchemy.sql import func as sqlfunc
+                trip.updated_at = sqlfunc.now()
 
-                # Touch trip_profile updated_at when itinerary changes
                 if trip.trip_profiles:
                     for prof in trip.trip_profiles:
-                        prof.updated_at = datetime.utcnow()
+                        prof.updated_at = sqlfunc.now()
 
-            # ── Persist TripProfile from AI profile data (always, regardless of days_data) ──
-            # The AI engine returns profile data in the result event.
-            # Create or update the TripProfile so it stays in sync with the AI engine.
+            # ── Persist TripProfile from AI ──────────────────────────────
             if profile_from_ai:
                 existing_profile = trip.trip_profiles[0] if trip.trip_profiles else None
                 if existing_profile:
                     _update_profile_from_ai(existing_profile, profile_from_ai)
-                    existing_profile.updated_at = datetime.utcnow()
+                    from sqlalchemy.sql import func as sqlfunc
+                    existing_profile.updated_at = sqlfunc.now()
                 else:
                     new_profile = TripProfile(
                         profile_id=str(uuid.uuid4()),
@@ -436,11 +428,9 @@ async def process_message_stream(
                         new_profile.profile_id, trip.trip_id,
                     )
 
-                # Refresh local trip_profiles so subsequent code sees the profile
                 if not trip.trip_profiles:
                     trip.trip_profiles = [existing_profile] if existing_profile else [new_profile]
 
-        # Execute remaining non-CREATE_TRIP actions (ADD_ACTIVITY, etc.)
         remaining_actions = [a for a in actions if a.get("type") != "CREATE_TRIP"]
         if remaining_actions:
             updated_actions = await execute_actions(remaining_actions, trip, db)
@@ -452,7 +442,7 @@ async def process_message_stream(
             stops_created,
         )
 
-    # ── Save AI response to DB ───────────────────────────────────────────
+    # ── Save AI response to DB ───────────────────────────────────────
     if full_response:
         await svc.save_agent_message(conversation.conversation_id, full_response)
 
@@ -485,7 +475,6 @@ async def process_message_stream(
 
 # ═════════════════════════════════════════════════════════════════════════════
 # WS /ws/chat/new?token=xxx
-# سيناريو 2: شات مباشر بدون فورم
 # ═════════════════════════════════════════════════════════════════════════════
 
 @router.websocket("/ws/chat/new")
@@ -506,7 +495,6 @@ async def websocket_new_chat(
     await manager.connect(ws_key, websocket)
 
     try:
-        # ── State ────────────────────────────────────────────────────────
         trip:             Trip         = None
         conversation:     Conversation = None
         profile_data:     dict         = {}
@@ -520,12 +508,8 @@ async def websocket_new_chat(
             if not user_text:
                 continue
 
-            # FIX: svc defined at the top of every loop iteration
             svc = ChatService(db)
 
-            # ══════════════════════════════════════════════════════════════
-            # لو Trip موجود خلاص → استخدم process_message_stream
-            # ══════════════════════════════════════════════════════════════
             if trip and conversation:
                 lock = manager.get_lock(ws_key)
                 async with lock:
@@ -545,10 +529,6 @@ async def websocket_new_chat(
                 if len(history_list) > 20:
                     history_list = history_list[-20:]
                 continue
-
-            # ══════════════════════════════════════════════════════════════
-            # لسه مفيش Trip → نكلم الـ AI ونشوف لو هيعمل CREATE_TRIP
-            # ══════════════════════════════════════════════════════════════
 
             pending_messages.append({"role": "user", "content": user_text})
 
@@ -601,9 +581,6 @@ async def websocket_new_chat(
                 await manager.send(ws_key, {"type": "token", "data": full_response})
                 await manager.send(ws_key, {"type": "done"})
 
-            # ══════════════════════════════════════════════════════════════
-            # شوف لو فيه CREATE_TRIP
-            # ══════════════════════════════════════════════════════════════
             for action in actions:
                 if action.get("type") == "CREATE_TRIP" and not trip:
                     ai_result = {"itinerary": action.get("data", {})}
@@ -617,7 +594,6 @@ async def websocket_new_chat(
                     trip         = created["trip"]
                     conversation = created["conversation"]
 
-                    # ── احفظ كل الرسايل المعلقة ───────────────────────────
                     for msg in pending_messages:
                         await svc.save_message(
                             conversation_id=conversation.conversation_id,
@@ -628,7 +604,6 @@ async def websocket_new_chat(
 
                     await db.commit()
 
-                    # ── بلّغ Flutter بالـ trip_id والـ itinerary ──────────
                     await manager.send(ws_key, {
                         "type":         "trip_created",
                         "trip_id":      trip.trip_id,
@@ -637,16 +612,12 @@ async def websocket_new_chat(
 
                     profile_data = await get_profile_data(user_id, trip.trip_id, db)
 
-                    # ── حدّث ws_key ──────────────────────────────────────
                     manager.disconnect(ws_key)
                     ws_key = trip.trip_id
                     await manager.connect_existing(ws_key, websocket)
 
                     break
 
-            # ══════════════════════════════════════════════════════════════
-            # نفذ باقي الـ Actions (ADD_ACTIVITY, etc.)
-            # ══════════════════════════════════════════════════════════════
             non_create_actions = [a for a in actions if a.get("type") != "CREATE_TRIP"]
             updated_actions    = []
 
@@ -654,19 +625,16 @@ async def websocket_new_chat(
                 updated_actions = await execute_actions(non_create_actions, trip, db)
                 await db.commit()
 
-            # ── احفظ رد الـ AI في pending أو في الـ DB لو conversation موجودة ──
             pending_messages.append({"role": "assistant", "content": full_response})
 
             if conversation and full_response:
                 await svc.save_agent_message(conversation.conversation_id, full_response)
                 await db.commit()
 
-            # ── بلّغ Flutter لو في تغييرات ────────────────────────────────
             if updated_actions:
                 await manager.send(ws_key, {"type": "actions", "data": updated_actions})
                 await manager.send(ws_key, {"type": "itinerary_updated"})
 
-            # ── حدّث history ─────────────────────────────────────────────
             history_list.append({"role": "user",      "content": user_text})
             history_list.append({"role": "assistant", "content": full_response})
             if len(history_list) > 20:
@@ -678,7 +646,6 @@ async def websocket_new_chat(
 
 # ═════════════════════════════════════════════════════════════════════════════
 # WS /ws/chat/{trip_id}?token=xxx&auto_msg=xxx
-# سيناريو 1: الفورم → الشات
 # ═════════════════════════════════════════════════════════════════════════════
 
 @router.websocket("/ws/chat/{trip_id}")
@@ -689,7 +656,6 @@ async def websocket_chat(
     auto_msg:  str          = Query(default=None),
     db:        AsyncSession = Depends(get_db),
 ):
-    # ── Auth ─────────────────────────────────────────────────────────────
     user = verify_token(token)
     if not user:
         await websocket.close(code=4001)
@@ -701,10 +667,8 @@ async def websocket_chat(
     lock = manager.get_lock(trip_id)
 
     try:
-        # ── State for session_id propagation ──────────────────────────────
         ai_session_id: Optional[str] = None
 
-        # ── جيب الـ Trip ─────────────────────────────────────────────────
         result = await db.execute(
             select(Trip)
             .options(
@@ -725,16 +689,11 @@ async def websocket_chat(
             await websocket.close(code=4004)
             return
 
-        # ── جيب أو أنشئ Conversation ─────────────────────────────────────
         conversation = await get_or_create_conversation(trip, user_id, db)
         await db.commit()
 
-        # ── جيب الـ Profile ──────────────────────────────────────────────
         profile_data = await get_profile_data(user_id, trip.trip_id, db)
 
-        # ══════════════════════════════════════════════════════════════════
-        # AUTO-GENERATE: لو Flutter بعت auto_msg → نبعته للـ AI فوراً
-        # ══════════════════════════════════════════════════════════════════
         if auto_msg and auto_msg.strip():
             async with lock:
                 ai_session_id = await process_message_stream(
@@ -749,7 +708,6 @@ async def websocket_chat(
                     session_id=ai_session_id,
                 )
 
-        # ── الـ Loop العادي ───────────────────────────────────────────────
         while True:
             data      = await websocket.receive_json()
             user_text = data.get("message", "").strip()
