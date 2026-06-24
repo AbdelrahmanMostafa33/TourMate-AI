@@ -3,8 +3,8 @@
 """
 Integration tests for the full multi-agent pipeline.
 
-Tests verify that agents wire together correctly through the graph:
-  load_profile → preference → retrieval → ranking → planner → optimizer → validator
+Tests verify that nodes wire together correctly through the graph:
+  load_profile → retrieval → ranking → planner → optimizer → validator
 
 All LLM calls and external services (OSRM, HTTP) are mocked,
 but agent logic (scoring, filtering, routing, derivation) runs for real.
@@ -72,11 +72,11 @@ class TestFullPipelineHappyPath:
         assert result["profile"]["budget_level"] == "moderate"
 
     @pytest.mark.asyncio
-    async def test_retrieval_agent_filters_and_diversifies(self):
-        """Retrieval Agent loads places, filters, and ensures diversity."""
+    async def test_retrieval_node_filters_and_diversifies(self):
+        """Place retriever loads places, filters, and ensures diversity."""
         state = build_pipeline_state()
 
-        with patch("ai_engine.agents.retrieval_agent.get_places_for_city", new_callable=AsyncMock, return_value=MOCK_PLACES):
+        with patch("ai_engine.services.place_retriever.get_places_for_city", new_callable=AsyncMock, return_value=MOCK_PLACES):
             result = await retrieval_node(state)
 
         filtered = result["filtered_places"]
@@ -88,11 +88,11 @@ class TestFullPipelineHappyPath:
             assert "lon" in place
 
     @pytest.mark.asyncio
-    async def test_ranking_agent_scores_and_selects(self):
-        """Ranking Agent scores candidates and caps the result set."""
+    async def test_ranking_node_scores_and_selects(self):
+        """Candidate scorer scores candidates and caps the result set."""
         state = build_pipeline_state()
 
-        with patch("ai_engine.agents.retrieval_agent.get_places_for_city", new_callable=AsyncMock, return_value=MOCK_PLACES):
+        with patch("ai_engine.services.place_retriever.get_places_for_city", new_callable=AsyncMock, return_value=MOCK_PLACES):
             state = await retrieval_node(state)
 
         result = await ranking_node(state)
@@ -108,7 +108,7 @@ class TestFullPipelineHappyPath:
 
         state = build_pipeline_state()
 
-        with patch("ai_engine.agents.retrieval_agent.get_places_for_city", new_callable=AsyncMock, return_value=MOCK_PLACES):
+        with patch("ai_engine.services.place_retriever.get_places_for_city", new_callable=AsyncMock, return_value=MOCK_PLACES):
             state = await retrieval_node(state)
         state = await ranking_node(state)
 
@@ -122,17 +122,17 @@ class TestFullPipelineHappyPath:
 
     @pytest.mark.asyncio
     @patch("ai_engine.agents.planning_agent.invoke_with_fallback")
-    @patch("ai_engine.agents.optimization_agent.compute_day_matrix", new_callable=AsyncMock)
+    @patch("ai_engine.services.route_optimizer.compute_day_matrix", new_callable=AsyncMock)
     async def test_optimizer_reorders_stops(
         self, mock_matrix, mock_plan_llm
     ):
-        """Optimizer reorders stops and annotates travel times."""
+        """Route optimizer reorders stops and annotates travel times."""
         mock_plan_llm.return_value = build_planning_llm_response(num_days=1, num_stops_per_day=3)
         mock_matrix.return_value = make_mock_matrix(3, travel_time=8.0)
 
         state = build_pipeline_state(duration_days=1)
 
-        with patch("ai_engine.agents.retrieval_agent.get_places_for_city", new_callable=AsyncMock, return_value=MOCK_PLACES):
+        with patch("ai_engine.services.place_retriever.get_places_for_city", new_callable=AsyncMock, return_value=MOCK_PLACES):
             state = await retrieval_node(state)
         state = await ranking_node(state)
         state = await planning_node(state)
@@ -151,36 +151,36 @@ class TestFullPipelineHappyPath:
 
     @pytest.mark.asyncio
     @patch("ai_engine.agents.planning_agent.invoke_with_fallback")
-    @patch("ai_engine.agents.optimization_agent.compute_day_matrix", new_callable=AsyncMock)
-    @patch("ai_engine.agents.validation_agent.invoke_with_fallback")
+    @patch("ai_engine.services.route_optimizer.compute_day_matrix", new_callable=AsyncMock)
+    @patch("ai_engine.services.itinerary_validator.invoke_with_fallback")
     async def test_full_pipeline_produces_valid_itinerary(
         self, mock_val_llm, mock_matrix, mock_plan_llm
     ):
-        """Full pipeline: preference → retrieval → ranking → planner → optimizer → validator."""
+        """Full pipeline: retrieval → ranking → planner → optimizer → validator."""
         mock_plan_llm.return_value = build_planning_llm_response(num_days=2, num_stops_per_day=3)
         mock_matrix.return_value = make_mock_matrix(3, travel_time=8.0)
         mock_val_llm.return_value = build_validation_llm_response(is_valid=True, score=85)
 
         state = build_pipeline_state()
 
-        # Step 1: Retrieval Agent
-        with patch("ai_engine.agents.retrieval_agent.get_places_for_city", new_callable=AsyncMock, return_value=MOCK_PLACES):
+        # Step 1: Retrieval node
+        with patch("ai_engine.services.place_retriever.get_places_for_city", new_callable=AsyncMock, return_value=MOCK_PLACES):
             state = await retrieval_node(state)
         assert len(state["filtered_places"]) > 0
 
-        # Step 2: Ranking Agent
+        # Step 2: Ranking node
         state = await ranking_node(state)
         assert len(state["candidate_places"]) > 0
 
-        # Step 3: Planning Agent
+        # Step 3: Planning node
         state = await planning_node(state)
         assert state["draft_itinerary"] is not None
 
-        # Step 4: Optimization Agent
+        # Step 4: Optimization node
         state = await optimization_node(state)
         assert state["optimized_itinerary"] is not None
 
-        # Step 5: Validation Agent
+        # Step 5: Validation node
         state = await validation_node(state)
         assert state["is_valid"] is True
         assert state["validation"]["score"] >= 70
@@ -201,7 +201,7 @@ class TestErrorPropagation:
         """No places found → retrieval sets error → pipeline stops."""
         state = build_pipeline_state()
 
-        with patch("ai_engine.agents.retrieval_agent.get_places_for_city", new_callable=AsyncMock, return_value=[]):
+        with patch("ai_engine.services.place_retriever.get_places_for_city", new_callable=AsyncMock, return_value=[]):
             state = await retrieval_node(state)
 
         assert state["error"] is not None
@@ -217,7 +217,7 @@ class TestErrorPropagation:
 
         # Return places that will be filtered out (low rating)
         bad_places = [_make_place(id="bad_001", name="Bad Place", rating=1.0, lat=30.0, lon=31.0)]
-        with patch("ai_engine.agents.retrieval_agent.get_places_for_city", new_callable=AsyncMock, return_value=bad_places):
+        with patch("ai_engine.services.place_retriever.get_places_for_city", new_callable=AsyncMock, return_value=bad_places):
             state = await retrieval_node(state)
 
         # filtered_places might be empty after filtering
@@ -230,7 +230,7 @@ class TestErrorPropagation:
         """No candidates after ranking → edge routes to end."""
         state = build_pipeline_state()
 
-        with patch("ai_engine.agents.retrieval_agent.get_places_for_city", new_callable=AsyncMock, return_value=[]):
+        with patch("ai_engine.services.place_retriever.get_places_for_city", new_callable=AsyncMock, return_value=[]):
             state = await retrieval_node(state)
 
         # Empty filtered_places → ranking gets nothing
@@ -249,7 +249,7 @@ class TestErrorPropagation:
 
         state = build_pipeline_state()
 
-        with patch("ai_engine.agents.retrieval_agent.get_places_for_city", new_callable=AsyncMock, return_value=MOCK_PLACES):
+        with patch("ai_engine.services.place_retriever.get_places_for_city", new_callable=AsyncMock, return_value=MOCK_PLACES):
             state = await retrieval_node(state)
         state = await ranking_node(state)
 
@@ -267,7 +267,7 @@ class TestErrorPropagation:
 
         state = build_pipeline_state()
 
-        with patch("ai_engine.agents.retrieval_agent.get_places_for_city", new_callable=AsyncMock, return_value=MOCK_PLACES):
+        with patch("ai_engine.services.place_retriever.get_places_for_city", new_callable=AsyncMock, return_value=MOCK_PLACES):
             state = await retrieval_node(state)
         state = await ranking_node(state)
 
@@ -358,8 +358,8 @@ class TestValidationRetryFlow:
 
     @pytest.mark.asyncio
     @patch("ai_engine.agents.planning_agent.invoke_with_fallback")
-    @patch("ai_engine.agents.optimization_agent.compute_day_matrix", new_callable=AsyncMock)
-    @patch("ai_engine.agents.validation_agent.invoke_with_fallback")
+    @patch("ai_engine.services.route_optimizer.compute_day_matrix", new_callable=AsyncMock)
+    @patch("ai_engine.services.itinerary_validator.invoke_with_fallback")
     async def test_validation_failure_increments_planning_attempts(
         self, mock_val_llm, mock_matrix, mock_plan_llm
     ):
@@ -371,7 +371,7 @@ class TestValidationRetryFlow:
         state = build_pipeline_state(duration_days=1)
 
         # Run through the pipeline
-        with patch("ai_engine.agents.retrieval_agent.get_places_for_city", new_callable=AsyncMock, return_value=MOCK_PLACES):
+        with patch("ai_engine.services.place_retriever.get_places_for_city", new_callable=AsyncMock, return_value=MOCK_PLACES):
             state = await retrieval_node(state)
         state = await ranking_node(state)
         state = await planning_node(state)

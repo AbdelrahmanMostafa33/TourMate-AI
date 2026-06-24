@@ -21,7 +21,7 @@ logging.getLogger("groq").setLevel(logging.WARNING)
 logging.getLogger("google.genai").setLevel(logging.WARNING)
 logging.getLogger("sqlalchemy").setLevel(logging.WARNING)
 
-from ai_engine.chat.conversation_agent import handle_chat
+from ai_engine.chat.orchestrator import handle_chat
 
 
 async def main():

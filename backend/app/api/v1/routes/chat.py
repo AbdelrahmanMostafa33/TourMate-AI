@@ -259,7 +259,7 @@ async def process_message_stream(
     profile_from_ai = None
 
     try:
-        from ai_engine.chat.conversation_agent import handle_chat_stream
+        from ai_engine.chat.orchestrator import handle_chat_stream
 
         async for chunk in handle_chat_stream(
             user_id=user_id,
@@ -550,7 +550,7 @@ async def websocket_new_chat(
             profile_data_from_ai = None
 
             try:
-                from ai_engine.chat.conversation_agent import handle_chat_stream
+                from ai_engine.chat.orchestrator import handle_chat_stream
 
                 async for chunk in handle_chat_stream(
                     user_id=user_id,

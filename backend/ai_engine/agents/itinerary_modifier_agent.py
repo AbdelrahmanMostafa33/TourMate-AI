@@ -17,7 +17,7 @@ import logging
 
 from langchain_core.messages import HumanMessage
 
-from ai_engine.agents.operations import (
+from ai_engine.services.operations import (
     ModifierResponse,
     apply_operation,
     build_compact_context,

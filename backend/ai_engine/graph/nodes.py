@@ -1,11 +1,11 @@
 from ai_engine.graph.state import TripState
 from ai_engine.graph.progress import report_progress
 from ai_engine.tools.profile_tool import load_trip_profile, load_mock_profile
-from ai_engine.agents.retrieval_agent import run_retrieval_agent
-from ai_engine.agents.ranking_agent import run_ranking_agent
+from ai_engine.services.place_retriever import retrieve_places
+from ai_engine.services.candidate_scorer import score_candidates
 from ai_engine.agents.planning_agent import run_planning_agent
-from ai_engine.agents.optimization_agent import run_optimization_agent
-from ai_engine.agents.validation_agent import run_validation_agent
+from ai_engine.services.route_optimizer import optimize_route
+from ai_engine.services.itinerary_validator import validate_itinerary
 from ai_engine.observability import traced
 
 
@@ -59,44 +59,44 @@ async def load_profile_node(state: TripState) -> TripState:
     return state
 
 
-@traced(name="retrieval_agent", tags=["agent", "retrieval"], metadata={"role": "retrieval"})
+@traced(name="retrieval", tags=["agent", "retrieval"], metadata={"role": "retrieval"})
 async def retrieval_node(state: TripState) -> TripState:
     """
-    RETRIEVAL AGENT NODE — Filters places from the database using
+    RETRIEVAL NODE — Filters places from the database using
     structured preference criteria.
     """
     city = state.get('destination_city', '?')
     pk = _progress_key(state)
     if pk:
-        await report_progress(pk, "RetrievalAgent", "running", f"Searching for places in {city}...")
+        await report_progress(pk, "PlaceRetriever", "running", f"Searching for places in {city}...")
 
-    print(f"[RetrievalAgent] Filtering places for: {city}")
-    result = await run_retrieval_agent(state)
+    print(f"[PlaceRetriever] Filtering places for: {city}")
+    result = await retrieve_places(state)
 
     filtered = result.get("filtered_places") or []
     if pk:
-        await report_progress(pk, "RetrievalAgent", "done", f"Found {len(filtered)} places to explore")
+        await report_progress(pk, "PlaceRetriever", "done", f"Found {len(filtered)} places to explore")
     return result
 
 
-@traced(name="ranking_agent", tags=["agent", "ranking"], metadata={"role": "ranking"})
+@traced(name="ranking", tags=["agent", "ranking"], metadata={"role": "ranking"})
 async def ranking_node(state: TripState) -> TripState:
     """
-    RANKING AGENT NODE — Scores candidates with multi-signal ranking
+    CANDIDATE SCORER NODE — Scores candidates with multi-signal scoring
     and diversity optimization.
     """
     filtered = state.get("filtered_places") or []
     pk = _progress_key(state)
     if pk:
-        await report_progress(pk, "RankingAgent", "running",
-                              f"Ranking {len(filtered)} places by relevance...")
+        await report_progress(pk, "CandidateScorer", "running",
+                              f"Scoring {len(filtered)} places by relevance...")
 
-    print(f"[RankingAgent] Ranking {len(filtered)} filtered places")
-    result = await run_ranking_agent(state)
+    print(f"[CandidateScorer] Scoring {len(filtered)} filtered places")
+    result = await score_candidates(state)
 
     candidates = result.get("candidate_places") or []
     if pk:
-        await report_progress(pk, "RankingAgent", "done",
+        await report_progress(pk, "CandidateScorer", "done",
                               f"Selected top {len(candidates)} places for your itinerary")
     return result
 
@@ -105,7 +105,7 @@ async def ranking_node(state: TripState) -> TripState:
 async def planning_node(state: TripState) -> TripState:
     """
     PLANNING AGENT NODE — Generates the itinerary using the LLM,
-    consuming pre-ranked candidates from upstream agents.
+    consuming pre-ranked candidates from upstream services.
     """
     candidates = state.get("candidate_places") or []
     pk = _progress_key(state)
@@ -137,10 +137,10 @@ async def planning_node(state: TripState) -> TripState:
     return result
 
 
-@traced(name="optimization_agent", tags=["agent", "optimizer"], metadata={"role": "optimizer"})
+@traced(name="optimization", tags=["agent", "optimizer"], metadata={"role": "optimizer"})
 async def optimization_node(state: TripState) -> TripState:
     """
-    OPTIMIZER AGENT NODE — Reorders stops by travel time.
+    ROUTE OPTIMIZER NODE — Reorders stops by travel time.
     """
     draft = state.get("draft_itinerary")
     days = len(draft.get("days", [])) if draft else 0
@@ -148,57 +148,57 @@ async def optimization_node(state: TripState) -> TripState:
 
     pk = _progress_key(state)
     if pk:
-        await report_progress(pk, "Optimizer", "running",
+        await report_progress(pk, "RouteOptimizer", "running",
                               f"Optimizing route for {total_stops} stops across {days} days...")
 
-    print(f"[Optimizer] Optimizing {days} days, {total_stops} stops...")
-    result = await run_optimization_agent(state)
+    print(f"[RouteOptimizer] Optimizing {days} days, {total_stops} stops...")
+    result = await optimize_route(state)
 
     if pk:
         opt = result.get("optimized_itinerary") or {}
         travel_time = sum(
             d.get("total_travel_time_minutes", 0) for d in opt.get("days", [])
         )
-        await report_progress(pk, "Optimizer", "done",
+        await report_progress(pk, "RouteOptimizer", "done",
                               f"Route optimized — {travel_time:.0f} min total travel time")
     return result
 
 
-@traced(name="validation_agent", tags=["agent", "validator"], metadata={"role": "validator"})
+@traced(name="validation", tags=["agent", "validator"], metadata={"role": "validator"})
 async def validation_node(state: TripState) -> TripState:
     """
-    VALIDATION AGENT NODE — Programmatic + LLM validation.
+    ITINERARY VALIDATOR NODE — Programmatic + LLM validation.
     """
     opt = state.get("optimized_itinerary")
     days = len(opt.get("days", [])) if opt else 0
 
     pk = _progress_key(state)
     if pk:
-        await report_progress(pk, "Validator", "running", "Reviewing itinerary quality...")
+        await report_progress(pk, "ItineraryValidator", "running", "Reviewing itinerary quality...")
 
-    print(f"[Validator] Validating {days}-day itinerary...")
+    print(f"[ItineraryValidator] Validating {days}-day itinerary...")
 
     # Build a progress callback for LLM retry reporting
     async def _validator_retry_cb(attempt, max_retries, reason):
         if pk:
-            await report_progress(pk, "Validator", "running",
+            await report_progress(pk, "ItineraryValidator", "running",
                 f"{reason} ({attempt}/{max_retries})")
 
-    result = await run_validation_agent(state, on_retry=_validator_retry_cb)
+    result = await validate_itinerary(state, on_retry=_validator_retry_cb)
 
     if pk:
         is_valid = result.get("is_valid")
         if is_valid:
-            await report_progress(pk, "Validator", "done",
+            await report_progress(pk, "ItineraryValidator", "done",
                                   "Itinerary passed quality checks! ✅")
         else:
             val = result.get("validation", {})
             score = val.get("score", "?")
             issues = len(val.get("issues", []))
             if result.get("planning_attempts", 1) < 2:
-                await report_progress(pk, "Validator", "running",
+                await report_progress(pk, "ItineraryValidator", "running",
                                       f"Score {score}/100 — improving quality...")
             else:
-                await report_progress(pk, "Validator", "done",
+                await report_progress(pk, "ItineraryValidator", "done",
                                       f"Final quality score: {score}/100 ({issues} notes)")
     return result

@@ -1,7 +1,7 @@
-# backend/tests/unit/test_ai_engine/test_ranking_agent.py
+# backend/tests/unit/test_ai_engine/test_candidate_scorer.py
 
 """
-Unit tests for the Ranking Agent (embedding-based scoring).
+Unit tests for the Candidate Scorer (embedding-based scoring).
 
 Tests cover:
     - _score_popularity(): normalizes popularity to 0-1
@@ -10,20 +10,20 @@ Tests cover:
     - _score_rating(): normalizes 1-5 rating to 0-1
     - _compute_composite_score(): weighted multi-signal formula (embedding path)
     - _diversity_optimize(): per-category caps and total candidate limit
-    - run_ranking_agent(): full agent run (DB + embedding calls mocked)
+    - score_candidates(): full agent run (DB + embedding calls mocked)
 """
 
 import pytest
 from unittest.mock import AsyncMock, patch
 
-from ai_engine.agents.ranking_agent import (
+from ai_engine.services.candidate_scorer import (
     _score_popularity,
     _score_preference_embedding,
     _score_proximity,
     _score_rating,
     _compute_composite_score,
     _diversity_optimize,
-    run_ranking_agent,
+    score_candidates,
     WEIGHT_POPULARITY,
     WEIGHT_PREFERENCE,
     WEIGHT_PROXIMITY,
@@ -340,16 +340,16 @@ class TestDiversityOptimize:
         assert attractions_7d >= attractions_2d
 
 
-# ── run_ranking_agent Tests ───────────────────────────────────────────────────
+# ── score_candidates Tests ───────────────────────────────────────────────────
 
-class TestRunRankingAgent:
+class TestRunScoring:
 
     @pytest.mark.asyncio
-    @patch("ai_engine.agents.ranking_agent.load_place_embeddings", new_callable=AsyncMock)
-    @patch("ai_engine.agents.ranking_agent.embed_query")
+    @patch("ai_engine.services.candidate_scorer.load_place_embeddings", new_callable=AsyncMock)
+    @patch("ai_engine.services.candidate_scorer.embed_query")
     async def test_empty_filtered_places_sets_error(self, mock_embed, mock_load):
-        state = _make_ranking_state(filtered_places=[])
-        result = await run_ranking_agent(state)
+        state = _make_scorer_state(filtered_places=[])
+        result = await score_candidates(state)
 
         assert result["candidate_places"] == []
         assert result["error"] is not None
@@ -357,25 +357,25 @@ class TestRunRankingAgent:
         mock_load.assert_not_called()
 
     @pytest.mark.asyncio
-    @patch("ai_engine.agents.ranking_agent.load_place_embeddings", new_callable=AsyncMock)
-    @patch("ai_engine.agents.ranking_agent.embed_query")
+    @patch("ai_engine.services.candidate_scorer.load_place_embeddings", new_callable=AsyncMock)
+    @patch("ai_engine.services.candidate_scorer.embed_query")
     async def test_none_filtered_places_sets_error(self, mock_embed, mock_load):
-        state = _make_ranking_state(filtered_places=None)
-        result = await run_ranking_agent(state)
+        state = _make_scorer_state(filtered_places=None)
+        result = await score_candidates(state)
 
         assert result["candidate_places"] == []
         mock_embed.assert_not_called()
 
     @pytest.mark.asyncio
-    @patch("ai_engine.agents.ranking_agent.load_place_embeddings", new_callable=AsyncMock)
-    @patch("ai_engine.agents.ranking_agent.embed_query")
+    @patch("ai_engine.services.candidate_scorer.load_place_embeddings", new_callable=AsyncMock)
+    @patch("ai_engine.services.candidate_scorer.embed_query")
     async def test_single_place_returns_it(self, mock_embed, mock_load):
         place = _make_place()
         mock_load.return_value = {"place_001": [0.5] * 768}
         mock_embed.return_value = [0.5] * 768
 
-        state = _make_ranking_state(filtered_places=[place])
-        result = await run_ranking_agent(state)
+        state = _make_scorer_state(filtered_places=[place])
+        result = await score_candidates(state)
 
         assert len(result["candidate_places"]) == 1
         assert result["candidate_places"][0]["id"] == "place_001"
@@ -383,8 +383,8 @@ class TestRunRankingAgent:
         mock_load.assert_called_once()
 
     @pytest.mark.asyncio
-    @patch("ai_engine.agents.ranking_agent.load_place_embeddings", new_callable=AsyncMock)
-    @patch("ai_engine.agents.ranking_agent.embed_query")
+    @patch("ai_engine.services.candidate_scorer.load_place_embeddings", new_callable=AsyncMock)
+    @patch("ai_engine.services.candidate_scorer.embed_query")
     async def test_multiple_places_ranked(self, mock_embed, mock_load):
         places = [
             _make_place(id="p_high", popularity_score=95, rating=4.8),
@@ -398,8 +398,8 @@ class TestRunRankingAgent:
         }
         mock_embed.return_value = [0.5] * 768
 
-        state = _make_ranking_state(filtered_places=places)
-        result = await run_ranking_agent(state)
+        state = _make_scorer_state(filtered_places=places)
+        result = await score_candidates(state)
 
         candidates = result["candidate_places"]
         assert len(candidates) >= 1
@@ -407,8 +407,8 @@ class TestRunRankingAgent:
         assert candidates[0]["id"] == "p_high"
 
     @pytest.mark.asyncio
-    @patch("ai_engine.agents.ranking_agent.load_place_embeddings", new_callable=AsyncMock)
-    @patch("ai_engine.agents.ranking_agent.embed_query")
+    @patch("ai_engine.services.candidate_scorer.load_place_embeddings", new_callable=AsyncMock)
+    @patch("ai_engine.services.candidate_scorer.embed_query")
     async def test_candidate_places_capped(self, mock_embed, mock_load):
         places = [
             _make_place(id=f"place_{i}", popularity_score=80, category="attractions")
@@ -417,28 +417,28 @@ class TestRunRankingAgent:
         mock_load.return_value = {f"place_{i}": [0.5] * 768 for i in range(50)}
         mock_embed.return_value = [0.5] * 768
 
-        state = _make_ranking_state(filtered_places=places, duration_days=7)
-        result = await run_ranking_agent(state)
+        state = _make_scorer_state(filtered_places=places, duration_days=7)
+        result = await score_candidates(state)
 
         assert len(result["candidate_places"]) <= MAX_TOTAL_CANDIDATES
 
     @pytest.mark.asyncio
-    @patch("ai_engine.agents.ranking_agent.load_place_embeddings", new_callable=AsyncMock)
-    @patch("ai_engine.agents.ranking_agent.embed_query")
+    @patch("ai_engine.services.candidate_scorer.load_place_embeddings", new_callable=AsyncMock)
+    @patch("ai_engine.services.candidate_scorer.embed_query")
     async def test_agent_message_appended(self, mock_embed, mock_load):
         place = _make_place()
         mock_load.return_value = {"place_001": [0.5] * 768}
         mock_embed.return_value = [0.5] * 768
 
-        state = _make_ranking_state(filtered_places=[place])
-        result = await run_ranking_agent(state)
+        state = _make_scorer_state(filtered_places=[place])
+        result = await score_candidates(state)
 
         messages = result["agent_messages"]
-        assert any("[RankingAgent]" in m for m in messages)
+        assert any("[CandidateScorer]" in m for m in messages)
 
     @pytest.mark.asyncio
-    @patch("ai_engine.agents.ranking_agent.load_place_embeddings", new_callable=AsyncMock)
-    @patch("ai_engine.agents.ranking_agent.embed_query")
+    @patch("ai_engine.services.candidate_scorer.load_place_embeddings", new_callable=AsyncMock)
+    @patch("ai_engine.services.candidate_scorer.embed_query")
     async def test_city_center_computed_from_non_hotel_places(self, mock_embed, mock_load):
         hotel = _make_place(id="h1", category="hotel", lat=35.0, lon=36.0)
         attraction = _make_place(id="a1", category="attractions", lat=30.0, lon=31.0)
@@ -446,38 +446,38 @@ class TestRunRankingAgent:
         mock_load.return_value = {"h1": [0.5] * 768, "a1": [0.5] * 768}
         mock_embed.return_value = [0.5] * 768
 
-        state = _make_ranking_state(filtered_places=[hotel, attraction])
-        result = await run_ranking_agent(state)
+        state = _make_scorer_state(filtered_places=[hotel, attraction])
+        result = await score_candidates(state)
 
         assert result["error"] is None
         assert len(result["candidate_places"]) >= 1
 
     @pytest.mark.asyncio
-    @patch("ai_engine.agents.ranking_agent.load_place_embeddings", new_callable=AsyncMock)
-    @patch("ai_engine.agents.ranking_agent.embed_query")
+    @patch("ai_engine.services.candidate_scorer.load_place_embeddings", new_callable=AsyncMock)
+    @patch("ai_engine.services.candidate_scorer.embed_query")
     async def test_embedding_failure_fallback(self, mock_embed, mock_load):
         """When embed_query returns None, ranking should still work with fallback."""
         place = _make_place()
         mock_load.return_value = {"place_001": [0.5] * 768}
         mock_embed.return_value = None  # embedding failed
 
-        state = _make_ranking_state(filtered_places=[place])
-        result = await run_ranking_agent(state)
+        state = _make_scorer_state(filtered_places=[place])
+        result = await score_candidates(state)
 
         assert len(result["candidate_places"]) == 1
         assert result["error"] is None
 
     @pytest.mark.asyncio
-    @patch("ai_engine.agents.ranking_agent.load_place_embeddings", new_callable=AsyncMock)
-    @patch("ai_engine.agents.ranking_agent.embed_query")
+    @patch("ai_engine.services.candidate_scorer.load_place_embeddings", new_callable=AsyncMock)
+    @patch("ai_engine.services.candidate_scorer.embed_query")
     async def test_missing_place_embeddings_fallback(self, mock_embed, mock_load):
         """When DB has no embeddings (empty dict), ranking uses fallback."""
         place = _make_place()
         mock_load.return_value = {}  # no embeddings in DB
         mock_embed.return_value = [0.5] * 768
 
-        state = _make_ranking_state(filtered_places=[place])
-        result = await run_ranking_agent(state)
+        state = _make_scorer_state(filtered_places=[place])
+        result = await score_candidates(state)
 
         assert result["candidate_places"]
         assert result["error"] is None
@@ -495,7 +495,7 @@ _DEFAULT_RANKING_PROFILE = {
 }
 
 
-def _make_ranking_state(**overrides) -> dict:
+def _make_scorer_state(**overrides) -> dict:
     """State with profile pre-populated for ranking tests."""
     defaults = {
         "profile": dict(_DEFAULT_RANKING_PROFILE),

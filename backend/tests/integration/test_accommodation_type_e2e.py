@@ -15,7 +15,7 @@ Agent logic (accommodation mapping, rating/distance filtering) runs for real.
 import pytest
 from unittest.mock import AsyncMock, patch
 
-from ai_engine.agents.retrieval_agent import _map_accommodation_to_type, _apply_filters
+from ai_engine.services.place_retriever import _map_accommodation_to_type, _apply_filters
 from tests.unit.test_ai_engine.conftest import _make_profile, _make_hotel, _make_place
 
 
@@ -269,7 +269,7 @@ class TestFullPipelineWithAccommodationType:
 
     @pytest.mark.asyncio
     async def test_retrieval_pipeline_filters_hotels_by_resort_type(self):
-        """Retrieval Agent filters hotels by resort type from profile."""
+        """Place retriever filters hotels by resort type from profile."""
 
         state = {
             "destination_city": "Cairo",
@@ -301,11 +301,11 @@ class TestFullPipelineWithAccommodationType:
             "trip_id": None,
         }
 
-        # Run Retrieval Agent (mock places, run real filtering)
+        # Run retrieval node (mock places, run real filtering)
         from ai_engine.graph.nodes import retrieval_node
 
         with patch(
-            "ai_engine.agents.retrieval_agent.get_places_for_city",
+            "ai_engine.services.place_retriever.get_places_for_city",
             new_callable=AsyncMock,
             return_value=MIXED_PLACES,
         ):

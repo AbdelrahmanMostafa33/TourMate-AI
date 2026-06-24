@@ -22,7 +22,7 @@ import pytest
 import requests
 from unittest.mock import AsyncMock, patch
 
-from ai_engine.chat.unified_router import RouterResult
+from ai_engine.chat.message_interpreter import InterpretationResult
 
 BASE_URL = os.environ.get("BACKEND_BASE_URL", "http://localhost:8000")
 FIREBASE_TOKEN = os.environ.get("FIREBASE_TEST_TOKEN", "")
@@ -218,14 +218,14 @@ class TestAIPipeline:
     """AI pipeline runs correctly via handle_chat (no WebSocket needed)."""
 
     @pytest.mark.asyncio
-    @patch("ai_engine.chat.conversation_agent.trip_graph", new_callable=AsyncMock)
-    @patch("ai_engine.chat.conversation_agent.route_message")
-    @patch("ai_engine.chat.conversation_agent.get_session_manager")
+    @patch("ai_engine.chat.orchestrator.trip_graph", new_callable=AsyncMock)
+    @patch("ai_engine.chat.orchestrator.interpret_message")
+    @patch("ai_engine.chat.orchestrator.get_session_manager")
     async def test_ai_pipeline_slot_filling_to_itinerary(
         self, mock_get_manager, mock_route, mock_graph
     ):
         """Slot filling → AI pipeline runs → itinerary generated."""
-        from ai_engine.chat.conversation_agent import handle_chat
+        from ai_engine.chat.orchestrator import handle_chat
         from ai_engine.memory.conversation_state import ConversationState
 
         # Setup mock Redis session
@@ -267,7 +267,7 @@ class TestAIPipeline:
         }
 
         # Build mock router that fills all slots in one turn
-        mock_route.return_value = RouterResult(
+        mock_route.return_value = InterpretationResult(
             action="plan_trip",
             response="Generating your itinerary!",
             extracted={

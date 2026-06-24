@@ -1,14 +1,14 @@
-# tests/unit/test_ai_engine/test_unified_router.py
-"""Tests for the unified router module."""
+# tests/unit/test_ai_engine/test_message_interpreter.py
+"""Tests for the message interpreter module."""
 
 import pytest
-from ai_engine.chat.unified_router import (
+from ai_engine.chat.message_interpreter import (
     _coerce_int,
     _build_extracted_dict,
     _normalize_action,
     ExtractedSlots,
-    RouterOutput,
-    RouterResult,
+    InterpreterOutput,
+    InterpretationResult,
 )
 
 

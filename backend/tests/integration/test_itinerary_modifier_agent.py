@@ -20,7 +20,7 @@ from unittest.mock import patch
 import pytest
 
 from ai_engine.agents.itinerary_modifier_agent import run_itinerary_modifier
-from ai_engine.agents.operations import (
+from ai_engine.services.operations import (
     AddOperation,
     ChangeHotelOperation,
     RemoveOperation,
@@ -145,7 +145,7 @@ class TestSwapOperation:
         )
 
         async def _mock_invoke(*args, **kwargs):
-            from ai_engine.agents.operations import ModifierResponse
+            from ai_engine.services.operations import ModifierResponse
             return ModifierResponse(operation=operation, note="Swapped museum for park")
 
         with patch(
@@ -185,7 +185,7 @@ class TestSwapOperation:
         )
 
         async def _mock_invoke(*args, **kwargs):
-            from ai_engine.agents.operations import ModifierResponse
+            from ai_engine.services.operations import ModifierResponse
             return ModifierResponse(operation=operation, note="Swapped restaurant")
 
         with patch(
@@ -221,7 +221,7 @@ class TestRemoveOperation:
         operation = RemoveOperation(place_id="place_004")
 
         async def _mock_invoke(*args, **kwargs):
-            from ai_engine.agents.operations import ModifierResponse
+            from ai_engine.services.operations import ModifierResponse
             return ModifierResponse(operation=operation, note="Removed Al-Azhar Park")
 
         with patch(
@@ -251,7 +251,7 @@ class TestRemoveOperation:
         operation = RemoveOperation(place_id="place_001")
 
         async def _mock_invoke(*args, **kwargs):
-            from ai_engine.agents.operations import ModifierResponse
+            from ai_engine.services.operations import ModifierResponse
             return ModifierResponse(operation=operation, note="Removed museum")
 
         with patch(
@@ -292,7 +292,7 @@ class TestAddOperation:
         )
 
         async def _mock_invoke(*args, **kwargs):
-            from ai_engine.agents.operations import ModifierResponse
+            from ai_engine.services.operations import ModifierResponse
             return ModifierResponse(operation=operation, note="Added evening activity")
 
         with patch(
@@ -326,7 +326,7 @@ class TestAddOperation:
         )
 
         async def _mock_invoke(*args, **kwargs):
-            from ai_engine.agents.operations import ModifierResponse
+            from ai_engine.services.operations import ModifierResponse
             return ModifierResponse(operation=operation, note="Added morning market visit")
 
         with patch(
@@ -370,7 +370,7 @@ class TestChangeHotelOperation:
         )
 
         async def _mock_invoke(*args, **kwargs):
-            from ai_engine.agents.operations import ModifierResponse
+            from ai_engine.services.operations import ModifierResponse
             return ModifierResponse(operation=operation, note="Changed to a cheaper hotel")
 
         with patch(
@@ -403,7 +403,7 @@ class TestChangeHotelOperation:
         )
 
         async def _mock_invoke(*args, **kwargs):
-            from ai_engine.agents.operations import ModifierResponse
+            from ai_engine.services.operations import ModifierResponse
             return ModifierResponse(operation=operation, note="Added downtown hotel option")
 
         with patch(
@@ -441,7 +441,7 @@ class TestReorderOperation:
         )
 
         async def _mock_invoke(*args, **kwargs):
-            from ai_engine.agents.operations import ModifierResponse
+            from ai_engine.services.operations import ModifierResponse
             return ModifierResponse(operation=operation, note="Reversed Day 1")
 
         with patch(
@@ -482,7 +482,7 @@ class TestReThemeOperation:
         )
 
         async def _mock_invoke(*args, **kwargs):
-            from ai_engine.agents.operations import ModifierResponse
+            from ai_engine.services.operations import ModifierResponse
             return ModifierResponse(operation=operation, note="Updated Day 1 theme")
 
         with patch(
@@ -573,7 +573,7 @@ class TestErrorHandling:
         )
 
         async def _mock_invoke(*args, **kwargs):
-            from ai_engine.agents.operations import ModifierResponse
+            from ai_engine.services.operations import ModifierResponse
             return ModifierResponse(operation=operation, note="Attempted swap")
 
         with patch(

@@ -39,7 +39,7 @@ async def get_places_for_city(
 
     The returned places are not filtered by interests,
     budget, trip style, or ranking score. Those tasks
-    are handled later by Retrieval and Ranking Agents.
+    are handled later by the Place Retriever and Candidate Scorer.
 
     Example:
         Input:  "Cairo"
@@ -130,10 +130,9 @@ async def get_places_for_city(
     # get_places_for_city("Cairo")
     #       ↓
     # Returns all Cairo places
-    #       ↓
-    # Retrieval Agent filters relevant places
-    #       ↓
-    # Ranking Agent scores and sorts them
+    #       ↓    # Place Retriever filters relevant places
+       #       ↓
+       # Candidate Scorer scores and sorts them
     #       ↓
     # Planner builds itinerary
     return places

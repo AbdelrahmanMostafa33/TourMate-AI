@@ -39,7 +39,7 @@ logging.getLogger("sqlalchemy.engine").setLevel(logging.WARNING)
 from ai_engine.observability import setup_langsmith
 setup_langsmith()
 
-from ai_engine.chat.conversation_agent import handle_chat
+from ai_engine.chat.orchestrator import handle_chat
 from ai_engine.memory.redis_memory import get_session_manager
 from ai_engine.llm_config import token_tracker
 
@@ -99,9 +99,9 @@ def print_debug(result: dict):
                 color = CYAN
             elif "[PreferenceAgent]" in msg:
                 color = GREEN
-            elif "[RetrievalAgent]" in msg:
+            elif "[PlaceRetriever]" in msg:
                 color = YELLOW
-            elif "[RankingAgent]" in msg:
+            elif "[CandidateScorer]" in msg:
                 color = YELLOW
             elif "[Planner]" in msg:
                 color = GREEN

@@ -6,7 +6,7 @@ import sys
 # Add the current directory to sys.path to allow imports from ai_engine
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), ".")))
 
-from ai_engine.chat.conversation_agent import handle_chat
+from ai_engine.chat.orchestrator import handle_chat
 
 # ── Test messages ──────────────────────────────────────────────────────────
 

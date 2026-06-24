@@ -5,7 +5,7 @@ from ai_engine.graph.state import TripState
 
 def should_retrieve(state: TripState) -> str:
     """
-    Called after the Preference Agent finishes.
+    Called after the Profile Loader finishes.
     If extraction succeeded, proceed to retrieval.
     """
     if state.get("error"):
@@ -15,8 +15,8 @@ def should_retrieve(state: TripState) -> str:
 
 def should_rank(state: TripState) -> str:
     """
-    Called after the Retrieval Agent finishes.
-    If filtering found places, proceed to ranking.
+    Called after the Place Retriever finishes.
+    If filtering found places, proceed to scoring.
     """
     if state.get("error"):
         return "end"
@@ -28,7 +28,7 @@ def should_rank(state: TripState) -> str:
 
 def should_plan(state: TripState) -> str:
     """
-    Called after the Ranking Agent finishes.
+    Called after the Candidate Scorer finishes.
     If candidates exist, proceed to planning.
     """
     if state.get("error"):
@@ -51,7 +51,7 @@ def should_optimize(state: TripState) -> str:
 
 def should_validate(state: TripState) -> str:
     """
-    Called after the Optimizer node finishes.
+    Called after the Route Optimizer node finishes.
     Did optimization succeed? If yes, go to Validator.
     """
     if state.get("error"):
@@ -66,7 +66,7 @@ _MAX_PLANNING_RETRIES = 3
 
 def should_retry_or_end(state: TripState) -> str:
     """
-    Called after the Validator node finishes.
+    Called after the Itinerary Validator node finishes.
     - If valid → end the pipeline successfully.
     - If invalid and an error exists → end with the error.
     - If invalid but no error and retries remain → retry from planner.

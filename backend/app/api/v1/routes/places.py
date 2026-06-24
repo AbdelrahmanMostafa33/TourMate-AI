@@ -176,7 +176,7 @@ async def explore_places(
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # POST /places/search
-# Main search endpoint for Retrieval Agent (DB-backed)
+# Main search endpoint for Place Retriever (DB-backed)
 # ═══════════════════════════════════════════════════════════════════════════════
 
 
@@ -189,7 +189,7 @@ async def search_places(
     """
     Search places with structured filters.
 
-    Used by the AI Engine's Retrieval Agent to fetch places
+    Used by the AI Engine's Place Retriever to fetch places
     from the database instead of local JSON files.
 
     **Filters supported:**

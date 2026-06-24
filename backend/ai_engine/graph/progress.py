@@ -12,10 +12,10 @@ Usage (in a graph node)::
 
     queue_key = state.get("progress_queue_key")
     if queue_key:
-        await report_progress(queue_key, "RetrievalAgent", "running",
+        await report_progress(queue_key, "PlaceRetriever", "running",
                               "Searching for places in Cairo...")
         # ... do work ...
-        await report_progress(queue_key, "RetrievalAgent", "done",
+        await report_progress(queue_key, "PlaceRetriever", "done",
                               "Found 45 places")
 """
 
@@ -54,7 +54,7 @@ async def report_progress(
 
     Args:
         session_id: The Redis session ID (used as the queue key).
-        agent:      Short agent name, e.g. ``"RetrievalAgent"``.
+        agent:      Short agent name, e.g. ``"PlaceRetriever"``.
         status:     ``"running"`` | ``"done"`` | ``"error"``.
         message:    Human-readable status message for the UI.
     """

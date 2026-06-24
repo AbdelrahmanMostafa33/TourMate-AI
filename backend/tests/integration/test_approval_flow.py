@@ -478,7 +478,7 @@ class TestProcessMessageStreamApproval:
 
         # ── 3. Patch handle_chat_stream and call process_message_stream ──
         with patch(
-            "ai_engine.chat.conversation_agent.handle_chat_stream",
+            "ai_engine.chat.orchestrator.handle_chat_stream",
             side_effect=mock_stream,
         ):
             from app.api.v1.routes.chat import process_message_stream
@@ -587,7 +587,7 @@ class TestProcessMessageStreamApproval:
 
         # ── 3. Patch handle_chat_stream and call process_message_stream ──
         with patch(
-            "ai_engine.chat.conversation_agent.handle_chat_stream",
+            "ai_engine.chat.orchestrator.handle_chat_stream",
             side_effect=mock_stream,
         ):
             from app.api.v1.routes.chat import process_message_stream

@@ -16,7 +16,7 @@ FAIL = "[FAIL]"
 all_pass = True
 
 # --- Test 1: _map_accommodation_to_type ---
-from ai_engine.agents.retrieval_agent import _map_accommodation_to_type
+from ai_engine.services.place_retriever import _map_accommodation_to_type
 
 print("=" * 60)
 print("TEST 1: _map_accommodation_to_type")
@@ -116,7 +116,7 @@ for name, adj, expected in cases:
 print(f"\n  Overall: {'PASS' if all_pass else 'FAIL'}\n")
 
 # --- Test 4: _apply_filters hotel type matching ---
-from ai_engine.agents.retrieval_agent import _apply_filters
+from ai_engine.services.place_retriever import _apply_filters
 
 print("=" * 60)
 print("TEST 4: _apply_filters hotel type matching")
@@ -162,7 +162,7 @@ for name, prefs, expected_names in cases:
 print(f"\n  Overall: {'PASS' if all_pass else 'FAIL'}\n")
 
 # --- Test 5: Code structure checks ---
-from ai_engine.chat.conversation_agent import (
+from ai_engine.chat.orchestrator import (
     _rerank_and_replan,
 )
 
@@ -191,12 +191,12 @@ print(f"  {status} Duplicate profile keys in rerank_state: {profile_keys} (expec
 if not ok:
     all_pass = False
 
-# Check that apply_preference_adjustments is no longer imported in conversation_agent
-from ai_engine.chat.conversation_agent import (
+# Check that apply_preference_adjustments is no longer imported in orchestrator
+from ai_engine.chat.orchestrator import (
     interpret_preference_adjustment,
 )
 try:
-    from ai_engine.chat.conversation_agent import apply_preference_adjustments
+    from ai_engine.chat.orchestrator import apply_preference_adjustments
     print(f"  {FAIL} apply_preference_adjustments is STILL imported (should be removed)")
     all_pass = False
 except ImportError:
@@ -209,7 +209,7 @@ print("=" * 60)
 print("TEST 6: _handle_modify_itinerary skip logic")
 print("=" * 60)
 
-from ai_engine.chat.conversation_agent import _handle_modify_itinerary
+from ai_engine.chat.orchestrator import _handle_modify_itinerary
 source = inspect.getsource(_handle_modify_itinerary)
 
 # Check the key logic: accommodations_updated should bypass re-ranking
@@ -232,7 +232,7 @@ print("=" * 60)
 print("TEST 7: _ACCOMMODATION_KEYWORDS coverage")
 print("=" * 60)
 
-from ai_engine.agents.retrieval_agent import _ACCOMMODATION_KEYWORDS
+from ai_engine.services.place_retriever import _ACCOMMODATION_KEYWORDS
 
 keyword_types = set()
 for keyword, acc_type in _ACCOMMODATION_KEYWORDS:

@@ -159,7 +159,7 @@ def test_graph_runs_with_mock_profile():
 
     import asyncio
     import unittest.mock as mock
-    with mock.patch("ai_engine.agents.retrieval_agent.get_places_for_city", side_effect=_mock_get_places):
+    with mock.patch("ai_engine.services.place_retriever.get_places_for_city", side_effect=_mock_get_places):
         result = asyncio.run(graph.ainvoke(initial_state))
 
     # Debug output

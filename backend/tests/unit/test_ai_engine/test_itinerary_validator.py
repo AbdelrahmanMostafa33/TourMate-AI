@@ -1,20 +1,20 @@
-# backend/tests/unit/test_ai_engine/test_validation_agent.py
+# backend/tests/unit/test_ai_engine/test_itinerary_validator.py
 
 """
-Unit tests for the Validation Agent.
+Unit tests for the Itinerary Validator.
 
 Tests cover:
     - _run_programmatic_checks(): deterministic feasibility checks
-    - run_validation_agent(): full agent with mocked LLM
+    - validate_itinerary(): full agent with mocked LLM
 """
 
 import json
 import pytest
 from unittest.mock import patch, MagicMock
 
-from ai_engine.agents.validation_agent import (
+from ai_engine.services.itinerary_validator import (
     _run_programmatic_checks,
-    run_validation_agent,
+    validate_itinerary,
     MAX_DAILY_TRAVEL_MINUTES,
     MAX_DAILY_STOPS,
     MIN_DAILY_STOPS,
@@ -24,7 +24,7 @@ from ai_engine.agents.validation_agent import (
 from tests.unit.test_ai_engine.conftest import _make_state
 
 
-def _make_validation_state(**overrides) -> dict:
+def _make_validator_state(**overrides) -> dict:
     """State with optimized_itinerary defaulting to a valid itinerary."""
     defaults = {
         "profile": None,
@@ -218,15 +218,15 @@ class TestRunProgrammaticChecks:
         assert isinstance(issues, list)
 
 
-# ── run_validation_agent Tests (with mocked LLM) ─────────────────────────────
+# ── validate_itinerary Tests (with mocked LLM) ─────────────────────────────
 
-class TestRunValidationAgent:
+class TestRunValidation:
 
     @pytest.mark.asyncio
     async def test_no_itinerary_sets_invalid(self):
         """No optimized itinerary → invalid with error message."""
         state = _make_state(optimized_itinerary=None, profile=None)
-        result = await run_validation_agent(state)
+        result = await validate_itinerary(state)
 
         assert result["is_valid"] is False
         assert "No itinerary" in result["validation"]["issues"][0]
@@ -235,7 +235,7 @@ class TestRunValidationAgent:
     async def test_error_state_sets_invalid(self):
         """If state has an error → invalid immediately."""
         state = _make_state(error="Something went wrong", optimized_itinerary=_make_itinerary(), profile=None)
-        result = await run_validation_agent(state)
+        result = await validate_itinerary(state)
 
         assert result["is_valid"] is False
 
@@ -249,8 +249,8 @@ class TestRunValidationAgent:
         )
         state = _make_state(optimized_itinerary=itinerary)
 
-        with patch("ai_engine.agents.validation_agent.invoke_with_fallback") as mock_fn:
-            result = await run_validation_agent(state)
+        with patch("ai_engine.services.itinerary_validator.invoke_with_fallback") as mock_fn:
+            result = await validate_itinerary(state)
 
         assert result["is_valid"] is False
         assert result["validation"]["score"] == 30
@@ -268,8 +268,8 @@ class TestRunValidationAgent:
         )
         state = _make_state(optimized_itinerary=itinerary)
 
-        with patch("ai_engine.agents.validation_agent.invoke_with_fallback") as mock_fn:
-            result = await run_validation_agent(state)
+        with patch("ai_engine.services.itinerary_validator.invoke_with_fallback") as mock_fn:
+            result = await validate_itinerary(state)
 
         assert result["is_valid"] is False
         mock_fn.assert_not_called()
@@ -286,9 +286,9 @@ class TestRunValidationAgent:
         mock_response = MagicMock()
         mock_response.content = json.dumps(llm_response)
 
-        state = _make_validation_state()
-        with patch("ai_engine.agents.validation_agent.invoke_with_fallback", return_value=mock_response) as mock_fn:
-            result = await run_validation_agent(state)
+        state = _make_validator_state()
+        with patch("ai_engine.services.itinerary_validator.invoke_with_fallback", return_value=mock_response) as mock_fn:
+            result = await validate_itinerary(state)
 
         mock_fn.assert_called_once()
         # Programmatic issue (1 issue) reduces score by 5: 90 - 5 = 85
@@ -298,9 +298,9 @@ class TestRunValidationAgent:
     @pytest.mark.asyncio
     async def test_llm_failure_falls_back_to_programmatic(self):
         """LLM exception → fallback to programmatic result."""
-        state = _make_validation_state()
-        with patch("ai_engine.agents.validation_agent.invoke_with_fallback", side_effect=Exception("API timeout")):
-            result = await run_validation_agent(state)
+        state = _make_validator_state()
+        with patch("ai_engine.services.itinerary_validator.invoke_with_fallback", side_effect=Exception("API timeout")):
+            result = await validate_itinerary(state)
 
         assert "LLM validation failed" in str(result["validation"]["issues"])
 
@@ -310,9 +310,9 @@ class TestRunValidationAgent:
         mock_response = MagicMock()
         mock_response.content = "not json"
 
-        state = _make_validation_state()
-        with patch("ai_engine.agents.validation_agent.invoke_with_fallback", return_value=mock_response):
-            result = await run_validation_agent(state)
+        state = _make_validator_state()
+        with patch("ai_engine.services.itinerary_validator.invoke_with_fallback", return_value=mock_response):
+            result = await validate_itinerary(state)
 
         # Should still have a validation result
         assert result["validation"] is not None
@@ -333,8 +333,8 @@ class TestRunValidationAgent:
         mock_response.content = json.dumps(llm_response)
 
         state = _make_state(optimized_itinerary=itinerary)
-        with patch("ai_engine.agents.validation_agent.invoke_with_fallback", return_value=mock_response) as mock_fn:
-            result = await run_validation_agent(state)
+        with patch("ai_engine.services.itinerary_validator.invoke_with_fallback", return_value=mock_response) as mock_fn:
+            result = await validate_itinerary(state)
 
         mock_fn.assert_called_once()
         # Score should be reduced due to programmatic issue
@@ -357,8 +357,8 @@ class TestRunValidationAgent:
         mock_response.content = json.dumps(llm_response)
 
         state = _make_state(optimized_itinerary=itinerary)
-        with patch("ai_engine.agents.validation_agent.invoke_with_fallback", return_value=mock_response):
-            result = await run_validation_agent(state)
+        with patch("ai_engine.services.itinerary_validator.invoke_with_fallback", return_value=mock_response):
+            result = await validate_itinerary(state)
 
         # 2 programmatic issues × 5 points = 10 points reduction
         assert result["validation"]["score"] == 75
@@ -370,9 +370,9 @@ class TestRunValidationAgent:
         mock_response = MagicMock()
         mock_response.content = json.dumps(llm_response)
 
-        state = _make_validation_state(user_message="I want a romantic Paris trip")
-        with patch("ai_engine.agents.validation_agent.invoke_with_fallback", return_value=mock_response) as mock_fn:
-            await run_validation_agent(state)
+        state = _make_validator_state(user_message="I want a romantic Paris trip")
+        with patch("ai_engine.services.itinerary_validator.invoke_with_fallback", return_value=mock_response) as mock_fn:
+            await validate_itinerary(state)
 
         call_args = mock_fn.call_args
         messages = call_args[0][1]

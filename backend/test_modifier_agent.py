@@ -16,7 +16,7 @@ import json
 
 os.environ.setdefault("GOOGLE_API_KEY", os.environ.get("GOOGLE_API_KEY", ""))
 
-from ai_engine.chat.conversation_agent import handle_chat
+from ai_engine.chat.orchestrator import handle_chat
 
 
 async def test():

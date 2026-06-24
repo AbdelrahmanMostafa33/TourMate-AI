@@ -5,7 +5,7 @@ import os
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), ".")))
 
-from ai_engine.chat.conversation_agent import handle_chat
+from ai_engine.chat.orchestrator import handle_chat
 from ai_engine.llm_config import token_tracker
 
 

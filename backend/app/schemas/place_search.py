@@ -13,7 +13,7 @@ VALID_ACCOMMODATION_TYPES = {e.value for e in AccommodationType}
 class PlaceSearchRequest(BaseModel):
     """
     Request schema for structured place search.
-    Used by the Retrieval Agent to query places from the database.
+    Used by the Place Retriever to query places from the database.
     """
     city: str = Field(..., description="Destination city name")
     country: Optional[str] = Field(None, description="Country filter")

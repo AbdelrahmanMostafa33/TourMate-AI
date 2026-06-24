@@ -1,5 +1,5 @@
 """
-Unified Router — Single context-aware LLM call with structured output.
+Message Interpreter — Single context-aware LLM call with structured output.
 
 Replaces the 3-call pattern (intent parser + clarification + general chat)
 with 1 intelligent call that sees full conversation history.
@@ -7,7 +7,7 @@ with 1 intelligent call that sees full conversation history.
 Uses Pydantic models + .with_structured_output() to guarantee valid JSON
 from the LLM, eliminating manual JSON parsing and markdown fence stripping.
 
-The router:
+The interpreter:
 1. Sees the full conversation history + current state (slots, phase, itinerary)
 2. Extracts any new information from the user's message
 3. Decides the action AND generates the response in one shot
@@ -96,8 +96,8 @@ class ExtractedSlots(BaseModel):
     )
 
 
-class RouterOutput(BaseModel):
-    """Structured output from the unified router.
+class InterpreterOutput(BaseModel):
+    """Structured output from the message interpreter.
 
     The LLM fills this Pydantic model directly via .with_structured_output(),
     guaranteeing valid output without manual JSON parsing.
@@ -122,10 +122,10 @@ class RouterOutput(BaseModel):
     )
 
 
-# ── RouterResult (return type, uses dicts for flexibility) ────────────────────
+# ── InterpretationResult (return type, uses dicts for flexibility) ───────────
 
-class RouterResult:
-    """Final output from route_message — uses plain dicts for extracted slots."""
+class InterpretationResult:
+    """Final output from interpret_message — uses plain dicts for extracted slots."""
 
     __slots__ = ("action", "extracted", "response")
 
@@ -135,9 +135,9 @@ class RouterResult:
         self.response = response
 
 
-# ── Router Prompt ────────────────────────────────────────────────────────────
+# ── Interpreter Prompt ──────────────────────────────────────────────────────
 
-ROUTER_SYSTEM_PROMPT = """You are TourMate AI, a travel planning assistant having a conversation with a user.
+INTERPRETER_SYSTEM_PROMPT = """You are TourMate AI, a travel planning assistant having a conversation with a user.
 
 ## Conversation History
 {conversation_history}
@@ -208,7 +208,7 @@ Examples:
 - **Accommodation**: Extract as a phrase containing: 'hotel', 'hostel', 'resort', 'luxury', 'boutique', 'palace'.
   Return as a list with ONE item, e.g. ['boutique hotel'] not ['luxury', 'boutique', 'hotel'].
 - **Duration**: Return as a string of the number (e.g. '3', '5', '7')
-- **If the user sends a greeting or casual message with no new travel info, do NOT extract any slots — leave extracted empty.**"""
+- **If the user sends a greeting or casual message with no new travel info, do NOT extract any slots — leave extracted empty."""
 
 
 # ── Context Building ─────────────────────────────────────────────────────────
@@ -302,10 +302,10 @@ def _build_extracted_dict(extracted: ExtractedSlots) -> dict:
     return normalized
 
 
-# ── Main Router Function ─────────────────────────────────────────────────────
+# ── Main Interpreter Function ───────────────────────────────────────────────
 
-@traced(name="unified_router", tags=["conversation", "router"], metadata={"component": "unified_router"})
-async def route_message(state: ConversationState, user_message: str) -> RouterResult:
+@traced(name="message_interpreter", tags=["conversation", "interpreter"], metadata={"component": "message_interpreter"})
+async def interpret_message(state: ConversationState, user_message: str) -> InterpretationResult:
     """
     Single context-aware LLM call with structured output.
 
@@ -322,7 +322,7 @@ async def route_message(state: ConversationState, user_message: str) -> RouterRe
         itinerary_context = _build_itinerary_summary(state)
 
     # Build prompt
-    prompt = ROUTER_SYSTEM_PROMPT.format(
+    prompt = INTERPRETER_SYSTEM_PROMPT.format(
         conversation_history=history_text,
         phase=state.phase.value,
         destination=slots.destination_city or "not yet provided",
@@ -348,40 +348,40 @@ async def route_message(state: ConversationState, user_message: str) -> RouterRe
     ]
 
     # Call LLM with structured output
-    router_output: Optional[RouterOutput] = None
+    interpreter_output: Optional[InterpreterOutput] = None
     try:
-        router_output = await invoke_with_fallback(
-            "router", messages, structured_output=RouterOutput,
+        interpreter_output = await invoke_with_fallback(
+            "router", messages, structured_output=InterpreterOutput,
         )
     except Exception as e:
-        logger.error("Router LLM failed: %s", e)
-        router_output = None
+        logger.error("Message interpreter LLM failed: %s", e)
+        interpreter_output = None
 
     # Extract fields
-    if router_output:
-        action = _normalize_action(router_output.action)
-        extracted = _build_extracted_dict(router_output.extracted)
-        response_text = router_output.response
+    if interpreter_output:
+        action = _normalize_action(interpreter_output.action)
+        extracted = _build_extracted_dict(interpreter_output.extracted)
+        response_text = interpreter_output.response
     else:
         # LLM failed — return generic response (all 10 keys exhausted)
-        logger.error("Router LLM failed with all keys exhausted")
+        logger.error("Message interpreter LLM failed with all keys exhausted")
         extracted = {}
         action = "answer_question"
         response_text = "I'm having trouble connecting to my AI service. Please try again in a moment."
 
     # If LLM extracted destination + duration from current message,
     # override to plan_trip to trigger itinerary generation.
-    if router_output is not None and any([
-        router_output.extracted.destination_city,
-        router_output.extracted.duration_days,
-        router_output.extracted.budget_level,
-        router_output.extracted.travel_style,
+    if interpreter_output is not None and any([
+        interpreter_output.extracted.destination_city,
+        interpreter_output.extracted.duration_days,
+        interpreter_output.extracted.budget_level,
+        interpreter_output.extracted.travel_style,
     ]):
         if extracted.get("destination_city") and extracted.get("duration_days"):
             if action not in ("approve_itinerary", "modify_itinerary"):
                 action = "plan_trip"
 
-    return RouterResult(
+    return InterpretationResult(
         action=action,
         extracted=extracted,
         response=response_text,

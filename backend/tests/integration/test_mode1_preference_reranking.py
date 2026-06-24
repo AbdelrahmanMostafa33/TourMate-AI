@@ -3,7 +3,7 @@
 """
 Integration test for Mode 1 — Preference Re-Ranking.
 
-Verifies the full "more entertaining" flow through the conversation_agent
+Verifies the full "more entertaining" flow through the orchestrator's
 modify handler, confirming that when the user requests a vibe change:
 
     1. Mode 2 (surgical modifier) is tried first — returns unchanged
@@ -22,7 +22,7 @@ import logging
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from ai_engine.chat.unified_router import RouterResult
+from ai_engine.chat.message_interpreter import InterpretationResult
 from ai_engine.memory.conversation_state import ConversationPhase, ConversationState
 from tests.integration.conftest import MOCK_PLACES
 
@@ -30,9 +30,9 @@ from tests.integration.conftest import MOCK_PLACES
 # ── Mock Helpers ───────────────────────────────────────────────────────────
 
 
-def _make_result(action: str, response: str = "OK", **extracted) -> RouterResult:
-    """Build a mock RouterResult."""
-    return RouterResult(action=action, extracted=extracted, response=response)
+def _make_result(action: str, response: str = "OK", **extracted) -> InterpretationResult:
+    """Build a mock InterpretationResult."""
+    return InterpretationResult(action=action, extracted=extracted, response=response)
 
 
 def _create_session_manager():
@@ -65,7 +65,7 @@ def _mock_rerank_ranking(state: dict) -> dict:
     state["candidate_places"] = list(filtered)
     state["agent_messages"] = (
         state.get("agent_messages", [])
-        + [f"[RankingAgent] {len(filtered)} filtered → {len(filtered)} ranked candidates"]
+        + [f"[CandidateScorer] {len(filtered)} filtered → {len(filtered)} ranked candidates"]
     )
     return state
 
@@ -176,7 +176,7 @@ def _mock_rerank_optimization(state: dict) -> dict:
     total_travel = sum(d.get("total_travel_time_minutes", 0) for d in optimized.get("days", []))
     state["agent_messages"] = (
         state.get("agent_messages", [])
-        + [f"[Optimizer] {len(optimized.get('days', []))} days, "
+        + [f"[RouteOptimizer] {len(optimized.get('days', []))} days, "
            f"{sum(len(d.get('stops', [])) for d in optimized.get('days', []))} stops, "
            f"{total_travel:.0f} min total travel"]
     )
@@ -289,16 +289,16 @@ MOCK_ORIGINAL_ITINERARY = {
 class TestMode1PreferenceReranking:
 
     @pytest.mark.asyncio
-    @patch("ai_engine.chat.conversation_agent.get_session_manager")
-    @patch("ai_engine.chat.conversation_agent.route_message")
-    @patch("ai_engine.chat.conversation_agent.trip_graph", new_callable=AsyncMock)
-    @patch("ai_engine.chat.conversation_agent.load_mock_profile")
-    @patch("ai_engine.chat.conversation_agent.run_itinerary_modifier")
-    @patch("ai_engine.chat.conversation_agent.interpret_preference_adjustment")
-    @patch("ai_engine.chat.conversation_agent.run_ranking_agent")
-    @patch("ai_engine.chat.conversation_agent.run_planning_agent")
-    @patch("ai_engine.chat.conversation_agent.run_optimization_agent")
-    @patch("ai_engine.chat.conversation_agent.run_validation_agent")
+    @patch("ai_engine.chat.orchestrator.get_session_manager")
+    @patch("ai_engine.chat.orchestrator.interpret_message")
+    @patch("ai_engine.chat.orchestrator.trip_graph", new_callable=AsyncMock)
+    @patch("ai_engine.chat.orchestrator.load_mock_profile")
+    @patch("ai_engine.chat.orchestrator.run_itinerary_modifier")
+    @patch("ai_engine.chat.orchestrator.interpret_preference_adjustment")
+    @patch("ai_engine.chat.orchestrator.score_candidates")
+    @patch("ai_engine.chat.orchestrator.run_planning_agent")
+    @patch("ai_engine.chat.orchestrator.optimize_route")
+    @patch("ai_engine.chat.orchestrator.validate_itinerary")
     async def test_more_entertaining_triggers_reranker(
         self,
         mock_validation,
@@ -336,7 +336,7 @@ class TestMode1PreferenceReranking:
             "validation": {"is_valid": True, "score": 85},
         }
 
-        from ai_engine.chat.conversation_agent import handle_chat
+        from ai_engine.chat.orchestrator import handle_chat
 
         # ── Step 1: Generate the initial itinerary ──
         mock_route.return_value = _make_result(
@@ -427,16 +427,16 @@ class TestMode1PreferenceReranking:
         assert len(updated_state.candidate_places) == len(MOCK_PLACES)
 
     @pytest.mark.asyncio
-    @patch("ai_engine.chat.conversation_agent.get_session_manager")
-    @patch("ai_engine.chat.conversation_agent.route_message")
-    @patch("ai_engine.chat.conversation_agent.trip_graph", new_callable=AsyncMock)
-    @patch("ai_engine.chat.conversation_agent.load_mock_profile")
-    @patch("ai_engine.chat.conversation_agent.run_itinerary_modifier")
-    @patch("ai_engine.chat.conversation_agent.interpret_preference_adjustment")
-    @patch("ai_engine.chat.conversation_agent.run_ranking_agent")
-    @patch("ai_engine.chat.conversation_agent.run_planning_agent")
-    @patch("ai_engine.chat.conversation_agent.run_optimization_agent")
-    @patch("ai_engine.chat.conversation_agent.run_validation_agent")
+    @patch("ai_engine.chat.orchestrator.get_session_manager")
+    @patch("ai_engine.chat.orchestrator.interpret_message")
+    @patch("ai_engine.chat.orchestrator.trip_graph", new_callable=AsyncMock)
+    @patch("ai_engine.chat.orchestrator.load_mock_profile")
+    @patch("ai_engine.chat.orchestrator.run_itinerary_modifier")
+    @patch("ai_engine.chat.orchestrator.interpret_preference_adjustment")
+    @patch("ai_engine.chat.orchestrator.score_candidates")
+    @patch("ai_engine.chat.orchestrator.run_planning_agent")
+    @patch("ai_engine.chat.orchestrator.optimize_route")
+    @patch("ai_engine.chat.orchestrator.validate_itinerary")
     async def test_reranker_failure_falls_through_to_pipeline(
         self,
         mock_validation,
@@ -465,7 +465,7 @@ class TestMode1PreferenceReranking:
             "validation": {"is_valid": True, "score": 85},
         }
 
-        from ai_engine.chat.conversation_agent import handle_chat
+        from ai_engine.chat.orchestrator import handle_chat
 
         # Generate initial itinerary
         mock_route.return_value = _make_result(
@@ -503,11 +503,11 @@ class TestMode1PreferenceReranking:
         assert result["itinerary"] is not None
 
     @pytest.mark.asyncio
-    @patch("ai_engine.chat.conversation_agent.get_session_manager")
-    @patch("ai_engine.chat.conversation_agent.route_message")
-    @patch("ai_engine.chat.conversation_agent.trip_graph", new_callable=AsyncMock)
-    @patch("ai_engine.chat.conversation_agent.load_mock_profile")
-    @patch("ai_engine.chat.conversation_agent.run_itinerary_modifier")
+    @patch("ai_engine.chat.orchestrator.get_session_manager")
+    @patch("ai_engine.chat.orchestrator.interpret_message")
+    @patch("ai_engine.chat.orchestrator.trip_graph", new_callable=AsyncMock)
+    @patch("ai_engine.chat.orchestrator.load_mock_profile")
+    @patch("ai_engine.chat.orchestrator.run_itinerary_modifier")
     async def test_modifier_succeeds_skips_reranker_and_pipeline(
         self,
         mock_modifier,
@@ -531,7 +531,7 @@ class TestMode1PreferenceReranking:
             "validation": {"is_valid": True, "score": 85},
         }
 
-        from ai_engine.chat.conversation_agent import handle_chat
+        from ai_engine.chat.orchestrator import handle_chat
 
         # Generate initial itinerary
         mock_route.return_value = _make_result(
@@ -590,16 +590,16 @@ class TestFallbackChainLogging:
     """
 
     @pytest.mark.asyncio
-    @patch("ai_engine.chat.conversation_agent.get_session_manager")
-    @patch("ai_engine.chat.conversation_agent.route_message")
-    @patch("ai_engine.chat.conversation_agent.trip_graph", new_callable=AsyncMock)
-    @patch("ai_engine.chat.conversation_agent.load_mock_profile")
-    @patch("ai_engine.chat.conversation_agent.run_itinerary_modifier")
-    @patch("ai_engine.chat.conversation_agent.interpret_preference_adjustment")
-    @patch("ai_engine.chat.conversation_agent.run_ranking_agent")
-    @patch("ai_engine.chat.conversation_agent.run_planning_agent")
-    @patch("ai_engine.chat.conversation_agent.run_optimization_agent")
-    @patch("ai_engine.chat.conversation_agent.run_validation_agent")
+    @patch("ai_engine.chat.orchestrator.get_session_manager")
+    @patch("ai_engine.chat.orchestrator.interpret_message")
+    @patch("ai_engine.chat.orchestrator.trip_graph", new_callable=AsyncMock)
+    @patch("ai_engine.chat.orchestrator.load_mock_profile")
+    @patch("ai_engine.chat.orchestrator.run_itinerary_modifier")
+    @patch("ai_engine.chat.orchestrator.interpret_preference_adjustment")
+    @patch("ai_engine.chat.orchestrator.score_candidates")
+    @patch("ai_engine.chat.orchestrator.run_planning_agent")
+    @patch("ai_engine.chat.orchestrator.optimize_route")
+    @patch("ai_engine.chat.orchestrator.validate_itinerary")
     async def test_full_fallthrough_logs_all_three_modes(
         self,
         mock_validation,
@@ -634,7 +634,7 @@ class TestFallbackChainLogging:
             "validation": {"is_valid": True, "score": 85},
         }
 
-        from ai_engine.chat.conversation_agent import handle_chat
+        from ai_engine.chat.orchestrator import handle_chat
 
         # Generate initial itinerary
         mock_route.return_value = _make_result(
@@ -691,16 +691,16 @@ class TestFallbackChainLogging:
         )
 
     @pytest.mark.asyncio
-    @patch("ai_engine.chat.conversation_agent.get_session_manager")
-    @patch("ai_engine.chat.conversation_agent.route_message")
-    @patch("ai_engine.chat.conversation_agent.trip_graph", new_callable=AsyncMock)
-    @patch("ai_engine.chat.conversation_agent.load_mock_profile")
-    @patch("ai_engine.chat.conversation_agent.run_itinerary_modifier")
-    @patch("ai_engine.chat.conversation_agent.interpret_preference_adjustment")
-    @patch("ai_engine.chat.conversation_agent.run_ranking_agent")
-    @patch("ai_engine.chat.conversation_agent.run_planning_agent")
-    @patch("ai_engine.chat.conversation_agent.run_optimization_agent")
-    @patch("ai_engine.chat.conversation_agent.run_validation_agent")
+    @patch("ai_engine.chat.orchestrator.get_session_manager")
+    @patch("ai_engine.chat.orchestrator.interpret_message")
+    @patch("ai_engine.chat.orchestrator.trip_graph", new_callable=AsyncMock)
+    @patch("ai_engine.chat.orchestrator.load_mock_profile")
+    @patch("ai_engine.chat.orchestrator.run_itinerary_modifier")
+    @patch("ai_engine.chat.orchestrator.interpret_preference_adjustment")
+    @patch("ai_engine.chat.orchestrator.score_candidates")
+    @patch("ai_engine.chat.orchestrator.run_planning_agent")
+    @patch("ai_engine.chat.orchestrator.optimize_route")
+    @patch("ai_engine.chat.orchestrator.validate_itinerary")
     async def test_mode1_success_no_mode3_log(
         self,
         mock_validation,
@@ -732,7 +732,7 @@ class TestFallbackChainLogging:
             "validation": {"is_valid": True, "score": 85},
         }
 
-        from ai_engine.chat.conversation_agent import handle_chat
+        from ai_engine.chat.orchestrator import handle_chat
 
         # Generate initial itinerary
         mock_route.return_value = _make_result(
@@ -783,12 +783,12 @@ class TestFallbackChainLogging:
         )
 
     @pytest.mark.asyncio
-    @patch("ai_engine.chat.conversation_agent.get_session_manager")
-    @patch("ai_engine.chat.conversation_agent.route_message")
-    @patch("ai_engine.chat.conversation_agent.trip_graph", new_callable=AsyncMock)
-    @patch("ai_engine.chat.conversation_agent.load_mock_profile")
-    @patch("ai_engine.chat.conversation_agent.run_itinerary_modifier")
-    @patch("ai_engine.chat.conversation_agent.interpret_preference_adjustment")
+    @patch("ai_engine.chat.orchestrator.get_session_manager")
+    @patch("ai_engine.chat.orchestrator.interpret_message")
+    @patch("ai_engine.chat.orchestrator.trip_graph", new_callable=AsyncMock)
+    @patch("ai_engine.chat.orchestrator.load_mock_profile")
+    @patch("ai_engine.chat.orchestrator.run_itinerary_modifier")
+    @patch("ai_engine.chat.orchestrator.interpret_preference_adjustment")
     async def test_no_candidate_places_skips_mode1_logs_mode3(
         self,
         mock_reranker_llm,
@@ -819,7 +819,7 @@ class TestFallbackChainLogging:
             "validation": {"is_valid": True, "score": 85},
         }
 
-        from ai_engine.chat.conversation_agent import handle_chat
+        from ai_engine.chat.orchestrator import handle_chat
 
         # Generate initial itinerary
         mock_route.return_value = _make_result(
@@ -868,11 +868,11 @@ class TestFallbackChainLogging:
         mock_reranker_llm.assert_not_called()
 
     @pytest.mark.asyncio
-    @patch("ai_engine.chat.conversation_agent.get_session_manager")
-    @patch("ai_engine.chat.conversation_agent.route_message")
-    @patch("ai_engine.chat.conversation_agent.trip_graph", new_callable=AsyncMock)
-    @patch("ai_engine.chat.conversation_agent.load_mock_profile")
-    @patch("ai_engine.chat.conversation_agent.run_itinerary_modifier")
+    @patch("ai_engine.chat.orchestrator.get_session_manager")
+    @patch("ai_engine.chat.orchestrator.interpret_message")
+    @patch("ai_engine.chat.orchestrator.trip_graph", new_callable=AsyncMock)
+    @patch("ai_engine.chat.orchestrator.load_mock_profile")
+    @patch("ai_engine.chat.orchestrator.run_itinerary_modifier")
     async def test_modifier_success_no_mode1_nor_mode3_logs(
         self,
         mock_modifier,
@@ -900,7 +900,7 @@ class TestFallbackChainLogging:
             "validation": {"is_valid": True, "score": 85},
         }
 
-        from ai_engine.chat.conversation_agent import handle_chat
+        from ai_engine.chat.orchestrator import handle_chat
 
         # Generate initial itinerary
         mock_route.return_value = _make_result(

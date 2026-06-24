@@ -22,21 +22,21 @@ from ai_engine.graph.edges import (
 
 def build_trip_graph():
     """
-    Assembles the full multi-agent graph for itinerary generation.
+    Assembles the full pipeline graph for itinerary generation.
 
     Pipeline:
-      load_profile → retrieval → ranking → planner → optimizer → validator
+      load_profile → retrieval → scorer → planner → optimizer → validator
 
-    Each agent is a specialized node that handles one concern:
-      - load_profile: Load user behavioral profile from DB
-      - retrieval:    Filter places using SQL-style criteria
-      - ranking:      Score candidates with multi-signal formula + diversity
+    Each node handles one concern:
+      - load_profile: Load trip profile from DB
+      - retrieval:    Filter places using SQL-style criteria (PlaceRetriever)
+      - scorer:       Score candidates with multi-signal formula + diversity (CandidateScorer)
       - planner:      LLM generates the day-by-day itinerary
-      - optimizer:    Reorder stops by travel time (OSRM + 2-opt)
-      - validator:    Programmatic feasibility + LLM quality checks
+      - optimizer:    Reorder stops by travel time via OSRM + 2-opt (RouteOptimizer)
+      - validator:    Programmatic feasibility + LLM quality checks (ItineraryValidator)
 
     Intent parsing and routing (plan_trip vs general_chat vs
-    needs_clarification)    is handled by conversation_agent.py before
+    needs_clarification)    is handled by orchestrator.py before
     the graph is invoked.
 
     Returns a compiled graph object that FastAPI will call.

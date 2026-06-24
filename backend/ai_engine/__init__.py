@@ -4,7 +4,7 @@ from ai_engine.graph.graph_builder import build_trip_graph
 
 # Guard stubs so the server doesn't crash while they're not yet implemented
 try:
-    from ai_engine.chat.conversation_agent import handle_chat
+    from ai_engine.chat.orchestrator import handle_chat
 except ImportError:
     handle_chat = None
 

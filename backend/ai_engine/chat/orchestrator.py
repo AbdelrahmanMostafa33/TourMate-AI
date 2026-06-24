@@ -1,7 +1,7 @@
-# backend/ai_engine/chat/conversation_agent.py
-"""Stateful conversation agent with Redis-backed session management.
+# backend/ai_engine/chat/orchestrator.py
+"""Chat orchestrator with Redis-backed session management.
 
-Uses a unified router that replaces the previous 3-call pattern (intent parser +
+Uses a message interpreter that replaces the previous 3-call pattern (intent parser +
 clarification + general chat) with a single intelligent call that sees
 full conversation history and current state.
 
@@ -26,7 +26,7 @@ _MAX_USER_LOCKS = 512
 _user_locks: OrderedDict[str, asyncio.Lock] = OrderedDict()
 
 # Core routing LLM that decides what the user wants (plan, clarify, chat, etc.)
-from ai_engine.chat.unified_router import route_message
+from ai_engine.chat.message_interpreter import interpret_message
 
 # Conversation state machine + slot tracking (memory of user preferences)
 from ai_engine.memory.conversation_state import (
@@ -50,10 +50,10 @@ from ai_engine.agents.preference_reranker_agent import (
 )
 
 # Direct agent imports for re-ranking (skip retrieval, go straight to rank→plan→optimize→validate)
-from ai_engine.agents.ranking_agent import run_ranking_agent
+from ai_engine.services.candidate_scorer import score_candidates
 from ai_engine.agents.planning_agent import run_planning_agent
-from ai_engine.agents.optimization_agent import run_optimization_agent
-from ai_engine.agents.validation_agent import run_validation_agent
+from ai_engine.services.route_optimizer import optimize_route
+from ai_engine.services.itinerary_validator import validate_itinerary
 
 # Image analysis pipeline for travel-related images
 from ai_engine.vision.image_analyzer import analyze_travel_image
@@ -71,7 +71,7 @@ from ai_engine.observability import traced
 # ── Shared Core ────────────────────────────────────────────────────────────────
 
 
-@traced(name="process_message", tags=["conversation", "routing"], metadata={"component": "conversation_agent"})
+@traced(name="process_message", tags=["conversation", "routing"], metadata={"component": "orchestrator"})
 async def _process_message(
     user_id: str,
     state: ConversationState,
@@ -157,13 +157,13 @@ async def _process_message_inner(
         return response
 
     # ─────────────────────────────────────────────────────────────
-    # STEP 1: Call unified router (single LLM decision point)
+    # STEP 1: Call message interpreter (single LLM decision point)
     # It returns:
     # - action (plan_trip / ask_clarification / etc.)
     # - extracted slots (destination, dates, budget, etc.)
     # - response text
     # ─────────────────────────────────────────────────────────────
-    router_result = await route_message(state, effective_message)
+    router_result = await interpret_message(state, effective_message)
 
     # Merge newly extracted structured data into accumulated slots
     state.slots.merge(router_result.extracted)
@@ -405,7 +405,7 @@ def _get_user_lock(user_id: str) -> asyncio.Lock:
 @traced(
     name="handle_chat",
     tags=["conversation", "entry_point"],
-    metadata={"component": "conversation_agent"},
+    metadata={"component": "orchestrator"},
 )
 async def handle_chat(
     user_id: str,
@@ -683,7 +683,7 @@ async def _swap_accommodation_surgically(
         A deep-copied itinerary with new ``accommodation_suggestions``,
         or ``None`` if no matching hotels were found.
     """
-    from ai_engine.agents.retrieval_agent import _map_accommodation_to_type
+    from ai_engine.services.place_retriever import _map_accommodation_to_type
     from ai_engine.tools.places_tool import get_places_for_city
 
     # Early exit if no new accommodation preferences to search for
@@ -771,7 +771,7 @@ async def _enrich_candidate_pool_by_category(
         An enriched list of candidate places (new + existing), or
         ``None`` if no category could be detected or no new places found.
     """
-    from ai_engine.agents.operations import _detect_category_hints
+    from ai_engine.services.operations import _detect_category_hints
     from ai_engine.tools.places_tool import get_places_for_city
 
     # Detect category/subcategory from the request
@@ -944,7 +944,7 @@ def _format_itinerary(itinerary: dict) -> str:
     return "\n".join(lines)
 
 
-@traced(name="modify_itinerary", tags=["conversation", "modify"], metadata={"component": "conversation_agent"})
+@traced(name="modify_itinerary", tags=["conversation", "modify"], metadata={"component": "orchestrator"})
 async def _handle_modify_itinerary(
     user_id: str,
     state: ConversationState,
@@ -1173,7 +1173,7 @@ async def _handle_modify_itinerary(
     return result
 
 
-@traced(name="rerank_and_replan", tags=["conversation", "rerank"], metadata={"component": "conversation_agent"})
+@traced(name="rerank_and_replan", tags=["conversation", "rerank"], metadata={"component": "orchestrator"})
 async def _rerank_and_replan(
     user_id: str,
     state: ConversationState,
@@ -1210,8 +1210,8 @@ async def _rerank_and_replan(
             "agent_messages": [],
         }
 
-        # 3. Run ranking agent with adjusted preferences
-        rerank_state = await run_ranking_agent(rerank_state)
+        # 3. Score candidates with adjusted preferences
+        rerank_state = await score_candidates(rerank_state)
 
         if rerank_state.get("error") or not rerank_state.get("candidate_places"):
             logger.warning(
@@ -1230,11 +1230,11 @@ async def _rerank_and_replan(
             )
             return None
 
-        # 5. Run optimizer
-        rerank_state = await run_optimization_agent(rerank_state)
+        # 5. Optimize route
+        rerank_state = await optimize_route(rerank_state)
 
-        # 6. Run validator
-        rerank_state = await run_validation_agent(rerank_state)
+        # 6. Validate itinerary
+        rerank_state = await validate_itinerary(rerank_state)
 
         # 7. Check result
         optimized = rerank_state.get("optimized_itinerary")
@@ -1263,7 +1263,7 @@ async def _rerank_and_replan(
         return None
 
 
-@traced(name="plan_trip_pipeline", tags=["conversation", "pipeline"], metadata={"component": "conversation_agent"})
+@traced(name="plan_trip_pipeline", tags=["conversation", "pipeline"], metadata={"component": "orchestrator"})
 async def _handle_plan_trip(user_id, user_message, extracted, image_features, token=None, state=None):
     """Runs full LangGraph itinerary generation pipeline."""
 

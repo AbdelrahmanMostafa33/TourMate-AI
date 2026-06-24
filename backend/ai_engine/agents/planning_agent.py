@@ -1,9 +1,9 @@
 """
-Planning Agent — Stage 4 of the multi-agent pipeline.
+Planning Agent — Stage 4 of the pipeline.
 
 The LLM's job is to REASON, not search. It receives:
 1. User request + profile summary
-2. Pre-ranked candidate places (15–30 from Ranking Agent)
+2. Pre-ranked candidate places (15–30 from Candidate Scorer)
 
 It produces a structured day-by-day itinerary choosing from candidates.
 
@@ -222,7 +222,7 @@ async def run_planning_agent(state: TripState, on_retry=None) -> TripState:
     """
     Main Planning Agent workflow.
 
-    Now receives pre-ranked candidates from the Ranking Agent
+    Now receives pre-ranked candidates from the Candidate Scorer
     instead of doing its own candidate selection.
 
     Args:
@@ -247,14 +247,14 @@ async def run_planning_agent(state: TripState, on_retry=None) -> TripState:
     duration_days = state.get("duration_days", 3)
 
     # ---------------------------------------------------------
-    # Read pre-ranked candidates from upstream agents.
-    # The Retrieval Agent filtered, the Ranking Agent scored
+    # Read pre-ranked candidates from upstream services.
+    # The Place Retriever filtered, the Candidate Scorer scored
     # and diversity-optimized. The planner just reasons over them.
     # ---------------------------------------------------------
     candidates = state.get("candidate_places") or []
 
     if not candidates:
-        state["error"] = "Planning Agent received no candidate places from Ranking Agent"
+        state["error"] = "Planning Agent received no candidate places from Candidate Scorer"
         return state
 
     # Trim place objects to essential planning information.

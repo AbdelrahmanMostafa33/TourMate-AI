@@ -5,11 +5,11 @@ Unit tests for the Planning Agent.
 
 Tests cover:
     - _trim_for_prompt(): reduces place dicts to essential fields
-    - run_planning_agent() with empty candidates → error
-    - run_planning_agent() with LLM failure → error
-    - run_planning_agent() with invalid JSON from LLM → error
-    - run_planning_agent() with valid LLM response → draft itinerary
-    - run_planning_agent() with markdown-wrapped JSON → success
+    - empty candidates → error
+    - LLM failure → error
+    - invalid JSON from LLM → error
+    - valid LLM response → draft itinerary
+    - markdown-wrapped JSON → success
     - hydration of stops with full place metadata
 """
 
@@ -27,7 +27,7 @@ from tests.unit.test_ai_engine.conftest import _make_state
 # ── Fixtures ──────────────────────────────────────────────────────────────────
 
 def _make_candidate(**overrides) -> dict:
-    """Create a candidate place dict as the Ranking Agent would produce."""
+    """Create a candidate place dict as the Candidate Scorer would produce."""
     base = {
         "id": "place_001",
         "name": "Egyptian Museum",
@@ -315,7 +315,7 @@ class TestPlanningAgentEdgeCases:
 
     @pytest.mark.asyncio
     async def test_empty_candidates_sets_error(self):
-        """No candidates from Ranking Agent → error, no LLM call."""
+        ""        "No candidates from Candidate Scorer → error, no LLM call."""
         state = _make_planning_state(candidate_places=[])
 
         with patch("ai_engine.agents.planning_agent.invoke_with_fallback") as mock_fn:

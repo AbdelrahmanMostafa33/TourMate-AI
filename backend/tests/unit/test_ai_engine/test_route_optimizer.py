@@ -1,7 +1,7 @@
-# tests/unit/test_ai_engine/test_optimization_agent.py
+# backend/tests/unit/test_ai_engine/test_route_optimizer.py
 
 """
-Unit tests for the Optimization Agent (run_optimization_agent).
+Unit tests for the Route Optimizer (optimize_route).
 
 Tests cover:
 - Reordering stops via nearest-neighbor + 2-opt
@@ -16,7 +16,7 @@ import copy
 import pytest
 from unittest.mock import AsyncMock, patch
 
-from ai_engine.agents.optimization_agent import run_optimization_agent
+from ai_engine.services.route_optimizer import optimize_route
 from tests.unit.test_ai_engine.conftest import _make_state
 
 
@@ -58,7 +58,7 @@ class TestExitEarly:
     async def test_no_draft_itinerary_returns_unchanged(self):
         """When draft_itinerary is None, state is returned unchanged."""
         state = _make_opt_state(draft_itinerary=None)
-        result = await run_optimization_agent(state)
+        result = await optimize_route(state)
         assert result["optimized_itinerary"] is None
         assert result["error"] is None
 
@@ -69,14 +69,14 @@ class TestExitEarly:
             draft_itinerary=_make_draft(_make_day([_make_stop("A", 30.0, 31.0)])),
             error="Something went wrong",
         )
-        result = await run_optimization_agent(state)
+        result = await optimize_route(state)
         assert result["optimized_itinerary"] is None
 
     @pytest.mark.asyncio
     async def test_empty_days_produces_empty_itinerary(self):
         """Draft with no days produces an optimized itinerary with empty days."""
         state = _make_opt_state(draft_itinerary={"days": []})
-        result = await run_optimization_agent(state)
+        result = await optimize_route(state)
         assert result["optimized_itinerary"]["days"] == []
 
 
@@ -90,7 +90,7 @@ class TestSingleStop:
         """Single stop stays in place, no travel time annotation."""
         stop = _make_stop("Pyramids", 29.9792, 31.1342)
         state = _make_opt_state(draft_itinerary=_make_draft(_make_day([stop])))
-        result = await run_optimization_agent(state)
+        result = await optimize_route(state)
         optimized = result["optimized_itinerary"]
         assert len(optimized["days"]) == 1
         assert len(optimized["days"][0]["stops"]) == 1
@@ -101,7 +101,7 @@ class TestSingleStop:
     async def test_empty_stops_no_crash(self):
         """Day with empty stops list doesn't crash."""
         state = _make_opt_state(draft_itinerary=_make_draft(_make_day([])))
-        result = await run_optimization_agent(state)
+        result = await optimize_route(state)
         assert result["optimized_itinerary"]["days"][0]["stops"] == []
         assert result["optimized_itinerary"]["days"][0]["total_travel_time_minutes"] == 0.0
 
@@ -112,7 +112,7 @@ class TestReordering:
     """Tests for nearest-neighbor + 2-opt reordering with mocked matrix."""
 
     @pytest.mark.asyncio
-    @patch("ai_engine.agents.optimization_agent.compute_day_matrix")
+    @patch("ai_engine.services.route_optimizer.compute_day_matrix")
     async def test_reorders_stops_by_travel_time(self, mock_matrix):
         """Stops are reordered to minimize total travel time."""
         # 3 stops: A is close to C, far from B
@@ -133,7 +133,7 @@ class TestReordering:
         mock_matrix.return_value = matrix
 
         state = _make_opt_state(draft_itinerary=_make_draft(_make_day(stops)))
-        result = await run_optimization_agent(state)
+        result = await optimize_route(state)
 
         optimized = result["optimized_itinerary"]
         reordered_names = [s["name"] for s in optimized["days"][0]["stops"]]
@@ -141,14 +141,14 @@ class TestReordering:
         assert reordered_names == ["A", "C", "B"]
 
     @pytest.mark.asyncio
-    @patch("ai_engine.agents.optimization_agent.compute_day_matrix")
+    @patch("ai_engine.services.route_optimizer.compute_day_matrix")
     async def test_matrix_called_for_multi_stop_day(self, mock_matrix):
         """compute_day_matrix is called for days with >1 stop."""
         stops = [_make_stop("A", 30.0, 31.0), _make_stop("B", 30.1, 31.1)]
         mock_matrix.return_value = [[0.0, 15.0], [15.0, 0.0]]
 
         state = _make_opt_state(draft_itinerary=_make_draft(_make_day(stops)))
-        await run_optimization_agent(state)
+        await optimize_route(state)
         # Verify it was called once, and with a list of 2 stops
         mock_matrix.assert_called_once()
         call_args = mock_matrix.call_args[0][0]
@@ -157,12 +157,12 @@ class TestReordering:
         assert call_args[1]["name"] == "B"
 
     @pytest.mark.asyncio
-    @patch("ai_engine.agents.optimization_agent.compute_day_matrix")
+    @patch("ai_engine.services.route_optimizer.compute_day_matrix")
     async def test_matrix_not_called_for_single_stop(self, mock_matrix):
         """compute_day_matrix is NOT called for days with <=1 stop."""
         stops = [_make_stop("A", 30.0, 31.0)]
         state = _make_opt_state(draft_itinerary=_make_draft(_make_day(stops)))
-        await run_optimization_agent(state)
+        await optimize_route(state)
         mock_matrix.assert_not_called()
 
 
@@ -172,7 +172,7 @@ class TestTransportMode:
     """Tests for walking vs driving mode assignment."""
 
     @pytest.mark.asyncio
-    @patch("ai_engine.agents.optimization_agent.compute_day_matrix")
+    @patch("ai_engine.services.route_optimizer.compute_day_matrix")
     async def test_walking_mode_for_close_stops(self, mock_matrix):
         """Stops < 2 km apart are tagged as walking."""
         # Two stops ~0.1 km apart
@@ -184,14 +184,14 @@ class TestTransportMode:
         mock_matrix.return_value = [[0.0, 2.0], [2.0, 0.0]]
 
         state = _make_opt_state(draft_itinerary=_make_draft(_make_day(stops)))
-        result = await run_optimization_agent(state)
+        result = await optimize_route(state)
 
         stop = result["optimized_itinerary"]["days"][0]["stops"][0]
         assert stop["transport_mode"] == "walking"
         assert stop["travel_time_to_next_minutes"] == 2.0
 
     @pytest.mark.asyncio
-    @patch("ai_engine.agents.optimization_agent.compute_day_matrix")
+    @patch("ai_engine.services.route_optimizer.compute_day_matrix")
     async def test_driving_mode_for_distant_stops(self, mock_matrix):
         """Stops > 2 km apart are tagged as driving."""
         stops = [
@@ -202,7 +202,7 @@ class TestTransportMode:
         mock_matrix.return_value = [[0.0, 20.0], [20.0, 0.0]]
 
         state = _make_opt_state(draft_itinerary=_make_draft(_make_day(stops)))
-        result = await run_optimization_agent(state)
+        result = await optimize_route(state)
 
         stop = result["optimized_itinerary"]["days"][0]["stops"][0]
         assert stop["transport_mode"] == "driving"
@@ -215,7 +215,7 @@ class TestTravelTimeAnnotation:
     """Tests for travel_time_to_next_minutes and total_travel_time_minutes."""
 
     @pytest.mark.asyncio
-    @patch("ai_engine.agents.optimization_agent.compute_day_matrix")
+    @patch("ai_engine.services.route_optimizer.compute_day_matrix")
     async def test_travel_time_annotated_on_each_stop(self, mock_matrix):
         """Each stop (except last) gets travel_time_to_next_minutes."""
         stops = [
@@ -230,7 +230,7 @@ class TestTravelTimeAnnotation:
         ]
 
         state = _make_opt_state(draft_itinerary=_make_draft(_make_day(stops)))
-        result = await run_optimization_agent(state)
+        result = await optimize_route(state)
 
         day_stops = result["optimized_itinerary"]["days"][0]["stops"]
         # Last stop should NOT have travel_time_to_next_minutes
@@ -241,7 +241,7 @@ class TestTravelTimeAnnotation:
             assert "transport_mode" in s
 
     @pytest.mark.asyncio
-    @patch("ai_engine.agents.optimization_agent.compute_day_matrix")
+    @patch("ai_engine.services.route_optimizer.compute_day_matrix")
     async def test_total_travel_time_is_sum(self, mock_matrix):
         """total_travel_time_minutes is the sum of all inter-stop times."""
         stops = [
@@ -257,7 +257,7 @@ class TestTravelTimeAnnotation:
         ]
 
         state = _make_opt_state(draft_itinerary=_make_draft(_make_day(stops)))
-        result = await run_optimization_agent(state)
+        result = await optimize_route(state)
 
         total = result["optimized_itinerary"]["days"][0]["total_travel_time_minutes"]
         assert isinstance(total, float)
@@ -270,7 +270,7 @@ class TestDeepCopySafety:
     """Optimization must not mutate the original draft itinerary."""
 
     @pytest.mark.asyncio
-    @patch("ai_engine.agents.optimization_agent.compute_day_matrix")
+    @patch("ai_engine.services.route_optimizer.compute_day_matrix")
     async def test_original_draft_not_mutated(self, mock_matrix):
         """The original draft_itinerary is not modified by optimization."""
         stops = [
@@ -284,7 +284,7 @@ class TestDeepCopySafety:
         original_draft = copy.deepcopy(draft)
         state = _make_opt_state(draft_itinerary=draft)
 
-        await run_optimization_agent(state)
+        await optimize_route(state)
 
         # Original draft should be unchanged
         assert state["draft_itinerary"] == original_draft
@@ -297,7 +297,7 @@ class TestMultiDay:
     """Tests for itineraries with multiple days."""
 
     @pytest.mark.asyncio
-    @patch("ai_engine.agents.optimization_agent.compute_day_matrix")
+    @patch("ai_engine.services.route_optimizer.compute_day_matrix")
     async def test_each_day_optimized_independently(self, mock_matrix):
         """Each day gets its own matrix computation and reordering."""
         day1_stops = [
@@ -320,7 +320,7 @@ class TestMultiDay:
             _make_day(day2_stops, day_number=2),
         )
         state = _make_opt_state(draft_itinerary=draft)
-        result = await run_optimization_agent(state)
+        result = await optimize_route(state)
 
         optimized = result["optimized_itinerary"]
         assert len(optimized["days"]) == 2
@@ -338,15 +338,15 @@ class TestAgentMessages:
     """Test that the agent does not modify agent_messages."""
 
     @pytest.mark.asyncio
-    @patch("ai_engine.agents.optimization_agent.compute_day_matrix")
+    @patch("ai_engine.services.route_optimizer.compute_day_matrix")
     async def test_agent_messages_not_modified(self, mock_matrix):
         """The optimization agent preserves existing agent_messages."""
         stops = [_make_stop("A", 30.0, 31.0), _make_stop("B", 30.1, 31.1)]
         mock_matrix.return_value = [[0.0, 10.0], [10.0, 0.0]]
 
         state = _make_opt_state(draft_itinerary=_make_draft(_make_day(stops)))
-        result = await run_optimization_agent(state)
+        result = await optimize_route(state)
 
         # Optimization agent appends a progress log message
         assert len(result["agent_messages"]) == 1
-        assert "[Optimizer]" in result["agent_messages"][0]
+        assert "[RouteOptimizer]" in result["agent_messages"][0]
