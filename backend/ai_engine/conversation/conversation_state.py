@@ -246,7 +246,10 @@ class ConversationState:
     history:      List[ChatMessage] = field(default_factory=list)
     itinerary:    Optional[Dict[str, Any]] = None
     itinerary_id: Optional[str] = None
+    filtered_places: Optional[List[Dict[str, Any]]] = None
     candidate_places: Optional[List[Dict[str, Any]]] = None
+    pool_metadata: Optional[Dict[str, Any]] = None
+    trip_id: Optional[str] = None
     created_at:   str = ""
     updated_at:   str = ""
     turn_count:   int = 0
@@ -270,7 +273,10 @@ class ConversationState:
             "history":      [m.to_dict() for m in self.history],
             "itinerary":    self.itinerary,
             "itinerary_id": self.itinerary_id,
+            "filtered_places": self.filtered_places,
             "candidate_places": self.candidate_places,
+            "pool_metadata": self.pool_metadata,
+            "trip_id": self.trip_id,
             "created_at":   self.created_at,
             "updated_at":   self.updated_at,
             "turn_count":   self.turn_count,
@@ -289,7 +295,10 @@ class ConversationState:
             history      = [ChatMessage.from_dict(m) for m in data.get("history", [])],
             itinerary    = data.get("itinerary"),
             itinerary_id = data.get("itinerary_id"),
+            filtered_places = data.get("filtered_places"),
             candidate_places = data.get("candidate_places"),
+            pool_metadata = data.get("pool_metadata"),
+            trip_id = data.get("trip_id"),
             created_at   = data.get("created_at", ""),
             updated_at   = data.get("updated_at", ""),
             turn_count   = data.get("turn_count", 0),
@@ -320,12 +329,48 @@ class ConversationState:
         self.phase = new_phase
         self._touch()
 
-    def set_itinerary(self, itinerary: Dict[str, Any], candidate_places: Optional[List[Dict[str, Any]]] = None) -> None:
+    def set_itinerary(
+        self,
+        itinerary: Dict[str, Any],
+        candidate_places: Optional[List[Dict[str, Any]]] = None,
+        filtered_places: Optional[List[Dict[str, Any]]] = None,
+        pool_metadata: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        from ai_engine.services.pool_manager import compute_pool_metadata
+
         self.itinerary = itinerary
         self.plan_started_at = None
+        if filtered_places is not None:
+            self.filtered_places = filtered_places
         if candidate_places is not None:
             self.candidate_places = candidate_places
+        if pool_metadata is not None:
+            self.pool_metadata = pool_metadata
+        elif self.filtered_places or self.candidate_places:
+            self.pool_metadata = compute_pool_metadata(
+                self.filtered_places,
+                self.candidate_places,
+                self.itinerary,
+            )
         self.transition_to(ConversationPhase.ITINERARY_REVIEW)
+
+    def get_pool_state(self) -> Dict[str, Any]:
+        """Return a serializable snapshot of the candidate pool for persistence."""
+        from ai_engine.services.pool_manager import build_pool_state_dict
+
+        return build_pool_state_dict(
+            self.filtered_places,
+            self.candidate_places,
+            self.itinerary,
+        )
+
+    def hydrate_pool(self, pool_state: Dict[str, Any]) -> None:
+        """Restore pool fields from Redis or PostgreSQL."""
+        if not pool_state:
+            return
+        self.filtered_places = pool_state.get("filtered_places") or self.filtered_places
+        self.candidate_places = pool_state.get("candidate_places") or self.candidate_places
+        self.pool_metadata = pool_state.get("pool_metadata") or self.pool_metadata
 
     def approve_itinerary(self, itinerary_id: str) -> None:
         self.itinerary_id = itinerary_id
@@ -336,7 +381,10 @@ class ConversationState:
         self.slots = TripSlots()
         self.itinerary = None
         self.itinerary_id = None
+        self.filtered_places = None
         self.candidate_places = None
+        self.pool_metadata = None
+        self.trip_id = None
         self.turn_count = 0
         self.last_question_field = None
         self.plan_started_at = None

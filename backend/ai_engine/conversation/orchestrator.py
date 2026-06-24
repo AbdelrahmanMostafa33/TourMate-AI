@@ -40,15 +40,30 @@ from ai_engine.graph.graph_builder import trip_graph
 # Itinerary Modifier Agent — surgically edits existing itineraries
 from ai_engine.agents.itinerary_modifier_agent import run_itinerary_modifier
 
+# Edit Classifier — routes modification requests to the correct workflow
+from ai_engine.agents.edit_classifier_agent import (
+    classify_edit,
+    is_preference_edit,
+    is_regenerate_edit,
+    is_surgical_edit,
+)
+
 # Preference Reranker Agent — interprets vibe changes and re-ranks candidates
 from ai_engine.agents.preference_reranker_agent import (
+    apply_preference_adjustments,
     interpret_preference_adjustment,
+)
+
+# Pool management — coverage metrics and DB refresh decisions
+from ai_engine.services.pool_manager import (
+    merge_pool_enrichment,
+    needs_database_query,
 )
 
 # Direct agent imports for re-ranking (skip retrieval, go straight to rank→plan→optimize→validate)
 from ai_engine.services.candidate_scorer import score_candidates
 from ai_engine.agents.planning_agent import run_planning_agent
-from ai_engine.services.route_optimizer import optimize_route
+from ai_engine.services.route_optimizer import optimize_route, optimize_itinerary_days
 from ai_engine.services.itinerary_validator import validate_itinerary
 
 # Image analysis pipeline for travel-related images
@@ -326,12 +341,16 @@ async def handle_chat(
         return response
 
 
-async def handle_chat_stream(user_id, user_message, image_bytes=None, token=None, session_id=None):
+async def handle_chat_stream(user_id, user_message, image_bytes=None, token=None, session_id=None, initial_pool_state=None):
     lock = _get_user_lock(user_id)
 
     async with lock:
         manager = await get_session_manager()
         state = await manager.resume_or_create(user_id, session_id)
+
+        if initial_pool_state and not state.candidate_places:
+            state.hydrate_pool(initial_pool_state)
+            await manager.save(state)
 
         yield {"type": "session", "data": {"session_id": state.session_id, "phase": state.phase.value}}
 
@@ -384,6 +403,8 @@ async def handle_chat_stream(user_id, user_message, image_bytes=None, token=None
             result_data["explanation"] = response["explanation"]
         if response.get("agent_metrics"):
             result_data["agent_metrics"] = response["agent_metrics"]
+        if response.get("pool_state"):
+            result_data["pool_state"] = response["pool_state"]
         yield {"type": "result", "data": result_data}
 
     yield {"type": "done", "data": None}
@@ -415,6 +436,147 @@ def _build_profile_from_slots(slots: TripSlots, trip_id: str) -> dict:
         generated_at=None,
         updated_at=None,
     )
+
+
+def _available_pool(state: ConversationState) -> list[dict]:
+    """Return the richest place pool available for edits."""
+    if state.filtered_places:
+        return state.filtered_places
+    return state.candidate_places or []
+
+
+def _apply_adjustments_to_slots(state: ConversationState, adjustments: dict) -> dict:
+    """Apply preference adjustments to trip slots and return updated preferences."""
+    updated = apply_preference_adjustments(state.slots, adjustments)
+
+    if adjustments.get("budget_level"):
+        state.slots.budget_level = adjustments["budget_level"]
+    if adjustments.get("travel_style"):
+        state.slots.travel_style = adjustments["travel_style"]
+    if adjustments.get("pace"):
+        state.slots.pace = adjustments["pace"]
+    if updated.get("interests") is not None:
+        state.slots.interests = updated["interests"]
+    if updated.get("food_preferences") is not None:
+        state.slots.food_preferences = updated["food_preferences"]
+    if updated.get("accommodation_preferences") is not None:
+        state.slots.accommodation_preferences = updated["accommodation_preferences"]
+
+    return updated
+
+
+def _detect_affected_days(original: dict, modified: dict) -> list[int]:
+    """Return day numbers whose stop lists changed."""
+    affected: list[int] = []
+    orig_days = {d.get("day_number"): d for d in original.get("days", []) if d.get("day_number") is not None}
+    mod_days = {d.get("day_number"): d for d in modified.get("days", []) if d.get("day_number") is not None}
+
+    for day_num in sorted(set(orig_days) | set(mod_days)):
+        orig_ids = [s.get("id") for s in orig_days.get(day_num, {}).get("stops", [])]
+        mod_ids = [s.get("id") for s in mod_days.get(day_num, {}).get("stops", [])]
+        if orig_ids != mod_ids:
+            affected.append(day_num)
+
+    return affected
+
+
+async def _post_edit_optimize(
+    modified: dict,
+    original: dict,
+    classification: dict | None = None,
+) -> dict:
+    """Run day-level OSRM optimization after structural delta edits."""
+    edit_type = (classification or {}).get("edit_type", "").upper()
+    if edit_type in ("RE_THEME", "CHANGE_HOTEL"):
+        return modified
+
+    affected = _detect_affected_days(original, modified)
+    target_day = (classification or {}).get("target_day")
+    if target_day and target_day not in affected:
+        affected.append(target_day)
+
+    if not affected and edit_type in ("ADD_PLACE", "REPLACE_PLACE", "REORDER", "MOVE_DAY", "REMOVE", "SWAP", "ADD", "UNKNOWN"):
+        affected = [d.get("day_number") for d in modified.get("days", []) if d.get("day_number") is not None]
+
+    if not affected:
+        return modified
+
+    try:
+        return await optimize_itinerary_days(modified, day_numbers=affected)
+    except Exception as exc:
+        logger.warning("[ConversationAgent] Post-edit route optimization failed: %s", exc)
+        return modified
+
+
+def _itinerary_response(
+    state: ConversationState,
+    modified: dict,
+    image_features: Optional[dict],
+    agent_messages: list[str] | None = None,
+    validation: dict | None = None,
+) -> dict:
+    """Build a standard itinerary response and update conversation state."""
+    state.set_itinerary(
+        modified,
+        candidate_places=state.candidate_places,
+        filtered_places=state.filtered_places,
+    )
+    response = {
+        "response_type": "itinerary",
+        "message": _format_itinerary(modified),
+        "itinerary": modified,
+        "image_features": image_features,
+        "pool_state": state.get_pool_state(),
+    }
+    if agent_messages:
+        response["agent_messages"] = agent_messages
+    if validation:
+        response["validation"] = validation
+    return response
+
+
+async def _maybe_enrich_pools(
+    state: ConversationState,
+    modification_request: str,
+    classification: dict | None = None,
+) -> bool:
+    """Enrich stored pools from DB when category coverage is insufficient."""
+    if not state.slots.destination_city:
+        return False
+
+    need_db, reason = needs_database_query(
+        modification_request,
+        state.filtered_places,
+        state.candidate_places,
+        state.itinerary,
+        classification,
+    )
+    if not need_db or reason not in ("missing_category", "insufficient_category", "low_coverage", "preference_shift"):
+        return False
+
+    enriched = await _enrich_candidate_pool_by_category(
+        modification_request=modification_request,
+        destination_city=state.slots.destination_city,
+        existing_pool=_available_pool(state),
+    )
+    if not enriched:
+        return False
+
+    existing_ids = {p.get("id") for p in _available_pool(state) if p.get("id")}
+    new_places = [p for p in enriched if p.get("id") not in existing_ids]
+    if not new_places:
+        return False
+
+    base_filtered = state.filtered_places or state.candidate_places or []
+    state.filtered_places = merge_pool_enrichment(base_filtered, new_places)
+    state.candidate_places = merge_pool_enrichment(state.candidate_places or [], new_places)
+    logger.info(
+        "[ConversationAgent] Enriched pools (%s) — filtered=%d candidate=%d",
+        reason,
+        len(state.filtered_places or []),
+        len(state.candidate_places or []),
+    )
+    return True
 
 
 def _has_real_modifications(mod: dict, orig: dict) -> bool:
@@ -627,6 +789,10 @@ async def _handle_modify_itinerary(
     image_features: Optional[dict],
     token: Optional[str],
 ) -> dict:
+    classification = await classify_edit(effective_message, state.itinerary)
+    edit_type = classification.get("edit_type", "UNKNOWN")
+    agent_messages = [f"[EditClassifier] {edit_type}: {classification.get('reasoning', '')}"]
+
     preferences = {
         "budget_level": state.slots.budget_level,
         "travel_style": state.slots.travel_style,
@@ -635,97 +801,176 @@ async def _handle_modify_itinerary(
         "food_preferences": state.slots.food_preferences or [],
         "accommodation_preferences": state.slots.accommodation_preferences or [],
     }
-    modified = await run_itinerary_modifier(
-        current_itinerary=state.itinerary,
-        modification_request=effective_message,
-        available_places=state.candidate_places or [],
-        preferences=preferences,
+
+    need_db, db_reason = needs_database_query(
+        effective_message,
+        state.filtered_places,
+        state.candidate_places,
+        state.itinerary,
+        classification,
     )
-
-    modifier_applied = _has_real_modifications(modified, state.itinerary)
-
-    if modifier_applied:
-        modifier_note = modified.get("_modifier_note", "")
-        message = _format_itinerary(modified)
-        state.set_itinerary(modified, candidate_places=state.candidate_places)
-        return {
-            "response_type": "itinerary",
-            "message": message,
-            "itinerary": modified,
-            "image_features": image_features,
-            "agent_messages": [f"[ModifierAgent] {modifier_note}"] if modifier_note else [],
-        }
-
-    accommodations_updated = False
-
-    if not modifier_applied and state.slots.destination_city:
-        enriched = await _enrich_candidate_pool_by_category(
-            modification_request=effective_message,
-            destination_city=state.slots.destination_city,
-            existing_pool=state.candidate_places or [],
+    if need_db and db_reason == "regenerate_requested":
+        logger.info("[ConversationAgent] Classifier requested full regeneration")
+        return await _fallback_full_regeneration(
+            user_id, state, effective_message, router_result, image_features, token,
+            modifier_applied=False,
+            accommodations_updated=False,
+            show_fallback_note=False,
         )
-        if enriched:
-            logger.info("[ConversationAgent] Enriched candidate pool with %d new places", len(enriched) - len(state.candidate_places or []))
-            state.candidate_places = enriched
 
-    if state.candidate_places and len(state.candidate_places) > 5:
-        logger.info("[ConversationAgent] Modifier unchanged — trying preference re-ranking (candidate_places: %d)", len(state.candidate_places))
+    # Enrich pool BEFORE preference-shift / modifier paths so category-
+    # matching places are available for reranking and delta edits.
+    await _maybe_enrich_pools(state, effective_message, classification)
 
+    if need_db and db_reason == "preference_shift":
         adjustments = await interpret_preference_adjustment(effective_message, current_preferences=preferences)
+        if adjustments:
+            reranked = await _rerank_and_replan(
+                user_id=user_id,
+                state=state,
+                adjustments=adjustments,
+                effective_message=effective_message,
+            )
+            if reranked:
+                return _itinerary_response(
+                    state,
+                    reranked["itinerary"],
+                    image_features,
+                    agent_messages + reranked.get("agent_messages", []),
+                    reranked.get("validation"),
+                )
 
-        reranked = None
+        # Rerank failed — try the modifier agent before full regeneration.
+        # The modifier can surgically add/swap places from the existing pool
+        # without throwing away the whole itinerary.
+        modified = await run_itinerary_modifier(
+            current_itinerary=state.itinerary,
+            modification_request=effective_message,
+            available_places=_available_pool(state),
+            preferences=preferences,
+        )
+        modifier_applied = _has_real_modifications(modified, state.itinerary)
+        if modifier_applied:
+            modified = await _post_edit_optimize(modified, state.itinerary, classification)
+            modifier_note = modified.pop("_modifier_note", "")
+            if modifier_note:
+                agent_messages.append(f"[ModifierAgent] {modifier_note}")
+            return _itinerary_response(state, modified, image_features, agent_messages)
+
+        return await _fallback_full_regeneration(
+            user_id, state, effective_message, router_result, image_features, token,
+            modifier_applied=False,
+            accommodations_updated=False,
+            agent_messages=agent_messages,
+            show_fallback_note=False,
+        )
+
+    if is_preference_edit(classification) and not is_surgical_edit(classification):
+        adjustments = await interpret_preference_adjustment(effective_message, current_preferences=preferences)
         if adjustments:
             acc_add = adjustments.get("accommodation_preferences_add") or []
             acc_remove = adjustments.get("accommodation_preferences_remove") or []
-            accommodations_updated = bool(acc_add or acc_remove)
-            if accommodations_updated:
-                current = list(state.slots.accommodation_preferences or [])
-                for a in acc_add:
-                    if a not in current:
-                        current.append(a)
-                for r in acc_remove:
-                    if r in current:
-                        current.remove(r)
-                state.slots.accommodation_preferences = current
-
+            if acc_add or acc_remove:
+                _apply_adjustments_to_slots(state, adjustments)
                 surgically_swapped = await _swap_accommodation_surgically(
                     itinerary=state.itinerary,
                     destination_city=state.slots.destination_city or "",
                     acc_add=acc_add,
                 )
-
                 if surgically_swapped:
-                    logger.info("[ConversationAgent] Surgical accommodation swap succeeded — %d new hotels, itinerary stops preserved", len(surgically_swapped.get("accommodation_suggestions", [])))
-                    state.set_itinerary(surgically_swapped, candidate_places=state.candidate_places)
-                    return {
-                        "response_type": "itinerary",
-                        "message": _format_itinerary(surgically_swapped),
-                        "itinerary": surgically_swapped,
-                        "image_features": image_features,
-                        "agent_messages": ["[AccommodationSwap] Updated accommodation to match your preference — itinerary stops preserved"],
-                    }
-
-                logger.info("[ConversationAgent] No %s hotels via surgical swap — falling through to full pipeline", acc_add)
+                    return _itinerary_response(
+                        state,
+                        surgically_swapped,
+                        image_features,
+                        agent_messages + ["[AccommodationSwap] Updated accommodation — stops preserved"],
+                    )
             else:
                 reranked = await _rerank_and_replan(
-                    user_id=user_id, state=state, adjustments=adjustments,
-                    effective_message=effective_message, image_features=image_features, token=token,
+                    user_id=user_id,
+                    state=state,
+                    adjustments=adjustments,
+                    effective_message=effective_message,
                 )
+                if reranked:
+                    return _itinerary_response(
+                        state,
+                        reranked["itinerary"],
+                        image_features,
+                        agent_messages + reranked.get("agent_messages", []),
+                        reranked.get("validation"),
+                    )
 
-            if reranked:
-                state.set_itinerary(reranked["itinerary"], candidate_places=reranked.get("candidate_places") or state.candidate_places)
-                return {
-                    "response_type": "itinerary",
-                    "message": _format_itinerary(reranked["itinerary"]),
-                    "itinerary": reranked["itinerary"],
-                    "image_features": image_features,
-                    "agent_messages": reranked.get("agent_messages", []),
-                    "validation": reranked.get("validation"),
-                }
+    if is_surgical_edit(classification) or not is_regenerate_edit(classification):
+        modified = await run_itinerary_modifier(
+            current_itinerary=state.itinerary,
+            modification_request=effective_message,
+            available_places=_available_pool(state),
+            preferences=preferences,
+        )
+        modifier_applied = _has_real_modifications(modified, state.itinerary)
 
-        logger.info("[ConversationAgent] Preference re-ranking failed or no adjustments — falling back to full pipeline")
+        if modifier_applied:
+            modified = await _post_edit_optimize(modified, state.itinerary, classification)
+            modifier_note = modified.pop("_modifier_note", "")
+            if modifier_note:
+                agent_messages.append(f"[ModifierAgent] {modifier_note}")
+            return _itinerary_response(state, modified, image_features, agent_messages)
+
+    if _available_pool(state) and len(_available_pool(state)) > 5:
+        adjustments = await interpret_preference_adjustment(effective_message, current_preferences=preferences)
+        if adjustments:
+            acc_add = adjustments.get("accommodation_preferences_add") or []
+            if acc_add or adjustments.get("accommodation_preferences_remove"):
+                _apply_adjustments_to_slots(state, adjustments)
+                surgically_swapped = await _swap_accommodation_surgically(
+                    itinerary=state.itinerary,
+                    destination_city=state.slots.destination_city or "",
+                    acc_add=acc_add,
+                )
+                if surgically_swapped:
+                    return _itinerary_response(
+                        state,
+                        surgically_swapped,
+                        image_features,
+                        agent_messages + ["[AccommodationSwap] Updated accommodation — stops preserved"],
+                    )
+            else:
+                reranked = await _rerank_and_replan(
+                    user_id=user_id,
+                    state=state,
+                    adjustments=adjustments,
+                    effective_message=effective_message,
+                )
+                if reranked:
+                    return _itinerary_response(
+                        state,
+                        reranked["itinerary"],
+                        image_features,
+                        agent_messages + reranked.get("agent_messages", []),
+                        reranked.get("validation"),
+                    )
 
     logger.info("[ConversationAgent] Falling back to full pipeline regeneration")
+    return await _fallback_full_regeneration(
+        user_id, state, effective_message, router_result, image_features, token,
+        modifier_applied=False,
+        accommodations_updated=False,
+        agent_messages=agent_messages,
+    )
+
+
+async def _fallback_full_regeneration(
+    user_id: str,
+    state: ConversationState,
+    effective_message: str,
+    router_result,
+    image_features: Optional[dict],
+    token: Optional[str],
+    modifier_applied: bool,
+    accommodations_updated: bool,
+    agent_messages: list[str] | None = None,
+    show_fallback_note: bool = True,
+) -> dict:
     state.transition_to(ConversationPhase.PLAN_GENERATION)
     state.plan_started_at = datetime.now(timezone.utc).isoformat()
 
@@ -736,15 +981,17 @@ async def _handle_modify_itinerary(
 
     result = await _handle_plan_trip(user_id, effective_message, extracted, image_features, token, state)
 
-    if not modifier_applied:
-        if not accommodations_updated:
-            message = result.get("message", "")
-            fallback_note = (
-                f"\n\n⚠️ Note: I couldn't find a place matching "
-                f"\"{effective_message}\" in the available options. "
-                "The itinerary above reflects the best available alternatives."
-            )
-            result["message"] = message + fallback_note
+    if agent_messages:
+        result["agent_messages"] = agent_messages + result.get("agent_messages", [])
+
+    if show_fallback_note and not modifier_applied and not accommodations_updated:
+        message = result.get("message", "")
+        fallback_note = (
+            f"\n\n⚠️ Note: I couldn't find a place matching "
+            f"\"{effective_message}\" in the available options. "
+            "The itinerary above reflects the best available alternatives."
+        )
+        result["message"] = message + fallback_note
 
     return result
 
@@ -760,12 +1007,26 @@ async def _rerank_and_replan(
 ) -> dict | None:
     try:
         with _track_pipeline_metrics():
+            updated_prefs = _apply_adjustments_to_slots(state, adjustments)
+            profile = dict(_build_profile_from_slots(state.slots, user_id))
+            for key in (
+                "budget_level",
+                "travel_style",
+                "pace",
+                "interests",
+                "food_preferences",
+                "accommodation_preferences",
+            ):
+                if updated_prefs.get(key) is not None:
+                    profile[key] = updated_prefs[key]
+
+            rerank_pool = state.filtered_places or state.candidate_places or []
             rerank_state = {
-                "filtered_places": state.candidate_places,
+                "filtered_places": rerank_pool,
                 "duration_days": state.slots.duration_days or 3,
                 "destination_city": state.slots.destination_city or "",
                 "destination_country": state.slots.destination_country,
-                "profile": _build_profile_from_slots(state.slots, user_id),
+                "profile": profile,
                 "user_message": effective_message,
                 "conversation_context": _build_conversation_context(state),
                 "candidate_places": None,
@@ -801,9 +1062,14 @@ async def _rerank_and_replan(
                         len(optimized.get("days", [])),
                         sum(len(d.get("stops", [])) for d in optimized.get("days", [])),
                         is_valid)
-            return {"itinerary": optimized, "candidate_places": rerank_state.get("candidate_places"),
-                    "agent_messages": rerank_state.get("agent_messages", []), "validation": rerank_state.get("validation"),
-                    "agent_metrics": agent_metrics.get_summary()}
+            return {
+                "itinerary": optimized,
+                "candidate_places": rerank_state.get("candidate_places"),
+                "filtered_places": rerank_pool,
+                "agent_messages": rerank_state.get("agent_messages", []),
+                "validation": rerank_state.get("validation"),
+                "agent_metrics": agent_metrics.get_summary(),
+            }
 
     except Exception as e:
         logger.exception("[RerankReplan] Unexpected error: %s", e)
@@ -904,9 +1170,14 @@ async def _handle_plan_trip(user_id, user_message, extracted, image_features, to
             message = "I wasn't able to generate a complete itinerary. Please try again."
 
         candidate_places = result_state.get("candidate_places") or result_state.get("filtered_places")
+        filtered_places = result_state.get("filtered_places")
 
         if state and optimized and is_valid:
-            state.set_itinerary(optimized, candidate_places=candidate_places)
+            state.set_itinerary(
+                optimized,
+                candidate_places=candidate_places,
+                filtered_places=filtered_places,
+            )
         elif state:
             state.transition_to(ConversationPhase.SLOT_FILLING)
             state.plan_started_at = None
@@ -939,4 +1210,5 @@ async def _handle_plan_trip(user_id, user_message, extracted, image_features, to
             "validation": validation_data,
             "explanation": explanation,
             "agent_metrics": agent_metrics_summary,
+            "pool_state": state.get_pool_state() if state else None,
         }

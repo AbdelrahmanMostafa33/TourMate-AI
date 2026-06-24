@@ -90,10 +90,10 @@ def _apply_filters(
 
 def _cap_candidates(
     places: list[dict],
-    max_attractions: int = 80,
-    max_restaurants: int = 15,
-    max_hotels: int = 10,
-    samples_per_subcategory: int = 6,
+    max_attractions: int = 150,
+    max_restaurants: int = 25,
+    max_hotels: int = 15,
+    samples_per_subcategory: int = 8,
 ) -> list[dict]:
     """
     Cap the number of candidates per category using per-subcategory sampling.
@@ -161,9 +161,9 @@ async def retrieve_places(state: TripState) -> TripState:
 
     diverse = _cap_candidates(
         filtered,
-        max_attractions=80,
-        max_restaurants=15,
-        max_hotels=10,
+        max_attractions=150,
+        max_restaurants=25,
+        max_hotels=15,
     )
 
     state["filtered_places"] = diverse

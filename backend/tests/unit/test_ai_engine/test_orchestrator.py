@@ -504,15 +504,10 @@ class TestRerankAndReplanStructure:
             f"found {profile_keys}. A duplicate would overwrite the first."
         )
 
-    def test_apply_preference_adjustments_not_imported(self):
-        """The orchestrator should import ``interpret_preference_adjustment``
-        but NOT ``apply_preference_adjustments`` (that function lives in
-        the preference_reranker_agent module)."""
-        from ai_engine.conversation.orchestrator import interpret_preference_adjustment
-        assert interpret_preference_adjustment is not None
-
-        with pytest.raises(ImportError):
-            from ai_engine.conversation.orchestrator import apply_preference_adjustments  # noqa: F811
+    def test_apply_preference_adjustments_imported(self):
+        """The orchestrator should import ``apply_preference_adjustments`` for reranking."""
+        from ai_engine.conversation.orchestrator import apply_preference_adjustments
+        assert apply_preference_adjustments is not None
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -522,42 +517,38 @@ class TestRerankAndReplanStructure:
 
 class TestHandleModifyItinerarySkipLogic:
     """
-    When accommodation changes are made, the itinerary modifier skips the
-    Mode 1 re-ranking step. These tests verify the source code contains
-    the correct guard logic.
+    When accommodation changes are made, the fallback note is suppressed.
+    The ``accommodations_updated`` parameter lives in ``_fallback_full_regeneration``.
+    These tests verify the source code contains the correct guard logic.
     """
 
     def test_accommodations_updated_flag_initialized(self):
-        """The ``accommodations_updated`` flag is initialized before Mode 1."""
+        """The ``accommodations_updated`` flag is a parameter of _fallback_full_regeneration."""
         import inspect
-        from ai_engine.conversation.orchestrator import _handle_modify_itinerary
+        from ai_engine.conversation.orchestrator import _fallback_full_regeneration
 
-        source = inspect.getsource(_handle_modify_itinerary)
-        assert "accommodations_updated = False" in source, (
-            "Expected 'accommodations_updated = False' initialization"
+        source = inspect.getsource(_fallback_full_regeneration)
+        assert "accommodations_updated" in source, (
+            "Expected 'accommodations_updated' parameter in _fallback_full_regeneration"
         )
 
     def test_skip_rerank_when_accommodations_updated(self):
-        """The source references ``accommodations_updated`` in a conditional
-        that skips re-ranking."""
+        """_fallback_full_regeneration references accommodations_updated in the
+        fallback-note suppression logic."""
         import inspect
-        from ai_engine.conversation.orchestrator import _handle_modify_itinerary
+        from ai_engine.conversation.orchestrator import _fallback_full_regeneration
 
-        source = inspect.getsource(_handle_modify_itinerary)
-        has_conditional = (
-            "accommodations_updated: True" in source
-            or "if accommodations_updated:" in source
-        )
-        assert has_conditional, (
-            "Expected conditional check on 'accommodations_updated' to skip re-rank"
+        source = inspect.getsource(_fallback_full_regeneration)
+        assert "accommodations_updated" in source, (
+            "Expected reference to 'accommodations_updated' in _fallback_full_regeneration"
         )
 
     def test_fallback_note_suppressed_when_accommodations_updated(self):
         """The fallback note is suppressed when accommodations were updated."""
         import inspect
-        from ai_engine.conversation.orchestrator import _handle_modify_itinerary
+        from ai_engine.conversation.orchestrator import _fallback_full_regeneration
 
-        source = inspect.getsource(_handle_modify_itinerary)
+        source = inspect.getsource(_fallback_full_regeneration)
         assert "not accommodations_updated" in source, (
             "Expected 'not accommodations_updated' to suppress fallback note"
         )

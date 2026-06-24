@@ -256,6 +256,9 @@ async def process_message_stream(
     ai_session_id = None
     approve_action = None
     profile_from_ai = None
+    pool_state_from_ai = None
+
+    initial_pool_state = await svc.load_pool_for_trip(trip.trip_id)
 
     try:
         from ai_engine.conversation.orchestrator import handle_chat_stream
@@ -265,6 +268,7 @@ async def process_message_stream(
             user_message=user_text,
             token=token,
             session_id=session_id,
+            initial_pool_state=initial_pool_state,
         ):
             event_type = chunk.get("type")
 
@@ -306,6 +310,8 @@ async def process_message_stream(
                     })
                     if result.get("profile"):
                         profile_from_ai = result["profile"]
+                    if result.get("pool_state"):
+                        pool_state_from_ai = result["pool_state"]
 
             elif event_type == "done":
                 await manager.send(ws_key, {"type": "done", "data": None})
@@ -418,6 +424,9 @@ async def process_message_stream(
                 if trip.trip_profiles:
                     for prof in trip.trip_profiles:
                         prof.updated_at = sqlfunc.now()
+
+                if pool_state_from_ai:
+                    await svc.save_pool_for_trip(trip.trip_id, pool_state_from_ai)
 
             # ── Persist TripProfile from AI ──────────────────────────────
             if profile_from_ai:
@@ -547,6 +556,7 @@ async def websocket_new_chat(
             full_response = ""
             actions       = []
             profile_data_from_ai = None
+            pool_state_from_ai = None
 
             try:
                 from ai_engine.conversation.orchestrator import handle_chat_stream
@@ -584,6 +594,8 @@ async def websocket_new_chat(
                             })
                         if result.get("profile"):
                             profile_data_from_ai = result["profile"]
+                        if result.get("pool_state"):
+                            pool_state_from_ai = result["pool_state"]
 
                     elif event_type == "done":
                         await manager.send(ws_key, {"type": "done"})
@@ -601,6 +613,8 @@ async def websocket_new_chat(
                     ai_result = {"itinerary": action.get("data", {})}
                     if profile_data_from_ai:
                         ai_result["profile"] = profile_data_from_ai
+                    if pool_state_from_ai:
+                        ai_result["pool_state"] = pool_state_from_ai
                     try:
                         created = await svc.create_trip_from_ai_result(
                             user_id,

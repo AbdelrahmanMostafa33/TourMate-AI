@@ -27,6 +27,8 @@ from typing import List, Literal, Optional
 
 from pydantic import BaseModel, Field, model_validator
 
+from ai_engine.constants import MODIFIER_POOL_DISPLAY
+
 logger = logging.getLogger(__name__)
 
 
@@ -820,7 +822,7 @@ def build_compact_context(
     modification_request: str,
     available_places: list[dict] | None = None,
     preferences: dict | None = None,
-    max_places: int = 30,
+    max_places: int = MODIFIER_POOL_DISPLAY,
 ) -> str:
     """Build a compact textual context for the LLM modifier prompt.
 

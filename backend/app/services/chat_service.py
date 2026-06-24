@@ -373,6 +373,11 @@ class ChatService:
             user_id,
         )
 
+        pool_state = ai_result.get("pool_state")
+        if pool_state:
+            itin_svc = ItineraryService(self.db)
+            await itin_svc.save_candidate_pool(itinerary.itinerary_id, pool_state)
+
         return {
             "trip_id": trip.trip_id,
             "conversation_id": conversation.conversation_id,
@@ -381,6 +386,28 @@ class ChatService:
             "itinerary": itinerary,
             "stops_created": stops_created,
         }
+
+    async def save_pool_for_trip(self, trip_id: str, pool_state: dict) -> None:
+        """Persist candidate pool JSON on the trip's latest itinerary."""
+        if not pool_state:
+            return
+
+        result = await self.db.execute(
+            select(Itinerary)
+            .where(Itinerary.trip_id == trip_id)
+            .order_by(Itinerary.created_at.desc())
+        )
+        itinerary = result.scalars().first()
+        if not itinerary:
+            return
+
+        itin_svc = ItineraryService(self.db)
+        await itin_svc.save_candidate_pool(itinerary.itinerary_id, pool_state)
+
+    async def load_pool_for_trip(self, trip_id: str) -> dict | None:
+        """Load persisted candidate pool for edit hydration."""
+        itin_svc = ItineraryService(self.db)
+        return await itin_svc.get_candidate_pool_by_trip_id(trip_id)
 
     # ── Redis → DB Sync ──────────────────────────────────────────────────
 

@@ -28,6 +28,7 @@ class Itinerary(Base):
     )
     created_at          = Column(DateTime, default=func.now())
     updated_at          = Column(DateTime, default=func.now(), onupdate=func.now())
+    candidate_pool_json = Column(JSON, nullable=True)
 
     # Relationships
     trip = relationship("Trip", back_populates="itineraries")

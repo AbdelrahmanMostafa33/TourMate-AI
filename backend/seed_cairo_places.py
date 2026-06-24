@@ -25,6 +25,8 @@ sys.path.insert(0, str(BACKEND_DIR))
 # Load .env so DATABASE_URL can come from there (each developer uses their own)
 load_dotenv(BACKEND_DIR / ".env")
 
+from sqlalchemy import create_engine, text
+from sqlalchemy.orm import Session
 from app.core.database import Base  # noqa: E402
 from app.models.place import Place, HotelDetails, RestaurantDetails, AttractionDetails  # noqa: E402
 

@@ -20,7 +20,7 @@ from sqlalchemy import select, func, delete
 
 from app.repositories.itinerary_repo import ItineraryRepo
 from app.models.enums import TimeOfDay, TravelMode
-from app.models.itinerary import Day as DayModel, ItineraryStop as StopModel
+from app.models.itinerary import Day as DayModel, ItineraryStop as StopModel, Itinerary
 
 logger = logging.getLogger(__name__)
 
@@ -184,6 +184,37 @@ class ItineraryService:
             )
 
         return total_stops
+
+    async def save_candidate_pool(
+        self,
+        itinerary_id: str,
+        pool_state: dict,
+    ) -> None:
+        """Persist the candidate pool snapshot for later edits."""
+        if not pool_state:
+            return
+
+        result = await self.db.execute(
+            select(Itinerary).where(Itinerary.itinerary_id == itinerary_id)
+        )
+        itinerary = result.scalar_one_or_none()
+        if itinerary:
+            itinerary.candidate_pool_json = pool_state
+            await self.db.flush()
+            logger.info(
+                "[ItineraryService] Saved candidate pool for itinerary %s "
+                "(filtered=%d, candidates=%d)",
+                itinerary_id,
+                len(pool_state.get("filtered_places") or []),
+                len(pool_state.get("candidate_places") or []),
+            )
+
+    async def get_candidate_pool_by_trip_id(self, trip_id: str) -> dict | None:
+        """Load the stored candidate pool for a trip's latest itinerary."""
+        itinerary = await self.repo.get_by_trip_id(trip_id)
+        if itinerary and itinerary.candidate_pool_json:
+            return itinerary.candidate_pool_json
+        return None
 
     async def create_full_from_ai_result(
         self,

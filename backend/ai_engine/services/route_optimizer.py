@@ -52,6 +52,90 @@ def _reattach_heavy_stop_fields(optimized: dict, heavy: dict[str, dict]) -> None
                         stop[field] = val
 
 
+async def _optimize_day_stops(stops: list[dict]) -> list[dict]:
+    """Reorder stops within a day and annotate travel times."""
+    if len(stops) <= 1:
+        return stops
+
+    matrix = await compute_day_matrix(stops)
+
+    _TIME_RANK = {"morning": 0, "afternoon": 1, "evening": 2}
+    groups: dict[int, list[int]] = {}
+    for i, stop in enumerate(stops):
+        slot = stop.get("suggested_time_of_day", "")
+        rank = _TIME_RANK.get(slot, 3)
+        groups.setdefault(rank, []).append(i)
+
+    final_order: list[int] = []
+    for rank in sorted(groups.keys()):
+        group_indices = groups[rank]
+        if len(group_indices) > 1:
+            sub_stops = [stops[i] for i in group_indices]
+            sub_matrix = [
+                [matrix[i][j] for j in group_indices]
+                for i in group_indices
+            ]
+            nn_idx = get_reorder_indices(sub_stops, sub_matrix)
+            reorder_idx = improve_order_2opt(nn_idx, sub_matrix)
+            final_order.extend([group_indices[i] for i in reorder_idx])
+        else:
+            final_order.extend(group_indices)
+
+    reordered_stops = [stops[i] for i in final_order]
+
+    for i in range(len(reordered_stops) - 1):
+        fi = final_order[i]
+        fj = final_order[i + 1]
+        dist_km = haversine(
+            reordered_stops[i]["lat"], reordered_stops[i]["lon"],
+            reordered_stops[i + 1]["lat"], reordered_stops[i + 1]["lon"],
+        )
+        mode = "walking" if dist_km <= WALK_THRESHOLD_KM else "driving"
+        reordered_stops[i]["travel_time_to_next_minutes"] = matrix[fi][fj]
+        reordered_stops[i]["transport_mode"] = mode
+
+    if reordered_stops:
+        reordered_stops[-1].pop("travel_time_to_next_minutes", None)
+        reordered_stops[-1].pop("transport_mode", None)
+
+    return reordered_stops
+
+
+async def optimize_itinerary_days(
+    itinerary: dict,
+    day_numbers: list[int] | None = None,
+) -> dict:
+    """Run OSRM route optimization on specific days (or all days).
+
+    Used after delta edits (ADD / SWAP / REORDER) without rerunning the full
+    LangGraph pipeline.
+    """
+    if not itinerary:
+        return itinerary
+
+    heavy_fields = _extract_heavy_stop_fields(itinerary)
+    optimized = copy.deepcopy(itinerary)
+    target_days = set(day_numbers) if day_numbers else None
+
+    for day in optimized.get("days", []):
+        day_num = day.get("day_number")
+        if target_days is not None and day_num not in target_days:
+            continue
+
+        _strip_heavy_stop_fields(day)
+        stops = day.get("stops", [])
+        if len(stops) > 1:
+            day["stops"] = await _optimize_day_stops(stops)
+
+        total_travel = sum(
+            s.get("travel_time_to_next_minutes", 0) for s in day.get("stops", [])
+        )
+        day["total_travel_time_minutes"] = round(total_travel, 1)
+
+    _reattach_heavy_stop_fields(optimized, heavy_fields)
+    return optimized
+
+
 async def optimize_route(state: TripState) -> TripState:
     """
     Route Optimizer
@@ -78,57 +162,7 @@ async def optimize_route(state: TripState) -> TripState:
     for day in optimized.get("days", []):
         stops = day.get("stops", [])
         if len(stops) > 1:
-            # 1. Compute full travel-time matrix for this day (single API call)
-            matrix = await compute_day_matrix(stops)
-
-            # 2. Group stops by their existing time-of-day, preserving
-            #    the planner's semantic assignment (museums → morning,
-            #    restaurants → afternoon/evening, etc.).
-            #    Unknown/unassigned slots go to an "other" group at the end.
-            _TIME_RANK = {"morning": 0, "afternoon": 1, "evening": 2}
-            groups: dict[int, list[int]] = {}
-            for i, stop in enumerate(stops):
-                slot = stop.get("suggested_time_of_day", "")
-                rank = _TIME_RANK.get(slot, 3)  # unassigned → last
-                groups.setdefault(rank, []).append(i)
-
-            # 3. Reorder within each time block (nearest-neighbor + 2-opt),
-            #    then concatenate groups in time order.
-            final_order: list[int] = []
-            for rank in sorted(groups.keys()):
-                group_indices = groups[rank]
-                if len(group_indices) > 1:
-                    # Build sub-matrix for this group from the full matrix
-                    sub_stops = [stops[i] for i in group_indices]
-                    sub_matrix = [
-                        [matrix[i][j] for j in group_indices]
-                        for i in group_indices
-                    ]
-                    nn_idx = get_reorder_indices(sub_stops, sub_matrix)
-                    reorder_idx = improve_order_2opt(nn_idx, sub_matrix)
-                    final_order.extend(
-                        [group_indices[i] for i in reorder_idx]
-                    )
-                else:
-                    final_order.extend(group_indices)
-
-            # 4. Build reordered stops list (time-of-day is NOT modified —
-            #    each stop keeps its original semantic assignment)
-            reordered_stops = [stops[i] for i in final_order]
-
-            # 5. Annotate stops with travel times and mode
-            for i in range(len(reordered_stops) - 1):
-                fi = final_order[i]
-                fj = final_order[i + 1]
-                dist_km = haversine(
-                    reordered_stops[i]["lat"], reordered_stops[i]["lon"],
-                    reordered_stops[i + 1]["lat"], reordered_stops[i + 1]["lon"],
-                )
-                mode = "walking" if dist_km <= WALK_THRESHOLD_KM else "driving"
-                reordered_stops[i]["travel_time_to_next_minutes"] = matrix[fi][fj]
-                reordered_stops[i]["transport_mode"] = mode
-
-            day["stops"] = reordered_stops
+            day["stops"] = await _optimize_day_stops(stops)
 
         total_travel = sum(
             s.get("travel_time_to_next_minutes", 0) for s in day.get("stops", [])

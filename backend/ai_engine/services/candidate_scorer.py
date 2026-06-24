@@ -38,9 +38,7 @@ WEIGHT_PROXIMITY   = 0.15
 WEIGHT_RATING      = 0.15
 WEIGHT_DIVERSITY   = 0.10
 
-# ── Candidate caps ───────────────────────────────────────────────────────────
-
-MAX_TOTAL_CANDIDATES = 40
+from ai_engine.constants import MAX_TOTAL_CANDIDATES
 
 # ── Embedding fallback ───────────────────────────────────────────────────────
 
