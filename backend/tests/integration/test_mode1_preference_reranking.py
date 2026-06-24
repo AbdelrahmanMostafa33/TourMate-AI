@@ -346,7 +346,7 @@ class TestMode1PreferenceReranking:
             duration_days=2,
             budget_level="moderate",
             travel_style="cultural",
-            pace="moderate",
+            pace="balanced",
             interests=["history", "art"],
             food_preferences=["local cuisine"],
             accommodation_preferences=["boutique hotel"],
@@ -473,7 +473,7 @@ class TestMode1PreferenceReranking:
             response="Generating!",
             destination_city="Cairo", duration_days=2,
             budget_level="moderate", travel_style="cultural",
-            pace="moderate", interests=["history", "art"],
+            pace="balanced", interests=["history", "art"],
             food_preferences=["local cuisine"],
             accommodation_preferences=["boutique hotel"],
         )
@@ -538,7 +538,7 @@ class TestMode1PreferenceReranking:
             "plan_trip", response="Generating!",
             destination_city="Cairo", duration_days=2,
             budget_level="moderate", travel_style="cultural",
-            pace="moderate", interests=["history", "art"],
+            pace="balanced", interests=["history", "art"],
             food_preferences=["local cuisine"],
             accommodation_preferences=["boutique hotel"],
         )
@@ -641,7 +641,7 @@ class TestFallbackChainLogging:
             "plan_trip", response="Generating!",
             destination_city="Cairo", duration_days=2,
             budget_level="moderate", travel_style="cultural",
-            pace="moderate", interests=["history", "art"],
+            pace="balanced", interests=["history", "art"],
             food_preferences=["local cuisine"],
             accommodation_preferences=["boutique hotel"],
         )
@@ -739,7 +739,7 @@ class TestFallbackChainLogging:
             "plan_trip", response="Generating!",
             destination_city="Cairo", duration_days=2,
             budget_level="moderate", travel_style="cultural",
-            pace="moderate", interests=["history", "art"],
+            pace="balanced", interests=["history", "art"],
             food_preferences=["local cuisine"],
             accommodation_preferences=["boutique hotel"],
         )
@@ -826,7 +826,7 @@ class TestFallbackChainLogging:
             "plan_trip", response="Generating!",
             destination_city="Cairo", duration_days=2,
             budget_level="moderate", travel_style="cultural",
-            pace="moderate", interests=["history", "art"],
+            pace="balanced", interests=["history", "art"],
             food_preferences=["local cuisine"],
             accommodation_preferences=["boutique hotel"],
         )
@@ -907,7 +907,7 @@ class TestFallbackChainLogging:
             "plan_trip", response="Generating!",
             destination_city="Cairo", duration_days=2,
             budget_level="moderate", travel_style="cultural",
-            pace="moderate", interests=["history", "art"],
+            pace="balanced", interests=["history", "art"],
             food_preferences=["local cuisine"],
             accommodation_preferences=["boutique hotel"],
         )

@@ -435,7 +435,11 @@ class _TripDetailScreenState extends State<TripDetailScreen> {
           const SizedBox(height: 24),
           ElevatedButton.icon(
             onPressed: () {
-              Navigator.pushReplacementNamed(context, '/chat');
+              Navigator.pushNamedAndRemoveUntil(
+                context,
+                '/home',
+                (route) => false,
+              );
             },
             icon: const Icon(Icons.chat_bubble_outline, size: 18),
             label: const Text('Chat with TourMate'),
@@ -824,12 +828,14 @@ class _TripDetailScreenState extends State<TripDetailScreen> {
     });
   }
   /// Navigate to the chat screen connected to this trip.
-  /// Uses pushNamed (not pushReplacementNamed) so pressing back in chat
-  /// returns to this trip detail screen.
+  /// Navigates to /home (MainShell) so the bottom navbar is preserved.
+  /// The trip_id is passed as route arguments for MainShell to forward
+  /// to ChatScreen as initialTripId.
   void _continueChat(BuildContext context, TripDetailModel trip) {
-    Navigator.pushNamed(
+    Navigator.pushNamedAndRemoveUntil(
       context,
-      '/chat',
+      '/home',
+      (route) => false,
       arguments: {
         'trip_id': trip.tripId,
       },

@@ -322,21 +322,38 @@ class ChatService:
                 try:
                     profile.budget_level = BudgetLevel(budget_val).value
                 except (ValueError, TypeError):
-                    profile.budget_level = str(budget_val)
+                    profile.budget_level = BudgetLevel.MODERATE.value
+                    logger.warning(
+                        "[ChatService] Invalid budget_level '%s', defaulting to '%s'",
+                        budget_val, profile.budget_level,
+                    )
 
             style_val = profile_data.get("travel_style")
             if style_val:
                 try:
                     profile.travel_style = TravelStyle(style_val).value
                 except (ValueError, TypeError):
-                    profile.travel_style = str(style_val)
+                    profile.travel_style = TravelStyle.CULTURAL.value
+                    logger.warning(
+                        "[ChatService] Invalid travel_style '%s', defaulting to '%s'",
+                        style_val, profile.travel_style,
+                    )
 
             pace_val = profile_data.get("pace")
             if pace_val:
                 try:
                     profile.pace = TripPace(pace_val).value
                 except (ValueError, TypeError):
-                    profile.pace = str(pace_val)
+                    # Map legacy AI values (e.g. "moderate") to valid enum values
+                    pace_lower = str(pace_val).lower().strip()
+                    fallback = {
+                        "moderate": TripPace.BALANCED.value,
+                    }
+                    profile.pace = fallback.get(pace_lower, TripPace.BALANCED.value)
+                    logger.warning(
+                        "[ChatService] Invalid pace '%s', defaulting to '%s'",
+                        pace_val, profile.pace,
+                    )
 
             # ── Map list fields ────────────────────────────────────────
             if profile_data.get("interests"):
@@ -518,6 +535,91 @@ class ChatService:
             }
             for m in messages
         ]
+
+    # ── Conversation Listing ────────────────────────────────────────────
+
+    async def get_user_conversations(
+        self,
+        user_id: str,
+        limit: int = 50,
+    ) -> list[dict]:
+        """Return all conversations for a user, each with the linked trip
+        (if any) and the most recent message snippet.
+
+        This powers the ``GET /api/v1/chats/`` endpoint that Flutter uses
+        to render the chat sidebar and recent-chats list.
+
+        Returns a list of dicts, each containing:
+
+          - conversation_id
+          - trip_id          (str | None)
+          - trip             (dict | None) with keys:
+                              trip_id, trip_name, destination, status
+          - started_at       (ISO-8601 str)
+          - last_message     (str | None) – the text of the most recent message
+          - last_message_at  (ISO-8601 str | None)
+        """
+        from sqlalchemy import text
+
+        SQL = text("""
+            SELECT
+                c.conversation_id,
+                t.trip_id         AS trip_id,
+                t.trip_name       AS trip_name,
+                t.destination     AS destination,
+                t.status          AS trip_status,
+                c.started_at      AS started_at,
+                m.content         AS last_message_content,
+                m.timestamp       AS last_message_timestamp
+            FROM conversations c
+            LEFT JOIN trips t
+                ON t.conversation_id = c.conversation_id
+            LEFT JOIN LATERAL (
+                SELECT content, timestamp
+                FROM messages
+                WHERE conversation_id = c.conversation_id
+                ORDER BY timestamp DESC
+                LIMIT 1
+            ) m ON TRUE
+            WHERE c.user_id = :user_id
+            ORDER BY
+                COALESCE(m.timestamp, c.started_at) DESC NULLS LAST
+            LIMIT :limit
+        """)
+
+        result = await self.db.execute(SQL, {"user_id": user_id, "limit": limit})
+        rows = result.fetchall()
+
+        out: list[dict] = []
+        for row in rows:
+            trip_info = None
+            if row.trip_id:
+                trip_info = {
+                    "trip_id":     row.trip_id,
+                    "trip_name":   row.trip_name,
+                    "destination": row.destination,
+                    "status":      row.trip_status,
+                }
+
+            started_at_str = (
+                row.started_at.isoformat() if row.started_at else None
+            )
+            last_msg_at_str = (
+                row.last_message_timestamp.isoformat()
+                if row.last_message_timestamp
+                else None
+            )
+
+            out.append({
+                "conversation_id": row.conversation_id,
+                "trip_id":         row.trip_id,
+                "trip":            trip_info,
+                "created_at":      started_at_str,
+                "last_message":    row.last_message_content,
+                "last_message_at": last_msg_at_str,
+            })
+
+        return out
 
     # ── Error Handling ────────────────────────────────────────────────────
 

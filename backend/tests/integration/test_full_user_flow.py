@@ -71,7 +71,7 @@ async def _create_trip_in_db(db_session, user_id: str = "full_flow_user") -> dic
         "profile": {
             "budget_level": "moderate",
             "travel_style": "cultural",
-            "pace": "moderate",
+            "pace": "balanced",
             "interests": ["history", "art"],
             "food_preferences": ["local cuisine"],
             "accommodation_preferences": ["boutique hotel"],

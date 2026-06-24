@@ -19,7 +19,7 @@ def _make_profile(**overrides) -> TripProfile:
         "trip_id": "mock_trip_001",
         "budget_level": "moderate",
         "travel_style": "cultural",
-        "pace": "moderate",
+        "pace": "balanced",
         "interests": ["history", "art", "food"],
         "food_preferences": ["local cuisine", "street food"],
         "accommodation_preferences": ["boutique hotel", "airbnb"],

@@ -62,9 +62,19 @@ class _MainShellState extends State<MainShell> {
   /// disposes off-screen widgets so their Cubits (and any open WebSockets)
   /// are properly cleaned up when the user switches tabs.
   Widget _buildActivePage(BuildContext context) {
+    // Read route arguments to check if we need to pass an initialTripId to ChatScreen
+    final routeArgs = ModalRoute.of(context)?.settings.arguments;
+    final String? initialTripId;
+    if (routeArgs is Map<String, dynamic>) {
+      initialTripId = routeArgs['trip_id'] as String?;
+    } else {
+      initialTripId = null;
+    }
+
     switch (currentIndex) {
       case 0:
         return ChatScreen(
+          initialTripId: initialTripId,
           onTripCreated: () {
             context.read<TripsCubit>().getTrips();
           },

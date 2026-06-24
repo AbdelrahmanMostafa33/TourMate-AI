@@ -170,10 +170,13 @@ def cosine_similarity(a: list[float], b: list[float]) -> float:
     Cosine similarity between two vectors.
 
     Returns a value between -1.0 and 1.0 (1.0 = identical direction).
-    Returns 0.0 if either vector is zero-magnitude.
+    Returns 0.0 if either vector is empty or zero-magnitude.
     """
     a_arr = np.array(a, dtype=np.float64)
     b_arr = np.array(b, dtype=np.float64)
+    if a_arr.size == 0 or b_arr.size == 0:
+        logger.debug("[EmbedService] cosine_similarity called with empty vector")
+        return 0.0
     dot = np.dot(a_arr, b_arr)
     norm_a = np.linalg.norm(a_arr)
     norm_b = np.linalg.norm(b_arr)

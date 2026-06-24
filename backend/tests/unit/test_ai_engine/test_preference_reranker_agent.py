@@ -135,7 +135,7 @@ class TestApplyPreferenceAdjustments:
 
         assert result["budget_level"] == "moderate"
         assert result["travel_style"] == "cultural"
-        assert result["pace"] == "moderate"
+        assert result["pace"] == "balanced"
         assert result["special_focus"] is None
 
     def test_change_style_to_adventure(self, filled_slots):
@@ -336,7 +336,7 @@ class TestInterpretPreferenceAdjustment:
         current_prefs = {
             "budget_level": "moderate",
             "travel_style": "cultural",
-            "pace": "moderate",
+            "pace": "balanced",
             "interests": ["history", "art"],
             "food_preferences": ["local cuisine"],
             "accommodation_preferences": ["hotel"],

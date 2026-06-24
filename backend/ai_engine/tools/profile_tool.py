@@ -112,7 +112,7 @@ def load_mock_profile(trip_id: str = "mock_trip_001") -> TripProfile:
         travel_style="cultural",
 
         # Sample travel pace.
-        pace="moderate",
+        pace="balanced",
 
         # Example interests.
         interests=["history", "art", "food"],

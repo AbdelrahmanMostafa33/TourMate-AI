@@ -89,7 +89,8 @@ class TestNormalizeBudget:
 class TestNormalizePace:
     def test_canonical_passthrough(self):
         assert normalize_pace("relaxed") == "relaxed"
-        assert normalize_pace("moderate") == "moderate"
+        assert normalize_pace("moderate") == "balanced"
+        assert normalize_pace("balanced") == "balanced"
         assert normalize_pace("packed") == "packed"
 
     def test_relaxed_synonyms(self):
@@ -99,11 +100,11 @@ class TestNormalizePace:
         assert normalize_pace("chill") == "relaxed"
         assert normalize_pace("lazy") == "relaxed"
 
-    def test_moderate_synonyms(self):
-        assert normalize_pace("mixed") == "moderate"
-        assert normalize_pace("flexible") == "moderate"
-        assert normalize_pace("varied") == "moderate"
-        assert normalize_pace("balanced") == "moderate"
+    def test_balanced_synonyms(self):
+        assert normalize_pace("mixed") == "balanced"
+        assert normalize_pace("flexible") == "balanced"
+        assert normalize_pace("varied") == "balanced"
+        assert normalize_pace("moderate") == "balanced"
 
     def test_packed_synonyms(self):
         assert normalize_pace("busy") == "packed"
@@ -112,15 +113,15 @@ class TestNormalizePace:
         assert normalize_pace("action-packed") == "packed"
         assert normalize_pace("non-stop") == "packed"
 
-    def test_anything_maps_to_moderate(self):
-        """The reviewer's key concern: 'anything' should map to moderate, not fail."""
-        assert normalize_pace("anything") == "moderate"
-        assert normalize_pace("don't care") == "moderate"
-        assert normalize_pace("i don't mind") == "moderate"
-        assert normalize_pace("no preference") == "moderate"
-        assert normalize_pace("surprise me") == "moderate"
-        assert normalize_pace("up to you") == "moderate"
-        assert normalize_pace("any") == "moderate"
+    def test_anything_maps_to_balanced(self):
+        """The reviewer's key concern: 'anything' should map to balanced, not fail."""
+        assert normalize_pace("anything") == "balanced"
+        assert normalize_pace("don't care") == "balanced"
+        assert normalize_pace("i don't mind") == "balanced"
+        assert normalize_pace("no preference") == "balanced"
+        assert normalize_pace("surprise me") == "balanced"
+        assert normalize_pace("up to you") == "balanced"
+        assert normalize_pace("any") == "balanced"
 
     def test_none_and_empty(self):
         assert normalize_pace(None) is None
@@ -477,7 +478,7 @@ class TestNormalizeExtractedSlots:
 
         # Scalar normalizations applied
         assert result["budget_level"] == "moderate"
-        assert result["pace"] == "moderate"
+        assert result["pace"] == "balanced"
         assert result["travel_style"] == "romantic"
 
         # List normalizations applied
@@ -514,7 +515,7 @@ class TestNormalizeExtractedSlots:
         """
         raw = {"pace": "anything"}
         result = normalize_extracted_slots(raw)
-        assert result["pace"] == "moderate"
+        assert result["pace"] == "balanced"
 
         raw2 = {"budget_level": "cheap", "travel_style": "chill"}
         result2 = normalize_extracted_slots(raw2)

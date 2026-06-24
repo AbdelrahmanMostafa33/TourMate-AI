@@ -149,7 +149,7 @@ class TestGetMissingFields:
         state.slots.traveler_group_type = "solo"
         state.slots.budget_level = "moderate"
         state.slots.travel_style = "cultural"
-        state.slots.pace = "moderate"
+        state.slots.pace = "balanced"
         state.slots.interests = ["history", "food"]
         state.slots.food_preferences = ["local cuisine"]
         state.slots.accommodation_preferences = ["hotel"]

@@ -18,7 +18,7 @@ Usage::
     # After LLM extracts slots:
     extracted = {"budget_level": "mid-range", "pace": "flexible", ...}
     normalized = normalize_extracted_slots(extracted)
-    # → {"budget_level": "moderate", "pace": "moderate", ...}
+    # → {"budget_level": "moderate", "pace": "balanced", ...}
 """
 
 from __future__ import annotations
@@ -51,7 +51,7 @@ def _contains_word(text: str, keyword: str) -> bool:
 
 VALID_BUDGET_LEVELS = {"budget", "moderate", "luxury"}
 VALID_TRAVEL_STYLES = {"romantic", "adventure", "family", "solo", "cultural", "relaxation"}
-VALID_PACES = {"relaxed", "moderate", "packed"}
+VALID_PACES = {"relaxed", "balanced", "packed"}
 
 VALID_ACCOMMODATION_TYPES = {"hostel", "resort", "hotel", "luxury hotel"}
 
@@ -149,7 +149,8 @@ def normalize_budget(value: Optional[str]) -> Optional[str]:
 _PACE_MAP: Dict[str, str] = {
     # Already canonical
     "relaxed": "relaxed",
-    "moderate": "moderate",
+    "balanced": "balanced",
+    "moderate": "balanced",
     "packed": "packed",
 
     # Relaxed synonyms
@@ -163,24 +164,24 @@ _PACE_MAP: Dict[str, str] = {
     "no rush": "relaxed",
     "at my own pace": "relaxed",
 
-    # Moderate synonyms
-    "mixed": "moderate",
-    "flexible": "moderate",
-    "varied": "moderate",
-    "balanced": "moderate",
-    "medium": "moderate",
-    "normal": "moderate",
-    "whatever": "moderate",
-    "anything": "moderate",
-    "anything goes": "moderate",
-    "don't care": "moderate",
-    "i don't mind": "moderate",
-    "no preference": "moderate",
-    "surprise me": "moderate",
-    "up to you": "moderate",
-    "you decide": "moderate",
-    "dealer's choice": "moderate",
-    "any": "moderate",
+    # Balanced synonyms
+    "mixed": "balanced",
+    "flexible": "balanced",
+    "varied": "balanced",
+    "medium": "balanced",
+    "moderate": "balanced",
+    "normal": "balanced",
+    "whatever": "balanced",
+    "anything": "balanced",
+    "anything goes": "balanced",
+    "don't care": "balanced",
+    "i don't mind": "balanced",
+    "no preference": "balanced",
+    "surprise me": "balanced",
+    "up to you": "balanced",
+    "you decide": "balanced",
+    "dealer's choice": "balanced",
+    "any": "balanced",
 
     # Packed synonyms
     "busy": "packed",
@@ -200,15 +201,16 @@ _PACE_MAP: Dict[str, str] = {
 
 def normalize_pace(value: Optional[str]) -> Optional[str]:
     """
-    Normalize a raw pace string to one of: 'relaxed', 'moderate', 'packed'.
+    Normalize a raw pace string to one of: 'relaxed', 'balanced', 'packed'.
 
     Examples::
 
-        normalize_pace("flexible")          → "moderate"
-        normalize_pace("anything")          → "moderate"
+        normalize_pace("flexible")          → "balanced"
+        normalize_pace("anything")          → "balanced"
         normalize_pace("slow")              → "relaxed"
         normalize_pace("action-packed")     → "packed"
-        normalize_pace("moderate")          → "moderate"  (already canonical)
+        normalize_pace("moderate")          → "balanced"
+        normalize_pace("balanced")          → "balanced"  (already canonical)
     """
     if not value or not isinstance(value, str):
         return None

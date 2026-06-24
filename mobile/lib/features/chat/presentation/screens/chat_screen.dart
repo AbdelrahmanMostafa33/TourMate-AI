@@ -50,16 +50,22 @@ class _ChatScreenState extends State<ChatScreen> {
   void _openChatSession(ChatSessionResponse session) {
     final tripInfo = session.trip;
     if (tripInfo != null) {
-      Navigator.pushReplacementNamed(
+      // Navigate to /home (MainShell) so the bottom navbar is preserved.
+      // The trip_id is passed as route arguments so MainShell can pass it
+      // to ChatScreen as initialTripId.
+      Navigator.pushNamedAndRemoveUntil(
         context,
-        '/chat',
+        '/home',
+        (route) => false,
         arguments: {'trip_id': tripInfo.tripId},
       );
     }
   }
 
   void _startNewChat() {
-    Navigator.pushReplacementNamed(context, '/chat');
+    // Navigate to /home (MainShell) so the bottom navbar is preserved.
+    // If we pushed /chat directly, it would show ChatScreen without the navbar.
+    Navigator.pushNamedAndRemoveUntil(context, '/home', (route) => false);
   }
 
   @override

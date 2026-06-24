@@ -44,7 +44,7 @@ def _make_plan_result(city, days, **extra):
         "plan_trip", response="Generating your itinerary!",
         destination_city=city, duration_days=days,
         travel_dates="next month", group_size=2, traveler_group_type="solo",
-        budget_level="moderate", travel_style="cultural", pace="moderate",
+        budget_level="moderate", travel_style="cultural", pace="balanced",
         interests=["history", "food"], food_preferences=["local cuisine"],
         accommodation_preferences=["hotel"], **extra,
     )
