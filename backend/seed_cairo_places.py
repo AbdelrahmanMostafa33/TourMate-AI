@@ -1,13 +1,13 @@
 """Seed the database with Cairo places from the JSON data file.
 
 Usage (from backend/):
-    export DATABASE_URL="postgresql+asyncpg://postgres:1610@localhost:5432/tourmate"
     python seed_cairo_places.py
 
 The script reads data/cairo/cairo_places_class_diagram.json and inserts
 places plus their detail records (hotel_details, restaurant_details,
 attraction_details) into the database.
 
+DATABASE_URL is read from backend/.env so each developer uses their own.
 It also loads pre-generated embeddings from data/cairo/cairo_embeddings.json
 (if the file exists) and sets them on each place during insertion.
 """
@@ -17,12 +17,13 @@ import os
 import sys
 from pathlib import Path
 
-from sqlalchemy import create_engine, text
-from sqlalchemy.orm import Session
+from dotenv import load_dotenv
 
-# ── Ensure backend is on sys.path ────────────────────────────────────────────
 BACKEND_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(BACKEND_DIR))
+
+# Load .env so DATABASE_URL can come from there (each developer uses their own)
+load_dotenv(BACKEND_DIR / ".env")
 
 from app.core.database import Base  # noqa: E402
 from app.models.place import Place, HotelDetails, RestaurantDetails, AttractionDetails  # noqa: E402
@@ -127,9 +128,9 @@ def build_attraction_details(row: dict) -> dict | None:
 
 def seed() -> None:
     # Resolve database URL
-    db_url = os.getenv("DATABASE_URL", "postgresql+asyncpg://postgres:1610@localhost:5432/tourmate")
+    db_url = os.getenv("DATABASE_URL")
     if not db_url:
-        print("ERROR: DATABASE_URL environment variable is not set.")
+        print("ERROR: DATABASE_URL not set. Add it to your .env file (e.g. DATABASE_URL=postgresql+asyncpg://user:pass@localhost:5432/tourmate)")
         sys.exit(1)
 
     # Normalise to sync driver

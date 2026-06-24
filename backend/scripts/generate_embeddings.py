@@ -18,9 +18,12 @@ import random
 from pathlib import Path
 from dataclasses import dataclass
 
+BACKEND_DIR = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(BACKEND_DIR))
+
 from dotenv import load_dotenv
 
-# Load .env from the backend directory (path-independent)
+# Load .env so DATABASE_URL can come from there (each developer uses their own)
 load_dotenv(BACKEND_DIR / ".env")
 
 if sys.platform == "win32":
@@ -29,9 +32,6 @@ if sys.platform == "win32":
         sys.stderr.reconfigure(encoding="utf-8")
     except AttributeError:
         pass
-
-BACKEND_DIR = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(BACKEND_DIR))
 
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import Session
@@ -45,10 +45,10 @@ EMBEDDING_JSON = DATA_DIR / "cairo_embeddings.json"
 
 # ── Config ───────────────────────────────────────────────────────────────────
 
-_raw_db_url = os.getenv(
-    "DATABASE_URL",
-    "postgresql://postgres:1610@localhost:5432/tourmate",
-)
+_raw_db_url = os.getenv("DATABASE_URL")
+if not _raw_db_url:
+    print("ERROR: DATABASE_URL not set. Add it to your .env file (e.g. DATABASE_URL=postgresql+asyncpg://user:pass@localhost:5432/tourmate)")
+    sys.exit(1)
 DB_URL = _raw_db_url.replace("+asyncpg", "").replace("+psycopg2", "")
 
 _raw_keys = os.getenv("GOOGLE_API_KEY", "")
