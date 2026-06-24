@@ -300,6 +300,11 @@ async def process_message_stream(
                     }
                 elif result.get("itinerary"):
                     actions = [{"type": "CREATE_TRIP", "data": result["itinerary"]}]
+                    # Send structured itinerary data to Flutter for card rendering
+                    await manager.send(ws_key, {
+                        "type": "itinerary_data",
+                        "data": result["itinerary"],
+                    })
                     if result.get("profile"):
                         profile_from_ai = result["profile"]
 
@@ -573,6 +578,11 @@ async def websocket_new_chat(
                             full_response = result_message
                         if result.get("itinerary"):
                             actions = [{"type": "CREATE_TRIP", "data": result["itinerary"]}]
+                            # Send structured itinerary data to Flutter for card rendering
+                            await manager.send(ws_key, {
+                                "type": "itinerary_data",
+                                "data": result["itinerary"],
+                            })
                         if result.get("profile"):
                             profile_data_from_ai = result["profile"]
 
