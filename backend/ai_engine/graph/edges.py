@@ -59,16 +59,32 @@ def should_validate(state: TripState) -> str:
     return "validator"
 
 
+# Maximum number of full pipeline retry cycles (planner → optimizer → validator).
+# Prevents infinite loops when the validator keeps rejecting output.
+_MAX_PLANNING_RETRIES = 3
+
+
 def should_retry_or_end(state: TripState) -> str:
     """
     Called after the Validator node finishes.
     - If valid → end the pipeline successfully.
     - If invalid and an error exists → end with the error.
-    - If invalid but no error → retry planning (sends back to planner).
+    - If invalid but no error and retries remain → retry from planner.
+    - If invalid and retries exhausted → set error and end.
     """
     if state.get("is_valid"):
         return "end"
     if state.get("error"):
         return "end"
+
+    # Check retry cap so we don't loop forever
+    attempts = state.get("planning_attempts", 0)
+    if attempts >= _MAX_PLANNING_RETRIES:
+        state["error"] = (
+            f"Pipeline failed after {attempts} planning attempts — "
+            f"itinerary could not pass quality validation"
+        )
+        return "end"
+
     # Itinerary was generated but failed validation — retry from planner
     return "planner"

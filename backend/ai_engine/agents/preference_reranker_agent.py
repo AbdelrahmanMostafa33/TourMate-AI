@@ -48,7 +48,7 @@ fields that need to change.
 - `budget_level`: Change to "budget", "moderate", or "luxury"
 - `travel_style`: Change to "cultural", "adventure", "relaxation",
   "romantic", "family", or "solo"
-- `pace`: Change to "relaxed", "moderate", or "packed"
+- `pace`: Change to "relaxed", "balanced", or "packed"
 - `food_preferences_add`: New food interests to add
 - `food_preferences_remove`: Food interests to remove
 - `accommodation_preferences_add`: New accommodation types to add
@@ -287,7 +287,7 @@ def apply_preference_adjustments(
     pace = (
         adjustments.get("pace")
         or getattr(slots, "pace", None)
-        or "moderate"
+        or "balanced"
     )
 
     # Build the final preference profile expected by the ranking agent.

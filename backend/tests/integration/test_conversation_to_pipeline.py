@@ -113,7 +113,7 @@ class TestSlotFillingToPipeline:
             response="Generating your itinerary!",
             budget_level="moderate",
             travel_style="cultural",
-            pace="moderate",
+            pace="balanced",
             interests=["history", "art"],
             food_preferences=["local cuisine"],
             accommodation_preferences=["boutique hotel"],
@@ -196,7 +196,7 @@ class TestProfileBuildingFromSlots:
         assert profile["trip_id"] == "trip_001"
         assert profile["budget_level"] == "moderate"
         assert profile["travel_style"] == "cultural"
-        assert profile["pace"] == "moderate"
+        assert profile["pace"] == "balanced"
         assert profile["interests"] == ["history", "art"]
         assert profile["food_preferences"] == ["local cuisine"]
         assert profile["accommodation_preferences"] == ["boutique hotel"]
@@ -355,7 +355,7 @@ class TestItineraryReviewPhase:
             duration_days=2,
             budget_level="moderate",
             travel_style="cultural",
-            pace="moderate",
+            pace="balanced",
             interests=["history"],
             food_preferences=["local cuisine"],
             accommodation_preferences=["boutique hotel"],
@@ -401,7 +401,7 @@ class TestItineraryReviewPhase:
             duration_days=2,
             budget_level="moderate",
             travel_style="cultural",
-            pace="moderate",
+            pace="balanced",
             interests=["history"],
             food_preferences=["local cuisine"],
             accommodation_preferences=["boutique hotel"],
@@ -458,7 +458,7 @@ class TestNewTripAfterCompletion:
             duration_days=2,
             budget_level="moderate",
             travel_style="cultural",
-            pace="moderate",
+            pace="balanced",
             interests=["history"],
             food_preferences=["local cuisine"],
             accommodation_preferences=["boutique hotel"],

@@ -748,6 +748,90 @@ async def _swap_accommodation_surgically(
     return modified
 
 
+async def _enrich_candidate_pool_by_category(
+    modification_request: str,
+    destination_city: str,
+    existing_pool: list[dict],
+) -> list[dict] | None:
+    """
+    Detect a category/subcategory from the modification request (e.g.
+    "add museums" → sub_category="museums") and fetch matching places
+    from the DB to enrich the candidate pool.
+
+    This is a lightweight targeted retrieval that avoids the expensive
+    full pipeline re-run when the only problem is that the existing
+    candidate pool doesn't contain places of the requested category.
+
+    Args:
+        modification_request: The user's edit request (e.g. "add museums").
+        destination_city: City to search in.
+        existing_pool: Current candidate places (to avoid duplicates).
+
+    Returns:
+        An enriched list of candidate places (new + existing), or
+        ``None`` if no category could be detected or no new places found.
+    """
+    from ai_engine.agents.operations import _detect_category_hints
+    from ai_engine.tools.places_tool import get_places_for_city
+
+    # Detect category/subcategory from the request
+    hints = _detect_category_hints(modification_request)
+    cat = hints.get("category")
+    subcat = hints.get("sub_category")
+
+    if not cat and not subcat:
+        logger.debug(
+            "[EnrichPool] No category hints in '%s'",
+            modification_request[:60],
+        )
+        return None
+
+    # Fetch all places for the city
+    all_places = await get_places_for_city(destination_city)
+    if not all_places:
+        return None
+
+    # Filter to places matching the detected category/subcategory
+    matching = []
+    for p in all_places:
+        if subcat:
+            p_sub = (p.get("sub_category") or "").lower()
+            if p_sub != subcat:
+                continue
+        elif cat:
+            p_cat = (p.get("category") or "").lower()
+            if p_cat != cat:
+                continue
+        matching.append(p)
+
+    if not matching:
+        logger.info(
+            "[EnrichPool] No places matching '%s' found in %s",
+            subcat or cat,
+            destination_city,
+        )
+        return None
+
+    # Sort by rating descending, take top 15
+    matching.sort(key=lambda p: p.get("rating", 0) or 0, reverse=True)
+    matching = matching[:15]
+
+    # Add only places that aren't already in the pool
+    existing_ids = {p.get("id") for p in existing_pool if p.get("id")}
+    new_places = [p for p in matching if p.get("id") not in existing_ids]
+
+    if not new_places:
+        logger.info("[EnrichPool] All matching places already in pool")
+        return None
+
+    enriched = list(existing_pool) + new_places
+    logger.info(
+        "[EnrichPool] Added %d new '%s' places to pool (total: %d)",
+        len(new_places), subcat or cat, len(enriched),
+    )
+    return enriched
+
+
 def _build_conversation_context(state) -> str:
     """
     Create a compact textual summary of full conversation history.
@@ -831,11 +915,9 @@ def _format_itinerary(itinerary: dict) -> str:
                 sep = " · "
                 lines.append(f"    {sep.join(detail_bits)}")
 
-            # Why recommended — only show if meaningful and short
+            # Why recommended — show full text
             if why:
-                # Trim long explanations to keep chat readable
-                short_why = why if len(why) <= 80 else why[:77] + "..."
-                lines.append(f"    💡 {short_why}")
+                lines.append(f"    💡 {why}")
 
         lines.append("")
 
@@ -855,8 +937,7 @@ def _format_itinerary(itinerary: dict) -> str:
                 line += f" ⭐ {rating}"
             lines.append(line)
             if why:
-                short_why = why if len(why) <= 60 else why[:57] + "..."
-                lines.append(f"    💡 {short_why}")
+                lines.append(f"    💡 {why}")
 
     lines.append("")
     lines.append("💡 You can ask me to modify any part of this itinerary, or say 'approve' to save it!")
@@ -927,6 +1008,27 @@ async def _handle_modify_itinerary(
     # Track whether accommodation preferences were updated (used below
     # to suppress a misleading fallback note when Mode 3 succeeds).
     accommodations_updated = False
+
+    # ── Mini-retrieval: Enrich candidate pool by category ────────────────
+    # If the modifier couldn't handle the request AND the request implies a
+    # specific category (e.g. "add museums" → category="attraction",
+    # sub_category="museums"), fetch places of that category from the DB
+    # and add them to the candidate pool.  This avoids the expensive full
+    # pipeline re-run when the only problem is that the pool is missing
+    # places of the requested type.
+    if not modifier_applied and state.slots.destination_city:
+        enriched = await _enrich_candidate_pool_by_category(
+            modification_request=effective_message,
+            destination_city=state.slots.destination_city,
+            existing_pool=state.candidate_places or [],
+        )
+        if enriched:
+            logger.info(
+                "[ConversationAgent] Enriched candidate pool with %d new "
+                "places matching request category",
+                len(enriched) - len(state.candidate_places or []),
+            )
+            state.candidate_places = enriched
 
     # ── Mode 1: Try preference re-ranking for vibe changes ──────────────
     if state.candidate_places and len(state.candidate_places) > 5:

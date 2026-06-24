@@ -70,7 +70,7 @@ async def _create_trip_with_itinerary_and_profile(
         "profile": {
             "budget_level": "moderate",
             "travel_style": "cultural",
-            "pace": "moderate",
+            "pace": "balanced",
             "interests": ["history", "art"],
             "food_preferences": ["local cuisine"],
             "accommodation_preferences": ["boutique hotel"],

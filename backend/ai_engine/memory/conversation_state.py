@@ -83,7 +83,7 @@ class TripSlots:
     # ── Profile Preferences (required) ─────────────────────────────
     budget_level:                   Optional[str] = None   # "budget" | "moderate" | "luxury"
     travel_style:                   Optional[str] = None   # "romantic" | "adventure" | "family" | "solo" | "cultural" | "relaxation"
-    pace:                           Optional[str] = None   # "relaxed" | "moderate" | "packed"
+    pace:                           Optional[str] = None   # "relaxed" | "balanced" | "packed"
     interests:                      Optional[List[str]] = None
     food_preferences:               Optional[List[str]] = None
     accommodation_preferences:      Optional[List[str]] = None
@@ -95,7 +95,7 @@ class TripSlots:
         "traveler_group_type": "solo",            # Inferred from 1 traveler
         "budget_level": "moderate",               # Safe middle ground
         "travel_style": "cultural",               # Fits most city destinations
-        "pace": "moderate",                       # Most flexible
+        "pace": "balanced",                       # Most flexible
         "interests": [],                           # Top-rated places fill the day
         "food_preferences": ["local cuisine"],    # Works everywhere
         "accommodation_preferences": ["hotel"],   # Most general

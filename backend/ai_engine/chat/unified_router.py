@@ -75,7 +75,7 @@ class ExtractedSlots(BaseModel):
     )
     pace: Optional[str] = Field(
         default=None,
-        description="Pace: 'relaxed', 'moderate', or 'packed'",
+        description="Pace: 'relaxed', 'balanced', or 'packed'",
     )
     interests: Optional[List[str]] = Field(
         default=None,
@@ -195,7 +195,7 @@ Examples:
 - **Style**: Extract ONLY when the user explicitly describes their travel STYLE
   (e.g. 'I want a solo trip', 'cultural travel'). Do NOT confuse interests with style —
   'I like history' → interests: ['history'], NOT travel_style: 'cultural'.
-- **Pace**: Extract the raw phrase. A downstream normalizer canonicalizes to 'relaxed', 'moderate', or 'packed'.
+- **Pace**: Extract the raw phrase. A downstream normalizer canonicalizes to 'relaxed', 'balanced', or 'packed'.
 - **Interests**: Extract ONLY interest CATEGORY keywords — short, single words or
   short phrases describing what the user wants to SEE or DO. Examples of valid
   interests: 'museums', 'history', 'food', 'shopping', 'nature', 'parks', 'art',

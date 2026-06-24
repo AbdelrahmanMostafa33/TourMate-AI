@@ -275,7 +275,7 @@ class TestAIPipeline:
                 "duration_days": 2,
                 "budget_level": "moderate",
                 "travel_style": "cultural",
-                "pace": "moderate",
+                "pace": "balanced",
                 "interests": ["history", "art"],
                 "food_preferences": ["local cuisine"],
                 "accommodation_preferences": ["boutique hotel"],

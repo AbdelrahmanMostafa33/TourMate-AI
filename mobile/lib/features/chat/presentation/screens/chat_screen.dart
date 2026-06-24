@@ -47,19 +47,12 @@ class _ChatScreenState extends State<ChatScreen> {
     if (mounted) setState(() => _loadingSessions = false);
   }
 
-  void _openChatSession(ChatSessionResponse session) {
-    final tripInfo = session.trip;
-    if (tripInfo != null) {
-      Navigator.pushReplacementNamed(
-        context,
-        '/chat',
-        arguments: {'trip_id': tripInfo.tripId},
-      );
+  /// Called by _ChatViewState when the user navigates to a different chat.
+  void _onSessionChanged(String? tripId) {
+    setState(() => _activeTripId = tripId);
+    if (tripId == null) {
+      _fetchChatSessions();
     }
-  }
-
-  void _startNewChat() {
-    Navigator.pushReplacementNamed(context, '/chat');
   }
 
   @override
@@ -67,8 +60,8 @@ class _ChatScreenState extends State<ChatScreen> {
     return BlocProvider(
       create: (_) {
         final cubit = ChatCubit(locator<ChatRepository>());
-        if (_activeTripId != null) {
-          cubit.connectToTrip(_activeTripId!, autoMsg: null);
+        if (widget.initialTripId != null) {
+          cubit.connectToTrip(widget.initialTripId!, autoMsg: null);
         } else {
           cubit.connect();
         }
@@ -80,8 +73,7 @@ class _ChatScreenState extends State<ChatScreen> {
         chatSessions: _chatSessions,
         loadingSessions: _loadingSessions,
         activeTripId: _activeTripId,
-        onOpenSession: _openChatSession,
-        onStartNewChat: _startNewChat,
+        onSessionChanged: _onSessionChanged,
         onRefreshSessions: _fetchChatSessions,
       ),
     );
@@ -95,8 +87,7 @@ class _ChatView extends StatefulWidget {
   final List<ChatSessionResponse> chatSessions;
   final bool loadingSessions;
   final String? activeTripId;
-  final void Function(ChatSessionResponse) onOpenSession;
-  final VoidCallback onStartNewChat;
+  final void Function(String?) onSessionChanged;
   final VoidCallback onRefreshSessions;
 
   const _ChatView({
@@ -104,8 +95,7 @@ class _ChatView extends StatefulWidget {
     required this.chatSessions,
     required this.loadingSessions,
     this.activeTripId,
-    required this.onOpenSession,
-    required this.onStartNewChat,
+    required this.onSessionChanged,
     required this.onRefreshSessions,
   });
 
@@ -117,6 +107,21 @@ class _ChatViewState extends State<_ChatView> {
   final TextEditingController _inputController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
   int _lastMessageCount = 0;
+
+  /// Open a fresh chat: disconnect, clear state, connect anew.
+  void _startNewChat() {
+    context.read<ChatCubit>().resetForNewChat();
+    widget.onSessionChanged(null);
+  }
+
+  /// Open a past chat session: disconnect, clear state, switch to that trip.
+  void _openSession(ChatSessionResponse session) {
+    final tripInfo = session.trip;
+    if (tripInfo != null) {
+      context.read<ChatCubit>().switchToTrip(tripInfo.tripId!);
+      widget.onSessionChanged(tripInfo.tripId);
+    }
+  }
 
   @override
   void dispose() {
@@ -171,9 +176,7 @@ class _ChatViewState extends State<_ChatView> {
                         const Center(child: CircularProgressIndicator()),
                     connected: (messages, isTyping, refreshToken, isReconnecting) {
                       if (messages.isEmpty && !isTyping) {
-                        return widget.chatSessions.isNotEmpty
-                            ? _buildHistoryBody()
-                            : _buildEmptyState();
+                        return _buildEmptyState();
                       }
 
                       final steps = cubit.pipelineSteps;
@@ -268,7 +271,7 @@ class _ChatViewState extends State<_ChatView> {
                     child: ElevatedButton.icon(
                       onPressed: () {
                         Navigator.pop(context); // close drawer
-                        widget.onStartNewChat();
+                        _startNewChat();
                       },
                       icon: const Icon(Icons.add_rounded, size: 18),
                       label: const Text('New Chat'),
@@ -324,7 +327,7 @@ class _ChatViewState extends State<_ChatView> {
     return InkWell(
       onTap: () {
         Navigator.pop(context); // close drawer
-        widget.onOpenSession(session);
+        _openSession(session);
       },
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
@@ -393,7 +396,7 @@ class _ChatViewState extends State<_ChatView> {
           children: [
             if (hasBack)
               GestureDetector(
-                onTap: () => Navigator.pop(context),
+                onTap: () => _startNewChat(),
                 child: const Padding(
                   padding: EdgeInsets.all(4),
                   child: Icon(Icons.arrow_back_rounded, size: 20),
@@ -427,123 +430,6 @@ class _ChatViewState extends State<_ChatView> {
                 ),
               ),
           ],
-        ),
-      ),
-    );
-  }
-
-  // ── History body (shown when on main chat and sessions exist) ──────
-
-  Widget _buildHistoryBody() {
-    if (widget.loadingSessions) {
-      return const Center(child: CircularProgressIndicator());
-    }
-
-    return Column(
-      children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
-          child: Row(
-            children: [
-              const Text(
-                "Recent Chats",
-                style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-              const Spacer(),
-              TextButton.icon(
-                onPressed: widget.onStartNewChat,
-                icon: const Icon(Icons.add_circle_outline, size: 18),
-                label: const Text("New Chat"),
-                style: TextButton.styleFrom(foregroundColor: Colors.black),
-              ),
-            ],
-          ),
-        ),
-        const Divider(height: 1),
-        Expanded(
-          child: widget.chatSessions.isEmpty
-              ? _buildEmptyState()
-              : ListView.separated(
-                  padding: const EdgeInsets.all(16),
-                  itemCount: widget.chatSessions.length,
-                  separatorBuilder: (_, _) => const SizedBox(height: 8),
-                  itemBuilder: (_, i) => _buildSessionCard(widget.chatSessions[i]),
-                ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildSessionCard(ChatSessionResponse session) {
-    final tripInfo = session.trip;
-    final destination = tripInfo?.destination ?? 'Chat';
-    final status = tripInfo?.status;
-    final lastMessage = session.lastMessage;
-
-    return Material(
-      color: Colors.white,
-      borderRadius: BorderRadius.circular(14),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(14),
-        onTap: () => widget.onOpenSession(session),
-        child: Container(
-          padding: const EdgeInsets.all(14),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(14),
-            border: Border.all(color: Colors.grey.shade200),
-          ),
-          child: Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(
-                  color: Colors.grey.shade100,
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Icon(
-                  tripInfo != null ? Icons.card_travel : Icons.chat_bubble_outline,
-                  size: 20,
-                  color: Colors.grey[700],
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      destination,
-                      style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
-                    ),
-                    if (lastMessage != null) ...[
-                      const SizedBox(height: 2),
-                      Text(
-                        lastMessage,
-                        style: TextStyle(fontSize: 12, color: Colors.grey[500]),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ],
-                    if (status != null) ...[
-                      const SizedBox(height: 2),
-                      Text(
-                        status.toUpperCase(),
-                        style: TextStyle(
-                          fontSize: 10,
-                          color: Colors.grey[400],
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ],
-                  ],
-                ),
-              ),
-              Icon(Icons.chevron_right, color: Colors.grey[300], size: 18),
-            ],
-          ),
         ),
       ),
     );
@@ -605,11 +491,7 @@ class _ChatViewState extends State<_ChatView> {
             ),
           ),
           const SizedBox(height: 24),
-          if (widget.chatSessions.isNotEmpty)
-            Text(
-              "Or pick up where you left off",
-              style: TextStyle(fontSize: 13, color: Colors.grey[400]),
-            ),
+
         ],
       ),
     );

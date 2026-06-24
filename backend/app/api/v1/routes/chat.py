@@ -167,7 +167,13 @@ def _update_profile_from_ai(profile: TripProfile, profile_data: dict) -> None:
         try:
             profile.pace = TripPace(pace_val)
         except (ValueError, TypeError):
-            pass
+            pace_lower = str(pace_val).lower().strip()
+            fallback = {"moderate": TripPace.BALANCED}
+            profile.pace = fallback.get(pace_lower, TripPace.BALANCED)
+            logger.warning(
+                "[ChatRoutes] Invalid pace '%s', defaulting to '%s'",
+                pace_val, profile.pace.value,
+            )
 
     # List fields
     if profile_data.get("interests"):
@@ -294,6 +300,11 @@ async def process_message_stream(
                     }
                 elif result.get("itinerary"):
                     actions = [{"type": "CREATE_TRIP", "data": result["itinerary"]}]
+                    # Send structured itinerary data to Flutter for card rendering
+                    await manager.send(ws_key, {
+                        "type": "itinerary_data",
+                        "data": result["itinerary"],
+                    })
                     if result.get("profile"):
                         profile_from_ai = result["profile"]
 
@@ -567,6 +578,11 @@ async def websocket_new_chat(
                             full_response = result_message
                         if result.get("itinerary"):
                             actions = [{"type": "CREATE_TRIP", "data": result["itinerary"]}]
+                            # Send structured itinerary data to Flutter for card rendering
+                            await manager.send(ws_key, {
+                                "type": "itinerary_data",
+                                "data": result["itinerary"],
+                            })
                         if result.get("profile"):
                             profile_data_from_ai = result["profile"]
 
@@ -782,6 +798,30 @@ async def get_history(
 # ═════════════════════════════════════════════════════════════════════════════
 # DELETE /chat/{trip_id}/clear
 # ═════════════════════════════════════════════════════════════════════════════
+
+# ═════════════════════════════════════════════════════════════════════════════
+# GET /chats/ — list all conversations for the current user
+# ═════════════════════════════════════════════════════════════════════════════
+
+@router.get("/chats/")
+async def list_chats(
+    current_user: dict         = Depends(get_current_user),
+    db:           AsyncSession = Depends(get_db),
+    limit:        int          = Query(50, description="Max conversations to return"),
+):
+    """Return all conversations for the authenticated user, newest first.
+
+    Each conversation includes:
+      - conversation_id
+      - trip_id          (if linked)
+      - trip             (nested object with trip_id, trip_name, destination, status)
+      - created_at       (ISO-8601)
+      - last_message     (snippet of the most recent message)
+      - last_message_at  (ISO-8601)
+    """
+    svc = ChatService(db)
+    return await svc.get_user_conversations(current_user["uid"], limit=limit)
+
 
 @router.delete("/chat/{trip_id}/clear")
 async def clear_chat(

@@ -400,7 +400,7 @@ class TestProfileCompleteness:
         profile = _make_profile(
             budget_level="moderate",
             travel_style="cultural",
-            pace="moderate",
+            pace="balanced",
             interests=["history"],
             food_preferences=["local cuisine"],
             accommodation_preferences=["boutique hotel"],

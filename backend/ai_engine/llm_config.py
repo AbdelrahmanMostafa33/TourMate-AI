@@ -291,7 +291,7 @@ _init_key_manager()
 
 AGENT_LLM_REGISTRY: Dict[str, LLMConfig] = {
     # ── Groq — classification, extraction, validation (massive RPD headroom) ──
-    "router":         LLMConfig(Provider.GROQ, "llama-3.3-70b-versatile", temperature=0.7, max_tokens=2048),
+    "router":         LLMConfig(Provider.GROQ, "llama-3.3-70b-versatile", temperature=0.8, max_tokens=2048),
     "preference_reranker": LLMConfig(Provider.GROQ, "llama-3.1-8b-instant",  temperature=0.2, max_tokens=2048),
     "validator":      LLMConfig(Provider.GROQ, "llama-3.3-70b-versatile", temperature=0.2, max_tokens=2048),
     "review_qa":      LLMConfig(Provider.GROQ, "llama-3.3-70b-versatile", temperature=0.7, max_tokens=8192),

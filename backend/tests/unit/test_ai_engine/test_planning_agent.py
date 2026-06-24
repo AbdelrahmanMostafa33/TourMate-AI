@@ -252,7 +252,11 @@ class TestTrimForPrompt:
         hotel = _make_hotel_candidate()
         trimmed = _trim_for_prompt(hotel)
         assert trimmed["accommodation_type"] == "hotel"
-        assert trimmed["amenities"] == ["wifi", "pool", "spa"]
+        # amenities and interest_tags are omitted to save tokens —
+        # category="hotel" + accommodation_type are sufficient for the planner.
+        assert "amenities" not in trimmed
+        assert "interest_tags" not in trimmed
+        assert "sub_category" not in trimmed
 
     def test_non_hotel_excludes_accommodation_type(self):
         place = _make_candidate()
@@ -299,7 +303,9 @@ class TestTrimForPrompt:
     def test_missing_optional_fields_default(self):
         candidate = {"id": "x", "name": "X", "category": "test", "lat": 0.0, "lon": 0.0}
         trimmed = _trim_for_prompt(candidate)
-        assert trimmed["sub_category"] == ""
+        # sub_category and interest_tags are omitted when empty to save tokens
+        assert "sub_category" not in trimmed
+        assert "interest_tags" not in trimmed
         assert trimmed["score"] == 0.0
 
 

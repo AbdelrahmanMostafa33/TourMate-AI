@@ -15,7 +15,7 @@ def make_mock_trip_profile():
     profile.trip_id = "trip_001"
     profile.budget_level = "moderate"
     profile.travel_style = "cultural"
-    profile.pace = "moderate"
+    profile.pace = "balanced"
     profile.interests = ["history", "art", "food"]
     profile.food_preferences = ["local cuisine"]
     profile.accommodation_preferences = ["boutique hotel"]

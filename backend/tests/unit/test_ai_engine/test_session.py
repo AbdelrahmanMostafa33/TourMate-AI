@@ -106,7 +106,7 @@ class TestTripSlots:
         slots.fill_defaults()
         assert slots.budget_level == "moderate"
         assert slots.travel_style == "cultural"
-        assert slots.pace == "moderate"
+        assert slots.pace == "balanced"
         assert slots.group_size == 2
         assert slots.traveler_group_type == "couple"
 

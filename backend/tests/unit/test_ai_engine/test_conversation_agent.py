@@ -44,7 +44,7 @@ def _make_plan_result(city, days, **extra):
         "plan_trip", response="Generating your itinerary!",
         destination_city=city, duration_days=days,
         travel_dates="next month", group_size=2, traveler_group_type="solo",
-        budget_level="moderate", travel_style="cultural", pace="moderate",
+        budget_level="moderate", travel_style="cultural", pace="balanced",
         interests=["history", "food"], food_preferences=["local cuisine"],
         accommodation_preferences=["hotel"], **extra,
     )
@@ -344,3 +344,201 @@ class TestHandleChatStream:
         # Then: the result event has phase == "itinerary_review"
         result_event = next(e for e in events if e["type"] == "result")
         assert result_event["data"]["phase"] == "itinerary_review"
+
+
+# ── _enrich_candidate_pool_by_category Tests ──────────────────────────────
+
+class TestEnrichCandidatePoolByCategory:
+    """Tests for the _enrich_candidate_pool_by_category() function."""
+
+    @pytest.mark.asyncio
+    @patch("ai_engine.agents.operations._detect_category_hints")
+    @patch("ai_engine.tools.places_tool.get_places_for_city")
+    async def test_no_category_hints_returns_none(
+        self, mock_get_places, mock_detect_hints
+    ):
+        """When the request has no detectable category, return None."""
+        mock_detect_hints.return_value = {}
+
+        from ai_engine.chat.conversation_agent import _enrich_candidate_pool_by_category
+
+        result = await _enrich_candidate_pool_by_category(
+            modification_request="swap giza for sphinx",
+            destination_city="Cairo",
+            existing_pool=[],
+        )
+
+        assert result is None
+        mock_get_places.assert_not_called()
+
+    @pytest.mark.asyncio
+    @patch("ai_engine.agents.operations._detect_category_hints")
+    @patch("ai_engine.tools.places_tool.get_places_for_city")
+    async def test_db_returns_empty_returns_none(
+        self, mock_get_places, mock_detect_hints
+    ):
+        """When the DB returns no places, return None."""
+        mock_detect_hints.return_value = {"category": "attraction", "sub_category": "museums"}
+        mock_get_places.return_value = []
+
+        from ai_engine.chat.conversation_agent import _enrich_candidate_pool_by_category
+
+        result = await _enrich_candidate_pool_by_category(
+            modification_request="add museums in the trip",
+            destination_city="Cairo",
+            existing_pool=[],
+        )
+
+        assert result is None
+        mock_get_places.assert_called_once_with("Cairo")
+
+    @pytest.mark.asyncio
+    @patch("ai_engine.agents.operations._detect_category_hints")
+    @patch("ai_engine.tools.places_tool.get_places_for_city")
+    async def test_no_matching_subcategory_returns_none(
+        self, mock_get_places, mock_detect_hints
+    ):
+        """When no places match the detected sub_category, return None."""
+        mock_detect_hints.return_value = {"category": "attraction", "sub_category": "museums"}
+        mock_get_places.return_value = [
+            {"id": "p1", "name": "Park", "category": "attraction", "sub_category": "parks"},
+            {"id": "p2", "name": "Nightclub", "category": "attraction", "sub_category": "nightlife"},
+        ]
+
+        from ai_engine.chat.conversation_agent import _enrich_candidate_pool_by_category
+
+        result = await _enrich_candidate_pool_by_category(
+            modification_request="add museums in the trip",
+            destination_city="Cairo",
+            existing_pool=[],
+        )
+
+        assert result is None
+
+    @pytest.mark.asyncio
+    @patch("ai_engine.agents.operations._detect_category_hints")
+    @patch("ai_engine.tools.places_tool.get_places_for_city")
+    async def test_adds_new_matching_places_to_pool(
+        self, mock_get_places, mock_detect_hints
+    ):
+        """Matching new places are added to the existing pool."""
+        mock_detect_hints.return_value = {"category": "attraction", "sub_category": "museums"}
+        mock_get_places.return_value = [
+            {"id": "m1", "name": "Egyptian Museum", "category": "attraction", "sub_category": "museums", "rating": 4.8},
+            {"id": "m2", "name": "Islamic Art Museum", "category": "attraction", "sub_category": "museums", "rating": 4.5},
+            {"id": "p1", "name": "Park", "category": "attraction", "sub_category": "parks", "rating": 4.2},
+        ]
+
+        from ai_engine.chat.conversation_agent import _enrich_candidate_pool_by_category
+
+        existing = [{"id": "existing_1", "name": "Giza Necropolis"}]
+        result = await _enrich_candidate_pool_by_category(
+            modification_request="add museums in the trip",
+            destination_city="Cairo",
+            existing_pool=existing,
+        )
+
+        assert result is not None
+        assert len(result) == 3  # 1 existing + 2 new museums
+        assert result[0]["id"] == "existing_1"  # existing first
+        assert result[1]["id"] == "m1"  # higher rating first
+        assert result[2]["id"] == "m2"
+
+    @pytest.mark.asyncio
+    @patch("ai_engine.agents.operations._detect_category_hints")
+    @patch("ai_engine.tools.places_tool.get_places_for_city")
+    async def test_skips_duplicates_already_in_pool(
+        self, mock_get_places, mock_detect_hints
+    ):
+        """Places already in the existing pool are not duplicated."""
+        mock_detect_hints.return_value = {"category": "attraction", "sub_category": "museums"}
+        mock_get_places.return_value = [
+            {"id": "m1", "name": "Egyptian Museum", "category": "attraction", "sub_category": "museums", "rating": 4.8},
+        ]
+
+        from ai_engine.chat.conversation_agent import _enrich_candidate_pool_by_category
+
+        existing = [{"id": "m1", "name": "Egyptian Museum", "category": "attraction"}]
+        result = await _enrich_candidate_pool_by_category(
+            modification_request="add museums in the trip",
+            destination_city="Cairo",
+            existing_pool=existing,
+        )
+
+        assert result is None  # No new places to add
+
+    @pytest.mark.asyncio
+    @patch("ai_engine.agents.operations._detect_category_hints")
+    @patch("ai_engine.tools.places_tool.get_places_for_city")
+    async def test_limits_to_top_15_by_rating(
+        self, mock_get_places, mock_detect_hints
+    ):
+        """At most 15 matching places are added, sorted by rating descending."""
+        mock_detect_hints.return_value = {"category": "attraction", "sub_category": "museums"}
+
+        # 20 museums with descending ratings
+        museums = [
+            {"id": f"m{i}", "name": f"Museum {i}", "category": "attraction", "sub_category": "museums", "rating": round(5.0 - i * 0.1, 1)}
+            for i in range(20)
+        ]
+        mock_get_places.return_value = museums
+
+        from ai_engine.chat.conversation_agent import _enrich_candidate_pool_by_category
+
+        result = await _enrich_candidate_pool_by_category(
+            modification_request="add museums in the trip",
+            destination_city="Cairo",
+            existing_pool=[],
+        )
+
+        assert result is not None
+        assert len(result) == 15  # capped at 15
+        # Verify sorted by rating descending
+        ratings = [p["rating"] for p in result]
+        assert ratings == sorted(ratings, reverse=True)
+
+    @pytest.mark.asyncio
+    @patch("ai_engine.agents.operations._detect_category_hints")
+    @patch("ai_engine.tools.places_tool.get_places_for_city")
+    async def test_matches_by_category_only_when_no_subcategory(
+        self, mock_get_places, mock_detect_hints
+    ):
+        """When only category (not subcategory) is detected, match by category."""
+        mock_detect_hints.return_value = {"category": "restaurant"}
+        mock_get_places.return_value = [
+            {"id": "r1", "name": "Koshary", "category": "restaurant", "sub_category": "local cuisine", "rating": 4.5},
+            {"id": "a1", "name": "Museum", "category": "attraction", "sub_category": "museums", "rating": 4.8},
+            {"id": "h1", "name": "Hotel", "category": "hotel", "sub_category": "", "rating": 4.2},
+        ]
+
+        from ai_engine.chat.conversation_agent import _enrich_candidate_pool_by_category
+
+        result = await _enrich_candidate_pool_by_category(
+            modification_request="add more restaurants",
+            destination_city="Cairo",
+            existing_pool=[],
+        )
+
+        assert result is not None
+        assert len(result) == 1
+        assert result[0]["id"] == "r1"
+
+    @pytest.mark.asyncio
+    @patch("ai_engine.agents.operations._detect_category_hints")
+    @patch("ai_engine.tools.places_tool.get_places_for_city")
+    async def test_db_failure_returns_none(
+        self, mock_get_places, mock_detect_hints
+    ):
+        """When the DB query fails (returns empty), return None."""
+        mock_detect_hints.return_value = {"category": "attraction", "sub_category": "museums"}
+        mock_get_places.return_value = []  # simulate DB failure
+
+        from ai_engine.chat.conversation_agent import _enrich_candidate_pool_by_category
+
+        result = await _enrich_candidate_pool_by_category(
+            modification_request="add museums",
+            destination_city="Cairo",
+            existing_pool=[],
+        )
+
+        assert result is None

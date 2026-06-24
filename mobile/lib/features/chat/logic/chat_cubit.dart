@@ -47,6 +47,30 @@ class ChatCubit extends Cubit<ChatState> {
   /// Current pipeline steps exposed for the UI to read.
   List<PipelineStep> get pipelineSteps => List.unmodifiable(_pipelineSteps);
 
+  /// Start a fresh chat: disconnect current WS, clear all state, connect anew.
+  Future<void> resetForNewChat() async {
+    _repo.disconnect();
+    _messages.clear();
+    _pipelineSteps.clear();
+    _buffer = "";
+    _subscription?.cancel();
+    _subscription = null;
+    _lastTripId = null;
+    await connect();
+  }
+
+  /// Switch to a trip chat: disconnect, clear state, load history, connect.
+  Future<void> switchToTrip(String tripId) async {
+    _repo.disconnect();
+    _messages.clear();
+    _pipelineSteps.clear();
+    _buffer = "";
+    _subscription?.cancel();
+    _subscription = null;
+    _lastTripId = tripId;
+    await connectToTrip(tripId, autoMsg: null);
+  }
+
   Future<void> connect() async {
     _lastTripId = null;
     emit(const ChatState.loading());
@@ -273,8 +297,10 @@ class ChatCubit extends Cubit<ChatState> {
         _buffer += data["data"];
 
         if (_messages.isNotEmpty && !_messages.last.isUser) {
-          _messages[_messages.length - 1] =
-              ChatMessage(text: _buffer, isUser: false, isStreaming: true);
+          _messages[_messages.length - 1] = _messages.last.copyWith(
+            text: _buffer,
+            isStreaming: true,
+          );
         } else {
           _messages.add(
             ChatMessage(text: _buffer, isUser: false, isStreaming: true),
@@ -289,8 +315,10 @@ class ChatCubit extends Cubit<ChatState> {
 
       case "done":
         if (_messages.isNotEmpty && !_messages.last.isUser) {
-          _messages[_messages.length - 1] =
-              ChatMessage(text: _buffer, isUser: false, isStreaming: false);
+          _messages[_messages.length - 1] = _messages.last.copyWith(
+            text: _buffer,
+            isStreaming: false,
+          );
         }
 
         emit(ChatState.connected(
@@ -313,34 +341,15 @@ class ChatCubit extends Cubit<ChatState> {
         break;
 
       case "actions":
-        final actionsList = data["data"] as List<dynamic>?;
-        if (actionsList != null) {
-          for (final action in actionsList) {
-            if (action is Map && action["type"] == "CREATE_TRIP") {
-              final rawData = action["data"];
-              if (rawData is Map<String, dynamic>) {
-                final itineraryData = ItineraryData.fromJson(rawData);
-                // Update the last assistant message with structured itinerary
-                if (_messages.isNotEmpty && !_messages.last.isUser) {
-                  _messages[_messages.length - 1] = _messages.last.copyWith(
-                    itinerary: itineraryData,
-                  );
-                  if (!isClosed) {
-                    emit(ChatState.connected(
-                      messages: List.from(_messages),
-                      isTyping: false,
-                    ));
-                  }
-                }
-              }
-            }
-          }
-        }
+        // Non-CREATE_TRIP actions (e.g. ADD_DAY, ADD_ACTIVITY) handled server-side.
+        // The itinerary card already has the latest data from 'itinerary_data'.
         break;
 
       case "itinerary_data":
         // Full structured itinerary JSON arrived from the backend.
         // Parse it and attach to the last assistant message.
+        // Preserve the current isTyping state so the card can render
+        // mid-stream without abruptly hiding the typing indicator.
         final rawItinerary = data["data"];
         if (rawItinerary is Map<String, dynamic>) {
           try {
@@ -350,9 +359,13 @@ class ChatCubit extends Cubit<ChatState> {
                 itinerary: itineraryData,
               );
               if (!isClosed) {
+                final currentIsTyping = state.maybeWhen(
+                  connected: (_, isTyping, _, _) => isTyping,
+                  orElse: () => false,
+                );
                 emit(ChatState.connected(
                   messages: List.from(_messages),
-                  isTyping: false,
+                  isTyping: currentIsTyping,
                 ));
               }
             }
