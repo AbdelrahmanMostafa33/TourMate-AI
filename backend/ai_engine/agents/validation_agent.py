@@ -197,9 +197,9 @@ def _run_programmatic_checks(itinerary: dict) -> list[str]:
             rank = _TIME_RANK.get(slot, -1)
             if rank < prev_rank:
                 issues.append(
-                    f"Day {day_num}: stop #{i + 1} '{stop.get("name", "?")}' "
-                    f"has suggested_time_of_day='{slot}' which is out of order "
-                    f"(previous was '{stops[i - 1].get("suggested_time_of_day", "?")}')"
+                    f'Day {day_num}: stop #{i + 1} "{stop.get("name", "?")}" '
+                    f'has suggested_time_of_day="{slot}" which is out of order '
+                    f'(previous was "{stops[i - 1].get("suggested_time_of_day", "?")}")'
                 )
             prev_rank = rank
 
