@@ -8,7 +8,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from ai_engine.tools.profile_tool import load_mock_profile
 from ai_engine.graph.state import TripProfile
 from ai_engine.graph.graph_builder import build_trip_graph
-from ai_engine.profiling.behavioral_profile import profile_to_text, is_profile_complete
+from ai_engine.tools.profile_tool import profile_to_text, is_profile_complete
 
 
 def test_load_mock_profile():

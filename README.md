@@ -13,7 +13,7 @@
 [![Firebase](https://img.shields.io/badge/Firebase-Auth-FFCA28?style=for-the-badge&logo=firebase&logoColor=black)](https://firebase.google.com)
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-Database-4169E1?style=for-the-badge&logo=postgresql&logoColor=white)](https://www.postgresql.org)
 
-*TourMate AI generates personalized, multi-day travel itineraries through natural conversation — powered by a multi-agent AI system that understands your travel personality.*
+*TourMate AI generates personalized, multi-day travel itineraries through natural conversation — powered by a modular AI pipeline that understands your travel personality.*
 
 [Features](#-features) · [Architecture](#-architecture) · [Getting Started](#-getting-started) · [API Reference](#-api-reference) · [Tech Stack](#%EF%B8%8F-tech-stack) · [Team](#-team)
 
@@ -30,10 +30,10 @@ Instead of browsing generic travel guides, users simply **chat** with TourMate �
 ### What Makes TourMate Different?
 
 - 🧠 **Behavioral Profiling** — Learns your travel style through an onboarding quiz and adapts over time
-- 🤖 **7-Agent Pipeline** — Preference, Retrieval, Ranking, Planning, Optimization, and Validation agents collaborate via LangGraph
+- 🤖 **6-Stage Pipeline** — Profile Loader → Place Retriever → Candidate Scorer → Planner → Route Optimizer → Itinerary Validator, orchestrated via LangGraph
 - 🖼️ **Multimodal Input** — Gemini 2.5 Flash VLM understands both text and images to extract travel preferences
 - 🗺️ **Real-World Data** — PostgreSQL-backed place database with Bayesian popularity scores + OSRM routing
-- 💬 **Unified Router** — Single context-aware LLM call handles intent, slot extraction, and responses
+- 💬 **Message Interpreter** — Single context-aware LLM call handles intent, slot extraction, and responses
 - 🔄 **Adaptive Personalization** — Redis-backed session memory with conversation state machine
 
 ---
@@ -53,20 +53,19 @@ Instead of browsing generic travel guides, users simply **chat** with TourMate �
 
 ### 💬 Multimodal Chat
 - Real-time WebSocket-based chat interface
-- Unified Router — single structured-output LLM call for intent + extraction
+- Message Interpreter — single structured-output LLM call for intent + extraction
 - Gemini VLM image analysis for travel preference extraction
 - Conversation state machine: GREETING → SLOT_FILLING → PLAN_GENERATION → ITINERARY_REVIEW
 - Redis-backed session persistence with automatic TTL
 
 ### 🗓️ AI Itinerary Generation
-- 7-agent LangGraph pipeline:
-  - **Load Profile** — Loads user behavioral profile from DB
-  - **Preference Agent** — Extracts structured preferences from conversation (Groq Llama 3.1 8B)
-  - **Retrieval Agent** — Filters places using SQL-style criteria from PostgreSQL
-  - **Ranking Agent** — Scores candidates with multi-signal formula + diversity
-  - **Planning Agent** — Generates day-by-day itinerary (Gemini 2.5 Flash)
-  - **Optimization Agent** — Reorders stops using OSRM routing + 2-opt
-  - **Validation Agent** — Programmatic feasibility + LLM quality checks (Groq Llama 3.1 8B)
+- 6-stage LangGraph pipeline:
+  - **Profile Loader** — Loads user behavioral profile from DB
+  - **Place Retriever** — Filters places using SQL-style criteria from PostgreSQL
+  - **Candidate Scorer** — Scores candidates with multi-signal formula + diversity
+  - **Planner** — Generates day-by-day itinerary via LLM (Gemini 2.5 Flash)
+  - **Route Optimizer** — Reorders stops using OSRM routing + 2-opt
+  - **Itinerary Validator** — Programmatic feasibility + LLM quality checks (Groq Llama 3.1 8B)
 - Automatic retry loop when validation fails
 
 ### 📍 Places & Exploration
@@ -107,24 +106,24 @@ Instead of browsing generic travel guides, users simply **chat** with TourMate �
 │  │ Users/     │ │  (ai_engine/)  │ │  Sessions + Cache    │ │
 │  │ Trips/     │ │                │ │                      │ │
 │  │ Places/    │ │                │ │                      │ │
-│  │ Reviews    │ │                │ │                      │ │
+│  │ Reviews    │ │                │ │                      │
 │  └────────────┘ └────────┬───────┘ └──────────────────────┘ │
 └───────────────────────────┼──────────────────────────────────┘
                             │
            ┌────────────────▼────────────────┐
-           │      Conversation Agent          │
-           │   (Unified Router + State Mgmt) │
+           │        Orchestrator              │
+           │  (Message Interpreter + State)  │
            └────────────────┬────────────────┘
                             │
            ┌────────────────▼────────────────┐
            │      LangGraph Pipeline          │
            │                                  │
-           │  load_profile → preference       │
-           │      → retrieval → ranking       │
-           │      → planner → optimizer       │
-           │      → validator ──┐             │
-           │                    │ (retry)     │
-           │                    └──→ planner  │
+           │  load_profile → retrieval        │
+           │  → ranking → planner             │
+           │  → optimizer → validator         │
+           │      └───────────┬───────────────┘│
+           │                  │ (retry loop)   │
+           │                  └──→ planner     │
            │                                  │
            │  External: Gemini · Groq · OSRM  │
            └──────────────────────────────────┘
@@ -251,8 +250,9 @@ pytest tests/unit/test_ai_engine/test_llm_client.py::test_intent_plan_trip -v
 TourMate-AI/
 ├── backend/
 │   ├── ai_engine/                    # 🤖 AI Layer
-│   │   ├── agents/                   # 7 specialized agents
-│   │   ├── chat/                     # Conversation handling
+│   │   ├── agents/                   # Planning agent (LLM-based)
+│   │   ├── services/                 # Pipeline services (retriever, scorer, optimizer, validator)
+│   │   ├── chat/                     # Orchestrator + message interpreter
 │   │   ├── graph/                    # LangGraph pipeline
 │   │   ├── memory/                   # Redis session management
 │   │   ├── tools/                    # External integrations

@@ -20,7 +20,7 @@ class TripProfile(TypedDict):
     # ── Core Preferences ──────────────────────────────────────────
     budget_level: Optional[str]        # "budget" | "moderate" | "luxury"
     travel_style: Optional[str]        # "romantic" | "adventure" | "family" | "solo" | "cultural" | "relaxation"
-    pace: Optional[str]                # "relaxed" | "balanced" | "packed"
+    pace: Optional[str]                # "relaxed" | "moderate" | "packed"
 
     # ── Interest & Preference Lists ───────────────────────────────
     interests: List[str]               # e.g. ["history", "food", "art"]

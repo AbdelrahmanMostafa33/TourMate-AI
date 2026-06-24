@@ -20,7 +20,7 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), ".")))
 from dotenv import load_dotenv
 load_dotenv()
 
-from ai_engine.chat.orchestrator import handle_chat
+from ai_engine.conversation.orchestrator import handle_chat
 
 
 async def main():

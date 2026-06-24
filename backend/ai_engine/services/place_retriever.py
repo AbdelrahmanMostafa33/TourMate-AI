@@ -16,60 +16,12 @@ from typing import Optional
 from ai_engine.graph.state import TripState
 from ai_engine.tools.places_tool import get_places_for_city  # async
 from ai_engine.tools.haversine import haversine
+from ai_engine.tools.slot_normalizer import map_accommodation_to_type
 
 
 # ── Filter thresholds ────────────────────────────────────────────────────────
 
 MIN_RATING = 3.5
-
-
-# ── Accommodation Type Mapping ───────────────────────────────────────────────
-
-# Maps natural language accommodation phrases to canonical types.
-# Order matters: more specific phrases first to avoid partial matches.
-_ACCOMMODATION_KEYWORDS: list[tuple[str, str]] = [
-    # Hostel keywords
-    ("hostel",         "hostel"),
-    ("backpacker",     "hostel"),
-    ("dorm",           "hostel"),
-    # Resort keywords
-    ("resort",         "resort"),
-    ("beach resort",   "resort"),
-    ("all-inclusive",  "resort"),
-    ("spa resort",     "resort"),
-    # Luxury keywords
-    ("luxury",         "luxury"),
-    ("boutique",       "luxury"),
-    ("palace",         "luxury"),
-    ("five star",      "luxury"),
-    ("5-star",         "luxury"),
-    ("premium",        "luxury"),
-    ("high-end",       "luxury"),
-    ("upscale",        "luxury"),
-    # Hotel (default) keywords
-    ("hotel",          "hotel"),
-    ("apartment",      "hotel"),
-    ("airbnb",         "hotel"),
-    ("motel",          "hotel"),
-]
-
-
-def _map_accommodation_to_type(accommodation_preferences: list[str]) -> str:
-    """
-    Map a list of natural language accommodation preferences to a canonical
-    accommodation type string (e.g., 'luxury', 'resort', 'hostel', 'hotel').
-
-    Checks each preference phrase against keyword mappings.
-    Returns the last matching type, or an empty string if no match.
-    """
-    result = ""
-    for pref in accommodation_preferences:
-        pref_lower = pref.lower().strip()
-        for keyword, acc_type in _ACCOMMODATION_KEYWORDS:
-            if keyword in pref_lower:
-                result = acc_type
-                break
-    return result
 
 
 # Minimum popularity score to include a place (0 = no filter)
@@ -101,7 +53,7 @@ def _apply_filters(
     """
     center = _compute_city_center(places)
     acc_prefs = preferences.get("accommodation_preferences") or []
-    accommodation_type = _map_accommodation_to_type(acc_prefs)
+    accommodation_type = map_accommodation_to_type(acc_prefs)
 
     filtered = []
     for place in places:

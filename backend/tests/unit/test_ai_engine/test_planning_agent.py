@@ -156,87 +156,6 @@ def _make_planning_state(**overrides) -> dict:
     return _make_state(**defaults)
 
 
-# ── _repair_missing_commas Tests ────────────────────────────────────────────────
-
-class TestRepairMissingCommas:
-    """Tests for the _repair_missing_commas() function."""
-
-    def test_valid_json_unchanged(self):
-        """Already-valid JSON should be returned unchanged."""
-        from ai_engine.agents.planning_agent import _repair_missing_commas
-        text = '{"a": 1, "b": 2}'
-        assert _repair_missing_commas(text) == text
-
-    def test_missing_comma_between_string_values(self):
-        """Missing comma between string key-value pairs."""
-        from ai_engine.agents.planning_agent import _repair_missing_commas
-        text = '{"name": "Museum" "id": "123"}'
-        result = _repair_missing_commas(text)
-        import json
-        parsed = json.loads(result)
-        assert parsed["name"] == "Museum"
-        assert parsed["id"] == "123"
-
-    def test_missing_comma_between_nested_keys(self):
-        """Missing comma between keys within a nested object (realistic planner output)."""
-        from ai_engine.agents.planning_agent import _repair_missing_commas
-        text = '{"day": 1, "stops": [{"name": "Museum" "category": "attraction"}]}'
-        result = _repair_missing_commas(text)
-        import json
-        parsed = json.loads(result)
-        assert parsed["stops"][0]["name"] == "Museum"
-        assert parsed["stops"][0]["category"] == "attraction"
-
-    def test_missing_comma_in_array(self):
-        """Missing commas between array elements."""
-        from ai_engine.agents.planning_agent import _repair_missing_commas
-        text = '[1 2 3]'
-        result = _repair_missing_commas(text)
-        import json
-        parsed = json.loads(result)
-        assert parsed == [1, 2, 3]
-
-    def test_missing_comma_before_nested_array(self):
-        """Missing comma before a nested array."""
-        from ai_engine.agents.planning_agent import _repair_missing_commas
-        text = '{"items": [1 2] "other": 3}'
-        result = _repair_missing_commas(text)
-        import json
-        parsed = json.loads(result)
-        assert parsed["items"] == [1, 2]
-        assert parsed["other"] == 3
-
-    def test_multiple_missing_commas(self):
-        """Multiple missing commas should all be fixed."""
-        from ai_engine.agents.planning_agent import _repair_missing_commas
-        text = '{"a": 1 "b": 2 "c": 3}'
-        result = _repair_missing_commas(text)
-        import json
-        parsed = json.loads(result)
-        assert parsed == {"a": 1, "b": 2, "c": 3}
-
-    def test_truncated_json_not_affected(self):
-        """Truncated JSON should not be corrupted by comma repair."""
-        from ai_engine.agents.planning_agent import _repair_missing_commas
-        # Truncated: missing closing brace
-        text = '{"a": 1, "b": 2'
-        result = _repair_missing_commas(text)
-        # Should still fail to parse (truncation repair needed)
-        import json
-        with pytest.raises(json.JSONDecodeError):
-            json.loads(result)
-
-    def test_strings_with_special_chars_preserved(self):
-        """Strings containing braces/brackets don't confuse the repair."""
-        from ai_engine.agents.planning_agent import _repair_missing_commas
-        text = '{"desc": "foo [bar] {baz}", "val": 42}'
-        result = _repair_missing_commas(text)
-        import json
-        parsed = json.loads(result)
-        assert parsed["desc"] == 'foo [bar] {baz}'
-        assert parsed["val"] == 42
-
-
 # ── _trim_for_prompt Tests ────────────────────────────────────────────────────
 
 class TestTrimForPrompt:
@@ -293,9 +212,17 @@ class TestTrimForPrompt:
         assert trimmed["category"] == "attractions"
         assert trimmed["lat"] == 30.0478
         assert trimmed["lon"] == 31.2336
+        # composite_score is not set by _make_candidate, so it falls back to popularity_score
         assert trimmed["score"] == 95.0
 
-    def test_score_uses_popularity(self):
+    def test_score_prefers_composite_over_popularity(self):
+        """When composite_score is present, use it instead of popularity_score."""
+        candidate = _make_candidate(popularity_score=85, composite_score=73.5)
+        trimmed = _trim_for_prompt(candidate)
+        assert trimmed["score"] == 73.5
+
+    def test_score_falls_back_to_popularity_when_no_composite(self):
+        """Without composite_score, fall back to popularity_score (backward compat)."""
         candidate = _make_candidate(popularity_score=85)
         trimmed = _trim_for_prompt(candidate)
         assert trimmed["score"] == 85.0

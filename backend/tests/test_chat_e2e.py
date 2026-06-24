@@ -12,7 +12,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")
 
 
 async def main():
-    from ai_engine.chat.orchestrator import handle_chat
+    from ai_engine.conversation.orchestrator import handle_chat
 
     import uuid
     user_id = f"e2e_test_{uuid.uuid4().hex[:8]}"
@@ -106,7 +106,7 @@ async def main():
         print(f"  Last message: {last_message[:200] if last_message else 'None'}")
 
     # Cleanup session
-    from ai_engine.memory.redis_memory import get_session_manager
+    from ai_engine.conversation.redis_memory import get_session_manager
     manager = await get_session_manager()
     await manager.close()
 

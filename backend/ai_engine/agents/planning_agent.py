@@ -14,10 +14,9 @@ valid JSON with the required ``days`` key, eliminating manual extraction/repair.
 import json
 import logging
 from langchain_core.messages import SystemMessage, HumanMessage
-from ai_engine.llm_config import invoke_with_fallback
+from ai_engine.llm import invoke_with_fallback
 from ai_engine.graph.state import TripState
 from ai_engine.schemas.planning_schema import ItineraryPlan
-from ai_engine.utils.json_utils import repair_missing_commas as _repair_missing_commas
 
 logger = logging.getLogger(__name__)
 
@@ -193,7 +192,7 @@ def _trim_for_prompt(place: dict) -> dict:
         "category": place["category"],
         "lat": place["lat"],
         "lon": place["lon"],
-        "score": round(place.get("popularity_score", 0), 1),
+        "score": round(place.get("composite_score", place.get("popularity_score", 0)), 1),
     }
     # Keep sub_category + interest_tags for attractions/restaurants so the
     # LLM can match against user interests and enforce category diversity.

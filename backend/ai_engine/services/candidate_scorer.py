@@ -229,6 +229,17 @@ async def score_candidates(state: TripState) -> TripState:
     # 6. Diversity optimization
     candidates = _diversity_optimize(scored, duration_days)
 
+    # Attach composite scores to candidate dicts so the Planning Agent
+    # receives the true relevance signal (not just raw popularity).
+    # Scale from 0-1 to 0-100 to match the planner prompt expectations.
+    score_map: dict[str, float] = {}
+    for p, s in scored:
+        pid = p.get("id", "")
+        if pid:
+            score_map[pid] = round(s * 100.0, 1)
+    for c in candidates:
+        c["composite_score"] = score_map.get(c.get("id", ""), 0.0)
+
     state["candidate_places"] = candidates
     state["agent_messages"] = (
         state.get("agent_messages", [])

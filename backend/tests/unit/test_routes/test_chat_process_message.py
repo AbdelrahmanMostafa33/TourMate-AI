@@ -105,7 +105,7 @@ async def test_get_profile_data_returns_behavioral_fields():
     profile = MagicMock()
     profile.budget_level = "moderate"
     profile.travel_style = "cultural"
-    profile.pace = "balanced"
+    profile.pace = "moderate"
     profile.interests = ["history"]
     profile.food_preferences = ["fine dining"]
     profile.accommodation_preferences = ["resort"]

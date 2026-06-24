@@ -142,6 +142,63 @@ class TestReordering:
 
     @pytest.mark.asyncio
     @patch("ai_engine.services.route_optimizer.compute_day_matrix")
+    async def test_preserves_time_of_day_blocks(self, mock_matrix):
+        """
+        Stops are reordered WITHIN their time-of-day blocks, not across them.
+        Morning stops stay in the morning block, afternoon in afternoon, etc.
+        """
+        # 4 stops: 2 morning (A close to C), 2 afternoon (B close to D)
+        # If we naively reordered by geography alone, we might end up with
+        # A -> D -> C -> B (5 + 5 + 25 = 35 min) — mixing blocks
+        # But the optimizer should keep blocks intact:
+        #   Morning: A -> C (5 min)
+        #   Afternoon: B -> D (5 min)
+        #   Total: A->C + C->B + B->D = 5 + 10 + 5 = 20 min
+        stops = [
+            {"name": "A_morning", "lat": 30.0, "lon": 31.0, "suggested_time_of_day": "morning"},
+            {"name": "B_afternoon", "lat": 30.5, "lon": 31.5, "suggested_time_of_day": "afternoon"},
+            {"name": "C_morning", "lat": 30.01, "lon": 31.01, "suggested_time_of_day": "morning"},
+            {"name": "D_afternoon", "lat": 30.51, "lon": 31.51, "suggested_time_of_day": "afternoon"},
+        ]
+        # Matrix: A-0, B-1, C-2, D-3
+        matrix = [
+            [0.0, 30.0, 5.0,  30.0],   # A -> everyone
+            [30.0, 0.0, 28.0, 5.0],    # B -> everyone
+            [5.0,  28.0, 0.0, 30.0],   # C -> everyone
+            [30.0, 5.0,  30.0, 0.0],   # D -> everyone
+        ]
+        mock_matrix.return_value = matrix
+
+        state = _make_opt_state(draft_itinerary=_make_draft(_make_day(stops)))
+        result = await optimize_route(state)
+
+        optimized = result["optimized_itinerary"]
+        day_stops = optimized["days"][0]["stops"]
+
+        # The two morning stops should come before the two afternoon stops
+        morning_names = [s["name"] for s in day_stops if s["suggested_time_of_day"] == "morning"]
+        afternoon_names = [s["name"] for s in day_stops if s["suggested_time_of_day"] == "afternoon"]
+
+        assert len(morning_names) == 2
+        assert len(afternoon_names) == 2
+
+        # Morning block should come before afternoon block
+        morning_end = max(i for i, s in enumerate(day_stops) if s["suggested_time_of_day"] == "morning")
+        afternoon_start = min(i for i, s in enumerate(day_stops) if s["suggested_time_of_day"] == "afternoon")
+        assert morning_end < afternoon_start
+
+        # Morning stops should be reordered within the morning block
+        # A(0,0) is at (30.0, 31.0), C(0.01) at (30.01, 31.01) — very close
+        # So morning order should be A_morning, C_morning or C_morning, A_morning
+        assert morning_names[0].endswith("_morning")
+        assert morning_names[1].endswith("_morning")
+
+        # Original time-of-day values should be preserved
+        assert day_stops[0]["suggested_time_of_day"] == "morning"
+        assert day_stops[1]["suggested_time_of_day"] == "morning"
+
+    @pytest.mark.asyncio
+    @patch("ai_engine.services.route_optimizer.compute_day_matrix")
     async def test_matrix_called_for_multi_stop_day(self, mock_matrix):
         """compute_day_matrix is called for days with >1 stop."""
         stops = [_make_stop("A", 30.0, 31.0), _make_stop("B", 30.1, 31.1)]

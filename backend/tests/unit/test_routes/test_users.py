@@ -24,7 +24,7 @@ def make_mock_trip_profile():
     profile.trip_id = "trip_001"
     profile.budget_level = "moderate"
     profile.travel_style = "cultural"
-    profile.pace = "balanced"
+    profile.pace = "moderate"
     profile.interests = ["history", "art", "food"]
     profile.generated_at = datetime.utcnow()
     profile.updated_at = datetime.utcnow()
@@ -38,7 +38,7 @@ def make_mock_trip_profile():
     profile.trip_id = "trip_001"
     profile.budget_level = "moderate"
     profile.travel_style = "cultural"
-    profile.pace = "balanced"
+    profile.pace = "moderate"
     profile.food_preferences = ["local cuisine"]
     profile.accommodation_preferences = ["boutique hotel"]
     profile.generated_at = datetime.utcnow()

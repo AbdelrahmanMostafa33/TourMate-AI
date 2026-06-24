@@ -11,7 +11,7 @@ from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import HumanMessage
 import base64
 
-from ai_engine.llm_config import get_llm_for_agent
+from ai_engine.llm import get_llm_for_agent
 
 
 # ── Backward-compatible wrappers ──────────────────────────────────────────────

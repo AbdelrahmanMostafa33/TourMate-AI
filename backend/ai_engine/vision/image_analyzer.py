@@ -1,10 +1,11 @@
 # backend/ai_engine/vision/image_analyzer.py
-
 import json
 
 from app.external.llm_client import analyze_image
 from ai_engine.prompts.vision_prompt import VISION_EXTRACTION_PROMPT
 from ai_engine.vision.feature_extractor import extract_and_validate
+from ai_engine.tools.json_utils import extract_json_from_llm_output
+
 
 
 def analyze_travel_image(image_bytes: bytes) -> dict:
@@ -40,8 +41,9 @@ def analyze_travel_image(image_bytes: bytes) -> dict:
         # analyze_image() handles base64 encoding internally.
         raw_response: str = analyze_image(image_bytes, VISION_EXTRACTION_PROMPT)
 
-        # Strip markdown fences for safe JSON parsing
-        cleaned = raw_response.strip().strip("```json").strip("```").strip()
+        # Extract JSON from LLM output (handles preamble, markdown fences,
+        # trailing commentary — unlike str.strip() which strips characters)
+        cleaned = extract_json_from_llm_output(raw_response)
 
         parsed = json.loads(cleaned)
         return extract_and_validate(parsed)

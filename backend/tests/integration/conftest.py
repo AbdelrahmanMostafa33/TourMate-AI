@@ -195,7 +195,7 @@ def build_pipeline_state(**overrides) -> dict:
         profile=_make_profile(
             budget_level="moderate",
             travel_style="cultural",
-            pace="balanced",
+            pace="moderate",
             interests=["history", "art", "food"],
             food_preferences=["local cuisine"],
             accommodation_preferences=["boutique hotel"],

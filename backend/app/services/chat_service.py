@@ -346,10 +346,7 @@ class ChatService:
                 except (ValueError, TypeError):
                     # Map legacy AI values (e.g. "moderate") to valid enum values
                     pace_lower = str(pace_val).lower().strip()
-                    fallback = {
-                        "moderate": TripPace.BALANCED.value,
-                    }
-                    profile.pace = fallback.get(pace_lower, TripPace.BALANCED.value)
+                    profile.pace = TripPace.MODERATE.value
                     logger.warning(
                         "[ChatService] Invalid pace '%s', defaulting to '%s'",
                         pace_val, profile.pace,

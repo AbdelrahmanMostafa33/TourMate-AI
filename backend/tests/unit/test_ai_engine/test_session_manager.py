@@ -14,8 +14,8 @@ Tests cover:
 import json
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
-from ai_engine.memory.conversation_state import ConversationPhase, ConversationState
-from ai_engine.memory.redis_memory import SessionManager
+from ai_engine.conversation.conversation_state import ConversationPhase, ConversationState
+from ai_engine.conversation.redis_memory import SessionManager
 
 
 # ── Fixtures ──────────────────────────────────────────────────────────────────
@@ -64,7 +64,7 @@ class TestConnection:
     @pytest.mark.asyncio
     async def test_connect_sets_redis(self):
         mgr = SessionManager(redis_url="redis://localhost:6379/0")
-        with patch("ai_engine.memory.redis_memory.aioredis") as mock_aioredis:
+        with patch("ai_engine.conversation.redis_memory.aioredis") as mock_aioredis:
             mock_redis = AsyncMock()
             mock_redis.ping = AsyncMock(return_value=True)
             mock_aioredis.from_url.return_value = mock_redis
@@ -74,7 +74,7 @@ class TestConnection:
     @pytest.mark.asyncio
     async def test_connect_failure_sets_none(self):
         mgr = SessionManager(redis_url="redis://localhost:6379/0")
-        with patch("ai_engine.memory.redis_memory.aioredis") as mock_aioredis:
+        with patch("ai_engine.conversation.redis_memory.aioredis") as mock_aioredis:
             mock_aioredis.from_url.side_effect = Exception("Connection refused")
             await mgr.connect()
             assert mgr.is_connected is False

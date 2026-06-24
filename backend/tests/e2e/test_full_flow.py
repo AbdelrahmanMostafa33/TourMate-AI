@@ -22,7 +22,7 @@ import pytest
 import requests
 from unittest.mock import AsyncMock, patch
 
-from ai_engine.chat.message_interpreter import InterpretationResult
+from ai_engine.conversation.message_interpreter import InterpretationResult
 
 BASE_URL = os.environ.get("BACKEND_BASE_URL", "http://localhost:8000")
 FIREBASE_TOKEN = os.environ.get("FIREBASE_TEST_TOKEN", "")
@@ -218,15 +218,15 @@ class TestAIPipeline:
     """AI pipeline runs correctly via handle_chat (no WebSocket needed)."""
 
     @pytest.mark.asyncio
-    @patch("ai_engine.chat.orchestrator.trip_graph", new_callable=AsyncMock)
-    @patch("ai_engine.chat.orchestrator.interpret_message")
-    @patch("ai_engine.chat.orchestrator.get_session_manager")
+    @patch("ai_engine.conversation.orchestrator.trip_graph", new_callable=AsyncMock)
+    @patch("ai_engine.conversation.orchestrator.interpret_message")
+    @patch("ai_engine.conversation.orchestrator.get_session_manager")
     async def test_ai_pipeline_slot_filling_to_itinerary(
         self, mock_get_manager, mock_route, mock_graph
     ):
         """Slot filling → AI pipeline runs → itinerary generated."""
-        from ai_engine.chat.orchestrator import handle_chat
-        from ai_engine.memory.conversation_state import ConversationState
+        from ai_engine.conversation.orchestrator import handle_chat
+        from ai_engine.conversation.conversation_state import ConversationState
 
         # Setup mock Redis session
         storage = {}
@@ -275,7 +275,7 @@ class TestAIPipeline:
                 "duration_days": 2,
                 "budget_level": "moderate",
                 "travel_style": "cultural",
-                "pace": "balanced",
+                "pace": "moderate",
                 "interests": ["history", "art"],
                 "food_preferences": ["local cuisine"],
                 "accommodation_preferences": ["boutique hotel"],

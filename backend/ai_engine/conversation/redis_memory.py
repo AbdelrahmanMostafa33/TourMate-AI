@@ -1,4 +1,4 @@
-# ai_engine/memory/redis_memory.py
+# ai_engine/conversation/redis_memory.py
 
 """
 Redis-backed session manager for ConversationState persistence.
@@ -32,7 +32,7 @@ from typing import List, Optional
 
 import redis.asyncio as aioredis
 
-from ai_engine.memory.conversation_state import ConversationState
+from ai_engine.conversation.conversation_state import ConversationState
 from ai_engine.constants import (
     SESSION_TTL_SECONDS,
     REDIS_SESSION_PREFIX,
@@ -58,13 +58,6 @@ class SessionManager:
     """
 
     def __init__(self, redis_url: Optional[str] = None):
-        """
-        Initialize the SessionManager.
-
-        Args:
-            redis_url: Redis connection string.  If None, reads from
-                       app.core.config.settings.REDIS_URL.
-        """
         if redis_url is None:
             from app.core.config import settings
             redis_url = settings.REDIS_URL
@@ -83,7 +76,6 @@ class SessionManager:
                 max_connections=10,
                 protocol=2,
             )
-            # Verify connection
             await self._redis.ping()
             logger.info("SessionManager connected to Redis at %s", self._redis_url)
         except Exception as e:
@@ -103,14 +95,6 @@ class SessionManager:
     # ── Core CRUD ────────────────────────────────────────────────────────────
 
     async def save(self, state: ConversationState) -> bool:
-        """
-        Persist a ConversationState to Redis.
-
-        Also updates the user's session list and active session pointer.
-        Uses the session's max_history TTL for expiry.
-
-        Returns True on success, False on failure.
-        """
         if not self._redis:
             logger.warning("Redis not connected — cannot save session %s", state.session_id)
             return False
@@ -120,33 +104,21 @@ class SessionManager:
             data = json.dumps(state.to_dict())
 
             pipe = self._redis.pipeline()
-
-            # Store the session state
             pipe.set(key, data, ex=SESSION_TTL_SECONDS)
-
-            # Add to user's session list (sorted set, score = timestamp)
             user_key = f"{REDIS_USER_SESSIONS_PREFIX}{state.user_id}"
             timestamp = datetime.now(timezone.utc).timestamp()
             pipe.zadd(user_key, {state.session_id: timestamp})
-
-            # Set as active session for the user
             active_key = f"{REDIS_ACTIVE_SESSION_PREFIX}{state.user_id}"
             pipe.set(active_key, state.session_id, ex=SESSION_TTL_SECONDS)
-
             await pipe.execute()
+
             logger.debug("Saved session %s for user %s", state.session_id, state.user_id)
             return True
-
         except Exception as e:
             logger.error("Failed to save session %s: %s", state.session_id, e)
             return False
 
     async def load(self, session_id: str) -> Optional[ConversationState]:
-        """
-        Load a ConversationState from Redis by session_id.
-
-        Returns the deserialized state, or None if not found / expired.
-        """
         if not self._redis:
             logger.warning("Redis not connected — cannot load session %s", session_id)
             return None
@@ -154,31 +126,20 @@ class SessionManager:
         try:
             key = f"{REDIS_SESSION_PREFIX}{session_id}"
             data = await self._redis.get(key)
-
             if data is None:
                 logger.debug("Session %s not found in Redis", session_id)
                 return None
-
-            state = ConversationState.from_dict(json.loads(data))
-            return state
-
+            return ConversationState.from_dict(json.loads(data))
         except Exception as e:
             logger.error("Failed to load session %s: %s", session_id, e)
             return None
 
     async def delete(self, session_id: str) -> bool:
-        """
-        Remove a session from Redis.
-
-        Returns True on success, False on failure.
-        """
         if not self._redis:
             return False
 
         try:
             key = f"{REDIS_SESSION_PREFIX}{session_id}"
-
-            # Load state first to get user_id for cleanup
             state = await self.load(session_id)
             if state:
                 user_key = f"{REDIS_USER_SESSIONS_PREFIX}{state.user_id}"
@@ -188,10 +149,8 @@ class SessionManager:
                 await pipe.execute()
             else:
                 await self._redis.delete(key)
-
             logger.debug("Deleted session %s", session_id)
             return True
-
         except Exception as e:
             logger.error("Failed to delete session %s: %s", session_id, e)
             return False
@@ -199,64 +158,39 @@ class SessionManager:
     # ── User-level queries ───────────────────────────────────────────────────
 
     async def get_active_session(self, user_id: str) -> Optional[ConversationState]:
-        """
-        Get the currently active session for a user.
-
-        This is the session the user was most recently interacting with.
-        Returns None if no active session exists or it has expired.
-        """
         if not self._redis:
             return None
 
         try:
             active_key = f"{REDIS_ACTIVE_SESSION_PREFIX}{user_id}"
             session_id = await self._redis.get(active_key)
-
             if session_id is None:
                 return None
-
             return await self.load(session_id)
-
         except Exception as e:
             logger.error("Failed to get active session for user %s: %s", user_id, e)
             return None
 
     async def get_user_sessions(self, user_id: str, limit: int = 10) -> List[ConversationState]:
-        """
-        Get recent sessions for a user, ordered by most recent first.
-
-        Args:
-            user_id: Firebase UID.
-            limit:   Maximum number of sessions to return.
-
-        Returns:
-            List of ConversationState objects (may be empty).
-        """
         if not self._redis:
             return []
 
         try:
             user_key = f"{REDIS_USER_SESSIONS_PREFIX}{user_id}"
-            # ZREVRANGE returns highest scores (newest timestamps) first
             session_ids = await self._redis.zrevrange(user_key, 0, limit - 1)
-
             states: List[ConversationState] = []
             for sid in session_ids:
                 state = await self.load(sid)
                 if state:
                     states.append(state)
-
             return states
-
         except Exception as e:
             logger.error("Failed to get sessions for user %s: %s", user_id, e)
             return []
 
     async def has_active_session(self, user_id: str) -> bool:
-        """Check whether a user has an active session."""
         if not self._redis:
             return False
-
         active_key = f"{REDIS_ACTIVE_SESSION_PREFIX}{user_id}"
         return bool(await self._redis.exists(active_key))
 
@@ -267,47 +201,28 @@ class SessionManager:
         user_id: str,
         session_id: Optional[str] = None,
     ) -> ConversationState:
-        """
-        Resume an existing session or create a new one.
-
-        If *session_id* is provided, try to load that specific session.
-        Otherwise, check for the user's active session.
-        If nothing found, create a brand new session.
-
-        Args:
-            user_id:    Firebase UID.
-            session_id: Optional specific session to resume.
-
-        Returns:
-            A ConversationState (either loaded or freshly created).
-        """
-        # Try loading specific session
         if session_id:
             state = await self.load(session_id)
             if state and state.user_id == user_id:
                 logger.info("Resumed session %s for user %s", session_id, user_id)
                 return state
 
-        # Try user's active session
         state = await self.get_active_session(user_id)
         if state:
             logger.info("Resumed active session %s for user %s", state.session_id, user_id)
             return state
 
-        # Create new session
         new_state = ConversationState(user_id=user_id)
         await self.save(new_state)
         logger.info("Created new session %s for user %s", new_state.session_id, user_id)
         return new_state
 
     async def save_and_update_active(self, state: ConversationState) -> bool:
-        """Save the state and ensure it's marked as the user's active session."""
         return await self.save(state)
 
     # ── TTL management ───────────────────────────────────────────────────────
 
     async def extend_ttl(self, session_id: str) -> bool:
-        """Extend the TTL of a session (called on each interaction)."""
         if not self._redis:
             return False
 
@@ -320,20 +235,11 @@ class SessionManager:
             return False
 
     async def cleanup_expired(self) -> int:
-        """
-        Remove expired session IDs from user session lists.
-
-        Redis handles key expiry automatically, but the sorted set entries
-        may reference expired keys.  This method cleans those up.
-
-        Returns the number of stale entries removed.
-        """
         if not self._redis:
             return 0
 
         removed = 0
         try:
-            # Scan for user session lists
             async for user_key in self._redis.scan_iter(match=f"{REDIS_USER_SESSIONS_PREFIX}*"):
                 session_ids = await self._redis.zrange(user_key, 0, -1)
                 for sid in session_ids:
@@ -342,9 +248,7 @@ class SessionManager:
                     if not exists:
                         await self._redis.zrem(user_key, sid)
                         removed += 1
-
             return removed
-
         except Exception as e:
             logger.error("Failed to cleanup expired sessions: %s", e)
             return removed
@@ -356,20 +260,13 @@ _session_manager: Optional[SessionManager] = None
 
 
 async def get_session_manager() -> SessionManager:
-    """
-    Get or create the singleton SessionManager instance.
-
-    This is the recommended way to access the session manager
-    throughout the application.  It lazily connects to Redis on
-    first use and retries reconnection if previously failed.
-    """
+    """Get or create the singleton SessionManager instance."""
     global _session_manager
 
     if _session_manager is None:
         _session_manager = SessionManager()
         await _session_manager.connect()
     elif not _session_manager.is_connected:
-        # Redis was previously unavailable — retry connection
         await _session_manager.connect()
 
     return _session_manager

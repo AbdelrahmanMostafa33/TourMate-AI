@@ -6,17 +6,21 @@ Unit tests for the Preference Reranker Agent (Mode 1).
 Tests cover:
     - apply_preference_adjustments(): applies adjustment dicts to TripSlots
     - interpret_preference_adjustment(): interprets vibe changes via mocked LLM
+
+Uses structured output (``PreferenceAdjustment`` model) so mocks return
+Pydantic model instances instead of raw MagicMock with ``.content``.
 """
 
-import json
 import pytest
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 
 from ai_engine.agents.preference_reranker_agent import (
     interpret_preference_adjustment,
     apply_preference_adjustments,
+    PREFERENCE_INTERPRETER_PROMPT,
+    PreferenceAdjustment,
 )
-from ai_engine.memory.conversation_state import TripSlots
+from ai_engine.conversation.conversation_state import TripSlots
 
 
 # ── Fixtures ──────────────────────────────────────────────────────────────────
@@ -135,7 +139,7 @@ class TestApplyPreferenceAdjustments:
 
         assert result["budget_level"] == "moderate"
         assert result["travel_style"] == "cultural"
-        assert result["pace"] == "balanced"
+        assert result["pace"] == "moderate"
         assert result["special_focus"] is None
 
     def test_change_style_to_adventure(self, filled_slots):
@@ -188,6 +192,39 @@ class TestApplyPreferenceAdjustments:
         assert "hotel" not in result.get("accommodation_preferences", [])
         # First preference becomes the accommodation style
         assert result["accommodation_preferences"][0] == "resort"
+
+    def test_accommodation_switch_to_hostels(self, filled_slots):
+        """Switch from hotel to hostel: add hostel, remove hotel."""
+        filled_slots.accommodation_preferences = ["hotel"]
+        adjustments = {
+            "accommodation_preferences_add": ["hostel"],
+            "accommodation_preferences_remove": ["hotel"],
+        }
+        result = apply_preference_adjustments(filled_slots, adjustments)
+        assert "hostel" in result.get("accommodation_preferences", [])
+        assert "hotel" not in result.get("accommodation_preferences", [])
+
+    def test_accommodation_switch_to_luxury(self, filled_slots):
+        """Switch from hotel to luxury: add luxury, remove hotel."""
+        filled_slots.accommodation_preferences = ["hotel"]
+        adjustments = {
+            "accommodation_preferences_add": ["luxury"],
+            "accommodation_preferences_remove": ["hotel"],
+        }
+        result = apply_preference_adjustments(filled_slots, adjustments)
+        assert "luxury" in result.get("accommodation_preferences", [])
+        assert "hotel" not in result.get("accommodation_preferences", [])
+
+    def test_accommodation_add_resort_keep_hotel(self, filled_slots):
+        """Add resort alongside existing hotel (no remove)."""
+        filled_slots.accommodation_preferences = ["hotel"]
+        adjustments = {
+            "accommodation_preferences_add": ["resort"],
+            "accommodation_preferences_remove": [],
+        }
+        result = apply_preference_adjustments(filled_slots, adjustments)
+        assert "hotel" in result.get("accommodation_preferences", [])
+        assert "resort" in result.get("accommodation_preferences", [])
 
     def test_accommodation_style_first_preference(self, filled_slots):
         """accommodation_style is the first item in accommodation_preferences."""
@@ -270,20 +307,25 @@ class TestApplyPreferenceAdjustments:
         assert result["interests"] == ["history"]
 
 
-# ── interpret_preference_adjustment Tests (with mocked LLM) ──────────────────
+# ── interpret_preference_adjustment Tests (with structured output) ────────────
 
 
 class TestInterpretPreferenceAdjustment:
+    """
+    Tests for ``interpret_preference_adjustment`` using structured output.
+
+    Mocks return ``PreferenceAdjustment`` Pydantic instances directly
+    (matching what ``invoke_with_fallback`` returns with ``structured_output``).
+    """
 
     @pytest.mark.asyncio
     async def test_more_entertaining(self):
         """'more entertaining' → adds entertainment/nightlife interests."""
-        mock_response = MagicMock()
-        mock_response.content = json.dumps({
-            "interests_add": ["entertainment", "nightlife"],
-            "special_focus": "evening entertainment and shows",
-            "rerank_reason": "Adding entertainment and nightlife interests boosts venues like cinemas, opera houses, and night spots in the ranking",
-        })
+        mock_response = PreferenceAdjustment(
+            interests_add=["entertainment", "nightlife"],
+            special_focus="evening entertainment and shows",
+            rerank_reason="Adding entertainment and nightlife interests boosts venues",
+        )
 
         with patch("ai_engine.agents.preference_reranker_agent.invoke_with_fallback", return_value=mock_response):
             result = await interpret_preference_adjustment("more entertaining")
@@ -295,11 +337,10 @@ class TestInterpretPreferenceAdjustment:
     @pytest.mark.asyncio
     async def test_cheaper(self):
         """'cheaper' → changes budget to budget level."""
-        mock_response = MagicMock()
-        mock_response.content = json.dumps({
-            "budget_level": "budget",
-            "rerank_reason": "Budget level filters expensive restaurants and hotels",
-        })
+        mock_response = PreferenceAdjustment(
+            budget_level="budget",
+            rerank_reason="Budget level filters expensive restaurants and hotels",
+        )
 
         with patch("ai_engine.agents.preference_reranker_agent.invoke_with_fallback", return_value=mock_response):
             result = await interpret_preference_adjustment("cheaper")
@@ -309,12 +350,11 @@ class TestInterpretPreferenceAdjustment:
     @pytest.mark.asyncio
     async def test_more_cultural(self):
         """'more cultural' → adds cultural interests and sets travel_style."""
-        mock_response = MagicMock()
-        mock_response.content = json.dumps({
-            "interests_add": ["history", "museums", "art"],
-            "travel_style": "cultural",
-            "rerank_reason": "Cultural interests boost museums and historic sites",
-        })
+        mock_response = PreferenceAdjustment(
+            interests_add=["history", "museums", "art"],
+            travel_style="cultural",
+            rerank_reason="Cultural interests boost museums and historic sites",
+        )
 
         with patch("ai_engine.agents.preference_reranker_agent.invoke_with_fallback", return_value=mock_response):
             result = await interpret_preference_adjustment("more cultural")
@@ -327,16 +367,15 @@ class TestInterpretPreferenceAdjustment:
     @pytest.mark.asyncio
     async def test_with_current_preferences(self):
         """Current preferences dict is included in the LLM prompt."""
-        mock_response = MagicMock()
-        mock_response.content = json.dumps({
-            "interests_add": ["entertainment"],
-            "rerank_reason": "Adding entertainment to existing cultural interests",
-        })
+        mock_response = PreferenceAdjustment(
+            interests_add=["entertainment"],
+            rerank_reason="Adding entertainment to existing cultural interests",
+        )
 
         current_prefs = {
             "budget_level": "moderate",
             "travel_style": "cultural",
-            "pace": "balanced",
+            "pace": "moderate",
             "interests": ["history", "art"],
             "food_preferences": ["local cuisine"],
             "accommodation_preferences": ["hotel"],
@@ -360,21 +399,10 @@ class TestInterpretPreferenceAdjustment:
         assert "entertainment" in result.get("interests_add", [])
 
     @pytest.mark.asyncio
-    async def test_llm_invalid_json_falls_back(self):
-        """LLM returns garbage → graceful fallback to empty dict."""
-        mock_response = MagicMock()
-        mock_response.content = "not valid json at all"
-
-        with patch("ai_engine.agents.preference_reranker_agent.invoke_with_fallback", return_value=mock_response):
-            result = await interpret_preference_adjustment("more entertaining")
-
-        assert result == {}
-
-    @pytest.mark.asyncio
-    async def test_llm_empty_json(self):
-        """LLM returns valid empty JSON object."""
-        mock_response = MagicMock()
-        mock_response.content = "{}"
+    async def test_llm_returns_none_falls_back(self):
+        """LLM returns None (all fields empty) → empty dict fallback."""
+        # A PreferenceAdjustment with all-None fields → model_dump(exclude_none=True) → {}
+        mock_response = PreferenceAdjustment()  # all fields default to None
 
         with patch("ai_engine.agents.preference_reranker_agent.invoke_with_fallback", return_value=mock_response):
             result = await interpret_preference_adjustment("no changes needed")
@@ -392,11 +420,10 @@ class TestInterpretPreferenceAdjustment:
     @pytest.mark.asyncio
     async def test_faster_pace_request(self):
         """'faster pace' → returns pace=packed."""
-        mock_response = MagicMock()
-        mock_response.content = json.dumps({
-            "pace": "packed",
-            "rerank_reason": "Packed pace encourages more stops per day",
-        })
+        mock_response = PreferenceAdjustment(
+            pace="packed",
+            rerank_reason="Packed pace encourages more stops per day",
+        )
 
         with patch("ai_engine.agents.preference_reranker_agent.invoke_with_fallback", return_value=mock_response):
             result = await interpret_preference_adjustment("faster pace")
@@ -406,13 +433,12 @@ class TestInterpretPreferenceAdjustment:
     @pytest.mark.asyncio
     async def test_romantic_trip_request(self):
         """'more romantic' → changes style to romantic, adds appropriate interests."""
-        mock_response = MagicMock()
-        mock_response.content = json.dumps({
-            "travel_style": "romantic",
-            "interests_add": ["scenic views", "fine dining"],
-            "special_focus": "romantic experiences",
-            "rerank_reason": "Romantic style boosts scenic spots and fine dining venues",
-        })
+        mock_response = PreferenceAdjustment(
+            travel_style="romantic",
+            interests_add=["scenic views", "fine dining"],
+            special_focus="romantic experiences",
+            rerank_reason="Romantic style boosts scenic spots and fine dining venues",
+        )
 
         with patch("ai_engine.agents.preference_reranker_agent.invoke_with_fallback", return_value=mock_response):
             result = await interpret_preference_adjustment("more romantic")
@@ -420,3 +446,32 @@ class TestInterpretPreferenceAdjustment:
         assert result.get("travel_style") == "romantic"
         assert "scenic views" in result.get("interests_add", [])
         assert "fine dining" in result.get("interests_add", [])
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# PREFERENCE_INTERPRETER_PROMPT structural checks
+# ══════════════════════════════════════════════════════════════════════════════
+
+
+class TestPreferenceInterpreterPrompt:
+    """
+    Verify the PREFERENCE_INTERPRETER_PROMPT includes accommodation
+    examples and field references so the LLM knows how to handle
+    accommodation changes.
+    """
+
+    def test_has_resort_example(self):
+        """The prompt includes an example about switching to resorts."""
+        assert "resorts instead of hotels" in PREFERENCE_INTERPRETER_PROMPT
+
+    def test_has_hostel_example(self):
+        """The prompt includes an example about switching to hostels."""
+        assert "switch to hostels" in PREFERENCE_INTERPRETER_PROMPT
+
+    def test_has_accommodation_add_field(self):
+        """The prompt references the accommodation_preferences_add field."""
+        assert "accommodation_preferences_add" in PREFERENCE_INTERPRETER_PROMPT
+
+    def test_has_accommodation_remove_field(self):
+        """The prompt references the accommodation_preferences_remove field."""
+        assert "accommodation_preferences_remove" in PREFERENCE_INTERPRETER_PROMPT

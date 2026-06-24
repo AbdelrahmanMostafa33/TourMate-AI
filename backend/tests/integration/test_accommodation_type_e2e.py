@@ -15,7 +15,8 @@ Agent logic (accommodation mapping, rating/distance filtering) runs for real.
 import pytest
 from unittest.mock import AsyncMock, patch
 
-from ai_engine.services.place_retriever import _map_accommodation_to_type, _apply_filters
+from ai_engine.tools.slot_normalizer import map_accommodation_to_type
+from ai_engine.services.place_retriever import _apply_filters
 from tests.unit.test_ai_engine.conftest import _make_profile, _make_hotel, _make_place
 
 
@@ -119,28 +120,28 @@ class TestMapAccommodationToType:
     """Natural language → canonical accommodation type mapping."""
 
     def test_resort_keyword(self):
-        assert _map_accommodation_to_type(["beach resort"]) == "resort"
+        assert map_accommodation_to_type(["beach resort"]) == "resort"
 
     def test_hostel_keyword(self):
-        assert _map_accommodation_to_type(["backpacker hostel"]) == "hostel"
+        assert map_accommodation_to_type(["backpacker hostel"]) == "hostel"
 
     def test_luxury_keyword(self):
-        assert _map_accommodation_to_type(["boutique hotel"]) == "luxury"
+        assert map_accommodation_to_type(["boutique hotel"]) == "luxury"
 
     def test_hotel_keyword(self):
-        assert _map_accommodation_to_type(["hotel"]) == "hotel"
+        assert map_accommodation_to_type(["hotel"]) == "hotel"
 
     def test_empty_preferences(self):
-        assert _map_accommodation_to_type([]) == ""
+        assert map_accommodation_to_type([]) == ""
 
     def test_all_inclusive_maps_to_resort(self):
-        assert _map_accommodation_to_type(["all-inclusive resort"]) == "resort"
+        assert map_accommodation_to_type(["all-inclusive resort"]) == "resort"
 
     def test_premium_maps_to_luxury(self):
-        assert _map_accommodation_to_type(["premium hotel"]) == "luxury"
+        assert map_accommodation_to_type(["premium hotel"]) == "luxury"
 
     def test_backpacker_maps_to_hostel(self):
-        assert _map_accommodation_to_type(["backpacker dorm"]) == "hostel"
+        assert map_accommodation_to_type(["backpacker dorm"]) == "hostel"
 
 
 # ═══════════════════════════════════════════════════════════════════════════

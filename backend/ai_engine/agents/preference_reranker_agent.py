@@ -9,14 +9,19 @@ this agent:
 
 This is Mode 1 of the itinerary editing system — faster than a full pipeline
 re-run because it skips retrieval and uses the existing places pool.
+
+Uses structured output (``with_structured_output``) to guarantee valid JSON
+from the LLM, eliminating manual JSON parsing and the fallback retry loop.
 """
 
-import json
 import logging
+from typing import List, Optional
+
 from langchain_core.messages import SystemMessage, HumanMessage
-from ai_engine.llm_config import invoke_with_fallback
+from pydantic import BaseModel, Field
+
+from ai_engine.llm import invoke_with_fallback
 from ai_engine.observability import traced
-from ai_engine.utils.json_utils import extract_json_from_llm_output
 
 # Create a logger instance for tracking execution, warnings, and errors
 logger = logging.getLogger(__name__)
@@ -48,7 +53,7 @@ fields that need to change.
 - `budget_level`: Change to "budget", "moderate", or "luxury"
 - `travel_style`: Change to "cultural", "adventure", "relaxation",
   "romantic", "family", or "solo"
-- `pace`: Change to "relaxed", "balanced", or "packed"
+- `pace`: Change to "relaxed", "moderate", or "packed"
 - `food_preferences_add`: New food interests to add
 - `food_preferences_remove`: Food interests to remove
 - `accommodation_preferences_add`: New accommodation types to add
@@ -84,6 +89,63 @@ fields that need to change.
 """
 
 
+# ── Structured Output Schema (Pydantic) ─────────────────────────────────────
+
+class PreferenceAdjustment(BaseModel):
+    """
+    Structured preference adjustments interpreted from a user's modification request.
+
+    All fields are optional — only fields that need to change are populated.
+    If no changes are needed, all fields remain None.  Uses ``model_dump(exclude_none=True)``
+    to produce a compact dict matching the current caller expectations.
+    """
+
+    interests_add: Optional[List[str]] = Field(
+        default=None,
+        description="New interests to add (e.g. ['entertainment', 'nightlife'])",
+    )
+    interests_remove: Optional[List[str]] = Field(
+        default=None,
+        description="Interests to remove",
+    )
+    budget_level: Optional[str] = Field(
+        default=None,
+        description="Budget level: 'budget', 'moderate', or 'luxury'",
+    )
+    travel_style: Optional[str] = Field(
+        default=None,
+        description="Travel style: 'cultural', 'adventure', 'relaxation', 'romantic', 'family', or 'solo'",
+    )
+    pace: Optional[str] = Field(
+        default=None,
+        description="Pace: 'relaxed', 'moderate', or 'packed'",
+    )
+    food_preferences_add: Optional[List[str]] = Field(
+        default=None,
+        description="New food interests to add",
+    )
+    food_preferences_remove: Optional[List[str]] = Field(
+        default=None,
+        description="Food interests to remove",
+    )
+    accommodation_preferences_add: Optional[List[str]] = Field(
+        default=None,
+        description="New accommodation types to add",
+    )
+    accommodation_preferences_remove: Optional[List[str]] = Field(
+        default=None,
+        description="Accommodation types to remove",
+    )
+    special_focus: Optional[str] = Field(
+        default=None,
+        description="A short phrase describing the new focus",
+    )
+    rerank_reason: Optional[str] = Field(
+        default=None,
+        description="One sentence explaining why these changes match the request",
+    )
+
+
 @traced(name="preference_reranker", tags=["agent", "reranker"], metadata={"role": "preference_reranker"})
 async def interpret_preference_adjustment(
     modification_request: str,
@@ -91,6 +153,9 @@ async def interpret_preference_adjustment(
 ) -> dict:
     """
     Interpret a vibe-change request and return preference adjustments.
+
+    Uses ``structured_output=PreferenceAdjustment`` to guarantee valid output
+    from the LLM, replacing the previous manual JSON extraction + retry loop.
 
     Args:
         modification_request: The user's request (e.g. "more entertaining")
@@ -138,7 +203,7 @@ Modification Request: {modification_request}
 
 {current_text}
 
-Determine the preference adjustments needed and return them as JSON."""
+Determine the preference adjustments needed."""
 
     # Build LangChain messages.
     # SystemMessage = instructions
@@ -148,65 +213,43 @@ Determine the preference adjustments needed and return them as JSON."""
         HumanMessage(content=prompt),
     ]
 
-    # Retry configuration in case the model returns invalid JSON
-    max_attempts = 2
-    last_error = None
+    # Single LLM call with structured output — invoke_with_fallback handles
+    # key rotation and retry on rate-limit / transient errors internally.
+    # The Pydantic model guarantees valid output, eliminating the old
+    # manual JSON extraction + 2-attempt retry loop.
+    try:
+        response: PreferenceAdjustment = await invoke_with_fallback(
+            "preference_reranker",
+            messages,
+            structured_output=PreferenceAdjustment,
+        )
 
-    # Retry loop
-    for attempt in range(1, max_attempts + 1):
-        try:
-            # Copy original messages so retries don't mutate them
-            attempt_messages = list(messages)
-
-            # If previous attempt failed, tell the model why and
-            # explicitly request valid JSON.
-            if attempt > 1 and last_error:
-                retry_note = (
-                    f"\n\nYour previous output was invalid: {last_error}. "
-                    f"Return ONLY a valid JSON object."
-                )
-                attempt_messages.append(HumanMessage(content=retry_note))
-
-            # Call the LLM using the configured fallback mechanism
-            response = await invoke_with_fallback(
-                "preference_reranker",
-                attempt_messages
-            )
-
-            # Extract JSON from the model response
-            extracted = extract_json_from_llm_output(response.content)
-
-            # Parse JSON into a Python dictionary
-            result = json.loads(extracted)
-
-            # Log successful interpretation
-            logger.info(
-                "[PreferenceReranker] Interpreted '%s' → %s",
-                modification_request[:50],
-                result.get("rerank_reason", "no reason given"),
-            )
-
-            return result
-
-        except Exception as e:
-            # Save error for retry attempt
-            last_error = str(e)
-
+        if response is None:
             logger.warning(
-                "[PreferenceReranker] Attempt %d/%d failed: %s",
-                attempt,
-                max_attempts,
-                last_error,
+                "[PreferenceReranker] LLM returned None for '%s' — returning empty",
+                modification_request[:50],
             )
+            return {}
 
-    # All retries failed
-    logger.warning(
-        "[PreferenceReranker] All attempts failed for '%s'",
-        modification_request[:50],
-    )
+        # Convert to dict, dropping None fields to match caller expectations.
+        # The caller (orchestrator) treats {} as "no changes needed".
+        result = response.model_dump(exclude_none=True)
 
-    # Return empty adjustments instead of crashing
-    return {}
+        logger.info(
+            "[PreferenceReranker] Interpreted '%s' → %s",
+            modification_request[:50],
+            result.get("rerank_reason", "no reason given"),
+        )
+
+        return result
+
+    except Exception as e:
+        logger.warning(
+            "[PreferenceReranker] LLM call failed for '%s': %s — returning empty",
+            modification_request[:50],
+            e,
+        )
+        return {}
 
 
 def apply_preference_adjustments(

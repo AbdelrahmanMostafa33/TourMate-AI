@@ -118,7 +118,7 @@ BASE_ITINERARY = {
 PREFERENCES = {
     "budget_level": "moderate",
     "travel_style": "cultural",
-    "pace": "balanced",
+    "pace": "moderate",
     "interests": ["history", "art", "food"],
     "food_preferences": ["local cuisine"],
 }

@@ -22,7 +22,7 @@ from ai_engine.services.operations import (
     apply_operation,
     build_compact_context,
 )
-from ai_engine.llm_config import invoke_with_fallback
+from ai_engine.llm import invoke_with_fallback
 
 logger = logging.getLogger(__name__)
 

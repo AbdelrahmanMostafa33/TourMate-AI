@@ -15,8 +15,8 @@ import sys
 import time
 sys.path.insert(0, '.')
 
-from ai_engine.chat.orchestrator import handle_chat
-from ai_engine.llm_config import token_tracker
+from ai_engine.conversation.orchestrator import handle_chat
+from ai_engine.llm import token_tracker
 
 
 import io
@@ -127,7 +127,7 @@ async def main():
 
     # Force Redis cleanup
     try:
-        from ai_engine.memory.redis_memory import get_session_manager
+        from ai_engine.conversation.redis_memory import get_session_manager
         manager = await get_session_manager()
         await manager.close()
     except Exception:

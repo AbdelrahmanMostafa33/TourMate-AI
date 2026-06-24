@@ -20,8 +20,8 @@ old 3-call pattern.
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from ai_engine.chat.message_interpreter import InterpretationResult
-from ai_engine.memory.conversation_state import ConversationPhase, ConversationState
+from ai_engine.conversation.message_interpreter import InterpretationResult
+from ai_engine.conversation.conversation_state import ConversationPhase, ConversationState
 from tests.integration.conftest import (
     MOCK_PLACES,
     build_planning_llm_response,
@@ -70,10 +70,10 @@ class TestSlotFillingToPipeline:
     """Slot filling collects profile fields, then pipeline runs."""
 
     @pytest.mark.asyncio
-    @patch("ai_engine.chat.orchestrator.get_session_manager")
-    @patch("ai_engine.chat.orchestrator.interpret_message")
-    @patch("ai_engine.chat.orchestrator.trip_graph", new_callable=AsyncMock)
-    @patch("ai_engine.chat.orchestrator.load_mock_profile")
+    @patch("ai_engine.conversation.orchestrator.get_session_manager")
+    @patch("ai_engine.conversation.orchestrator.interpret_message")
+    @patch("ai_engine.conversation.orchestrator.trip_graph", new_callable=AsyncMock)
+    @patch("ai_engine.conversation.orchestrator.load_mock_profile")
     async def test_full_slot_filling_triggers_pipeline(
         self, mock_profile, mock_graph, mock_route, mock_get_manager
     ):
@@ -91,7 +91,7 @@ class TestSlotFillingToPipeline:
             "is_valid": True,
         }
 
-        from ai_engine.chat.orchestrator import handle_chat
+        from ai_engine.conversation.orchestrator import handle_chat
 
         # Turn 1: destination + duration → safety override with fill_defaults()
         # triggers pipeline immediately (destination+duration = complete, defaults fill rest)
@@ -113,7 +113,7 @@ class TestSlotFillingToPipeline:
             response="Generating your itinerary!",
             budget_level="moderate",
             travel_style="cultural",
-            pace="balanced",
+            pace="moderate",
             interests=["history", "art"],
             food_preferences=["local cuisine"],
             accommodation_preferences=["boutique hotel"],
@@ -124,10 +124,10 @@ class TestSlotFillingToPipeline:
         assert mock_graph.ainvoke.called
 
     @pytest.mark.asyncio
-    @patch("ai_engine.chat.orchestrator.get_session_manager")
-    @patch("ai_engine.chat.orchestrator.interpret_message")
-    @patch("ai_engine.chat.orchestrator.trip_graph", new_callable=AsyncMock)
-    @patch("ai_engine.chat.orchestrator.load_mock_profile")
+    @patch("ai_engine.conversation.orchestrator.get_session_manager")
+    @patch("ai_engine.conversation.orchestrator.interpret_message")
+    @patch("ai_engine.conversation.orchestrator.trip_graph", new_callable=AsyncMock)
+    @patch("ai_engine.conversation.orchestrator.load_mock_profile")
     async def test_complete_info_in_first_message_skips_to_plan(
         self, mock_profile, mock_graph, mock_route, mock_get_manager
     ):
@@ -145,7 +145,7 @@ class TestSlotFillingToPipeline:
             "is_valid": True,
         }
 
-        from ai_engine.chat.orchestrator import handle_chat
+        from ai_engine.conversation.orchestrator import handle_chat
 
         mock_route.return_value = _make_result(
             "plan_trip",
@@ -178,8 +178,8 @@ class TestProfileBuildingFromSlots:
 
     def test_build_profile_from_slots_maps_all_fields(self):
         """All slot fields map to the correct TripProfile keys."""
-        from ai_engine.chat.orchestrator import _build_profile_from_slots
-        from ai_engine.memory.conversation_state import TripSlots
+        from ai_engine.conversation.orchestrator import _build_profile_from_slots
+        from ai_engine.conversation.conversation_state import TripSlots
 
         slots = TripSlots()
         slots.destination_city = "Cairo"
@@ -203,8 +203,8 @@ class TestProfileBuildingFromSlots:
 
     def test_build_profile_from_slots_defaults_empty_lists(self):
         """Missing list fields default to empty lists, not None."""
-        from ai_engine.chat.orchestrator import _build_profile_from_slots
-        from ai_engine.memory.conversation_state import TripSlots
+        from ai_engine.conversation.orchestrator import _build_profile_from_slots
+        from ai_engine.conversation.conversation_state import TripSlots
 
         slots = TripSlots()
         slots.destination_city = "Tokyo"
@@ -226,8 +226,8 @@ class TestSessionStateAcrossTurns:
     """Session state persists and accumulates across conversation turns."""
 
     @pytest.mark.asyncio
-    @patch("ai_engine.chat.orchestrator.get_session_manager")
-    @patch("ai_engine.chat.orchestrator.interpret_message")
+    @patch("ai_engine.conversation.orchestrator.get_session_manager")
+    @patch("ai_engine.conversation.orchestrator.interpret_message")
     async def test_slots_accumulate_across_turns(
         self, mock_route, mock_get_manager
     ):
@@ -235,7 +235,7 @@ class TestSessionStateAcrossTurns:
         manager, storage = _create_session_manager()
         mock_get_manager.return_value = manager
 
-        from ai_engine.chat.orchestrator import handle_chat
+        from ai_engine.conversation.orchestrator import handle_chat
 
         # Turn 1: destination
         mock_route.return_value = _make_result(
@@ -259,8 +259,8 @@ class TestSessionStateAcrossTurns:
         assert state.slots.duration_days == 5
 
     @pytest.mark.asyncio
-    @patch("ai_engine.chat.orchestrator.get_session_manager")
-    @patch("ai_engine.chat.orchestrator.interpret_message")
+    @patch("ai_engine.conversation.orchestrator.get_session_manager")
+    @patch("ai_engine.conversation.orchestrator.interpret_message")
     async def test_general_chat_does_not_affect_slots(
         self, mock_route, mock_get_manager
     ):
@@ -268,7 +268,7 @@ class TestSessionStateAcrossTurns:
         manager, storage = _create_session_manager()
         mock_get_manager.return_value = manager
 
-        from ai_engine.chat.orchestrator import handle_chat
+        from ai_engine.conversation.orchestrator import handle_chat
 
         # Turn 1: set destination
         mock_route.return_value = _make_result(
@@ -298,8 +298,8 @@ class TestSessionStateAcrossTurns:
         assert state.slots.duration_days == 3
 
     @pytest.mark.asyncio
-    @patch("ai_engine.chat.orchestrator.get_session_manager")
-    @patch("ai_engine.chat.orchestrator.interpret_message")
+    @patch("ai_engine.conversation.orchestrator.get_session_manager")
+    @patch("ai_engine.conversation.orchestrator.interpret_message")
     async def test_session_id_consistent_across_turns(
         self, mock_route, mock_get_manager
     ):
@@ -307,7 +307,7 @@ class TestSessionStateAcrossTurns:
         manager, _ = _create_session_manager()
         mock_get_manager.return_value = manager
 
-        from ai_engine.chat.orchestrator import handle_chat
+        from ai_engine.conversation.orchestrator import handle_chat
 
         mock_route.return_value = _make_result("answer_question", response="Hi!")
         result1 = await handle_chat("user1", "Hello")
@@ -326,10 +326,10 @@ class TestItineraryReviewPhase:
     """After pipeline runs, user reviews the itinerary."""
 
     @pytest.mark.asyncio
-    @patch("ai_engine.chat.orchestrator.get_session_manager")
-    @patch("ai_engine.chat.orchestrator.interpret_message")
-    @patch("ai_engine.chat.orchestrator.trip_graph", new_callable=AsyncMock)
-    @patch("ai_engine.chat.orchestrator.load_mock_profile")
+    @patch("ai_engine.conversation.orchestrator.get_session_manager")
+    @patch("ai_engine.conversation.orchestrator.interpret_message")
+    @patch("ai_engine.conversation.orchestrator.trip_graph", new_callable=AsyncMock)
+    @patch("ai_engine.conversation.orchestrator.load_mock_profile")
     async def test_approve_transitions_to_completed(
         self, mock_profile, mock_graph, mock_route, mock_get_manager
     ):
@@ -345,7 +345,7 @@ class TestItineraryReviewPhase:
             "is_valid": True,
         }
 
-        from ai_engine.chat.orchestrator import handle_chat
+        from ai_engine.conversation.orchestrator import handle_chat
 
         # Generate itinerary (all 8 required slots filled)
         mock_route.return_value = _make_result(
@@ -355,7 +355,7 @@ class TestItineraryReviewPhase:
             duration_days=2,
             budget_level="moderate",
             travel_style="cultural",
-            pace="balanced",
+            pace="moderate",
             interests=["history"],
             food_preferences=["local cuisine"],
             accommodation_preferences=["boutique hotel"],
@@ -372,10 +372,10 @@ class TestItineraryReviewPhase:
         assert result2["phase"] == "completed"
 
     @pytest.mark.asyncio
-    @patch("ai_engine.chat.orchestrator.get_session_manager")
-    @patch("ai_engine.chat.orchestrator.interpret_message")
-    @patch("ai_engine.chat.orchestrator.trip_graph", new_callable=AsyncMock)
-    @patch("ai_engine.chat.orchestrator.load_mock_profile")
+    @patch("ai_engine.conversation.orchestrator.get_session_manager")
+    @patch("ai_engine.conversation.orchestrator.interpret_message")
+    @patch("ai_engine.conversation.orchestrator.trip_graph", new_callable=AsyncMock)
+    @patch("ai_engine.conversation.orchestrator.load_mock_profile")
     async def test_modification_re_runs_pipeline(
         self, mock_profile, mock_graph, mock_route, mock_get_manager
     ):
@@ -391,7 +391,7 @@ class TestItineraryReviewPhase:
             "is_valid": True,
         }
 
-        from ai_engine.chat.orchestrator import handle_chat
+        from ai_engine.conversation.orchestrator import handle_chat
 
         # Generate itinerary (all 8 required slots filled)
         mock_route.return_value = _make_result(
@@ -401,7 +401,7 @@ class TestItineraryReviewPhase:
             duration_days=2,
             budget_level="moderate",
             travel_style="cultural",
-            pace="balanced",
+            pace="moderate",
             interests=["history"],
             food_preferences=["local cuisine"],
             accommodation_preferences=["boutique hotel"],
@@ -429,10 +429,10 @@ class TestNewTripAfterCompletion:
     """After approving one trip, user can start a new one."""
 
     @pytest.mark.asyncio
-    @patch("ai_engine.chat.orchestrator.get_session_manager")
-    @patch("ai_engine.chat.orchestrator.interpret_message")
-    @patch("ai_engine.chat.orchestrator.trip_graph", new_callable=AsyncMock)
-    @patch("ai_engine.chat.orchestrator.load_mock_profile")
+    @patch("ai_engine.conversation.orchestrator.get_session_manager")
+    @patch("ai_engine.conversation.orchestrator.interpret_message")
+    @patch("ai_engine.conversation.orchestrator.trip_graph", new_callable=AsyncMock)
+    @patch("ai_engine.conversation.orchestrator.load_mock_profile")
     async def test_new_trip_resets_slots(
         self, mock_profile, mock_graph, mock_route, mock_get_manager
     ):
@@ -448,7 +448,7 @@ class TestNewTripAfterCompletion:
             "is_valid": True,
         }
 
-        from ai_engine.chat.orchestrator import handle_chat
+        from ai_engine.conversation.orchestrator import handle_chat
 
         # Complete first trip (all 8 required slots filled)
         mock_route.return_value = _make_result(
@@ -458,7 +458,7 @@ class TestNewTripAfterCompletion:
             duration_days=2,
             budget_level="moderate",
             travel_style="cultural",
-            pace="balanced",
+            pace="moderate",
             interests=["history"],
             food_preferences=["local cuisine"],
             accommodation_preferences=["boutique hotel"],
@@ -496,9 +496,9 @@ class TestImageProcessingIntegration:
     """Image analysis integrates with the pipeline flow."""
 
     @pytest.mark.asyncio
-    @patch("ai_engine.chat.orchestrator.get_session_manager")
-    @patch("ai_engine.chat.orchestrator.interpret_message")
-    @patch("ai_engine.chat.orchestrator.analyze_travel_image")
+    @patch("ai_engine.conversation.orchestrator.get_session_manager")
+    @patch("ai_engine.conversation.orchestrator.interpret_message")
+    @patch("ai_engine.conversation.orchestrator.analyze_travel_image")
     async def test_image_features_passed_to_general_chat(
         self, mock_analyze, mock_route, mock_get_manager
     ):
@@ -516,7 +516,7 @@ class TestImageProcessingIntegration:
             "inferred_interests": ["beach", "relaxation"],
         }
 
-        from ai_engine.chat.orchestrator import handle_chat
+        from ai_engine.conversation.orchestrator import handle_chat
         result = await handle_chat("user1", "", image_bytes=b"fake_image_bytes")
 
         assert result["image_features"] is not None

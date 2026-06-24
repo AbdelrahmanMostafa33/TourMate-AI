@@ -168,8 +168,7 @@ def _update_profile_from_ai(profile: TripProfile, profile_data: dict) -> None:
             profile.pace = TripPace(pace_val)
         except (ValueError, TypeError):
             pace_lower = str(pace_val).lower().strip()
-            fallback = {"moderate": TripPace.BALANCED}
-            profile.pace = fallback.get(pace_lower, TripPace.BALANCED)
+            profile.pace = TripPace.MODERATE
             logger.warning(
                 "[ChatRoutes] Invalid pace '%s', defaulting to '%s'",
                 pace_val, profile.pace.value,
@@ -259,7 +258,7 @@ async def process_message_stream(
     profile_from_ai = None
 
     try:
-        from ai_engine.chat.orchestrator import handle_chat_stream
+        from ai_engine.conversation.orchestrator import handle_chat_stream
 
         async for chunk in handle_chat_stream(
             user_id=user_id,
@@ -460,7 +459,7 @@ async def process_message_stream(
     # ── Sync Redis state to DB ────────────────────────────────────────────
     if ai_session_id:
         try:
-            from ai_engine.memory.redis_memory import get_session_manager
+            from ai_engine.conversation.redis_memory import get_session_manager
             redis_manager = await get_session_manager()
             if redis_manager.is_connected:
                 redis_state = await redis_manager.load(ai_session_id)
@@ -550,7 +549,7 @@ async def websocket_new_chat(
             profile_data_from_ai = None
 
             try:
-                from ai_engine.chat.orchestrator import handle_chat_stream
+                from ai_engine.conversation.orchestrator import handle_chat_stream
 
                 async for chunk in handle_chat_stream(
                     user_id=user_id,

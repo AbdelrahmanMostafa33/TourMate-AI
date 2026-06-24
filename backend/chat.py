@@ -39,9 +39,9 @@ logging.getLogger("sqlalchemy.engine").setLevel(logging.WARNING)
 from ai_engine.observability import setup_langsmith
 setup_langsmith()
 
-from ai_engine.chat.orchestrator import handle_chat
-from ai_engine.memory.redis_memory import get_session_manager
-from ai_engine.llm_config import token_tracker
+from ai_engine.conversation.orchestrator import handle_chat
+from ai_engine.conversation.redis_memory import get_session_manager
+from ai_engine.llm import token_tracker
 
 
 # ── Formatting helpers ─────────────────────────────────────────────────────

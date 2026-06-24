@@ -77,7 +77,7 @@ async def test_upsert_creates_new_profile_when_none_exists():
     data = TripProfileCreate(
         budget_level=BudgetLevel.MODERATE,
         travel_style=TravelStyle.CULTURAL,
-        pace=TripPace.BALANCED,
+        pace=TripPace.MODERATE,
         interests=["history", "art"],
         food_preferences=["local cuisine"],
         accommodation_preferences=["boutique hotel"],

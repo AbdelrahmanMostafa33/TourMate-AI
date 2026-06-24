@@ -22,8 +22,8 @@ import logging
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from ai_engine.chat.message_interpreter import InterpretationResult
-from ai_engine.memory.conversation_state import ConversationPhase, ConversationState
+from ai_engine.conversation.message_interpreter import InterpretationResult
+from ai_engine.conversation.conversation_state import ConversationPhase, ConversationState
 from tests.integration.conftest import MOCK_PLACES
 
 
@@ -289,16 +289,16 @@ MOCK_ORIGINAL_ITINERARY = {
 class TestMode1PreferenceReranking:
 
     @pytest.mark.asyncio
-    @patch("ai_engine.chat.orchestrator.get_session_manager")
-    @patch("ai_engine.chat.orchestrator.interpret_message")
-    @patch("ai_engine.chat.orchestrator.trip_graph", new_callable=AsyncMock)
-    @patch("ai_engine.chat.orchestrator.load_mock_profile")
-    @patch("ai_engine.chat.orchestrator.run_itinerary_modifier")
-    @patch("ai_engine.chat.orchestrator.interpret_preference_adjustment")
-    @patch("ai_engine.chat.orchestrator.score_candidates")
-    @patch("ai_engine.chat.orchestrator.run_planning_agent")
-    @patch("ai_engine.chat.orchestrator.optimize_route")
-    @patch("ai_engine.chat.orchestrator.validate_itinerary")
+    @patch("ai_engine.conversation.orchestrator.get_session_manager")
+    @patch("ai_engine.conversation.orchestrator.interpret_message")
+    @patch("ai_engine.conversation.orchestrator.trip_graph", new_callable=AsyncMock)
+    @patch("ai_engine.conversation.orchestrator.load_mock_profile")
+    @patch("ai_engine.conversation.orchestrator.run_itinerary_modifier")
+    @patch("ai_engine.conversation.orchestrator.interpret_preference_adjustment")
+    @patch("ai_engine.conversation.orchestrator.score_candidates")
+    @patch("ai_engine.conversation.orchestrator.run_planning_agent")
+    @patch("ai_engine.conversation.orchestrator.optimize_route")
+    @patch("ai_engine.conversation.orchestrator.validate_itinerary")
     async def test_more_entertaining_triggers_reranker(
         self,
         mock_validation,
@@ -336,7 +336,7 @@ class TestMode1PreferenceReranking:
             "validation": {"is_valid": True, "score": 85},
         }
 
-        from ai_engine.chat.orchestrator import handle_chat
+        from ai_engine.conversation.orchestrator import handle_chat
 
         # ── Step 1: Generate the initial itinerary ──
         mock_route.return_value = _make_result(
@@ -346,7 +346,7 @@ class TestMode1PreferenceReranking:
             duration_days=2,
             budget_level="moderate",
             travel_style="cultural",
-            pace="balanced",
+            pace="moderate",
             interests=["history", "art"],
             food_preferences=["local cuisine"],
             accommodation_preferences=["boutique hotel"],
@@ -427,16 +427,16 @@ class TestMode1PreferenceReranking:
         assert len(updated_state.candidate_places) == len(MOCK_PLACES)
 
     @pytest.mark.asyncio
-    @patch("ai_engine.chat.orchestrator.get_session_manager")
-    @patch("ai_engine.chat.orchestrator.interpret_message")
-    @patch("ai_engine.chat.orchestrator.trip_graph", new_callable=AsyncMock)
-    @patch("ai_engine.chat.orchestrator.load_mock_profile")
-    @patch("ai_engine.chat.orchestrator.run_itinerary_modifier")
-    @patch("ai_engine.chat.orchestrator.interpret_preference_adjustment")
-    @patch("ai_engine.chat.orchestrator.score_candidates")
-    @patch("ai_engine.chat.orchestrator.run_planning_agent")
-    @patch("ai_engine.chat.orchestrator.optimize_route")
-    @patch("ai_engine.chat.orchestrator.validate_itinerary")
+    @patch("ai_engine.conversation.orchestrator.get_session_manager")
+    @patch("ai_engine.conversation.orchestrator.interpret_message")
+    @patch("ai_engine.conversation.orchestrator.trip_graph", new_callable=AsyncMock)
+    @patch("ai_engine.conversation.orchestrator.load_mock_profile")
+    @patch("ai_engine.conversation.orchestrator.run_itinerary_modifier")
+    @patch("ai_engine.conversation.orchestrator.interpret_preference_adjustment")
+    @patch("ai_engine.conversation.orchestrator.score_candidates")
+    @patch("ai_engine.conversation.orchestrator.run_planning_agent")
+    @patch("ai_engine.conversation.orchestrator.optimize_route")
+    @patch("ai_engine.conversation.orchestrator.validate_itinerary")
     async def test_reranker_failure_falls_through_to_pipeline(
         self,
         mock_validation,
@@ -465,7 +465,7 @@ class TestMode1PreferenceReranking:
             "validation": {"is_valid": True, "score": 85},
         }
 
-        from ai_engine.chat.orchestrator import handle_chat
+        from ai_engine.conversation.orchestrator import handle_chat
 
         # Generate initial itinerary
         mock_route.return_value = _make_result(
@@ -473,7 +473,7 @@ class TestMode1PreferenceReranking:
             response="Generating!",
             destination_city="Cairo", duration_days=2,
             budget_level="moderate", travel_style="cultural",
-            pace="balanced", interests=["history", "art"],
+            pace="moderate", interests=["history", "art"],
             food_preferences=["local cuisine"],
             accommodation_preferences=["boutique hotel"],
         )
@@ -503,11 +503,11 @@ class TestMode1PreferenceReranking:
         assert result["itinerary"] is not None
 
     @pytest.mark.asyncio
-    @patch("ai_engine.chat.orchestrator.get_session_manager")
-    @patch("ai_engine.chat.orchestrator.interpret_message")
-    @patch("ai_engine.chat.orchestrator.trip_graph", new_callable=AsyncMock)
-    @patch("ai_engine.chat.orchestrator.load_mock_profile")
-    @patch("ai_engine.chat.orchestrator.run_itinerary_modifier")
+    @patch("ai_engine.conversation.orchestrator.get_session_manager")
+    @patch("ai_engine.conversation.orchestrator.interpret_message")
+    @patch("ai_engine.conversation.orchestrator.trip_graph", new_callable=AsyncMock)
+    @patch("ai_engine.conversation.orchestrator.load_mock_profile")
+    @patch("ai_engine.conversation.orchestrator.run_itinerary_modifier")
     async def test_modifier_succeeds_skips_reranker_and_pipeline(
         self,
         mock_modifier,
@@ -531,14 +531,14 @@ class TestMode1PreferenceReranking:
             "validation": {"is_valid": True, "score": 85},
         }
 
-        from ai_engine.chat.orchestrator import handle_chat
+        from ai_engine.conversation.orchestrator import handle_chat
 
         # Generate initial itinerary
         mock_route.return_value = _make_result(
             "plan_trip", response="Generating!",
             destination_city="Cairo", duration_days=2,
             budget_level="moderate", travel_style="cultural",
-            pace="balanced", interests=["history", "art"],
+            pace="moderate", interests=["history", "art"],
             food_preferences=["local cuisine"],
             accommodation_preferences=["boutique hotel"],
         )
@@ -590,16 +590,16 @@ class TestFallbackChainLogging:
     """
 
     @pytest.mark.asyncio
-    @patch("ai_engine.chat.orchestrator.get_session_manager")
-    @patch("ai_engine.chat.orchestrator.interpret_message")
-    @patch("ai_engine.chat.orchestrator.trip_graph", new_callable=AsyncMock)
-    @patch("ai_engine.chat.orchestrator.load_mock_profile")
-    @patch("ai_engine.chat.orchestrator.run_itinerary_modifier")
-    @patch("ai_engine.chat.orchestrator.interpret_preference_adjustment")
-    @patch("ai_engine.chat.orchestrator.score_candidates")
-    @patch("ai_engine.chat.orchestrator.run_planning_agent")
-    @patch("ai_engine.chat.orchestrator.optimize_route")
-    @patch("ai_engine.chat.orchestrator.validate_itinerary")
+    @patch("ai_engine.conversation.orchestrator.get_session_manager")
+    @patch("ai_engine.conversation.orchestrator.interpret_message")
+    @patch("ai_engine.conversation.orchestrator.trip_graph", new_callable=AsyncMock)
+    @patch("ai_engine.conversation.orchestrator.load_mock_profile")
+    @patch("ai_engine.conversation.orchestrator.run_itinerary_modifier")
+    @patch("ai_engine.conversation.orchestrator.interpret_preference_adjustment")
+    @patch("ai_engine.conversation.orchestrator.score_candidates")
+    @patch("ai_engine.conversation.orchestrator.run_planning_agent")
+    @patch("ai_engine.conversation.orchestrator.optimize_route")
+    @patch("ai_engine.conversation.orchestrator.validate_itinerary")
     async def test_full_fallthrough_logs_all_three_modes(
         self,
         mock_validation,
@@ -634,14 +634,14 @@ class TestFallbackChainLogging:
             "validation": {"is_valid": True, "score": 85},
         }
 
-        from ai_engine.chat.orchestrator import handle_chat
+        from ai_engine.conversation.orchestrator import handle_chat
 
         # Generate initial itinerary
         mock_route.return_value = _make_result(
             "plan_trip", response="Generating!",
             destination_city="Cairo", duration_days=2,
             budget_level="moderate", travel_style="cultural",
-            pace="balanced", interests=["history", "art"],
+            pace="moderate", interests=["history", "art"],
             food_preferences=["local cuisine"],
             accommodation_preferences=["boutique hotel"],
         )
@@ -691,16 +691,16 @@ class TestFallbackChainLogging:
         )
 
     @pytest.mark.asyncio
-    @patch("ai_engine.chat.orchestrator.get_session_manager")
-    @patch("ai_engine.chat.orchestrator.interpret_message")
-    @patch("ai_engine.chat.orchestrator.trip_graph", new_callable=AsyncMock)
-    @patch("ai_engine.chat.orchestrator.load_mock_profile")
-    @patch("ai_engine.chat.orchestrator.run_itinerary_modifier")
-    @patch("ai_engine.chat.orchestrator.interpret_preference_adjustment")
-    @patch("ai_engine.chat.orchestrator.score_candidates")
-    @patch("ai_engine.chat.orchestrator.run_planning_agent")
-    @patch("ai_engine.chat.orchestrator.optimize_route")
-    @patch("ai_engine.chat.orchestrator.validate_itinerary")
+    @patch("ai_engine.conversation.orchestrator.get_session_manager")
+    @patch("ai_engine.conversation.orchestrator.interpret_message")
+    @patch("ai_engine.conversation.orchestrator.trip_graph", new_callable=AsyncMock)
+    @patch("ai_engine.conversation.orchestrator.load_mock_profile")
+    @patch("ai_engine.conversation.orchestrator.run_itinerary_modifier")
+    @patch("ai_engine.conversation.orchestrator.interpret_preference_adjustment")
+    @patch("ai_engine.conversation.orchestrator.score_candidates")
+    @patch("ai_engine.conversation.orchestrator.run_planning_agent")
+    @patch("ai_engine.conversation.orchestrator.optimize_route")
+    @patch("ai_engine.conversation.orchestrator.validate_itinerary")
     async def test_mode1_success_no_mode3_log(
         self,
         mock_validation,
@@ -732,14 +732,14 @@ class TestFallbackChainLogging:
             "validation": {"is_valid": True, "score": 85},
         }
 
-        from ai_engine.chat.orchestrator import handle_chat
+        from ai_engine.conversation.orchestrator import handle_chat
 
         # Generate initial itinerary
         mock_route.return_value = _make_result(
             "plan_trip", response="Generating!",
             destination_city="Cairo", duration_days=2,
             budget_level="moderate", travel_style="cultural",
-            pace="balanced", interests=["history", "art"],
+            pace="moderate", interests=["history", "art"],
             food_preferences=["local cuisine"],
             accommodation_preferences=["boutique hotel"],
         )
@@ -783,12 +783,12 @@ class TestFallbackChainLogging:
         )
 
     @pytest.mark.asyncio
-    @patch("ai_engine.chat.orchestrator.get_session_manager")
-    @patch("ai_engine.chat.orchestrator.interpret_message")
-    @patch("ai_engine.chat.orchestrator.trip_graph", new_callable=AsyncMock)
-    @patch("ai_engine.chat.orchestrator.load_mock_profile")
-    @patch("ai_engine.chat.orchestrator.run_itinerary_modifier")
-    @patch("ai_engine.chat.orchestrator.interpret_preference_adjustment")
+    @patch("ai_engine.conversation.orchestrator.get_session_manager")
+    @patch("ai_engine.conversation.orchestrator.interpret_message")
+    @patch("ai_engine.conversation.orchestrator.trip_graph", new_callable=AsyncMock)
+    @patch("ai_engine.conversation.orchestrator.load_mock_profile")
+    @patch("ai_engine.conversation.orchestrator.run_itinerary_modifier")
+    @patch("ai_engine.conversation.orchestrator.interpret_preference_adjustment")
     async def test_no_candidate_places_skips_mode1_logs_mode3(
         self,
         mock_reranker_llm,
@@ -819,14 +819,14 @@ class TestFallbackChainLogging:
             "validation": {"is_valid": True, "score": 85},
         }
 
-        from ai_engine.chat.orchestrator import handle_chat
+        from ai_engine.conversation.orchestrator import handle_chat
 
         # Generate initial itinerary
         mock_route.return_value = _make_result(
             "plan_trip", response="Generating!",
             destination_city="Cairo", duration_days=2,
             budget_level="moderate", travel_style="cultural",
-            pace="balanced", interests=["history", "art"],
+            pace="moderate", interests=["history", "art"],
             food_preferences=["local cuisine"],
             accommodation_preferences=["boutique hotel"],
         )
@@ -868,11 +868,11 @@ class TestFallbackChainLogging:
         mock_reranker_llm.assert_not_called()
 
     @pytest.mark.asyncio
-    @patch("ai_engine.chat.orchestrator.get_session_manager")
-    @patch("ai_engine.chat.orchestrator.interpret_message")
-    @patch("ai_engine.chat.orchestrator.trip_graph", new_callable=AsyncMock)
-    @patch("ai_engine.chat.orchestrator.load_mock_profile")
-    @patch("ai_engine.chat.orchestrator.run_itinerary_modifier")
+    @patch("ai_engine.conversation.orchestrator.get_session_manager")
+    @patch("ai_engine.conversation.orchestrator.interpret_message")
+    @patch("ai_engine.conversation.orchestrator.trip_graph", new_callable=AsyncMock)
+    @patch("ai_engine.conversation.orchestrator.load_mock_profile")
+    @patch("ai_engine.conversation.orchestrator.run_itinerary_modifier")
     async def test_modifier_success_no_mode1_nor_mode3_logs(
         self,
         mock_modifier,
@@ -900,14 +900,14 @@ class TestFallbackChainLogging:
             "validation": {"is_valid": True, "score": 85},
         }
 
-        from ai_engine.chat.orchestrator import handle_chat
+        from ai_engine.conversation.orchestrator import handle_chat
 
         # Generate initial itinerary
         mock_route.return_value = _make_result(
             "plan_trip", response="Generating!",
             destination_city="Cairo", duration_days=2,
             budget_level="moderate", travel_style="cultural",
-            pace="balanced", interests=["history", "art"],
+            pace="moderate", interests=["history", "art"],
             food_preferences=["local cuisine"],
             accommodation_preferences=["boutique hotel"],
         )

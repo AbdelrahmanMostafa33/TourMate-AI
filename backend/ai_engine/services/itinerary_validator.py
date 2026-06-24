@@ -2,26 +2,21 @@
 Itinerary Validator — Stage 6 of the pipeline.
 
 Two-layer validation:
-1. Programmatic checks (deterministic, fast, catches real issues)
+1. Programmatic checks delegated to ``ai_engine.evaluation.feasibility_checker``
 2. LLM quality check (catches subjective issues)
 """
 
 import json
 import re
 from ai_engine.graph.state import TripState
-from ai_engine.tools.haversine import haversine
-from ai_engine.llm_config import invoke_with_fallback
+from ai_engine.evaluation.feasibility_checker import run_programmatic_checks
+from ai_engine.evaluation.itinerary_metrics import compute_all_metrics
+from ai_engine.llm import invoke_with_fallback
 from langchain_core.messages import SystemMessage, HumanMessage
 
 
-# ── Programmatic Validation Thresholds ───────────────────────────────────────
+# ── LLM Prompt Token Budget ──────────────────────────────────────────────────
 
-MAX_DAILY_TRAVEL_MINUTES = 180
-MAX_DAILY_STOPS = 8
-MIN_DAILY_STOPS = 3
-MAX_CONSECUTIVE_CATEGORY = 2
-MIN_TOTAL_DAYS = 1
-MAX_DISTANCE_BETWEEN_STOPS_KM = 40
 _MAX_WHY_LENGTH = 150
 
 
@@ -107,79 +102,6 @@ JSON schema:
 """
 
 
-def _run_programmatic_checks(itinerary: dict) -> list[str]:
-    """Deterministic checks that catch real feasibility issues."""
-    issues = []
-    days = itinerary.get("days", [])
-
-    if len(days) < MIN_TOTAL_DAYS:
-        issues.append(f"Itinerary has only {len(days)} day(s), expected at least {MIN_TOTAL_DAYS}")
-
-    for day in days:
-        day_num = day.get("day_number", "?")
-        stops = day.get("stops", [])
-
-        if len(stops) > MAX_DAILY_STOPS:
-            issues.append(f"Day {day_num}: {len(stops)} stops exceeds max of {MAX_DAILY_STOPS}")
-        if len(stops) < MIN_DAILY_STOPS:
-            issues.append(f"Day {day_num}: only {len(stops)} stop(s), add more activities")
-
-        consecutive = 1
-        for i in range(1, len(stops)):
-            prev_cat = stops[i - 1].get("category", "")
-            curr_cat = stops[i].get("category", "")
-            if prev_cat == curr_cat and prev_cat != "hotel":
-                consecutive += 1
-                if consecutive > MAX_CONSECUTIVE_CATEGORY:
-                    issues.append(
-                        f"Day {day_num}: {consecutive} consecutive '{curr_cat}' stops "
-                        f"(max {MAX_CONSECUTIVE_CATEGORY})"
-                    )
-            else:
-                consecutive = 1
-
-        total_travel = day.get("total_travel_time_minutes", 0)
-        if total_travel > MAX_DAILY_TRAVEL_MINUTES:
-            issues.append(
-                f"Day {day_num}: {total_travel} min travel time "
-                f"exceeds {MAX_DAILY_TRAVEL_MINUTES} min limit"
-            )
-
-        for i in range(len(stops) - 1):
-            s1, s2 = stops[i], stops[i + 1]
-            if s1.get("lat") and s1.get("lon") and s2.get("lat") and s2.get("lon"):
-                dist = haversine(s1["lat"], s1["lon"], s2["lat"], s2["lon"])
-                if dist > MAX_DISTANCE_BETWEEN_STOPS_KM:
-                    issues.append(
-                        f"Day {day_num}: Stop '{s1.get('name', '?')}' to "
-                        f"'{s2.get('name', '?')}' is {dist:.1f}km — too far"
-                    )
-
-    hotels = itinerary.get("accommodation_suggestions", [])
-    if len(hotels) == 0:
-        issues.append("No accommodation suggestions provided")
-    elif len(hotels) > 5:
-        issues.append(f"{len(hotels)} hotel suggestions is too many (max 5)")
-
-    _TIME_RANK = {"morning": 0, "afternoon": 1, "evening": 2}
-    for day in days:
-        day_num = day.get("day_number", "?")
-        stops = day.get("stops", [])
-        prev_rank = -1
-        for i, stop in enumerate(stops):
-            slot = stop.get("suggested_time_of_day", "")
-            rank = _TIME_RANK.get(slot, -1)
-            if rank < prev_rank:
-                issues.append(
-                    f'Day {day_num}: stop #{i + 1} "{stop.get("name", "?")}" '
-                    f'has suggested_time_of_day="{slot}" which is out of order '
-                    f'(previous was "{stops[i - 1].get("suggested_time_of_day", "?")}")'
-                )
-            prev_rank = rank
-
-    return issues
-
-
 async def validate_itinerary(state: TripState, on_retry=None) -> TripState:
     """
     Two-layer validation:
@@ -191,15 +113,20 @@ async def validate_itinerary(state: TripState, on_retry=None) -> TripState:
 
     if not optimized or state.get("error"):
         state["is_valid"] = False
-        state["validation"] = {"is_valid": False, "score": 0, "issues": ["No itinerary to validate"]}
+        state["validation"] = {
+            "is_valid": False,
+            "score": 0,
+            "issues": ["No itinerary to validate"],
+            "metrics": compute_all_metrics({}, state.get("profile")),
+        }
         state["agent_messages"] = (
             state.get("agent_messages", [])
             + ["[ItineraryValidator] valid=False score=0 issues=1 (no itinerary)"]
         )
         return state
 
-    # Layer 1: Programmatic checks
-    prog_issues = _run_programmatic_checks(optimized)
+    # Layer 1: Programmatic checks (delegated to feasibility_checker)
+    prog_issues = run_programmatic_checks(optimized)
 
     critical = [i for i in prog_issues if "exceeds max" in i or "too far" in i]
     if critical:
@@ -209,6 +136,7 @@ async def validate_itinerary(state: TripState, on_retry=None) -> TripState:
             "score": 30,
             "issues": prog_issues,
             "suggestions": ["Regenerate with fewer stops or shorter distances"],
+            "metrics": compute_all_metrics(optimized, state.get("profile")),
         }
         state["agent_messages"] = (
             state.get("agent_messages", [])
@@ -266,6 +194,9 @@ Validate the itinerary now.
             "issues": prog_issues + [f"LLM validation failed: {str(e)}"],
             "suggestions": [],
         }
+
+    # Attach quantitative itinerary metrics to the validation result
+    state["validation"]["metrics"] = compute_all_metrics(optimized, state.get("profile"))
 
     val = state.get("validation", {})
     state["agent_messages"] = (

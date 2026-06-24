@@ -4,8 +4,8 @@
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from ai_engine.chat.message_interpreter import InterpretationResult
-from ai_engine.memory.conversation_state import ConversationPhase, ConversationState
+from ai_engine.conversation.message_interpreter import InterpretationResult
+from ai_engine.conversation.conversation_state import ConversationPhase, ConversationState
 
 
 # ── Shared Mock Fixtures ──────────────────────────────────────────────────────
@@ -44,7 +44,7 @@ def _make_plan_result(city, days, **extra):
         "plan_trip", response="Generating your itinerary!",
         destination_city=city, duration_days=days,
         travel_dates="next month", group_size=2, traveler_group_type="solo",
-        budget_level="moderate", travel_style="cultural", pace="balanced",
+        budget_level="moderate", travel_style="cultural", pace="moderate",
         interests=["history", "food"], food_preferences=["local cuisine"],
         accommodation_preferences=["hotel"], **extra,
     )
@@ -73,15 +73,15 @@ def _make_mock_graph_result(is_valid=True):
 class TestGreetingPhase:
 
     @pytest.mark.asyncio
-    @patch("ai_engine.chat.orchestrator.get_session_manager")
-    @patch("ai_engine.chat.orchestrator.interpret_message")
+    @patch("ai_engine.conversation.orchestrator.get_session_manager")
+    @patch("ai_engine.conversation.orchestrator.interpret_message")
     async def test_greeting_general_chat_stays_in_greeting(
         self, mock_route, mock_get_manager, mock_manager
     ):
         mock_get_manager.return_value = mock_manager
         mock_route.return_value = _make_router_result("answer_question", "Hi! I'm TourMate. Ready to plan a trip?")
 
-        from ai_engine.chat.orchestrator import handle_chat
+        from ai_engine.conversation.orchestrator import handle_chat
         result = await handle_chat("user1", "Hello!")
 
         assert result["response_type"] == "chat"
@@ -89,25 +89,25 @@ class TestGreetingPhase:
         assert result["phase"] == "greeting"
 
     @pytest.mark.asyncio
-    @patch("ai_engine.chat.orchestrator.get_session_manager")
-    @patch("ai_engine.chat.orchestrator.interpret_message")
+    @patch("ai_engine.conversation.orchestrator.get_session_manager")
+    @patch("ai_engine.conversation.orchestrator.interpret_message")
     async def test_greeting_plan_trip_transitions_to_slot_filling(
         self, mock_route, mock_get_manager, mock_manager
     ):
         mock_get_manager.return_value = mock_manager
         mock_route.return_value = _make_router_result("ask_clarification", "Where would you like to go?")
 
-        from ai_engine.chat.orchestrator import handle_chat
+        from ai_engine.conversation.orchestrator import handle_chat
         result = await handle_chat("user1", "Plan me a trip")
 
         assert result["response_type"] == "clarification"
         assert result["phase"] == "slot_filling"
 
     @pytest.mark.asyncio
-    @patch("ai_engine.chat.orchestrator.get_session_manager")
-    @patch("ai_engine.chat.orchestrator.interpret_message")
-    @patch("ai_engine.chat.orchestrator.trip_graph", new_callable=AsyncMock)
-    @patch("ai_engine.chat.orchestrator.load_mock_profile")
+    @patch("ai_engine.conversation.orchestrator.get_session_manager")
+    @patch("ai_engine.conversation.orchestrator.interpret_message")
+    @patch("ai_engine.conversation.orchestrator.trip_graph", new_callable=AsyncMock)
+    @patch("ai_engine.conversation.orchestrator.load_mock_profile")
     async def test_greeting_complete_info_skips_to_plan_generation(
         self, mock_profile, mock_graph, mock_route, mock_get_manager, mock_manager
     ):
@@ -116,7 +116,7 @@ class TestGreetingPhase:
         mock_profile.return_value = {"user_id": "user1"}
         mock_graph.ainvoke.return_value = _make_mock_graph_result()
 
-        from ai_engine.chat.orchestrator import handle_chat
+        from ai_engine.conversation.orchestrator import handle_chat
         result = await handle_chat("user1", "Plan me a 5-day trip to Paris")
 
         assert result["response_type"] == "itinerary"
@@ -129,10 +129,10 @@ class TestGreetingPhase:
 class TestSlotFillingPhase:
 
     @pytest.mark.asyncio
-    @patch("ai_engine.chat.orchestrator.get_session_manager")
-    @patch("ai_engine.chat.orchestrator.interpret_message")
-    @patch("ai_engine.chat.orchestrator.trip_graph", new_callable=AsyncMock)
-    @patch("ai_engine.chat.orchestrator.load_mock_profile")
+    @patch("ai_engine.conversation.orchestrator.get_session_manager")
+    @patch("ai_engine.conversation.orchestrator.interpret_message")
+    @patch("ai_engine.conversation.orchestrator.trip_graph", new_callable=AsyncMock)
+    @patch("ai_engine.conversation.orchestrator.load_mock_profile")
     async def test_slot_filling_partial_info_asks_clarification(
         self, mock_profile, mock_graph, mock_route, mock_get_manager, mock_manager
     ):
@@ -141,7 +141,7 @@ class TestSlotFillingPhase:
         # First turn: greeting -> slot_filling (partial info)
         mock_route.return_value = _make_router_result("ask_clarification", "How many days?", destination_city="Cairo")
 
-        from ai_engine.chat.orchestrator import handle_chat
+        from ai_engine.conversation.orchestrator import handle_chat
         result1 = await handle_chat("user1", "I want to visit Cairo")
         assert result1["phase"] == "slot_filling"
 
@@ -155,8 +155,8 @@ class TestSlotFillingPhase:
         assert result2["phase"] == "itinerary_review"
 
     @pytest.mark.asyncio
-    @patch("ai_engine.chat.orchestrator.get_session_manager")
-    @patch("ai_engine.chat.orchestrator.interpret_message")
+    @patch("ai_engine.conversation.orchestrator.get_session_manager")
+    @patch("ai_engine.conversation.orchestrator.interpret_message")
     async def test_slot_filling_general_chat_stays_in_slot_filling(
         self, mock_route, mock_get_manager, mock_manager
     ):
@@ -165,7 +165,7 @@ class TestSlotFillingPhase:
         # First turn: greeting -> slot_filling
         mock_route.return_value = _make_router_result("ask_clarification", "How many days?", destination_city="Paris")
 
-        from ai_engine.chat.orchestrator import handle_chat
+        from ai_engine.conversation.orchestrator import handle_chat
         await handle_chat("user1", "I want to visit Paris")
 
         # Second turn: general question
@@ -181,10 +181,10 @@ class TestSlotFillingPhase:
 class TestItineraryReviewPhase:
 
     @pytest.mark.asyncio
-    @patch("ai_engine.chat.orchestrator.get_session_manager")
-    @patch("ai_engine.chat.orchestrator.interpret_message")
-    @patch("ai_engine.chat.orchestrator.trip_graph", new_callable=AsyncMock)
-    @patch("ai_engine.chat.orchestrator.load_mock_profile")
+    @patch("ai_engine.conversation.orchestrator.get_session_manager")
+    @patch("ai_engine.conversation.orchestrator.interpret_message")
+    @patch("ai_engine.conversation.orchestrator.trip_graph", new_callable=AsyncMock)
+    @patch("ai_engine.conversation.orchestrator.load_mock_profile")
     async def test_review_approve_transitions_to_completed(
         self, mock_profile, mock_graph, mock_route, mock_get_manager, mock_manager
     ):
@@ -192,7 +192,7 @@ class TestItineraryReviewPhase:
         mock_profile.return_value = {"user_id": "user1"}
         mock_graph.ainvoke.return_value = _make_mock_graph_result()
 
-        from ai_engine.chat.orchestrator import handle_chat
+        from ai_engine.conversation.orchestrator import handle_chat
 
         # Generate itinerary first
         mock_route.return_value = _make_plan_result("Paris", 3)
@@ -212,10 +212,10 @@ class TestHandleChatStream:
     """Tests for the handle_chat_stream() async generator."""
 
     @pytest.mark.asyncio
-    @patch("ai_engine.chat.orchestrator.get_session_manager")
-    @patch("ai_engine.chat.orchestrator.interpret_message")
-    @patch("ai_engine.chat.orchestrator.trip_graph", new_callable=AsyncMock)
-    @patch("ai_engine.chat.orchestrator.load_mock_profile")
+    @patch("ai_engine.conversation.orchestrator.get_session_manager")
+    @patch("ai_engine.conversation.orchestrator.interpret_message")
+    @patch("ai_engine.conversation.orchestrator.trip_graph", new_callable=AsyncMock)
+    @patch("ai_engine.conversation.orchestrator.load_mock_profile")
     async def test_yields_result_event_when_itinerary_is_generated(
         self, mock_profile, mock_graph, mock_route, mock_get_manager, mock_manager
     ):
@@ -225,7 +225,7 @@ class TestHandleChatStream:
         mock_profile.return_value = {"user_id": "user1"}
         mock_graph.ainvoke.return_value = _make_mock_graph_result(is_valid=True)
 
-        from ai_engine.chat.orchestrator import handle_chat_stream
+        from ai_engine.conversation.orchestrator import handle_chat_stream
 
         # When: we iterate over the stream
         events = []
@@ -258,8 +258,8 @@ class TestHandleChatStream:
         assert result_data["itinerary"]["days"][0]["stops"][0]["name"] == "Pyramids of Giza"
 
     @pytest.mark.asyncio
-    @patch("ai_engine.chat.orchestrator.get_session_manager")
-    @patch("ai_engine.chat.orchestrator.interpret_message")
+    @patch("ai_engine.conversation.orchestrator.get_session_manager")
+    @patch("ai_engine.conversation.orchestrator.interpret_message")
     async def test_does_not_yield_result_event_when_no_itinerary(
         self, mock_route, mock_get_manager, mock_manager
     ):
@@ -270,7 +270,7 @@ class TestHandleChatStream:
             destination_city="Cairo",
         )
 
-        from ai_engine.chat.orchestrator import handle_chat_stream
+        from ai_engine.conversation.orchestrator import handle_chat_stream
 
         # When: we iterate over the stream
         events = []
@@ -290,8 +290,8 @@ class TestHandleChatStream:
         assert event_types[-1] == "done"
 
     @pytest.mark.asyncio
-    @patch("ai_engine.chat.orchestrator.get_session_manager")
-    @patch("ai_engine.chat.orchestrator.interpret_message")
+    @patch("ai_engine.conversation.orchestrator.get_session_manager")
+    @patch("ai_engine.conversation.orchestrator.interpret_message")
     async def test_yields_session_event_first(
         self, mock_route, mock_get_manager, mock_manager
     ):
@@ -301,7 +301,7 @@ class TestHandleChatStream:
             "answer_question", "I'm here to help!"
         )
 
-        from ai_engine.chat.orchestrator import handle_chat_stream
+        from ai_engine.conversation.orchestrator import handle_chat_stream
 
         # When: we iterate over the stream
         events = []
@@ -318,10 +318,10 @@ class TestHandleChatStream:
         assert first["data"]["phase"] is not None
 
     @pytest.mark.asyncio
-    @patch("ai_engine.chat.orchestrator.get_session_manager")
-    @patch("ai_engine.chat.orchestrator.interpret_message")
-    @patch("ai_engine.chat.orchestrator.trip_graph", new_callable=AsyncMock)
-    @patch("ai_engine.chat.orchestrator.load_mock_profile")
+    @patch("ai_engine.conversation.orchestrator.get_session_manager")
+    @patch("ai_engine.conversation.orchestrator.interpret_message")
+    @patch("ai_engine.conversation.orchestrator.trip_graph", new_callable=AsyncMock)
+    @patch("ai_engine.conversation.orchestrator.load_mock_profile")
     async def test_result_event_contains_correct_phase(
         self, mock_profile, mock_graph, mock_route, mock_get_manager, mock_manager
     ):
@@ -331,7 +331,7 @@ class TestHandleChatStream:
         mock_profile.return_value = {"user_id": "user1"}
         mock_graph.ainvoke.return_value = _make_mock_graph_result(is_valid=True)
 
-        from ai_engine.chat.orchestrator import handle_chat_stream
+        from ai_engine.conversation.orchestrator import handle_chat_stream
 
         # When: we iterate over the stream
         events = []
@@ -360,7 +360,7 @@ class TestEnrichCandidatePoolByCategory:
         """When the request has no detectable category, return None."""
         mock_detect_hints.return_value = {}
 
-        from ai_engine.chat.orchestrator import _enrich_candidate_pool_by_category
+        from ai_engine.conversation.orchestrator import _enrich_candidate_pool_by_category
 
         result = await _enrich_candidate_pool_by_category(
             modification_request="swap giza for sphinx",
@@ -381,7 +381,7 @@ class TestEnrichCandidatePoolByCategory:
         mock_detect_hints.return_value = {"category": "attraction", "sub_category": "museums"}
         mock_get_places.return_value = []
 
-        from ai_engine.chat.orchestrator import _enrich_candidate_pool_by_category
+        from ai_engine.conversation.orchestrator import _enrich_candidate_pool_by_category
 
         result = await _enrich_candidate_pool_by_category(
             modification_request="add museums in the trip",
@@ -405,7 +405,7 @@ class TestEnrichCandidatePoolByCategory:
             {"id": "p2", "name": "Nightclub", "category": "attraction", "sub_category": "nightlife"},
         ]
 
-        from ai_engine.chat.orchestrator import _enrich_candidate_pool_by_category
+        from ai_engine.conversation.orchestrator import _enrich_candidate_pool_by_category
 
         result = await _enrich_candidate_pool_by_category(
             modification_request="add museums in the trip",
@@ -429,7 +429,7 @@ class TestEnrichCandidatePoolByCategory:
             {"id": "p1", "name": "Park", "category": "attraction", "sub_category": "parks", "rating": 4.2},
         ]
 
-        from ai_engine.chat.orchestrator import _enrich_candidate_pool_by_category
+        from ai_engine.conversation.orchestrator import _enrich_candidate_pool_by_category
 
         existing = [{"id": "existing_1", "name": "Giza Necropolis"}]
         result = await _enrich_candidate_pool_by_category(
@@ -456,7 +456,7 @@ class TestEnrichCandidatePoolByCategory:
             {"id": "m1", "name": "Egyptian Museum", "category": "attraction", "sub_category": "museums", "rating": 4.8},
         ]
 
-        from ai_engine.chat.orchestrator import _enrich_candidate_pool_by_category
+        from ai_engine.conversation.orchestrator import _enrich_candidate_pool_by_category
 
         existing = [{"id": "m1", "name": "Egyptian Museum", "category": "attraction"}]
         result = await _enrich_candidate_pool_by_category(
@@ -466,6 +466,102 @@ class TestEnrichCandidatePoolByCategory:
         )
 
         assert result is None  # No new places to add
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Code structure checks (_rerank_and_replan)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+
+class TestRerankAndReplanStructure:
+    """
+    Verify internal invariants of ``_rerank_and_replan``.
+
+    These are source-inspection tests that catch regressions in
+    the orchestrator's internal state construction, such as
+    duplicate profile keys or leftover imports.
+    """
+
+    def test_no_duplicate_profile_key_in_rerank_state(self):
+        """The rerank state dict should contain exactly one 'profile' key."""
+        import inspect
+        from ai_engine.conversation.orchestrator import _rerank_and_replan
+
+        source = inspect.getsource(_rerank_and_replan)
+        profile_keys = 0
+        in_dict = False
+        for line in source.split("\n"):
+            stripped = line.strip()
+            if '"filtered_places"' in stripped:
+                in_dict = True
+            if in_dict and stripped == "}":
+                in_dict = False
+            if in_dict and stripped.startswith('"profile"'):
+                profile_keys += 1
+
+        assert profile_keys == 1, (
+            f"Expected exactly 1 'profile' key in rerank state dict, "
+            f"found {profile_keys}. A duplicate would overwrite the first."
+        )
+
+    def test_apply_preference_adjustments_not_imported(self):
+        """The orchestrator should import ``interpret_preference_adjustment``
+        but NOT ``apply_preference_adjustments`` (that function lives in
+        the preference_reranker_agent module)."""
+        from ai_engine.conversation.orchestrator import interpret_preference_adjustment
+        assert interpret_preference_adjustment is not None
+
+        with pytest.raises(ImportError):
+            from ai_engine.conversation.orchestrator import apply_preference_adjustments  # noqa: F811
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# _handle_modify_itinerary skip logic
+# ═══════════════════════════════════════════════════════════════════════════════
+
+
+class TestHandleModifyItinerarySkipLogic:
+    """
+    When accommodation changes are made, the itinerary modifier skips the
+    Mode 1 re-ranking step. These tests verify the source code contains
+    the correct guard logic.
+    """
+
+    def test_accommodations_updated_flag_initialized(self):
+        """The ``accommodations_updated`` flag is initialized before Mode 1."""
+        import inspect
+        from ai_engine.conversation.orchestrator import _handle_modify_itinerary
+
+        source = inspect.getsource(_handle_modify_itinerary)
+        assert "accommodations_updated = False" in source, (
+            "Expected 'accommodations_updated = False' initialization"
+        )
+
+    def test_skip_rerank_when_accommodations_updated(self):
+        """The source references ``accommodations_updated`` in a conditional
+        that skips re-ranking."""
+        import inspect
+        from ai_engine.conversation.orchestrator import _handle_modify_itinerary
+
+        source = inspect.getsource(_handle_modify_itinerary)
+        has_conditional = (
+            "accommodations_updated: True" in source
+            or "if accommodations_updated:" in source
+        )
+        assert has_conditional, (
+            "Expected conditional check on 'accommodations_updated' to skip re-rank"
+        )
+
+    def test_fallback_note_suppressed_when_accommodations_updated(self):
+        """The fallback note is suppressed when accommodations were updated."""
+        import inspect
+        from ai_engine.conversation.orchestrator import _handle_modify_itinerary
+
+        source = inspect.getsource(_handle_modify_itinerary)
+        assert "not accommodations_updated" in source, (
+            "Expected 'not accommodations_updated' to suppress fallback note"
+        )
+
 
     @pytest.mark.asyncio
     @patch("ai_engine.services.operations._detect_category_hints")
@@ -483,7 +579,7 @@ class TestEnrichCandidatePoolByCategory:
         ]
         mock_get_places.return_value = museums
 
-        from ai_engine.chat.orchestrator import _enrich_candidate_pool_by_category
+        from ai_engine.conversation.orchestrator import _enrich_candidate_pool_by_category
 
         result = await _enrich_candidate_pool_by_category(
             modification_request="add museums in the trip",
@@ -511,7 +607,7 @@ class TestEnrichCandidatePoolByCategory:
             {"id": "h1", "name": "Hotel", "category": "hotel", "sub_category": "", "rating": 4.2},
         ]
 
-        from ai_engine.chat.orchestrator import _enrich_candidate_pool_by_category
+        from ai_engine.conversation.orchestrator import _enrich_candidate_pool_by_category
 
         result = await _enrich_candidate_pool_by_category(
             modification_request="add more restaurants",
@@ -533,7 +629,7 @@ class TestEnrichCandidatePoolByCategory:
         mock_detect_hints.return_value = {"category": "attraction", "sub_category": "museums"}
         mock_get_places.return_value = []  # simulate DB failure
 
-        from ai_engine.chat.orchestrator import _enrich_candidate_pool_by_category
+        from ai_engine.conversation.orchestrator import _enrich_candidate_pool_by_category
 
         result = await _enrich_candidate_pool_by_category(
             modification_request="add museums",

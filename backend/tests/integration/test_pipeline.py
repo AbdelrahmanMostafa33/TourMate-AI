@@ -31,13 +31,13 @@ from ai_engine.graph.nodes import (
     validation_node,
 )
 from ai_engine.graph.edges import (
-    should_retrieve,
     should_rank,
     should_plan,
     should_optimize,
     should_validate,
     should_retry_or_end,
 )
+from ai_engine.evaluation.agent_metrics import agent_metrics
 from tests.integration.conftest import (
     MOCK_PLACES,
     build_pipeline_state,
@@ -283,16 +283,6 @@ class TestErrorPropagation:
 class TestConditionalEdgeRouting:
     """Each edge function routes correctly based on state."""
 
-    def test_should_retrieve_without_error(self):
-        """No error → route to retrieval."""
-        state = {"error": None}
-        assert should_retrieve(state) == "retrieval"
-
-    def test_should_retrieve_with_error(self):
-        """Error present → route to end."""
-        state = {"error": "Something went wrong"}
-        assert should_retrieve(state) == "end"
-
     def test_should_rank_with_filtered_places(self):
         """Filtered places exist → route to ranking."""
         state = {"error": None, "filtered_places": [{"id": "p1"}]}
@@ -353,6 +343,110 @@ class TestConditionalEdgeRouting:
 # 5. Validation Retry Flow
 # ═══════════════════════════════════════════════════════════════════════════
 
+# ═══════════════════════════════════════════════════════════════════════════
+# 7. Agent Metrics Integration
+# ═══════════════════════════════════════════════════════════════════════════
+
+class TestAgentMetricsIntegration:
+    """Running all pipeline nodes should record metrics for all 6 agent roles."""
+
+    @pytest.mark.asyncio
+    @patch("ai_engine.agents.planning_agent.invoke_with_fallback")
+    @patch("ai_engine.services.route_optimizer.compute_day_matrix", new_callable=AsyncMock)
+    @patch("ai_engine.services.itinerary_validator.invoke_with_fallback")
+    async def test_all_six_roles_recorded(
+        self, mock_val_llm, mock_matrix, mock_plan_llm
+    ):
+        """After running all 6 pipeline nodes, agent_metrics has 6 roles with non-zero calls."""
+        mock_plan_llm.return_value = build_planning_llm_response(num_days=2, num_stops_per_day=3)
+        mock_matrix.return_value = make_mock_matrix(3, travel_time=8.0)
+        mock_val_llm.return_value = build_validation_llm_response(is_valid=True, score=85)
+
+        # Reset metrics before the pipeline run
+        agent_metrics.reset()
+
+        state = build_pipeline_state()
+
+        # Run all 6 nodes in sequence — load_profile_node first so all roles execute
+        state = await load_profile_node(state)
+        with patch("ai_engine.services.place_retriever.get_places_for_city", new_callable=AsyncMock, return_value=MOCK_PLACES):
+            state = await retrieval_node(state)
+        state = await ranking_node(state)
+        state = await planning_node(state)
+        state = await optimization_node(state)
+        state = await validation_node(state)
+
+        # Get the summary
+        summary = agent_metrics.get_summary()
+
+        # Verify all 6 roles are present with non-zero call counts
+        expected_roles = {
+            "profile_loader",
+            "place_retriever",
+            "candidate_scorer",
+            "planner",
+            "route_optimizer",
+            "itinerary_validator",
+        }
+        actual_roles = {k for k in summary if k != "total"}
+        assert actual_roles == expected_roles, f"Expected roles {expected_roles}, got {actual_roles}"
+
+        for role in expected_roles:
+            row = summary[role]
+            assert row["calls"] > 0, f"Role '{role}' has zero calls"
+            assert row["latency_ms"]["avg"] > 0, f"Role '{role}' has zero avg latency"
+            assert row["errors"] == 0, f"Role '{role}' has unexpected errors"
+
+        # Verify total aggregation
+        total = summary["total"]
+        assert total["calls"] == 6, f"Expected 6 total calls, got {total['calls']}"
+        assert total["errors"] == 0
+        assert total["duration_ms"] > 0
+
+    @pytest.mark.asyncio
+    @patch("ai_engine.agents.planning_agent.invoke_with_fallback")
+    @patch("ai_engine.services.route_optimizer.compute_day_matrix", new_callable=AsyncMock)
+    @patch("ai_engine.services.itinerary_validator.invoke_with_fallback")
+    async def test_reset_between_pipeline_runs(
+        self, mock_val_llm, mock_matrix, mock_plan_llm
+    ):
+        """Resetting agent_metrics clears data between pipeline runs."""
+        mock_plan_llm.return_value = build_planning_llm_response(num_days=1, num_stops_per_day=2)
+        mock_matrix.return_value = make_mock_matrix(2, travel_time=5.0)
+        mock_val_llm.return_value = build_validation_llm_response(is_valid=True, score=85)
+
+        agent_metrics.reset()
+        state = build_pipeline_state(duration_days=1)
+
+        with patch("ai_engine.services.place_retriever.get_places_for_city", new_callable=AsyncMock, return_value=MOCK_PLACES):
+            state = await retrieval_node(state)
+        # Don't run full pipeline — just verify reset clears properly
+
+        assert len(agent_metrics.get_all_snapshots()) == 1
+
+        agent_metrics.reset()
+        assert len(agent_metrics.get_all_snapshots()) == 0
+        assert agent_metrics.get_summary()["total"]["calls"] == 0
+
+    @pytest.mark.asyncio
+    async def test_pipeline_error_records_error_metric(self):
+        """When an external service raises, the error is recorded in agent_metrics."""
+        # Mock get_places_for_city to raise (exception propagates through retrieval_node
+        # and gets caught by agent_metrics.track_async("place_retriever"))
+        agent_metrics.reset()
+        state = build_pipeline_state()
+
+        with patch("ai_engine.services.place_retriever.get_places_for_city", new_callable=AsyncMock, side_effect=Exception("API error")):
+            with pytest.raises(Exception):
+                await retrieval_node(state)
+
+        summary = agent_metrics.get_summary()
+        assert "place_retriever" in summary
+        assert summary["place_retriever"]["errors"] == 1, f"Expected 1 error, got {summary['place_retriever']['errors']}"
+        assert summary["place_retriever"]["calls"] == 1
+        assert summary["place_retriever"]["error_rate"] > 0
+
+
 class TestValidationRetryFlow:
     """When validation fails, the pipeline can retry from the planner."""
 
@@ -396,11 +490,11 @@ class TestProfileCompleteness:
     """is_profile_complete works with the new TripProfile schema."""
 
     def test_complete_profile_passes(self):
-        from ai_engine.profiling.behavioral_profile import is_profile_complete
+        from ai_engine.tools.profile_tool import is_profile_complete
         profile = _make_profile(
             budget_level="moderate",
             travel_style="cultural",
-            pace="balanced",
+            pace="moderate",
             interests=["history"],
             food_preferences=["local cuisine"],
             accommodation_preferences=["boutique hotel"],
@@ -408,7 +502,7 @@ class TestProfileCompleteness:
         assert is_profile_complete(profile) is True
 
     def test_incomplete_profile_fails(self):
-        from ai_engine.profiling.behavioral_profile import is_profile_complete
+        from ai_engine.tools.profile_tool import is_profile_complete
         profile = _make_profile(
             budget_level=None,
             travel_style=None,
@@ -417,7 +511,7 @@ class TestProfileCompleteness:
         assert is_profile_complete(profile) is False
 
     def test_profile_to_text_contains_fields(self):
-        from ai_engine.profiling.behavioral_profile import profile_to_text
+        from ai_engine.tools.profile_tool import profile_to_text
         profile = _make_profile(
             budget_level="luxury",
             travel_style="adventure",

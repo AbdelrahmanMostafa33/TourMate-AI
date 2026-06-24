@@ -18,6 +18,7 @@ from ai_engine.tools.slot_normalizer import (
     normalize_accommodation,
     normalize_interests,
     normalize_extracted_slots,
+    map_accommodation_to_type,
 )
 
 
@@ -89,8 +90,8 @@ class TestNormalizeBudget:
 class TestNormalizePace:
     def test_canonical_passthrough(self):
         assert normalize_pace("relaxed") == "relaxed"
-        assert normalize_pace("moderate") == "balanced"
-        assert normalize_pace("balanced") == "balanced"
+        assert normalize_pace("moderate") == "moderate"
+        assert normalize_pace("balanced") == "moderate"
         assert normalize_pace("packed") == "packed"
 
     def test_relaxed_synonyms(self):
@@ -101,10 +102,10 @@ class TestNormalizePace:
         assert normalize_pace("lazy") == "relaxed"
 
     def test_balanced_synonyms(self):
-        assert normalize_pace("mixed") == "balanced"
-        assert normalize_pace("flexible") == "balanced"
-        assert normalize_pace("varied") == "balanced"
-        assert normalize_pace("moderate") == "balanced"
+        assert normalize_pace("mixed") == "moderate"
+        assert normalize_pace("flexible") == "moderate"
+        assert normalize_pace("varied") == "moderate"
+        assert normalize_pace("moderate") == "moderate"
 
     def test_packed_synonyms(self):
         assert normalize_pace("busy") == "packed"
@@ -113,15 +114,15 @@ class TestNormalizePace:
         assert normalize_pace("action-packed") == "packed"
         assert normalize_pace("non-stop") == "packed"
 
-    def test_anything_maps_to_balanced(self):
-        """The reviewer's key concern: 'anything' should map to balanced, not fail."""
-        assert normalize_pace("anything") == "balanced"
-        assert normalize_pace("don't care") == "balanced"
-        assert normalize_pace("i don't mind") == "balanced"
-        assert normalize_pace("no preference") == "balanced"
-        assert normalize_pace("surprise me") == "balanced"
-        assert normalize_pace("up to you") == "balanced"
-        assert normalize_pace("any") == "balanced"
+    def test_anything_maps_to_moderate(self):
+        """The reviewer's key concern: 'anything' should map to moderate, not fail."""
+        assert normalize_pace("anything") == "moderate"
+        assert normalize_pace("don't care") == "moderate"
+        assert normalize_pace("i don't mind") == "moderate"
+        assert normalize_pace("no preference") == "moderate"
+        assert normalize_pace("surprise me") == "moderate"
+        assert normalize_pace("up to you") == "moderate"
+        assert normalize_pace("any") == "moderate"
 
     def test_none_and_empty(self):
         assert normalize_pace(None) is None
@@ -230,11 +231,11 @@ class TestNormalizeAccommodation:
         assert normalize_accommodation(["resort"]) == ["resort"]
 
     def test_luxury_keywords(self):
-        assert normalize_accommodation(["boutique hotel"]) == ["luxury hotel"]
-        assert normalize_accommodation(["five star"]) == ["luxury hotel"]
-        assert normalize_accommodation(["high-end"]) == ["luxury hotel"]
-        assert normalize_accommodation(["upscale"]) == ["luxury hotel"]
-        assert normalize_accommodation(["palace"]) == ["luxury hotel"]
+        assert normalize_accommodation(["boutique hotel"]) == ["luxury"]
+        assert normalize_accommodation(["five star"]) == ["luxury"]
+        assert normalize_accommodation(["high-end"]) == ["luxury"]
+        assert normalize_accommodation(["upscale"]) == ["luxury"]
+        assert normalize_accommodation(["palace"]) == ["luxury"]
 
     def test_hostel_keywords(self):
         assert normalize_accommodation(["backpacker"]) == ["hostel"]
@@ -256,7 +257,7 @@ class TestNormalizeAccommodation:
     def test_priority_luxury_over_hotel(self):
         """More specific types take priority over generic 'hotel'."""
         result = normalize_accommodation(["boutique hotel", "standard hotel"])
-        assert result == ["luxury hotel"]
+        assert result == ["luxury"]
 
     def test_priority_resort_over_hotel(self):
         result = normalize_accommodation(["hotel", "resort"])
@@ -275,6 +276,168 @@ class TestNormalizeAccommodation:
     def test_substring_in_sentence(self):
         result = normalize_accommodation(["I want a nice resort please"])
         assert result == ["resort"]
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Consistency: normalize_accommodation vs map_accommodation_to_type
+# ══════════════════════════════════════════════════════════════════════════════
+
+class TestAccommodationConsistency:
+    """
+    Verify that ``normalize_accommodation`` and ``map_accommodation_to_type``
+    produce consistent results for the same inputs.
+
+    ``normalize_accommodation`` returns ``["luxury"]`` (list)
+    ``map_accommodation_to_type`` returns ``"luxury"`` (bare string)
+
+    These two functions share the same ``_ACCOMMODATION_KEYWORDS`` list but use
+    different matching strategies:
+    - ``normalize_accommodation``: ``_contains_word()`` (regex word-boundary)
+    - ``map_accommodation_to_type``: ``keyword in pref_lower`` (simple substring)
+
+    For clean single-keyword inputs the results should always agree.
+    For complex inputs with non-word characters near a keyword the word-boundary
+    and substring strategies may differ — those edge cases are documented below.
+    """
+
+    # ── Tests for inputs where both functions should agree ──────────────
+
+    def test_hotel_single_word(self):
+        """Canonical type via single word."""
+        assert map_accommodation_to_type(["hotel"]) == "hotel"
+        assert normalize_accommodation(["hotel"]) == ["hotel"]
+        assert map_accommodation_to_type(["hotel"]) == normalize_accommodation(["hotel"])[0]
+
+    def test_luxury_single_word(self):
+        assert map_accommodation_to_type(["luxury"]) == "luxury"
+        assert normalize_accommodation(["luxury"]) == ["luxury"]
+        assert map_accommodation_to_type(["luxury"]) == normalize_accommodation(["luxury"])[0]
+
+    def test_hostel_single_word(self):
+        assert map_accommodation_to_type(["hostel"]) == "hostel"
+        assert normalize_accommodation(["hostel"]) == ["hostel"]
+
+    def test_resort_single_word(self):
+        assert map_accommodation_to_type(["resort"]) == "resort"
+        assert normalize_accommodation(["resort"]) == ["resort"]
+
+    def test_boutique_hotel_phrase(self):
+        """Multi-word phrase mapping to luxury."""
+        assert map_accommodation_to_type(["boutique hotel"]) == "luxury"
+        assert normalize_accommodation(["boutique hotel"]) == ["luxury"]
+
+    def test_beach_resort_phrase(self):
+        """Multi-word phrase mapping to resort."""
+        assert map_accommodation_to_type(["beach resort"]) == "resort"
+        assert normalize_accommodation(["beach resort"]) == ["resort"]
+
+    def test_backpacker_hostel(self):
+        assert map_accommodation_to_type(["backpacker hostel"]) == "hostel"
+        assert normalize_accommodation(["backpacker hostel"]) == ["hostel"]
+
+    def test_airbnb(self):
+        assert map_accommodation_to_type(["airbnb"]) == "hotel"
+        assert normalize_accommodation(["airbnb"]) == ["hotel"]
+
+    def test_all_inclusive_resort(self):
+        assert map_accommodation_to_type(["all-inclusive"]) == "resort"
+        assert normalize_accommodation(["all-inclusive"]) == ["resort"]
+
+    def test_five_star_luxury(self):
+        assert map_accommodation_to_type(["5-star"]) == "luxury"
+        assert normalize_accommodation(["5-star"]) == ["luxury"]
+
+    def test_premium_hotel(self):
+        assert map_accommodation_to_type(["premium hotel"]) == "luxury"
+        assert normalize_accommodation(["premium hotel"]) == ["luxury"]
+
+    def test_sentence_input(self):
+        """Both functions handle full-sentence inputs."""
+        assert map_accommodation_to_type(["I want a nice boutique hotel"]) == "luxury"
+        assert normalize_accommodation(["I want a nice boutique hotel"]) == ["luxury"]
+
+    def test_guest_house(self):
+        assert map_accommodation_to_type(["guesthouse"]) == "hotel"
+        assert normalize_accommodation(["guesthouse"]) == ["hotel"]
+
+    def test_bed_and_breakfast(self):
+        assert map_accommodation_to_type(["bed and breakfast"]) == "hotel"
+        assert normalize_accommodation(["bed and breakfast"]) == ["hotel"]
+
+    def test_multiple_prefs_dominant_wins(self):
+        """Both functions return the dominant (highest-priority) type."""
+        inputs = [["hotel", "resort"], ["standard hotel", "beach resort"], ["hostel", "villa"]]
+        for inp in inputs:
+            map_result = map_accommodation_to_type(inp)
+            norm_result = normalize_accommodation(inp)
+            assert norm_result is not None, f"normalize_accommodation returned None for {inp}"
+            assert map_result == norm_result[0], (
+                f"Mismatch for {inp}: map={map_result!r}, norm={norm_result!r}"
+            )
+
+    def test_no_match_empty_list(self):
+        """No matching keywords: map returns empty, norm returns None."""
+        assert map_accommodation_to_type(["camping"]) == ""
+        assert normalize_accommodation(["camping"]) is None
+
+    def test_empty_input(self):
+        assert map_accommodation_to_type([]) == ""
+        assert normalize_accommodation([]) is None
+
+    def test_villa_edge_case(self):
+        """'villa' maps to luxury in both functions."""
+        assert map_accommodation_to_type(["villa"]) == "luxury"
+        assert normalize_accommodation(["villa"]) == ["luxury"]
+
+    def test_dormitory_edge_case(self):
+        """'dormitory' maps to hostel."""
+        assert map_accommodation_to_type(["dormitory"]) == "hostel"
+        assert normalize_accommodation(["dormitory"]) == ["hostel"]
+
+    def test_motel(self):
+        assert map_accommodation_to_type(["motel"]) == "hotel"
+        assert normalize_accommodation(["motel"]) == ["hotel"]
+
+    def test_executive_suite(self):
+        """'executive' maps to luxury."""
+        assert map_accommodation_to_type(["executive suite"]) == "luxury"
+        assert normalize_accommodation(["executive suite"]) == ["luxury"]
+
+    def test_high_end(self):
+        assert map_accommodation_to_type(["high end"]) == "luxury"
+        assert normalize_accommodation(["high end"]) == ["luxury"]
+
+    def test_standard_hotel(self):
+        """'standard' maps to hotel, not 'standard' as a canonical type."""
+        assert map_accommodation_to_type(["standard"]) == "hotel"
+        assert normalize_accommodation(["standard"]) == ["hotel"]
+
+    # ── Documented divergence cases ────────────────────────────────────
+
+    def test_apartment_hotel(self):
+        """Both agree on 'apartment' → hotel."""
+        assert map_accommodation_to_type(["apartment"]) == "hotel"
+        assert normalize_accommodation(["apartment"]) == ["hotel"]
+
+    def test_waterpark_resort(self):
+        """Both map 'water park' → resort."""
+        assert map_accommodation_to_type(["water park"]) == "resort"
+        assert normalize_accommodation(["water park"]) == ["resort"]
+
+    def test_private_villa(self):
+        """'private villa' maps to luxury."""
+        assert map_accommodation_to_type(["private villa"]) == "luxury"
+        assert normalize_accommodation(["private villa"]) == ["luxury"]
+
+    def test_bnb(self):
+        """'bnb' maps to hotel."""
+        assert map_accommodation_to_type(["bnb"]) == "hotel"
+        assert normalize_accommodation(["bnb"]) == ["hotel"]
+
+    def test_budget_accommodation(self):
+        """'budget accommodation' maps to hostel."""
+        assert map_accommodation_to_type(["budget accommodation"]) == "hostel"
+        assert normalize_accommodation(["budget accommodation"]) == ["hostel"]
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -478,13 +641,13 @@ class TestNormalizeExtractedSlots:
 
         # Scalar normalizations applied
         assert result["budget_level"] == "moderate"
-        assert result["pace"] == "balanced"
+        assert result["pace"] == "moderate"
         assert result["travel_style"] == "romantic"
 
         # List normalizations applied
         assert "local cuisine" in result["food_preferences"]
         assert "street food" in result["food_preferences"]
-        assert result["accommodation_preferences"] == ["luxury hotel"]
+        assert result["accommodation_preferences"] == ["luxury"]
         assert "museums" in result["interests"]
         assert "art" in result["interests"]
 
@@ -515,7 +678,7 @@ class TestNormalizeExtractedSlots:
         """
         raw = {"pace": "anything"}
         result = normalize_extracted_slots(raw)
-        assert result["pace"] == "balanced"
+        assert result["pace"] == "moderate"
 
         raw2 = {"budget_level": "cheap", "travel_style": "chill"}
         result2 = normalize_extracted_slots(raw2)

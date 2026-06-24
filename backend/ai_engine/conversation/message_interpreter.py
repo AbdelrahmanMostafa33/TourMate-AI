@@ -6,11 +6,6 @@ with 1 intelligent call that sees full conversation history.
 
 Uses Pydantic models + .with_structured_output() to guarantee valid JSON
 from the LLM, eliminating manual JSON parsing and markdown fence stripping.
-
-The interpreter:
-1. Sees the full conversation history + current state (slots, phase, itinerary)
-2. Extracts any new information from the user's message
-3. Decides the action AND generates the response in one shot
 """
 
 from __future__ import annotations
@@ -21,8 +16,8 @@ from typing import Dict, Any, List, Optional, Literal
 from pydantic import BaseModel, Field
 from langchain_core.messages import SystemMessage, HumanMessage
 
-from ai_engine.llm_config import invoke_with_fallback
-from ai_engine.memory.conversation_state import (
+from ai_engine.llm import invoke_with_fallback
+from ai_engine.conversation.conversation_state import (
     ConversationState,
     ConversationPhase,
 )
@@ -75,7 +70,7 @@ class ExtractedSlots(BaseModel):
     )
     pace: Optional[str] = Field(
         default=None,
-        description="Pace: 'relaxed', 'balanced', or 'packed'",
+        description="Pace: 'relaxed', 'moderate', or 'packed'",
     )
     interests: Optional[List[str]] = Field(
         default=None,
@@ -97,11 +92,7 @@ class ExtractedSlots(BaseModel):
 
 
 class InterpreterOutput(BaseModel):
-    """Structured output from the message interpreter.
-
-    The LLM fills this Pydantic model directly via .with_structured_output(),
-    guaranteeing valid output without manual JSON parsing.
-    """
+    """Structured output from the message interpreter."""
 
     action: Literal["plan_trip", "ask_clarification", "answer_question", "approve_itinerary", "modify_itinerary"] = Field(
         description=(
@@ -178,42 +169,20 @@ Examples:
 3. If the user provided their destination + duration → set action to "plan_trip" immediately. Smart defaults will handle everything else.
 4. NEVER ask for information they already provided — check the Current State above
 5. Always acknowledge what the user said before asking for more
-   - Good: "Cairo! Great choice. How many days are you thinking?"
-   - Bad: "Please provide your destination and duration."
 6. If destination or duration is missing, ask for ONE thing at a time — start with destination, then duration.
-7. NEVER ask about budget, pace, style, interests, food, accommodation, traveler count, dates, or traveler group —
-   those are all handled by smart defaults. Only ask for destination and duration.
+7. NEVER ask about budget, pace, style, interests, food, accommodation, traveler count, dates, or traveler group — those are all handled by smart defaults.
 8. If they ask a travel question, answer it naturally and helpfully
 9. If they approve an itinerary, confirm it warmly
 10. If they request changes to an itinerary, acknowledge and set action to "modify_itinerary"
-11. Be warm but concise — no filler words like "I understand", "Certainly!", "Of course!"
+11. Be warm but concise — no filler words
 12. Respond in the same language the user writes in
-13. NEVER confirm or ask "Is that correct?" — if the user provides a clear answer, accept it immediately and move on.
-
-## Extraction Rules
-- **Budget**: Extract the raw phrase. A downstream normalizer canonicalizes to 'budget', 'moderate', or 'luxury'.
-- **Style**: Extract ONLY when the user explicitly describes their travel STYLE
-  (e.g. 'I want a solo trip', 'cultural travel'). Do NOT confuse interests with style —
-  'I like history' → interests: ['history'], NOT travel_style: 'cultural'.
-- **Pace**: Extract the raw phrase. A downstream normalizer canonicalizes to 'relaxed', 'balanced', or 'packed'.
-- **Interests**: Extract ONLY interest CATEGORY keywords — short, single words or
-  short phrases describing what the user wants to SEE or DO. Examples of valid
-  interests: 'museums', 'history', 'food', 'shopping', 'nature', 'parks', 'art',
-  'architecture', 'nightlife', 'beaches', 'photography', 'religion', 'adventure'.
-  Do NOT extract: commands or instructions ('remove X', 'swap Y', 'add Z'),
-  specific place names ('Al-Azhar Mosque', 'Eiffel Tower'), full sentences,
-  or multi-word instructions. If the user says "remove X and add Y and I like
-  museums and food" → extract ONLY ['museums', 'food'].
-- **Food preferences**: Extract from phrases like 'local food', 'street food', 'vegetarian', etc.
-- **Accommodation**: Extract as a phrase containing: 'hotel', 'hostel', 'resort', 'luxury', 'boutique', 'palace'.
-  Return as a list with ONE item, e.g. ['boutique hotel'] not ['luxury', 'boutique', 'hotel'].
-- **Duration**: Return as a string of the number (e.g. '3', '5', '7')
-- **If the user sends a greeting or casual message with no new travel info, do NOT extract any slots — leave extracted empty."""
+13. NEVER confirm or ask "Is that correct?" — if the user provides a clear answer, accept it immediately.
+"""
 
 
 # ── Context Building ─────────────────────────────────────────────────────────
+
 def _build_conversation_history(state: ConversationState, max_messages: int = 10) -> str:
-    """Build a text summary of recent conversation for the LLM prompt."""
     recent = state.history[-max_messages:]
     if not recent:
         return "(No previous messages — this is the start of the conversation)"
@@ -227,7 +196,6 @@ def _build_conversation_history(state: ConversationState, max_messages: int = 10
 
 
 def _build_itinerary_summary(state: ConversationState) -> str:
-    """Build a concise itinerary summary for review phase."""
     if not state.itinerary:
         return ""
 
@@ -273,12 +241,10 @@ _ACTION_ALIASES = {
 
 
 def _normalize_action(action: str) -> str:
-    """Normalize action string to a valid action."""
     return _ACTION_ALIASES.get(action.lower().strip(), "answer_question")
 
 
 def _coerce_int(value) -> int | None:
-    """Coerce a value to int, returning None on failure."""
     if value is None:
         return None
     try:
@@ -288,16 +254,10 @@ def _coerce_int(value) -> int | None:
 
 
 def _build_extracted_dict(extracted: ExtractedSlots) -> dict:
-    """Convert Pydantic ExtractedSlots to a plain dict, drop None values,
-    coerce duration_days/group_size to int, then apply deterministic
-    normalization (budget, pace, style, food, accommodation)."""
     raw = extracted.model_dump()
     raw["duration_days"] = _coerce_int(raw.get("duration_days"))
     raw["group_size"] = _coerce_int(raw.get("group_size"))
     raw = {k: v for k, v in raw.items() if v is not None}
-
-    # Deterministic post-processing — replaces LLM-dependent normalization.
-    # The LLM extracts raw values; this step guarantees canonical forms.
     normalized = normalize_extracted_slots(raw)
     return normalized
 
@@ -306,12 +266,7 @@ def _build_extracted_dict(extracted: ExtractedSlots) -> dict:
 
 @traced(name="message_interpreter", tags=["conversation", "interpreter"], metadata={"component": "message_interpreter"})
 async def interpret_message(state: ConversationState, user_message: str) -> InterpretationResult:
-    """
-    Single context-aware LLM call with structured output.
-
-    Uses .with_structured_output() to guarantee valid JSON from the LLM.
-    """
-    # Build context
+    """Single context-aware LLM call with structured output."""
     history_text = _build_conversation_history(state)
     slots = state.slots
     missing = slots.missing_required()
@@ -321,7 +276,6 @@ async def interpret_message(state: ConversationState, user_message: str) -> Inte
     if state.phase == ConversationPhase.ITINERARY_REVIEW:
         itinerary_context = _build_itinerary_summary(state)
 
-    # Build prompt
     prompt = INTERPRETER_SYSTEM_PROMPT.format(
         conversation_history=history_text,
         phase=state.phase.value,
@@ -347,30 +301,23 @@ async def interpret_message(state: ConversationState, user_message: str) -> Inte
         HumanMessage(content="Extract information and respond now."),
     ]
 
-    # Call LLM with structured output
     interpreter_output: Optional[InterpreterOutput] = None
     try:
-        interpreter_output = await invoke_with_fallback(
-            "router", messages, structured_output=InterpreterOutput,
-        )
+        interpreter_output = await invoke_with_fallback("router", messages, structured_output=InterpreterOutput)
     except Exception as e:
         logger.error("Message interpreter LLM failed: %s", e)
         interpreter_output = None
 
-    # Extract fields
     if interpreter_output:
         action = _normalize_action(interpreter_output.action)
         extracted = _build_extracted_dict(interpreter_output.extracted)
         response_text = interpreter_output.response
     else:
-        # LLM failed — return generic response (all 10 keys exhausted)
         logger.error("Message interpreter LLM failed with all keys exhausted")
         extracted = {}
         action = "answer_question"
         response_text = "I'm having trouble connecting to my AI service. Please try again in a moment."
 
-    # If LLM extracted destination + duration from current message,
-    # override to plan_trip to trigger itinerary generation.
     if interpreter_output is not None and any([
         interpreter_output.extracted.destination_city,
         interpreter_output.extracted.duration_days,

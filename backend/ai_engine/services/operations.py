@@ -729,47 +729,62 @@ _CATEGORY_KEYWORDS: dict[str, tuple[str | None, str | None]] = {
 }
 
 
-def _detect_category_hints(modification_request: str) -> dict[str, str]:
+def _detect_category_hints(modification_request: str) -> dict[str, list[str]]:
     """Detect category/subcategory hints from the user's modification request.
 
-    Uses keyword matching to determine what type of place the user is
-    asking about.  The hints are used to promote matching places to the
-    front of the pool so they survive the ``max_places`` cap.
+    Collects ALL matching keywords (not just the first) so a request like
+    "add a museum and a restaurant" promotes both types.  Duplicate
+    categories/subcategories are deduplicated.
+
+    The hints are used to promote matching places to the front of the pool
+    so they survive the ``max_places`` cap.
 
     Example::
         >>> _detect_category_hints("add a museum to day 2")
-        {'category': 'attraction', 'sub_category': 'museums'}
+        {'category': ['attraction'], 'sub_category': ['museums']}
 
         >>> _detect_category_hints("change the hotel")
-        {'category': 'hotel'}
+        {'category': ['hotel']}
+
+        >>> _detect_category_hints("add a museum and a restaurant")
+        {'category': ['attraction', 'restaurant'], 'sub_category': ['museums']}
     """
     request_lower = modification_request.lower()
+    result: dict[str, list[str]] = {}
+    seen_categories: set[str] = set()
+    seen_subcategories: set[str] = set()
+
     for keyword, (cat, subcat) in _CATEGORY_KEYWORDS.items():
         if keyword in request_lower:
-            result: dict[str, str] = {}
-            if cat:
-                result["category"] = cat
-            if subcat:
-                result["sub_category"] = subcat
-            return result
-    return {}
+            if cat and cat not in seen_categories:
+                result.setdefault("category", []).append(cat)
+                seen_categories.add(cat)
+            if subcat and subcat not in seen_subcategories:
+                result.setdefault("sub_category", []).append(subcat)
+                seen_subcategories.add(subcat)
+
+    return result
 
 
 def _reorder_pool_by_category(
     fresh_pool: list[dict],
-    category_hints: dict[str, str],
+    category_hints: dict[str, list[str]],
 ) -> list[dict]:
     """Reorder the place pool so places matching *category_hints* come first.
 
-    Places matching both category AND subcategory (if specified) are
+    ``category_hints`` is a dict with optional ``"category"`` and
+    ``"sub_category"`` keys, each mapping to a **list** of accepted
+    values (produced by ``_detect_category_hints``).
+
+    Places matching ANY of the specified categories OR subcategories are
     promoted to the front.  This ensures relevant places survive the
     ``max_places`` cap.
     """
     if not category_hints:
         return fresh_pool
 
-    cat = category_hints.get("category")
-    subcat = category_hints.get("sub_category")
+    cats: list[str] = category_hints.get("category", [])
+    subcats: list[str] = category_hints.get("sub_category", [])
 
     matching: list[dict] = []
     non_matching: list[dict] = []
@@ -778,20 +793,18 @@ def _reorder_pool_by_category(
         p_cat = p.get("category", "").lower()
         p_subcat = p.get("sub_category", p.get("subcategory", "")).lower()
 
-        match = True
-        if cat and p_cat != cat:
-            match = False
-        if subcat and p_subcat != subcat:
-            match = False
-        if match:
+        matches_category = not cats or p_cat in cats
+        matches_subcategory = not subcats or p_subcat in subcats
+
+        if matches_category and matches_subcategory:
             matching.append(p)
         else:
             non_matching.append(p)
 
     if matching:
-        label = subcat or cat or "matching"
+        label = ", ".join(subcats or cats) or "matching"
         logger.info(
-            "[CategoryReorder] '%s' — %d matching place(s) out of %d",
+            "[CategoryReorder] %s — %d matching place(s) out of %d",
             label, len(matching), len(fresh_pool),
         )
 

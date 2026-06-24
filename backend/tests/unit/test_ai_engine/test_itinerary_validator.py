@@ -4,23 +4,24 @@
 Unit tests for the Itinerary Validator.
 
 Tests cover:
-    - _run_programmatic_checks(): deterministic feasibility checks
-    - validate_itinerary(): full agent with mocked LLM
+    - run_programmatic_checks(): deterministic feasibility checks
+      (lives in ai_engine.evaluation.feasibility_checker)
+    - validate_itinerary(): full validator with mocked LLM
 """
 
 import json
 import pytest
 from unittest.mock import patch, MagicMock
 
-from ai_engine.services.itinerary_validator import (
-    _run_programmatic_checks,
-    validate_itinerary,
+from ai_engine.evaluation.feasibility_checker import (
+    run_programmatic_checks,
     MAX_DAILY_TRAVEL_MINUTES,
     MAX_DAILY_STOPS,
     MIN_DAILY_STOPS,
     MAX_CONSECUTIVE_CATEGORY,
     MAX_DISTANCE_BETWEEN_STOPS_KM,
 )
+from ai_engine.services.itinerary_validator import validate_itinerary
 from tests.unit.test_ai_engine.conftest import _make_state
 
 
@@ -81,14 +82,14 @@ def _make_itinerary(**overrides) -> dict:
     return base
 
 
-# ── _run_programmatic_checks Tests ────────────────────────────────────────────
+# ── run_programmatic_checks Tests ──────────────────────────────────────────
 
 class TestRunProgrammaticChecks:
 
     def test_valid_itinerary_passes(self):
         """A well-formed itinerary should produce no issues."""
         itinerary = _make_itinerary()
-        issues = _run_programmatic_checks(itinerary)
+        issues = run_programmatic_checks(itinerary)
         # Day 2 has 2 stops, MIN_DAILY_STOPS=3, so expect a warning
         assert len(issues) == 1
         assert "Day 2: only 2 stop(s)" in issues[0]
@@ -96,20 +97,20 @@ class TestRunProgrammaticChecks:
     def test_too_few_days(self):
         """Itinerary with 0 days should flag."""
         itinerary = _make_itinerary(days=[])
-        issues = _run_programmatic_checks(itinerary)
+        issues = run_programmatic_checks(itinerary)
         assert any("at least" in i for i in issues)
 
     def test_too_many_stops_per_day(self):
         """Day with more than MAX_DAILY_STOPS should flag."""
         stops = [_make_stop(name=f"Stop {i}") for i in range(MAX_DAILY_STOPS + 2)]
         itinerary = _make_itinerary(days=[_make_day(1, stops)])
-        issues = _run_programmatic_checks(itinerary)
+        issues = run_programmatic_checks(itinerary)
         assert any("exceeds max" in i for i in issues)
 
     def test_too_few_stops_per_day(self):
         """Day with fewer than MIN_DAILY_STOPS should flag."""
         itinerary = _make_itinerary(days=[_make_day(1, [_make_stop()])])
-        issues = _run_programmatic_checks(itinerary)
+        issues = run_programmatic_checks(itinerary)
         assert any("add more activities" in i for i in issues)
 
     def test_consecutive_same_category(self):
@@ -120,7 +121,7 @@ class TestRunProgrammaticChecks:
             _make_stop(name="Museum 3", category="attractions"),
         ]
         itinerary = _make_itinerary(days=[_make_day(1, stops)])
-        issues = _run_programmatic_checks(itinerary)
+        issues = run_programmatic_checks(itinerary)
         assert any("consecutive" in i for i in issues)
 
     def test_two_consecutive_same_category_ok(self):
@@ -131,7 +132,7 @@ class TestRunProgrammaticChecks:
             _make_stop(name="Restaurant", category="restaurant"),
         ]
         itinerary = _make_itinerary(days=[_make_day(1, stops)])
-        issues = _run_programmatic_checks(itinerary)
+        issues = run_programmatic_checks(itinerary)
         # Should not have consecutive issue (but might have other issues)
         consecutive_issues = [i for i in issues if "consecutive" in i]
         assert consecutive_issues == []
@@ -143,7 +144,7 @@ class TestRunProgrammaticChecks:
             _make_stop(name="Hotel 2", category="hotel"),
         ]
         itinerary = _make_itinerary(days=[_make_day(1, stops)])
-        issues = _run_programmatic_checks(itinerary)
+        issues = run_programmatic_checks(itinerary)
         consecutive_issues = [i for i in issues if "consecutive" in i]
         assert consecutive_issues == []
 
@@ -152,7 +153,7 @@ class TestRunProgrammaticChecks:
         itinerary = _make_itinerary(
             days=[_make_day(1, [_make_stop(), _make_stop()], total_travel_time_minutes=MAX_DAILY_TRAVEL_MINUTES + 30)]
         )
-        issues = _run_programmatic_checks(itinerary)
+        issues = run_programmatic_checks(itinerary)
         assert any("travel time" in i for i in issues)
 
     def test_normal_travel_time_ok(self):
@@ -160,7 +161,7 @@ class TestRunProgrammaticChecks:
         itinerary = _make_itinerary(
             days=[_make_day(1, [_make_stop(), _make_stop()], total_travel_time_minutes=60)]
         )
-        issues = _run_programmatic_checks(itinerary)
+        issues = run_programmatic_checks(itinerary)
         travel_issues = [i for i in issues if "travel time" in i]
         assert travel_issues == []
 
@@ -171,7 +172,7 @@ class TestRunProgrammaticChecks:
         itinerary = _make_itinerary(
             days=[_make_day(1, [stop_near, stop_far])]
         )
-        issues = _run_programmatic_checks(itinerary)
+        issues = run_programmatic_checks(itinerary)
         assert any("too far" in i for i in issues)
 
     def test_consecutive_stops_close_ok(self):
@@ -181,28 +182,28 @@ class TestRunProgrammaticChecks:
         itinerary = _make_itinerary(
             days=[_make_day(1, [stop1, stop2])]
         )
-        issues = _run_programmatic_checks(itinerary)
+        issues = run_programmatic_checks(itinerary)
         far_issues = [i for i in issues if "too far" in i]
         assert far_issues == []
 
     def test_no_accommodation_suggestions(self):
         """Missing accommodation suggestions should flag."""
         itinerary = _make_itinerary(accommodation_suggestions=[])
-        issues = _run_programmatic_checks(itinerary)
+        issues = run_programmatic_checks(itinerary)
         assert any("accommodation" in i.lower() for i in issues)
 
     def test_too_many_hotel_suggestions(self):
         """More than 5 hotel suggestions should flag."""
         hotels = [{"name": f"Hotel {i}"} for i in range(6)]
         itinerary = _make_itinerary(accommodation_suggestions=hotels)
-        issues = _run_programmatic_checks(itinerary)
+        issues = run_programmatic_checks(itinerary)
         assert any("hotel suggestions is too many" in i for i in issues)
 
     def test_five_hotel_suggestions_ok(self):
         """Exactly 5 hotel suggestions should pass."""
         hotels = [{"name": f"Hotel {i}"} for i in range(5)]
         itinerary = _make_itinerary(accommodation_suggestions=hotels)
-        issues = _run_programmatic_checks(itinerary)
+        issues = run_programmatic_checks(itinerary)
         hotel_issues = [i for i in issues if "hotel suggestions" in i]
         assert hotel_issues == []
 
@@ -214,7 +215,7 @@ class TestRunProgrammaticChecks:
         ]
         itinerary = _make_itinerary(days=[_make_day(1, stops)])
         # Should not raise
-        issues = _run_programmatic_checks(itinerary)
+        issues = run_programmatic_checks(itinerary)
         assert isinstance(issues, list)
 
 
@@ -294,6 +295,15 @@ class TestRunValidation:
         # Programmatic issue (1 issue) reduces score by 5: 90 - 5 = 85
         assert result["validation"]["score"] == 85
         assert result["is_valid"] is True
+        # Quantitative metrics should be attached
+        assert "metrics" in result["validation"]
+        metrics = result["validation"]["metrics"]
+        assert set(metrics.keys()) == {
+            "category_diversity", "interest_alignment",
+            "pacing", "geographic_coverage", "overall",
+        }
+        for v in metrics.values():
+            assert 0.0 <= v <= 1.0
 
     @pytest.mark.asyncio
     async def test_llm_failure_falls_back_to_programmatic(self):

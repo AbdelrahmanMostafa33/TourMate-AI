@@ -98,7 +98,7 @@ SAMPLE_AI_RESULT_WITH_ALL = {
         "trip_id": None,  # Will be assigned by create_trip_from_ai_result
         "budget_level": "moderate",
         "travel_style": "cultural",
-        "pace": "balanced",
+        "pace": "moderate",
         "interests": ["history", "art", "food"],
         "food_preferences": ["local cuisine", "street food"],
         "accommodation_preferences": ["boutique hotel"],
@@ -331,7 +331,7 @@ class TestTripProfileCreation:
         assert profile.travel_style == TravelStyle.CULTURAL, (
             f"Expected CULTURAL, got {profile.travel_style}"
         )
-        assert profile.pace == TripPace.BALANCED, (
+        assert profile.pace == TripPace.MODERATE, (
             f"Expected BALANCED, got {profile.pace}"
         )
 
@@ -455,5 +455,5 @@ class TestFullFlowVerification:
         assert profile.trip_id == trip_id
         assert profile.budget_level == BudgetLevel.MODERATE
         assert profile.travel_style == TravelStyle.CULTURAL
-        assert profile.pace == TripPace.BALANCED
+        assert profile.pace == TripPace.MODERATE
         assert "history" in profile.interests

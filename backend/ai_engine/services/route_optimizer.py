@@ -78,27 +78,54 @@ async def optimize_route(state: TripState) -> TripState:
     for day in optimized.get("days", []):
         stops = day.get("stops", [])
         if len(stops) > 1:
+            # 1. Compute full travel-time matrix for this day (single API call)
             matrix = await compute_day_matrix(stops)
-            nn_idx = get_reorder_indices(stops, matrix)
-            reorder_idx = improve_order_2opt(nn_idx, matrix)
-            reordered_stops = [stops[i] for i in reorder_idx]
 
-            # Reassign time-of-day slots by position
-            _TIME_SLOTS = ["morning", "afternoon", "evening"]
-            for i, stop in enumerate(reordered_stops):
-                slot_idx = min(i, len(_TIME_SLOTS) - 1)
-                stop["suggested_time_of_day"] = _TIME_SLOTS[slot_idx]
+            # 2. Group stops by their existing time-of-day, preserving
+            #    the planner's semantic assignment (museums → morning,
+            #    restaurants → afternoon/evening, etc.).
+            #    Unknown/unassigned slots go to an "other" group at the end.
+            _TIME_RANK = {"morning": 0, "afternoon": 1, "evening": 2}
+            groups: dict[int, list[int]] = {}
+            for i, stop in enumerate(stops):
+                slot = stop.get("suggested_time_of_day", "")
+                rank = _TIME_RANK.get(slot, 3)  # unassigned → last
+                groups.setdefault(rank, []).append(i)
 
-            # Annotate stops with travel times and mode
+            # 3. Reorder within each time block (nearest-neighbor + 2-opt),
+            #    then concatenate groups in time order.
+            final_order: list[int] = []
+            for rank in sorted(groups.keys()):
+                group_indices = groups[rank]
+                if len(group_indices) > 1:
+                    # Build sub-matrix for this group from the full matrix
+                    sub_stops = [stops[i] for i in group_indices]
+                    sub_matrix = [
+                        [matrix[i][j] for j in group_indices]
+                        for i in group_indices
+                    ]
+                    nn_idx = get_reorder_indices(sub_stops, sub_matrix)
+                    reorder_idx = improve_order_2opt(nn_idx, sub_matrix)
+                    final_order.extend(
+                        [group_indices[i] for i in reorder_idx]
+                    )
+                else:
+                    final_order.extend(group_indices)
+
+            # 4. Build reordered stops list (time-of-day is NOT modified —
+            #    each stop keeps its original semantic assignment)
+            reordered_stops = [stops[i] for i in final_order]
+
+            # 5. Annotate stops with travel times and mode
             for i in range(len(reordered_stops) - 1):
-                oi = reorder_idx[i]
-                oj = reorder_idx[i + 1]
+                fi = final_order[i]
+                fj = final_order[i + 1]
                 dist_km = haversine(
                     reordered_stops[i]["lat"], reordered_stops[i]["lon"],
                     reordered_stops[i + 1]["lat"], reordered_stops[i + 1]["lon"],
                 )
                 mode = "walking" if dist_km <= WALK_THRESHOLD_KM else "driving"
-                reordered_stops[i]["travel_time_to_next_minutes"] = matrix[oi][oj]
+                reordered_stops[i]["travel_time_to_next_minutes"] = matrix[fi][fj]
                 reordered_stops[i]["transport_mode"] = mode
 
             day["stops"] = reordered_stops

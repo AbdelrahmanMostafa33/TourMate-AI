@@ -16,9 +16,9 @@ Usage::
     from ai_engine.tools.slot_normalizer import normalize_extracted_slots
 
     # After LLM extracts slots:
-    extracted = {"budget_level": "mid-range", "pace": "flexible", ...}
+    extracted = {"budget_level": "mid-range", "pace": "balanced", ...}
     normalized = normalize_extracted_slots(extracted)
-    # → {"budget_level": "moderate", "pace": "balanced", ...}
+    # → {"budget_level": "moderate", "pace": "moderate", ...}
 """
 
 from __future__ import annotations
@@ -51,9 +51,9 @@ def _contains_word(text: str, keyword: str) -> bool:
 
 VALID_BUDGET_LEVELS = {"budget", "moderate", "luxury"}
 VALID_TRAVEL_STYLES = {"romantic", "adventure", "family", "solo", "cultural", "relaxation"}
-VALID_PACES = {"relaxed", "balanced", "packed"}
+VALID_PACES = {"relaxed", "moderate", "packed"}
 
-VALID_ACCOMMODATION_TYPES = {"hostel", "resort", "hotel", "luxury hotel"}
+VALID_ACCOMMODATION_TYPES = {"hostel", "resort", "hotel", "luxury"}
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -149,8 +149,8 @@ def normalize_budget(value: Optional[str]) -> Optional[str]:
 _PACE_MAP: Dict[str, str] = {
     # Already canonical
     "relaxed": "relaxed",
-    "balanced": "balanced",
-    "moderate": "balanced",
+    "balanced": "moderate",
+    "moderate": "moderate",
     "packed": "packed",
 
     # Relaxed synonyms
@@ -164,24 +164,23 @@ _PACE_MAP: Dict[str, str] = {
     "no rush": "relaxed",
     "at my own pace": "relaxed",
 
-    # Balanced synonyms
-    "mixed": "balanced",
-    "flexible": "balanced",
-    "varied": "balanced",
-    "medium": "balanced",
-    "moderate": "balanced",
-    "normal": "balanced",
-    "whatever": "balanced",
-    "anything": "balanced",
-    "anything goes": "balanced",
-    "don't care": "balanced",
-    "i don't mind": "balanced",
-    "no preference": "balanced",
-    "surprise me": "balanced",
-    "up to you": "balanced",
-    "you decide": "balanced",
-    "dealer's choice": "balanced",
-    "any": "balanced",
+    # Moderate synonyms (includes all synonyms that were previously "balanced")
+    "mixed": "moderate",
+    "flexible": "moderate",
+    "varied": "moderate",
+    "medium": "moderate",
+    "normal": "moderate",
+    "whatever": "moderate",
+    "anything": "moderate",
+    "anything goes": "moderate",
+    "don't care": "moderate",
+    "i don't mind": "moderate",
+    "no preference": "moderate",
+    "surprise me": "moderate",
+    "up to you": "moderate",
+    "you decide": "moderate",
+    "dealer's choice": "moderate",
+    "any": "moderate",
 
     # Packed synonyms
     "busy": "packed",
@@ -201,16 +200,16 @@ _PACE_MAP: Dict[str, str] = {
 
 def normalize_pace(value: Optional[str]) -> Optional[str]:
     """
-    Normalize a raw pace string to one of: 'relaxed', 'balanced', 'packed'.
+    Normalize a raw pace string to one of: 'relaxed', 'moderate', 'packed'.
 
     Examples::
 
-        normalize_pace("flexible")          → "balanced"
-        normalize_pace("anything")          → "balanced"
+        normalize_pace("flexible")          → "moderate"
+        normalize_pace("anything")          → "moderate"
         normalize_pace("slow")              → "relaxed"
         normalize_pace("action-packed")     → "packed"
-        normalize_pace("moderate")          → "balanced"
-        normalize_pace("balanced")          → "balanced"  (already canonical)
+        normalize_pace("moderate")          → "moderate"
+        normalize_pace("balanced")          → "moderate"
     """
     if not value or not isinstance(value, str):
         return None
@@ -513,23 +512,23 @@ _ACCOMMODATION_KEYWORDS: list[tuple[str, str]] = [
     ("spa resort",    "resort"),
     ("waterpark",     "resort"),
     ("water park",    "resort"),
-    # luxury hotel
-    ("luxury",        "luxury hotel"),
-    ("luxury hotel",  "luxury hotel"),
-    ("boutique",      "luxury hotel"),
-    ("boutique hotel","luxury hotel"),
-    ("palace",        "luxury hotel"),
-    ("five star",     "luxury hotel"),
-    ("five-star",     "luxury hotel"),
-    ("5-star",        "luxury hotel"),
-    ("5 star",        "luxury hotel"),
-    ("premium",       "luxury hotel"),
-    ("high-end",      "luxury hotel"),
-    ("high end",      "luxury hotel"),
-    ("upscale",       "luxury hotel"),
-    ("executive",     "luxury hotel"),
-    ("villa",         "luxury hotel"),
-    ("private villa", "luxury hotel"),
+    # luxury
+    ("luxury",        "luxury"),
+    ("luxury hotel",  "luxury"),
+    ("boutique",      "luxury"),
+    ("boutique hotel","luxury"),
+    ("palace",        "luxury"),
+    ("five star",     "luxury"),
+    ("five-star",     "luxury"),
+    ("5-star",        "luxury"),
+    ("5 star",        "luxury"),
+    ("premium",       "luxury"),
+    ("high-end",      "luxury"),
+    ("high end",      "luxury"),
+    ("upscale",       "luxury"),
+    ("executive",     "luxury"),
+    ("villa",         "luxury"),
+    ("private villa", "luxury"),
     # hotel (default)
     ("hotel",         "hotel"),
     ("apartment",     "hotel"),
@@ -553,7 +552,7 @@ def normalize_accommodation(preferences: Optional[List[str]]) -> Optional[List[s
     Examples::
 
         normalize_accommodation(["boutique hotel"])
-        → ["luxury hotel"]
+        → ["luxury"]
 
         normalize_accommodation(["cheap place to stay"])
         → ["hostel"]
@@ -569,7 +568,7 @@ def normalize_accommodation(preferences: Optional[List[str]]) -> Optional[List[s
 
     # Find the dominant (most specific) accommodation type
     # Priority: luxury > resort > hostel > hotel
-    result_priority = {"hostel": 1, "hotel": 2, "resort": 3, "luxury hotel": 4}
+    result_priority = {"hostel": 1, "hotel": 2, "resort": 3, "luxury": 4}
     best_type: Optional[str] = None
     best_priority = 0
 
@@ -604,6 +603,33 @@ def normalize_accommodation(preferences: Optional[List[str]]) -> Optional[List[s
 
     logger.debug("[SlotNormalizer] Could not normalize accommodation: %r", preferences)
     return None
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Accommodation → canonical type (shared with Place Retriever)
+# ══════════════════════════════════════════════════════════════════════════════
+
+
+def map_accommodation_to_type(accommodation_preferences: list[str]) -> str:
+    """
+    Map a list of accommodation preference phrases to a single canonical
+    accommodation type string (e.g. 'luxury', 'resort', 'hostel', 'hotel').
+
+    Uses the same keyword list as ``normalize_accommodation()`` but with
+    simple substring matching (``keyword in pref_lower``) instead of
+    word-boundary matching, consistent with the Place Retriever's existing
+    filter logic.
+
+    Returns the last matching type, or an empty string if no match.
+    """
+    result = ""
+    for pref in accommodation_preferences:
+        pref_lower = pref.lower().strip()
+        for keyword, acc_type in _ACCOMMODATION_KEYWORDS:
+            if keyword in pref_lower:
+                result = acc_type
+                break
+    return result
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -934,7 +960,7 @@ def normalize_extracted_slots(extracted: Dict[str, Any]) -> Dict[str, Any]:
 
         raw = {
             "budget_level": "mid-range",
-            "pace": "anything",
+            "pace": "balanced",
             "travel_style": "honeymoon",
             "food_preferences": ["local food", "street food"],
             "accommodation_preferences": ["boutique hotel"],
@@ -946,7 +972,7 @@ def normalize_extracted_slots(extracted: Dict[str, Any]) -> Dict[str, Any]:
         #     "pace": "moderate",
         #     "travel_style": "romantic",
         #     "food_preferences": ["local cuisine", "street food"],
-        #     "accommodation_preferences": ["luxury hotel"],
+        #     "accommodation_preferences": ["luxury"],
         #     "interests": ["museums", "art"],
         # }
     """

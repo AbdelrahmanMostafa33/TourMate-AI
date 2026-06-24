@@ -491,7 +491,7 @@ _DEFAULT_RANKING_PROFILE = {
     "food_preferences": ["local cuisine"],
     "accommodation_preferences": ["hotel"],
     "interests": ["history", "art"],
-    "pace": "balanced",
+    "pace": "moderate",
 }
 
 

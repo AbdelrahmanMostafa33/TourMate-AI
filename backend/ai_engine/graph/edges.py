@@ -3,16 +3,6 @@
 from ai_engine.graph.state import TripState
 
 
-def should_retrieve(state: TripState) -> str:
-    """
-    Called after the Profile Loader finishes.
-    If extraction succeeded, proceed to retrieval.
-    """
-    if state.get("error"):
-        return "end"
-    return "retrieval"
-
-
 def should_rank(state: TripState) -> str:
     """
     Called after the Place Retriever finishes.

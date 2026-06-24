@@ -2,7 +2,7 @@
 """Tests for the message interpreter module."""
 
 import pytest
-from ai_engine.chat.message_interpreter import (
+from ai_engine.conversation.message_interpreter import (
     _coerce_int,
     _build_extracted_dict,
     _normalize_action,
