@@ -27,6 +27,7 @@ class ChatCubit extends Cubit<ChatState> {
   final List<ChatMessage> _messages = [];
   final List<PipelineStep> _pipelineSteps = [];
   String _buffer = "";
+  ItineraryData? _pendingItinerary;
   StreamSubscription<dynamic>? _subscription;
   StreamSubscription<WsConnectionState>? _wsStateSubscription;
   
@@ -53,6 +54,7 @@ class ChatCubit extends Cubit<ChatState> {
     _messages.clear();
     _pipelineSteps.clear();
     _buffer = "";
+    _pendingItinerary = null;
     _subscription?.cancel();
     _subscription = null;
     _lastTripId = null;
@@ -65,6 +67,7 @@ class ChatCubit extends Cubit<ChatState> {
     _messages.clear();
     _pipelineSteps.clear();
     _buffer = "";
+    _pendingItinerary = null;
     _subscription?.cancel();
     _subscription = null;
     _lastTripId = tripId;
@@ -249,6 +252,44 @@ class ChatCubit extends Cubit<ChatState> {
     _pipelineSteps.clear();
   }
 
+  void _emitConnected({required bool isTyping, bool bumpRefresh = false}) {
+    if (isClosed) return;
+
+    final refreshToken = state.maybeWhen(
+      connected: (_, __, token, ___) => bumpRefresh ? token + 1 : token,
+      orElse: () => bumpRefresh ? 1 : 0,
+    );
+
+    emit(ChatState.connected(
+      messages: List.from(_messages),
+      isTyping: isTyping,
+      refreshToken: refreshToken,
+    ));
+  }
+
+  void _applyPendingItineraryToLastAssistant() {
+    if (_pendingItinerary == null) return;
+    if (_messages.isEmpty || _messages.last.isUser) return;
+
+    _messages[_messages.length - 1] = _messages.last.copyWith(
+      itinerary: _pendingItinerary,
+      text: '',
+    );
+    _pendingItinerary = null;
+  }
+
+  void _attachItinerary(ItineraryData itineraryData) {
+    if (_messages.isNotEmpty && !_messages.last.isUser) {
+      _messages[_messages.length - 1] = _messages.last.copyWith(
+        itinerary: itineraryData,
+        text: '',
+      );
+      _pendingItinerary = null;
+    } else {
+      _pendingItinerary = itineraryData;
+    }
+  }
+
   Future<void> _handleEvent(dynamic event) async {
     final data = jsonDecode(event) as Map<String, dynamic>;
 
@@ -307,25 +348,20 @@ class ChatCubit extends Cubit<ChatState> {
           );
         }
 
-        emit(ChatState.connected(
-          messages: List.from(_messages),
-          isTyping: true,
-        ));
+        _applyPendingItineraryToLastAssistant();
+        _emitConnected(isTyping: true);
         break;
 
       case "done":
         if (_messages.isNotEmpty && !_messages.last.isUser) {
-          _messages[_messages.length - 1] = _messages.last.copyWith(
-            text: _buffer,
+          final last = _messages.last;
+          _messages[_messages.length - 1] = last.copyWith(
+            text: last.itinerary != null ? '' : _buffer,
             isStreaming: false,
           );
         }
 
-        emit(ChatState.connected(
-          messages: List.from(_messages),
-          isTyping: false,
-        ));
-
+        _emitConnected(isTyping: false);
         _buffer = "";
         break;
 
@@ -348,29 +384,18 @@ class ChatCubit extends Cubit<ChatState> {
       case "itinerary_data":
         // Full structured itinerary JSON arrived from the backend.
         // Parse it and attach to the last assistant message.
-        // Preserve the current isTyping state so the card can render
-        // mid-stream without abruptly hiding the typing indicator.
         final rawItinerary = data["data"];
         if (rawItinerary is Map<String, dynamic>) {
           try {
             final itineraryData = ItineraryData.fromJson(rawItinerary);
-            if (_messages.isNotEmpty && !_messages.last.isUser) {
-              _messages[_messages.length - 1] = _messages.last.copyWith(
-                itinerary: itineraryData,
-              );
-              if (!isClosed) {
-                final currentIsTyping = state.maybeWhen(
-                  connected: (_, isTyping, _, _) => isTyping,
-                  orElse: () => false,
-                );
-                emit(ChatState.connected(
-                  messages: List.from(_messages),
-                  isTyping: currentIsTyping,
-                ));
-              }
-            }
+            _attachItinerary(itineraryData);
+            final currentIsTyping = state.maybeWhen(
+              connected: (_, isTyping, _, _) => isTyping,
+              orElse: () => false,
+            );
+            _emitConnected(isTyping: currentIsTyping, bumpRefresh: true);
           } catch (e) {
-            // Silently ignore malformed itinerary data
+            print('[ChatCubit] Failed to parse itinerary_data: $e');
           }
         }
         break;

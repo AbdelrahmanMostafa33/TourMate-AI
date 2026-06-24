@@ -1,3 +1,34 @@
+int _parseInt(dynamic value, [int defaultValue = 0]) {
+  if (value == null) return defaultValue;
+  if (value is int) return value;
+  if (value is num) return value.round();
+  if (value is String) return int.tryParse(value) ?? defaultValue;
+  return defaultValue;
+}
+
+int? _parseIntOrNull(dynamic value) {
+  if (value == null) return null;
+  if (value is int) return value;
+  if (value is num) return value.round();
+  if (value is String) return int.tryParse(value);
+  return null;
+}
+
+String _parseString(dynamic value, [String defaultValue = '']) {
+  if (value == null) return defaultValue;
+  return value.toString();
+}
+
+String? _parsePhotoUrl(dynamic photos) {
+  if (photos is! List || photos.isEmpty) return null;
+  final first = photos.first;
+  if (first is String) return first;
+  if (first is Map) {
+    return first['url'] as String? ?? first['photo_url'] as String?;
+  }
+  return null;
+}
+
 class ItineraryData {
   final String destination;
   final int durationDays;
@@ -18,8 +49,8 @@ class ItineraryData {
         [];
 
     return ItineraryData(
-      destination: json['destination'] as String? ?? 'Your Trip',
-      durationDays: json['duration_days'] as int? ?? daysList.length,
+      destination: _parseString(json['destination'], 'Your Trip'),
+      durationDays: _parseInt(json['duration_days'], daysList.length),
       days: daysList,
       accommodationSuggestions:
           (json['accommodation_suggestions'] as List<dynamic>?)
@@ -48,8 +79,8 @@ class ItineraryDay {
 
   factory ItineraryDay.fromJson(Map<String, dynamic> json) {
     return ItineraryDay(
-      dayNumber: json['day_number'] as int? ?? 0,
-      theme: json['theme'] as String? ?? '',
+      dayNumber: _parseInt(json['day_number']),
+      theme: _parseString(json['theme']),
       totalTravelTimeMinutes:
           (json['total_travel_time_minutes'] as num?)?.toDouble(),
       stops: (json['stops'] as List<dynamic>?)
@@ -101,24 +132,24 @@ class ItineraryStop {
 
   factory ItineraryStop.fromJson(Map<String, dynamic> json) {
     return ItineraryStop(
-      id: json['id'] as String? ?? '',
-      name: json['name'] as String? ?? '',
-      category: json['category'] as String? ?? '',
-      subCategory: json['sub_category'] as String? ?? '',
-      cuisineType: json['cuisine_type'] as String? ?? '',
+      id: _parseString(json['id']),
+      name: _parseString(json['name']),
+      category: _parseString(json['category']),
+      subCategory: _parseString(json['sub_category']),
+      cuisineType: _parseString(json['cuisine_type']),
       lat: (json['lat'] as num?)?.toDouble() ?? 0.0,
       lon: (json['lon'] as num?)?.toDouble() ?? 0.0,
-      whyRecommended: json['why_recommended'] as String? ?? '',
-      estimatedDurationMinutes: json['estimated_duration_minutes'] as int? ?? 0,
-      suggestedTimeOfDay: json['suggested_time_of_day'] as String? ?? '',
+      whyRecommended: _parseString(json['why_recommended']),
+      estimatedDurationMinutes:
+          _parseInt(json['estimated_duration_minutes']),
+      suggestedTimeOfDay: _parseString(json['suggested_time_of_day']),
       rating: (json['rating'] as num?)?.toDouble(),
       address: json['address'] as String?,
-      photoUrl: (json['photos'] as List<dynamic>?)?.isNotEmpty == true
-          ? (json['photos']![0] as String)
-          : null,
-      travelTimeToNextMinutes: json['travel_time_to_next_minutes'] as int?,
+      photoUrl: _parsePhotoUrl(json['photos']),
+      travelTimeToNextMinutes:
+          _parseIntOrNull(json['travel_time_to_next_minutes']),
       transportMode: json['transport_mode'] as String?,
-      orderInDay: json['order_in_day'] as int?,
+      orderInDay: _parseIntOrNull(json['order_in_day']),
     );
   }
 }
@@ -148,16 +179,14 @@ class AccommodationSuggestion {
 
   factory AccommodationSuggestion.fromJson(Map<String, dynamic> json) {
     return AccommodationSuggestion(
-      id: json['id'] as String? ?? '',
-      name: json['name'] as String? ?? '',
-      accommodationType: json['accommodation_type'] as String? ?? '',
+      id: _parseString(json['id']),
+      name: _parseString(json['name']),
+      accommodationType: _parseString(json['accommodation_type']),
       lat: (json['lat'] as num?)?.toDouble() ?? 0.0,
       lon: (json['lon'] as num?)?.toDouble() ?? 0.0,
-      whyRecommended: json['why_recommended'] as String? ?? '',
+      whyRecommended: _parseString(json['why_recommended']),
       rating: (json['rating'] as num?)?.toDouble(),
-      photoUrl: (json['photos'] as List<dynamic>?)?.isNotEmpty == true
-          ? (json['photos']![0] as String)
-          : null,
+      photoUrl: _parsePhotoUrl(json['photos']),
       address: json['address'] as String?,
     );
   }
