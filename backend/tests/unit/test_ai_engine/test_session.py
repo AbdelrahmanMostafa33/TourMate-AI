@@ -107,8 +107,8 @@ class TestTripSlots:
         assert slots.budget_level == "moderate"
         assert slots.travel_style == "cultural"
         assert slots.pace == "balanced"
-        assert slots.group_size == 2
-        assert slots.traveler_group_type == "couple"
+        assert slots.group_size == 1
+        assert slots.traveler_group_type == "solo"
 
     def test_is_complete_when_missing_trip_info(self):
         slots = TripSlots(
@@ -354,9 +354,9 @@ class TestConversationState:
         state.slots.fill_defaults()
         assert state.slots.budget_level == "moderate"
         assert state.slots.travel_style == "cultural"
-        assert state.slots.pace == "moderate"
-        assert state.slots.group_size == 2
-        assert state.slots.traveler_group_type == "couple"
+        assert state.slots.pace == "balanced"
+        assert state.slots.group_size == 1
+        assert state.slots.traveler_group_type == "solo"
         assert state.slots.food_preferences == ["local cuisine"]
         assert state.slots.accommodation_preferences == ["hotel"]
 

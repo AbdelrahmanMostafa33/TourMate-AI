@@ -100,7 +100,11 @@ async def _assert_booking_state(
 ) -> Booking:
     """Helper: load a booking with payment+receipt and assert state."""
     result = await db_session.execute(
-        select(Booking).where(Booking.booking_id == booking_id)
+        select(Booking)
+        .options(
+            selectinload(Booking.payment).selectinload(Payment.receipt),
+        )
+        .where(Booking.booking_id == booking_id)
     )
     booking = result.scalar_one_or_none()
     assert booking is not None, f"Booking {booking_id} not found"

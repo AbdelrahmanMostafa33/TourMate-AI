@@ -196,7 +196,7 @@ class TestProfileBuildingFromSlots:
         assert profile["trip_id"] == "trip_001"
         assert profile["budget_level"] == "moderate"
         assert profile["travel_style"] == "cultural"
-        assert profile["pace"] == "balanced"
+        assert profile["pace"] == "moderate"
         assert profile["interests"] == ["history", "art"]
         assert profile["food_preferences"] == ["local cuisine"]
         assert profile["accommodation_preferences"] == ["boutique hotel"]

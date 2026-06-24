@@ -198,9 +198,11 @@ class BookingService:
         Raises:
             ValueError: If booking not found, already paid, or cancelled.
         """
-        # ── Load booking ──────────────────────────────────────────────────
+        # ── Load booking (eager-load payment to avoid lazy-load MissingGreenlet in async) ──
         result = await self.db.execute(
-            select(Booking).where(Booking.booking_id == booking_id)
+            select(Booking)
+            .options(selectinload(Booking.payment))
+            .where(Booking.booking_id == booking_id)
         )
         booking = result.scalar_one_or_none()
         if not booking:
@@ -295,6 +297,9 @@ class BookingService:
             paid_at                 = datetime.utcnow(),
         )
         self.db.add(payment)
+        # Link the Python-side relationship so booking.payment is populated
+        # in-memory (avoids MissingGreenlet from async lazy-loading later).
+        booking.payment = payment
 
         # ── Create Receipt record ─────────────────────────────────────────
         receipt = Receipt(
@@ -307,6 +312,8 @@ class BookingService:
             currency       = currency.upper(),
         )
         self.db.add(receipt)
+        # Link the Python-side relationship so payment.receipt is populated.
+        payment.receipt = receipt
 
         logger.info(
             "[BookingService] Payment %s / Receipt %s created for booking %s",
@@ -332,7 +339,9 @@ class BookingService:
             ValueError: If booking not found, already confirmed, cancelled, or completed.
         """
         result = await self.db.execute(
-            select(Booking).where(Booking.booking_id == booking_id)
+            select(Booking)
+            .options(selectinload(Booking.payment))
+            .where(Booking.booking_id == booking_id)
         )
         booking = result.scalar_one_or_none()
         if not booking:
@@ -361,7 +370,9 @@ class BookingService:
             ValueError: If booking not found or already cancelled.
         """
         result = await self.db.execute(
-            select(Booking).where(Booking.booking_id == booking_id)
+            select(Booking)
+            .options(selectinload(Booking.payment))
+            .where(Booking.booking_id == booking_id)
         )
         booking = result.scalar_one_or_none()
         if not booking:
@@ -398,7 +409,9 @@ class BookingService:
             ValueError: If booking not found or not in confirmed status.
         """
         result = await self.db.execute(
-            select(Booking).where(Booking.booking_id == booking_id)
+            select(Booking)
+            .options(selectinload(Booking.payment))
+            .where(Booking.booking_id == booking_id)
         )
         booking = result.scalar_one_or_none()
         if not booking:
@@ -767,11 +780,9 @@ class BookingService:
         """Fetch a single booking by ID (with payment + receipt eager-loaded)."""
         result = await self.db.execute(
             select(Booking)
-            .where(Booking.booking_id == booking_id)
-        )
-        return result.scalar_one_or_none()
-        result = await self.db.execute(
-            select(Booking)
+            .options(
+                selectinload(Booking.payment).selectinload(Payment.receipt),
+            )
             .where(Booking.booking_id == booking_id)
         )
         return result.scalar_one_or_none()

@@ -73,11 +73,10 @@ def make_mock_booking(
 
 def make_mock_db(execute_return_value=None) -> AsyncMock:
     """Create a mock AsyncSession with a configured execute return."""
-    db = AsyncMock(spec=True)
-    if execute_return_value is not None:
-        mock_result = MagicMock()
-        mock_result.scalar_one_or_none.return_value = execute_return_value
-        db.execute.return_value = mock_result
+    db = AsyncMock()
+    mock_result = MagicMock()
+    mock_result.scalar_one_or_none.return_value = execute_return_value
+    db.execute.return_value = mock_result
     return db
 
 
@@ -144,7 +143,7 @@ class TestHandlePaymentSucceeded:
         )
 
         # Mock two DB calls: find_payment, then get_booking
-        db = AsyncMock(spec=True)
+        db = AsyncMock()
         # First execute → returns payment
         r1 = MagicMock()
         r1.scalar_one_or_none.return_value = payment
@@ -196,7 +195,7 @@ class TestHandlePaymentSucceeded:
             status=BookingStatus.confirmed,  # already confirmed
         )
 
-        db = AsyncMock(spec=True)
+        db = AsyncMock()
         r1 = MagicMock()
         r1.scalar_one_or_none.return_value = payment
         r2 = MagicMock()
@@ -220,8 +219,8 @@ class TestHandlePaymentSucceeded:
     @pytest.mark.asyncio
     async def test_raises_error_when_booking_not_found(self):
         """Should raise ValueError when the linked booking doesn't exist."""
-        payment = make_mock_payment(stripe_pi_id="pi_test_orphan")
-        db = AsyncMock(spec=True)
+        payment = make_mock_payment(stripe_pi_id="pi_test_orphan", status=PaymentStatus.pending)
+        db = AsyncMock()
         r1 = MagicMock()
         r1.scalar_one_or_none.return_value = payment
         r2 = MagicMock()
@@ -298,7 +297,7 @@ class TestHandleChargeRefunded:
             payment=payment,
         )
 
-        db = AsyncMock(spec=True)
+        db = AsyncMock()
         r1 = MagicMock()
         r1.scalar_one_or_none.return_value = payment
         r2 = MagicMock()
@@ -341,7 +340,7 @@ class TestHandleChargeRefunded:
             status=BookingStatus.cancelled,  # already cancelled
         )
 
-        db = AsyncMock(spec=True)
+        db = AsyncMock()
         r1 = MagicMock()
         r1.scalar_one_or_none.return_value = payment
         r2 = MagicMock()
