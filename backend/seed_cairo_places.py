@@ -1,7 +1,7 @@
 """Seed the database with Cairo places from the JSON data file.
 
 Usage (from backend/):
-    export DATABASE_URL="postgresql+asyncpg://postgres:382004@localhost:5432/tourmate"
+    export DATABASE_URL="postgresql+asyncpg://postgres:1610@localhost:5432/tourmate"
     python seed_cairo_places.py
 
 The script reads data/cairo/cairo_places_class_diagram.json and inserts
@@ -127,7 +127,7 @@ def build_attraction_details(row: dict) -> dict | None:
 
 def seed() -> None:
     # Resolve database URL
-    db_url = os.getenv("DATABASE_URL", "postgresql+asyncpg://postgres:382004@localhost:5432/tourmate")
+    db_url = os.getenv("DATABASE_URL", "postgresql+asyncpg://postgres:1610@localhost:5432/tourmate")
     if not db_url:
         print("ERROR: DATABASE_URL environment variable is not set.")
         sys.exit(1)

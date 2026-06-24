@@ -18,6 +18,11 @@ import random
 from pathlib import Path
 from dataclasses import dataclass
 
+from dotenv import load_dotenv
+
+# Load .env from the backend directory (path-independent)
+load_dotenv(BACKEND_DIR / ".env")
+
 if sys.platform == "win32":
     try:
         sys.stdout.reconfigure(encoding="utf-8")
@@ -42,7 +47,7 @@ EMBEDDING_JSON = DATA_DIR / "cairo_embeddings.json"
 
 _raw_db_url = os.getenv(
     "DATABASE_URL",
-    "postgresql://postgres:382004@localhost:5432/tourmate",
+    "postgresql://postgres:1610@localhost:5432/tourmate",
 )
 DB_URL = _raw_db_url.replace("+asyncpg", "").replace("+psycopg2", "")
 
@@ -416,7 +421,7 @@ def main():
         batch = place_texts[batch_idx: batch_idx + BATCH_SIZE]
         batch_num = batch_idx // BATCH_SIZE + 1
         batch_start = time.time()
-        texts = [t[1] for _, t in batch]
+        texts = [text for _, text in batch]
 
         # Blocking call — will retry internally until success
         try:

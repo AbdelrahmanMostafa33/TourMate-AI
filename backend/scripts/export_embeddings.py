@@ -43,7 +43,7 @@ OUTPUT_FILE = DATA_DIR / "cairo_embeddings.json"
 
 _raw_db_url = os.getenv(
     "DATABASE_URL",
-    "postgresql://postgres:382004@localhost:5432/tourmate",
+    "postgresql://postgres:1610@localhost:5432/tourmate",
 )
 DB_URL = _raw_db_url.replace("+asyncpg", "").replace("+psycopg2", "")
 
