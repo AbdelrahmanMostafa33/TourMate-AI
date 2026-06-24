@@ -138,3 +138,41 @@ class TripPackageBookingResponse(BaseModel):
     bookings:     list[PackageBookingItem]
     stop_count:   int
     booking_count: int
+
+
+# ─── Trip Package Payment ─────────────────────────────────────────────────
+
+class PackagePaymentItem(BaseModel):
+    """A single paid booking as part of a trip package payment."""
+    booking_id:          str
+    amount:              float
+    currency:            str
+    receipt_number:      str
+    status:              BookingStatus = BookingStatus.confirmed
+
+
+class PackagePaymentSkipItem(BaseModel):
+    """A booking that was skipped during bulk payment."""
+    booking_id:          str
+    reason:              str
+
+
+class BulkPaymentRequest(BaseModel):
+    """Request for paying all pending bookings in a trip at once.
+
+    The ``amount`` per booking is taken from each booking's ``total_cost``,
+    so only ``payment_method`` and optional ``currency`` are needed here.
+    """
+    payment_method:     PaymentMethod
+    currency:           Optional[str] = None
+
+
+class TripPackagePaymentResponse(BaseModel):
+    """Response for paying all pending bookings in a trip."""
+    trip_id:           str
+    total_charged:     float
+    currency:          str
+    paid_count:        int
+    skipped_count:     int
+    paid_bookings:     list[PackagePaymentItem]
+    skipped_bookings:  list[PackagePaymentSkipItem]

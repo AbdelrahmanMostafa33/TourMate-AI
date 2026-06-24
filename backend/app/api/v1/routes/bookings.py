@@ -14,6 +14,8 @@ Endpoints:
   - ``POST   /{booking_id}/pay``          — Process payment (Stripe sandbox)
   - ``POST   /{booking_id}/cancel``       — Cancel a booking
   - ``POST   /{booking_id}/complete``     — Mark booking as completed
+  - ``POST   /trip/{trip_id}/package``    — Book all stops in the trip
+  - ``POST   /trip/{trip_id}/pay-all``    — Pay all pending bookings in a trip
 """
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -28,6 +30,7 @@ from app.models.enums import BookingStatus
 from app.schemas.booking import (
     BookingCreate, BookingResponse, BookingStatusUpdate,
     PaymentCreate, TripPackageBookingResponse,
+    BulkPaymentRequest, TripPackagePaymentResponse,
 )
 from app.services.booking_service import BookingService
 
@@ -255,6 +258,44 @@ async def book_trip_package(
         result = await svc.book_trip_package(
             trip_id=trip_id,
             user_id=current_user["uid"],
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+    await db.commit()
+    return result
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# POST /trip/{trip_id}/pay-all
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@router.post("/trip/{trip_id}/pay-all", response_model=TripPackagePaymentResponse)
+async def pay_trip_package(
+    trip_id:      str,
+    data:         BulkPaymentRequest,
+    current_user: dict         = Depends(get_current_user),
+    db:           AsyncSession = Depends(get_db),
+):
+    """Pay for all pending bookings in a trip at once.
+
+    Accepts a shared body (``payment_method``, optional ``currency``) that is
+    applied to each pending booking.  The per-booking ``amount`` is taken from
+    each booking's ``total_cost``.
+
+    - Pending bookings are paid and confirmed.
+    - Non-pending bookings (confirmed, cancelled, completed) are silently
+      skipped with a reason in the response.
+    - If a payment fails for an individual booking, processing continues with
+      the next one.
+    """
+    svc = BookingService(db)
+
+    try:
+        result = await svc.pay_trip_package(
+            trip_id=trip_id,
+            user_id=current_user["uid"],
+            data=data,
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))

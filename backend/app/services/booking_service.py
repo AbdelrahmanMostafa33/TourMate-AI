@@ -38,7 +38,7 @@ from app.models.enums import (
 )
 from app.models.itinerary import Itinerary, Day, ItineraryStop
 from app.models.trip import Trip
-from app.schemas.booking import BookingCreate, PaymentCreate, PackageBookingItem
+from app.schemas.booking import BookingCreate, PaymentCreate, PackageBookingItem, BulkPaymentRequest
 
 logger = logging.getLogger(__name__)
 
@@ -772,6 +772,115 @@ class BookingService:
             "bookings":      created_bookings,
             "stop_count":    total_stops,
             "booking_count": len(created_bookings),
+        }
+
+    # ── pay_trip_package ───────────────────────────────────────────────────
+
+    async def pay_trip_package(
+        self,
+        trip_id: str,
+        user_id: str,
+        data: BulkPaymentRequest,
+    ) -> dict:
+        """Pay for all pending bookings in a trip using a shared payment config.
+
+        Iterates over all ``pending`` bookings belonging to the given trip/user,
+        processes payment for each (using the shared payment config for
+        ``payment_method`` and ``currency``), then confirms each booking.
+
+        - Bookings that are not ``pending`` are silently skipped (their status is
+          noted in ``skipped_bookings``).
+        - If a payment fails for an individual booking, that booking is added to
+          ``skipped_bookings`` and processing continues with the next one.
+
+        Args:
+            trip_id:  The trip whose pending bookings should be paid.
+            user_id:  The user making the payment.
+            data:     Shared ``BulkPaymentRequest`` providing ``payment_method``
+                      and optional ``currency``.  The per-booking ``amount`` is
+                      taken from each booking's ``total_cost``.
+
+        Returns:
+            A dict with keys:
+              - trip_id, total_charged, currency
+              - paid_count, skipped_count
+              - paid_bookings: list of ``PackagePaymentItem`` dicts
+              - skipped_bookings: list of ``PackagePaymentSkipItem`` dicts
+        """
+        # ── Load all pending bookings for this trip ────────────────────────
+        all_bookings = await self.list_trip_bookings(trip_id)
+        pending_bookings = [
+            b for b in all_bookings
+            if b.user_id == user_id and b.status == BookingStatus.pending
+        ]
+        skipped_bookings = [
+            b for b in all_bookings
+            if b.user_id == user_id and b.status != BookingStatus.pending
+        ]
+
+        if not pending_bookings:
+            raise ValueError(
+                f"No pending bookings found for trip {trip_id} — "
+                "all bookings are already paid, cancelled, or completed."
+            )
+
+        paid_bookings: list[dict] = []
+        skipped: list[dict] = []
+        total_charged = 0.0
+        currency = (data.currency or "USD").upper()
+
+        for booking in pending_bookings:
+            try:
+                # Build per-booking PaymentCreate using shared method + currency,
+                # but use the booking's own cost as the amount.
+                booking_amount = booking.total_cost or 0.0
+                booking_payment_data = PaymentCreate(
+                    amount       = booking_amount,
+                    currency     = currency,
+                    payment_method = data.payment_method,
+                )
+
+                result = await self.process_payment(
+                    booking.booking_id,
+                    booking_payment_data,
+                )
+                await self.confirm_booking(booking.booking_id)
+
+                paid_bookings.append({
+                    "booking_id":     booking.booking_id,
+                    "amount":         result["payment"].amount,
+                    "currency":       result["payment"].currency,
+                    "receipt_number": result["receipt"].receipt_number,
+                    "status":         BookingStatus.confirmed.value,
+                })
+                total_charged += result["receipt"].total
+
+            except ValueError as exc:
+                skipped.append({
+                    "booking_id": booking.booking_id,
+                    "reason":     str(exc),
+                })
+
+        # Also report skipped non-pending bookings
+        for b in skipped_bookings:
+            skipped.append({
+                "booking_id": b.booking_id,
+                "reason":     f"Booking is already '{b.status.value}' (not pending)",
+            })
+
+        logger.info(
+            "[BookingService] Bulk pay for trip %s: %d paid, %d skipped, total=%.2f %s",
+            trip_id, len(paid_bookings), len(skipped), total_charged, currency,
+        )
+
+        return {
+            "trip_id":         trip_id,
+            "total_charged":   round(total_charged, 2),
+            "currency":        currency,
+            "paid_count":      len(paid_bookings),
+            "skipped_count":   len(skipped),
+            "paid_bookings":   paid_bookings,
+            "skipped_bookings": skipped,
         }
 
     # ── query helpers ──────────────────────────────────────────────────────

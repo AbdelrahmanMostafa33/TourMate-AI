@@ -31,7 +31,7 @@ from app.models.enums import (
     PaymentMethod, PaymentStatus, PaymentProvider,
     PlaceCategory, AccommodationType,
 )
-from app.schemas.booking import BookingCreate, PaymentCreate
+from app.schemas.booking import BookingCreate, PaymentCreate, BulkPaymentRequest
 from app.services.booking_service import BookingService
 
 
@@ -508,3 +508,201 @@ class TestBookingEdgeCases:
         # Second succeeded webhook after refund (edge case - should not crash)
         r4 = await svc.handle_webhook_payment_succeeded(pi_id)
         assert r4["status"] == "already_completed"
+
+
+def _make_bulk_payment_request() -> BulkPaymentRequest:
+    """Standard BulkPaymentRequest for tests."""
+    return BulkPaymentRequest(
+        payment_method=PaymentMethod.credit_card,
+        currency="USD",
+    )
+
+
+class TestBulkPayAll:
+    """Tests for the bulk pay-all endpoint (pay_trip_package)."""
+
+    @pytest.mark.asyncio
+    async def test_pay_all_pending_bookings(self, db_session):
+        """Pay all pending bookings in a trip in one call."""
+        svc = BookingService(db_session)
+        svc._stripe = None
+        await _seed_db(db_session)
+
+        # Create 2 pending bookings
+        booking1 = await svc.create_booking(
+            trip_id="booking_test_trip",
+            user_id="booking_test_user",
+            data=_make_booking_create(),
+        )
+        booking2 = await svc.create_booking(
+            trip_id="booking_test_trip",
+            user_id="booking_test_user",
+            data=BookingCreate(
+                trip_id="booking_test_trip",
+                booking_type=BookingType.restaurant,
+                total_cost=75.00,
+                currency="USD",
+            ),
+        )
+        await db_session.commit()
+
+        # Pay all
+        result = await svc.pay_trip_package(
+            trip_id="booking_test_trip",
+            user_id="booking_test_user",
+            data=_make_bulk_payment_request(),
+        )
+        await db_session.commit()
+
+        assert result["paid_count"] == 2
+        assert result["skipped_count"] == 0
+        assert result["trip_id"] == "booking_test_trip"
+        assert result["total_charged"] > 0
+        assert result["currency"] == "USD"
+        assert len(result["paid_bookings"]) == 2
+        assert len(result["skipped_bookings"]) == 0
+
+        # Verify both bookings are now confirmed
+        for item in result["paid_bookings"]:
+            assert item["status"] == "confirmed"
+            assert item["receipt_number"].startswith("RCT-")
+
+        booking1_loaded = await svc.get_booking(booking1.booking_id)
+        assert booking1_loaded.status == BookingStatus.confirmed
+        assert booking1_loaded.payment is not None
+
+        booking2_loaded = await svc.get_booking(booking2.booking_id)
+        assert booking2_loaded.status == BookingStatus.confirmed
+        assert booking2_loaded.payment is not None
+
+    @pytest.mark.asyncio
+    async def test_pay_all_skips_non_pending(self, db_session):
+        """Non-pending bookings (confirmed, cancelled) are skipped."""
+        svc = BookingService(db_session)
+        svc._stripe = None
+        await _seed_db(db_session)
+
+        # Create 3 bookings: one pending, one already paid (confirmed), one cancelled
+        pending_booking = await svc.create_booking(
+            trip_id="booking_test_trip",
+            user_id="booking_test_user",
+            data=_make_booking_create(),
+        )
+        confirmed_booking = await svc.create_booking(
+            trip_id="booking_test_trip",
+            user_id="booking_test_user",
+            data=BookingCreate(
+                trip_id="booking_test_trip",
+                booking_type=BookingType.restaurant,
+                total_cost=75.00,
+                currency="USD",
+            ),
+        )
+        cancelled_booking = await svc.create_booking(
+            trip_id="booking_test_trip",
+            user_id="booking_test_user",
+            data=BookingCreate(
+                trip_id="booking_test_trip",
+                booking_type=BookingType.activity,
+                total_cost=50.00,
+                currency="USD",
+            ),
+        )
+        # Pay + confirm the second one
+        conf_result = await svc.process_payment(
+            confirmed_booking.booking_id, _make_payment_create(),
+        )
+        await svc.confirm_booking(confirmed_booking.booking_id)
+        # Cancel the third one
+        await svc.cancel_booking(cancelled_booking.booking_id)
+        await db_session.commit()
+
+        # Pay all — should only pay the pending one
+        result = await svc.pay_trip_package(
+            trip_id="booking_test_trip",
+            user_id="booking_test_user",
+            data=_make_bulk_payment_request(),
+        )
+        await db_session.commit()
+
+        assert result["paid_count"] == 1
+        assert result["skipped_count"] == 2  # confirmed + cancelled
+        assert len(result["paid_bookings"]) == 1
+        assert len(result["skipped_bookings"]) == 2
+
+        # Check skipped reasons
+        skipped_ids = [s["booking_id"] for s in result["skipped_bookings"]]
+        assert confirmed_booking.booking_id in skipped_ids
+        assert cancelled_booking.booking_id in skipped_ids
+
+        # Verify pending booking is now confirmed
+        pending_loaded = await svc.get_booking(pending_booking.booking_id)
+        assert pending_loaded.status == BookingStatus.confirmed
+
+        # Confirmed booking should still be confirmed (not double-paid)
+        confirmed_loaded = await svc.get_booking(confirmed_booking.booking_id)
+        assert confirmed_loaded.status == BookingStatus.confirmed
+
+    @pytest.mark.asyncio
+    async def test_pay_all_no_pending_bookings(self, db_session):
+        """Error if no pending bookings exist."""
+        svc = BookingService(db_session)
+        svc._stripe = None
+        await _seed_db(db_session)
+
+        # Create and immediately cancel a booking so there are no pending
+        booking = await svc.create_booking(
+            trip_id="booking_test_trip",
+            user_id="booking_test_user",
+            data=_make_booking_create(),
+        )
+        await svc.cancel_booking(booking.booking_id)
+        await db_session.commit()
+
+        with pytest.raises(ValueError, match="No pending bookings"):
+            await svc.pay_trip_package(
+                trip_id="booking_test_trip",
+                user_id="booking_test_user",
+                data=_make_bulk_payment_request(),
+            )
+
+    @pytest.mark.asyncio
+    async def test_pay_all_other_users_bookings_not_affected(self, db_session):
+        """Only the current user's bookings are paid; other users' bookings are ignored."""
+        svc = BookingService(db_session)
+        svc._stripe = None
+        await _seed_db(db_session)
+
+        # Create a booking for the test user
+        booking = await svc.create_booking(
+            trip_id="booking_test_trip",
+            user_id="booking_test_user",
+            data=_make_booking_create(),
+        )
+        # Create another booking for a DIFFERENT user on the same trip
+        other_booking = await svc.create_booking(
+            trip_id="booking_test_trip",
+            user_id="other_user",
+            data=BookingCreate(
+                trip_id="booking_test_trip",
+                booking_type=BookingType.restaurant,
+                total_cost=100.00,
+                currency="USD",
+            ),
+        )
+        await db_session.commit()
+
+        # Pay all as test user
+        result = await svc.pay_trip_package(
+            trip_id="booking_test_trip",
+            user_id="booking_test_user",
+            data=_make_bulk_payment_request(),
+        )
+        await db_session.commit()
+
+        assert result["paid_count"] == 1
+        assert result["paid_bookings"][0]["booking_id"] == booking.booking_id
+
+        # Other user's booking should remain pending
+        other_loaded = await svc.get_booking(other_booking.booking_id)
+        assert other_loaded.status == BookingStatus.pending
