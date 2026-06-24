@@ -320,21 +320,21 @@ class ChatService:
             budget_val = profile_data.get("budget_level")
             if budget_val:
                 try:
-                    profile.budget_level = BudgetLevel(budget_val).value
+                    profile.budget_level = BudgetLevel(budget_val)
                 except (ValueError, TypeError):
                     profile.budget_level = str(budget_val)
 
             style_val = profile_data.get("travel_style")
             if style_val:
                 try:
-                    profile.travel_style = TravelStyle(style_val).value
+                    profile.travel_style = TravelStyle(style_val)
                 except (ValueError, TypeError):
                     profile.travel_style = str(style_val)
 
             pace_val = profile_data.get("pace")
             if pace_val:
                 try:
-                    profile.pace = TripPace(pace_val).value
+                    profile.pace = TripPace(pace_val)
                 except (ValueError, TypeError):
                     profile.pace = str(pace_val)
 

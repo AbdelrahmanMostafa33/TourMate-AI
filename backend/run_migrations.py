@@ -5,6 +5,10 @@ import sys
 # Ensure we're in the backend directory
 os.chdir(os.path.dirname(os.path.abspath(__file__)))
 
+# Load .env file so DATABASE_URL is available
+from dotenv import load_dotenv
+load_dotenv()
+
 from alembic.config import Config
 from alembic import command
 

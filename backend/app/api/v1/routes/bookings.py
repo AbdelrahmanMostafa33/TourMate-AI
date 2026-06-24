@@ -17,10 +17,13 @@ Endpoints:
 """
 
 from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.core.database import get_db
 from app.core.security import get_current_user
+from app.models.booking import Booking, Payment
 from app.models.enums import BookingStatus
 from app.schemas.booking import (
     BookingCreate, BookingResponse, BookingStatusUpdate,
@@ -29,6 +32,20 @@ from app.schemas.booking import (
 from app.services.booking_service import BookingService
 
 router = APIRouter()
+
+
+# ── Helper ────────────────────────────────────────────────────────────────────
+
+async def _load_booking(db: AsyncSession, booking_id: str) -> Booking | None:
+    """Load a booking with payment + receipt eagerly to avoid lazy-load errors."""
+    result = await db.execute(
+        select(Booking)
+        .options(
+            selectinload(Booking.payment).selectinload(Payment.receipt),
+        )
+        .where(Booking.booking_id == booking_id)
+    )
+    return result.scalar_one_or_none()
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -41,11 +58,7 @@ async def create_booking(
     current_user: dict         = Depends(get_current_user),
     db:           AsyncSession = Depends(get_db),
 ):
-    """Create a simulated booking for the given trip.
-
-    The booking starts in **pending** status.  Use ``/{booking_id}/pay`` to
-    process payment (Stripe sandbox) which will auto-confirm the booking.
-    """
+    """Create a simulated booking for the given trip."""
     svc = BookingService(db)
     booking = await svc.create_booking(
         trip_id=data.trip_id,
@@ -53,7 +66,7 @@ async def create_booking(
         data=data,
     )
     await db.commit()
-    await db.refresh(booking)
+    booking = await _load_booking(db, booking.booking_id)
     return booking
 
 
@@ -68,8 +81,7 @@ async def get_booking(
     db:           AsyncSession = Depends(get_db),
 ):
     """Get full details for a single booking, including payment + receipt."""
-    svc = BookingService(db)
-    booking = await svc.get_booking(booking_id)
+    booking = await _load_booking(db, booking_id)
     if not booking or booking.user_id != current_user["uid"]:
         raise HTTPException(status_code=404, detail="Booking not found")
     return booking
@@ -99,8 +111,6 @@ async def list_trip_bookings(
 
     svc = BookingService(db)
     bookings = await svc.list_trip_bookings(trip_id, status=status_enum)
-
-    # Security: only return bookings that belong to the current user
     bookings = [b for b in bookings if b.user_id == current_user["uid"]]
     return bookings
 
@@ -116,23 +126,18 @@ async def update_booking_status(
     current_user: dict         = Depends(get_current_user),
     db:           AsyncSession = Depends(get_db),
 ):
-    """Manually update the status of a booking.
-
-    Use this as a low-level override.  Prefer the dedicated endpoints
-    ``/cancel`` and ``/complete`` for standard lifecycle transitions.
-    """
-    svc = BookingService(db)
-    booking = await svc.get_booking(booking_id)
+    """Manually update the status of a booking."""
+    booking = await _load_booking(db, booking_id)
     if not booking or booking.user_id != current_user["uid"]:
         raise HTTPException(status_code=404, detail="Booking not found")
 
     booking.status = body.status
     booking.raw_response = {
         **(booking.raw_response or {}),
-        f"status_changed_to_{body.status.value}_at": None,  # will be set by DB onupdate
+        f"status_changed_to_{body.status.value}_at": None,
     }
     await db.commit()
-    await db.refresh(booking)
+    booking = await _load_booking(db, booking_id)
     return booking
 
 
@@ -147,28 +152,10 @@ async def pay_booking(
     current_user: dict         = Depends(get_current_user),
     db:           AsyncSession = Depends(get_db),
 ):
-    """Process payment for a booking (Stripe sandbox with simulation fallback).
-
-    Uses Stripe test mode if ``STRIPE_SECRET_KEY`` is configured, otherwise
-    falls back to a fully simulated payment.  On success, creates a
-    ``Payment`` and ``Receipt`` record and transitions the booking to
-    **confirmed**.
-
-    Request body example (sandbox mode — test token is automatic)::
-
-        {
-          "amount": 150.00,
-          "currency": "USD",
-          "payment_method": "credit_card"
-        }
-
-    Returns payment details including ``stripe_payment_intent_id`` and the
-    generated ``receipt_number``.
-    """
+    """Process payment for a booking (Stripe sandbox with simulation fallback)."""
     svc = BookingService(db)
 
-    # Security: verify ownership first
-    booking = await svc.get_booking(booking_id)
+    booking = await _load_booking(db, booking_id)
     if not booking or booking.user_id != current_user["uid"]:
         raise HTTPException(status_code=404, detail="Booking not found")
 
@@ -177,7 +164,6 @@ async def pay_booking(
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
 
-    # Auto-confirm booking after successful payment
     await svc.confirm_booking(booking_id)
     await db.commit()
 
@@ -211,18 +197,17 @@ async def cancel_booking(
     """Cancel a booking and refund any linked payment."""
     svc = BookingService(db)
 
-    # Security: verify ownership first
-    booking = await svc.get_booking(booking_id)
+    booking = await _load_booking(db, booking_id)
     if not booking or booking.user_id != current_user["uid"]:
         raise HTTPException(status_code=404, detail="Booking not found")
 
     try:
-        booking = await svc.cancel_booking(booking_id)
+        await svc.cancel_booking(booking_id)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
 
     await db.commit()
-    await db.refresh(booking)
+    booking = await _load_booking(db, booking_id)
     return booking
 
 
@@ -239,18 +224,17 @@ async def complete_booking(
     """Mark a confirmed booking as completed (post-visit)."""
     svc = BookingService(db)
 
-    # Security: verify ownership first
-    booking = await svc.get_booking(booking_id)
+    booking = await _load_booking(db, booking_id)
     if not booking or booking.user_id != current_user["uid"]:
         raise HTTPException(status_code=404, detail="Booking not found")
 
     try:
-        booking = await svc.complete_booking(booking_id)
+        await svc.complete_booking(booking_id)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
 
     await db.commit()
-    await db.refresh(booking)
+    booking = await _load_booking(db, booking_id)
     return booking
 
 
@@ -264,22 +248,7 @@ async def book_trip_package(
     current_user: dict         = Depends(get_current_user),
     db:           AsyncSession = Depends(get_db),
 ):
-    """Book every stop in the trip's itinerary as a package.
-
-    Creates individual ``Booking`` records (status = pending) for each stop
-    in the latest itinerary version.  Stops are mapped to booking types:
-
-    - hotels → ``hotel``
-    - restaurants → ``restaurant``
-    - attractions / activities → ``activity``
-
-    All bookings are created in ``pending`` status.  Use the individual
-    ``/{booking_id}/pay`` endpoint to pay for each, or use ``/pay-all``
-    for a single bulk payment.
-
-    Returns a summary with total cost, booking count, and the list of
-    created bookings with their confirmation numbers.
-    """
+    """Book every stop in the trip's itinerary as a package."""
     svc = BookingService(db)
 
     try:

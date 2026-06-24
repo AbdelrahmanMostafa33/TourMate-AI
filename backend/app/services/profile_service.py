@@ -43,11 +43,11 @@ async def upsert_trip_profile(
 
     # ── Update fields from request data ──────────────────────────────
     if data.budget_level is not None:
-        profile.budget_level = data.budget_level.value
+        profile.budget_level = data.budget_level
     if data.travel_style is not None:
-        profile.travel_style = data.travel_style.value
+        profile.travel_style = data.travel_style
     if data.pace is not None:
-        profile.pace = data.pace.value
+        profile.pace = data.pace
     if data.interests:
         profile.interests = data.interests
     if data.food_preferences:

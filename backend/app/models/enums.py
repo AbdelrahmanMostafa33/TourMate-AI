@@ -120,6 +120,7 @@ class TravelStyle(str, PyEnum):
 class TripPace(str, PyEnum):
     PACKED = "packed"
     BALANCED = "balanced"
+    MODERATE = "moderate"
     RELAXED = "relaxed"
 
 
