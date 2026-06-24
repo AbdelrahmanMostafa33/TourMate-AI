@@ -183,27 +183,36 @@ def _trim_for_prompt(place: dict) -> dict:
     """
     Reduce a place record to only the information needed
     by the LLM for itinerary planning.
+
+    Strips photos, maps_link, address, and other verbose fields
+    — consistent with the validator's _strip_unnecessary_fields().
     """
     trimmed = {
         "id": place["id"],
         "name": place["name"],
         "category": place["category"],
-        "sub_category": place.get("sub_category", ""),
-        "interest_tags": place.get("interest_tags", []),
         "lat": place["lat"],
         "lon": place["lon"],
         "score": round(place.get("popularity_score", 0), 1),
     }
+    # Keep sub_category + interest_tags for attractions/restaurants so the
+    # LLM can match against user interests and enforce category diversity.
+    if place.get("category") != "hotel":
+        sub = place.get("sub_category", "")
+        if sub:
+            trimmed["sub_category"] = sub
+        tags = place.get("interest_tags", [])
+        if tags:
+            # Limit to top 3 interest tags to save tokens — the planner
+            # has enough info from category + sub_category + truncated tags.
+            trimmed["interest_tags"] = tags[:3]
     # Include cuisine_type for restaurants so the LLM can match food preferences
     if place.get("category") == "restaurant" and place.get("cuisine_type"):
         trimmed["cuisine_type"] = place["cuisine_type"]
-    # Include accommodation_type and top amenities for hotels (trimmed to reduce prompt size)
+    # Include accommodation_type for hotels (amenities and redundant
+    # interest_tags are omitted — category="hotel" is sufficient).
     if place.get("category") == "hotel":
         trimmed["accommodation_type"] = place.get("accommodation_type", "")
-        amenities = place.get("amenities", [])
-        trimmed["amenities"] = amenities[:3] if len(amenities) > 3 else amenities
-        # Hotels don't need verbose interest_tags — just the category is enough
-        trimmed["interest_tags"] = ["hotel"]
     return trimmed
 
 
@@ -332,6 +341,17 @@ Generate the itinerary now.
             # Validate non-empty days.
             if not parsed.get("days"):
                 raise ValueError("Itinerary has empty 'days' array")
+
+            # ── Fix time-of-day ordering within each day ─────────────
+            # The LLM sometimes assigns suggested_time_of_day tags in
+            # non-chronological order (e.g. Morning → Afternoon → Morning).
+            # Sort stops chronologically so downstream agents see a
+            # sensible sequence.
+            _TIME_ORDER = {"morning": 0, "afternoon": 1, "evening": 2}
+            for day in parsed.get("days", []):
+                stops = day.get("stops", [])
+                stops.sort(key=lambda s: _TIME_ORDER.get(s.get("suggested_time_of_day", ""), 1))
+                day["stops"] = stops
 
             itinerary = parsed
             logger.info(

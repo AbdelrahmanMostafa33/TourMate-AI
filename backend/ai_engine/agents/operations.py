@@ -23,9 +23,9 @@ from __future__ import annotations
 
 import copy
 import logging
-from typing import List, Literal, Optional, Union
+from typing import List, Literal, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 logger = logging.getLogger(__name__)
 
@@ -103,40 +103,97 @@ class ReThemeOperation(BaseModel):
     new_theme: str = Field(description="New theme/title for the day")
 
 
-# ── Discriminated union ───────────────────────────────────────────────────
-
-ModifierOperation = Union[
-    RemoveOperation,
-    SwapOperation,
-    AddOperation,
-    ChangeHotelOperation,
-    ReorderOperation,
-    ReThemeOperation,
-]
-
-
 class ModifierResponse(BaseModel):
     """Structured response from the itinerary modifier LLM.
 
-    The LLM outputs this via ``with_structured_output``. It contains
-    the operation to apply plus a human-readable explanation note.
+    Uses a **flat schema** (no discriminated union) so that ANY operation
+    name from the LLM is accepted without a Pydantic ValidationError.
+    Unknown operation names fall through to ``apply_operation``'s ``else``
+    branch, which logs a warning and returns the original itinerary
+    unchanged — much more graceful than crashing.
+
+    The ``@model_validator`` also accepts the old nested format
+    ``{"operation": SwapOperation(...), "note": "..."}`` for backward
+    compatibility with existing test code.
     """
 
-    operation: Union[
-        RemoveOperation,
-        SwapOperation,
-        AddOperation,
-        ChangeHotelOperation,
-        ReorderOperation,
-        ReThemeOperation,
-    ] = Field(
-        discriminator="op",
-        description="The operation to perform on the itinerary",
-    )
+    op: str = Field(description="The operation to perform")
     note: str = Field(
         default="",
         description="Brief human-readable explanation of changes made",
     )
+
+    # ── All fields from all operation types, all optional ──────────────
+    place_id: Optional[str] = Field(
+        default=None,
+        description="ID of the stop to remove (REMOVE)",
+    )
+    remove_place_id: Optional[str] = Field(
+        default=None,
+        description="ID of the stop to remove (SWAP)",
+    )
+    add_place_id: Optional[str] = Field(
+        default=None,
+        description="ID of the new place from the available pool (SWAP, ADD)",
+    )
+    day_number: Optional[int] = Field(
+        default=None,
+        description="Day number (1-based) (SWAP, ADD, REORDER, RE_THEME)",
+    )
+    new_order: Optional[List[str]] = Field(
+        default=None,
+        description="Ordered list of place IDs representing the new stop sequence (REORDER)",
+    )
+    new_why_recommended: Optional[str] = Field(
+        default=None,
+        description="Updated recommendation reason for the new place (SWAP)",
+    )
+    suggested_time_of_day: Optional[Literal["morning", "afternoon", "evening"]] = Field(
+        default=None,
+        description="Best time of day for this stop (ADD)",
+    )
+    why_recommended: Optional[str] = Field(
+        default=None,
+        description="Reason why this new stop/hotel fits the user's request (ADD, CHANGE_HOTEL)",
+    )
+    old_hotel_id: Optional[str] = Field(
+        default=None,
+        description="ID of the hotel to replace. If None, adds a new hotel (CHANGE_HOTEL)",
+    )
+    new_hotel_id: Optional[str] = Field(
+        default=None,
+        description="ID of the new hotel from the available pool (CHANGE_HOTEL)",
+    )
+    new_theme: Optional[str] = Field(
+        default=None,
+        description="New theme/title for the day (RE_THEME)",
+    )
+
+    @model_validator(mode="before")
+    @classmethod
+    def _normalize_input(cls, data: dict) -> dict:
+        """Accept both flat and nested operation formats.
+
+        The LLM outputs flat format:
+            ``{"op": "REORDER", "day_number": 1, "new_order": [...], "note": "..."}``
+
+        The test code uses nested format:
+            ``{"operation": SwapOperation(...), "note": "..."}``
+
+        This validator flattens the nested format into the flat format
+        so the rest of the code always works with a flat response.
+        """
+        if isinstance(data, dict):
+            op = data.get("operation")
+            if op is not None and not isinstance(op, str):
+                # Unpack nested operation (Pydantic model or dict)
+                op_data = op.model_dump() if hasattr(op, "model_dump") else op
+                if isinstance(op_data, dict):
+                    for k, v in op_data.items():
+                        if k not in data:
+                            data[k] = v
+                data.pop("operation", None)
+        return data
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -261,7 +318,7 @@ def _reattach_full_metadata(
 # ── Individual operation executors ─────────────────────────────────────────
 
 
-def _exec_remove(itinerary: dict, op: RemoveOperation) -> dict:
+def _exec_remove(itinerary: dict, op: ModifierResponse) -> dict:
     """Execute a REMOVE operation."""
     modified = copy.deepcopy(itinerary)
     removed = False
@@ -296,10 +353,10 @@ def _exec_remove(itinerary: dict, op: RemoveOperation) -> dict:
     return modified
 
 
-def _exec_swap(itinerary: dict, op: SwapOperation, place_pool: list[dict]) -> dict:
+def _exec_swap(itinerary: dict, op: ModifierResponse, place_pool: list[dict]) -> dict:
     """Execute a SWAP operation — replace one stop with another place."""
     modified = copy.deepcopy(itinerary)
-    day = _find_day(modified, op.day_number)
+    day = _find_day(modified, op.day_number or 0)
     if day is None:
         logger.warning("[OperationExecutor] SWAP: day %d not found", op.day_number)
         return modified
@@ -363,10 +420,10 @@ def _exec_swap(itinerary: dict, op: SwapOperation, place_pool: list[dict]) -> di
     return modified
 
 
-def _exec_add(itinerary: dict, op: AddOperation, place_pool: list[dict]) -> dict:
+def _exec_add(itinerary: dict, op: ModifierResponse, place_pool: list[dict]) -> dict:
     """Execute an ADD operation — insert a new stop into a specific day/time."""
     modified = copy.deepcopy(itinerary)
-    day = _find_day(modified, op.day_number)
+    day = _find_day(modified, op.day_number or 0)
     if day is None:
         logger.warning("[OperationExecutor] ADD: day %d not found", op.day_number)
         return modified
@@ -388,6 +445,7 @@ def _exec_add(itinerary: dict, op: AddOperation, place_pool: list[dict]) -> dict
         )
         return modified
 
+    time_slot = op.suggested_time_of_day or "afternoon"
     new_stop = {
         "id": new_place.get("id", op.add_place_id),
         "name": new_place.get("name", ""),
@@ -400,13 +458,13 @@ def _exec_add(itinerary: dict, op: AddOperation, place_pool: list[dict]) -> dict
         "why_recommended": op.why_recommended or new_place.get("why_recommended", ""),
         "estimated_duration_minutes": new_place.get("estimated_duration_minutes")
             or new_place.get("duration_minutes", 60),
-        "suggested_time_of_day": op.suggested_time_of_day,
+        "suggested_time_of_day": time_slot,
     }
 
     # Decide where to insert based on time of day
     stops = day.get("stops", [])
     time_order = {"morning": 0, "afternoon": 1, "evening": 2}
-    target_rank = time_order.get(op.suggested_time_of_day, 1)
+    target_rank = time_order.get(time_slot, 1)
 
     insert_idx = len(stops)  # default: append
     for i, s in enumerate(stops):
@@ -436,13 +494,13 @@ def _exec_add(itinerary: dict, op: AddOperation, place_pool: list[dict]) -> dict
 
     logger.info(
         "[OperationExecutor] ADDED %s to day %d (%s slot)",
-        op.add_place_id, op.day_number, op.suggested_time_of_day,
+        op.add_place_id, op.day_number, time_slot,
     )
 
     return modified
 
 
-def _exec_change_hotel(itinerary: dict, op: ChangeHotelOperation, place_pool: list[dict]) -> dict:
+def _exec_change_hotel(itinerary: dict, op: ModifierResponse, place_pool: list[dict]) -> dict:
     """Execute a CHANGE_HOTEL operation — replace or add a hotel."""
     modified = copy.deepcopy(itinerary)
 
@@ -504,10 +562,10 @@ def _exec_change_hotel(itinerary: dict, op: ChangeHotelOperation, place_pool: li
     return modified
 
 
-def _exec_reorder(itinerary: dict, op: ReorderOperation) -> dict:
+def _exec_reorder(itinerary: dict, op: ModifierResponse) -> dict:
     """Execute a REORDER operation — reorder stops within a day."""
     modified = copy.deepcopy(itinerary)
-    day = _find_day(modified, op.day_number)
+    day = _find_day(modified, op.day_number or 0)
     if day is None:
         logger.warning("[OperationExecutor] REORDER: day %d not found", op.day_number)
         return modified
@@ -516,8 +574,9 @@ def _exec_reorder(itinerary: dict, op: ReorderOperation) -> dict:
     # Build index of existing stops by ID
     stop_index: dict[str, dict] = {s.get("id", ""): s for s in stops}
 
+    new_order = op.new_order or []
     # Validate that all IDs in new_order exist
-    missing = [pid for pid in op.new_order if pid not in stop_index]
+    missing = [pid for pid in new_order if pid not in stop_index]
     if missing:
         logger.warning(
             "[OperationExecutor] REORDER: place IDs %s not found in day %d — skipping",
@@ -526,7 +585,7 @@ def _exec_reorder(itinerary: dict, op: ReorderOperation) -> dict:
         return modified
 
     # Reorder according to new_order
-    reordered = [stop_index[pid] for pid in op.new_order]
+    reordered = [stop_index[pid] for pid in new_order]
 
     # Fix travel times — each stop except the last gets a travel time
     for i, s in enumerate(reordered):
@@ -554,15 +613,15 @@ def _exec_reorder(itinerary: dict, op: ReorderOperation) -> dict:
     return modified
 
 
-def _exec_retheme(itinerary: dict, op: ReThemeOperation) -> dict:
+def _exec_retheme(itinerary: dict, op: ModifierResponse) -> dict:
     """Execute a RE_THEME operation — update a day's theme."""
     modified = copy.deepcopy(itinerary)
-    day = _find_day(modified, op.day_number)
+    day = _find_day(modified, op.day_number or 0)
     if day is None:
         logger.warning("[OperationExecutor] RE_THEME: day %d not found", op.day_number)
         return modified
 
-    day["theme"] = op.new_theme
+    day["theme"] = op.new_theme or ""
     logger.info("[OperationExecutor] RE_THEME day %d → '%s'", op.day_number, op.new_theme)
     return modified
 
@@ -574,7 +633,7 @@ def _exec_retheme(itinerary: dict, op: ReThemeOperation) -> dict:
 
 def apply_operation(
     itinerary: dict,
-    operation: ModifierOperation,
+    operation: ModifierResponse,
     place_pool: list[dict] | None = None,
 ) -> dict:
     """Apply a modifier operation to an itinerary and return the result.
@@ -586,7 +645,7 @@ def apply_operation(
     Args:
         itinerary: The current itinerary dict (kept unchanged — a deep
             copy is made internally).
-        operation: One of the ``*Operation`` Pydantic models.
+        operation: A parsed ``ModifierResponse`` with flat fields.
         place_pool: Full place pool used to fill in rich metadata for
             newly introduced stops/hotels.
 
@@ -596,7 +655,10 @@ def apply_operation(
     if not itinerary or not operation:
         return itinerary
 
-    # Dispatch to the correct executor
+    # Dispatch to the correct executor based on the operation name.
+    # Unlike the old discriminated-union approach, this NEVER raises a
+    # ValidationError — unknown op names fall through to the ``else``
+    # branch which logs a warning and returns a deep copy unchanged.
     op_type = operation.op
 
     if op_type == "REMOVE":
@@ -612,7 +674,11 @@ def apply_operation(
     elif op_type == "RE_THEME":
         modified = _exec_retheme(itinerary, operation)
     else:
-        logger.warning("[OperationExecutor] Unknown operation type: %s", op_type)
+        logger.warning(
+            "[OperationExecutor] Unknown operation type: '%s' — "
+            "returning itinerary unchanged",
+            op_type,
+        )
         return copy.deepcopy(itinerary)
 
     # Reattach full metadata for any newly introduced stops/hotels

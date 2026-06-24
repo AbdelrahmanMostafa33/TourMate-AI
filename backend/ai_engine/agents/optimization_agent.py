@@ -4,6 +4,52 @@ from ai_engine.tools.routing_tool import order_stops_by_proximity, get_reorder_i
 from ai_engine.tools.haversine import haversine
 
 
+# ── Heavy-field helpers (consistent with validator's _strip_unnecessary_fields) ──
+
+_HEAVY_STOP_FIELDS = {"photos", "address", "maps_link"}
+
+
+def _extract_heavy_stop_fields(draft: dict) -> dict[str, dict]:
+    """
+    Extract heavy stop fields (photos, address, maps_link) into an
+    id → {field: value} mapping, so they can be re-attached after
+    optimization.  The optimizer only needs lat/lon/name for routing.
+    """
+    heavy = {}
+    for day in draft.get("days", []):
+        for stop in day.get("stops", []):
+            sid = stop.get("id")
+            if not sid:
+                continue
+            payload = {}
+            for field in _HEAVY_STOP_FIELDS:
+                val = stop.get(field)
+                if val:
+                    payload[field] = val
+            if payload:
+                heavy[sid] = payload
+    return heavy
+
+
+def _strip_heavy_stop_fields(day_data: dict) -> None:
+    """Remove heavy fields from all stops in *day_data* in-place."""
+    for stop in day_data.get("stops", []):
+        for field in _HEAVY_STOP_FIELDS:
+            stop.pop(field, None)
+
+
+def _reattach_heavy_stop_fields(optimized: dict, heavy: dict[str, dict]) -> None:
+    """Re-attach heavy fields from the original draft back into *optimized*."""
+    for day in optimized.get("days", []):
+        for stop in day.get("stops", []):
+            sid = stop.get("id")
+            if sid and sid in heavy:
+                for field, val in heavy[sid].items():
+                    # Don't overwrite fields the optimizer already set
+                    if field not in stop:
+                        stop[field] = val
+
+
 async def run_optimization_agent(state: TripState) -> TripState:
     """
     Optimization Agent
@@ -34,8 +80,18 @@ async def run_optimization_agent(state: TripState) -> TripState:
     if not draft or state.get("error"):
         return state
 
+    # Extract heavy stop fields (photos, address, maps_link) before
+    # deep-copying — the optimizer only needs lat/lon/name for routing
+    # and these heavy fields just add unnecessary overhead to the copy.
+    heavy_fields = _extract_heavy_stop_fields(draft)
+
     # Create a deep copy so modifications do not affect the original draft.
     optimized = copy.deepcopy(draft)
+
+    # Strip heavy fields from the working copy — they'll be re-attached
+    # from *draft* after reordering is complete.
+    for day in optimized.get("days", []):
+        _strip_heavy_stop_fields(day)
 
     # Iterate through each day in the itinerary.
     for day in optimized.get("days", []):
@@ -62,6 +118,15 @@ async def run_optimization_agent(state: TripState) -> TripState:
             reorder_idx = improve_order_2opt(nn_idx, matrix)
             reordered_stops = [stops[i] for i in reorder_idx]
 
+            # --- Step 2c: Reassign suggested_time_of_day by position ---
+            # The proximity reorder above changes stop positions, making the
+            # LLM-assigned time-of-day labels stale.  Reassign them based on
+            # position: early stops → morning, middle → afternoon, last → evening.
+            _TIME_SLOTS = ["morning", "afternoon", "evening"]
+            for i, stop in enumerate(reordered_stops):
+                slot_idx = min(i, len(_TIME_SLOTS) - 1)
+                stop["suggested_time_of_day"] = _TIME_SLOTS[slot_idx]
+
             # --- Step 3: Annotate stops with travel times and mode ---
             # Use reorder_idx to look up travel times from the original
             # matrix without fragile id()-based remapping.
@@ -83,6 +148,11 @@ async def run_optimization_agent(state: TripState) -> TripState:
             s.get("travel_time_to_next_minutes", 0) for s in day.get("stops", [])
         )
         day["total_travel_time_minutes"] = round(total_travel, 1)
+
+    # Re-attach heavy fields (photos, address, maps_link) that were stripped
+    # before the deep copy.  The optimizer doesn't use them for routing, but
+    # downstream code (API responses, DB persistence) expects them.
+    _reattach_heavy_stop_fields(optimized, heavy_fields)
 
     # Save the optimized itinerary into the shared state.
     state["optimized_itinerary"] = optimized

@@ -23,6 +23,76 @@ MAX_CONSECUTIVE_CATEGORY = 2      # No more than 2 of same category in a row
 MIN_TOTAL_DAYS = 1                # At least 1 day planned
 MAX_DISTANCE_BETWEEN_STOPS_KM = 40  # Sanity check for consecutive stops
 
+# Max length to truncate why_recommended to before sending to LLM
+_MAX_WHY_LENGTH = 150
+
+
+# ── Field Stripper (saves tokens for LLM prompt) ─────────────────────────────
+
+_FIELDS_STOP_KEEP = {
+    "id", "name", "category", "sub_category", "lat", "lon",
+    "estimated_duration_minutes", "suggested_time_of_day",
+    "travel_time_to_next_minutes", "transport_mode",
+    "interest_tags", "rating", "cuisine_type",
+}
+
+_FIELDS_HOTEL_KEEP = {
+    "id", "name", "accommodation_type", "rating",
+    "category", "lat", "lon",
+}
+
+_FIELDS_DAY_KEEP = {
+    "day_number", "theme", "stops", "total_travel_time_minutes",
+}
+
+
+def _strip_unnecessary_fields(itinerary: dict) -> dict:
+    """
+    Strip verbose fields (photos, maps_link, address, amenities, etc.)
+    from the itinerary before sending it to the LLM prompt.
+
+    Only fields relevant for quality validation are kept:
+      - stop names, categories, lat/lon, duration, time-of-day
+      - hotel names, type, rating
+      - day themes, travel times
+    """
+    if not itinerary:
+        return itinerary
+
+    pruned = {}
+
+    # Carry over top-level keys that matter
+    for key in ("destination", "duration_days", "destination_city"):
+        if key in itinerary:
+            pruned[key] = itinerary[key]
+
+    # ── Prune accommodation_suggestions ─────────────────────────────
+    hotels = itinerary.get("accommodation_suggestions", [])
+    pruned["accommodation_suggestions"] = []
+    for h in hotels:
+        pruned_h = {k: h[k] for k in _FIELDS_HOTEL_KEEP if k in h}
+        why = h.get("why_recommended", "")
+        if why:
+            pruned_h["why_recommended"] = why if len(why) <= _MAX_WHY_LENGTH else why[:_MAX_WHY_LENGTH - 3] + "..."
+        pruned["accommodation_suggestions"].append(pruned_h)
+
+    # ── Prune days ──────────────────────────────────────────────────
+    days = itinerary.get("days", [])
+    pruned["days"] = []
+    for d in days:
+        pruned_d = {k: d[k] for k in _FIELDS_DAY_KEEP if k in d}
+        pruned_stops = []
+        for s in d.get("stops", []):
+            pruned_s = {k: s[k] for k in _FIELDS_STOP_KEEP if k in s}
+            why = s.get("why_recommended", "")
+            if why:
+                pruned_s["why_recommended"] = why if len(why) <= _MAX_WHY_LENGTH else why[:_MAX_WHY_LENGTH - 3] + "..."
+            pruned_stops.append(pruned_s)
+        pruned_d["stops"] = pruned_stops
+        pruned["days"].append(pruned_d)
+
+    return pruned
+
 
 # ── LLM Validation Prompt ───────────────────────────────────────────────────
 
@@ -116,6 +186,23 @@ def _run_programmatic_checks(itinerary: dict) -> list[str]:
     elif len(hotels) > 5:
         issues.append(f"{len(hotels)} hotel suggestions is too many (max 5)")
 
+    # ── Check 7: Time-of-day ordering within each day ──
+    _TIME_RANK = {"morning": 0, "afternoon": 1, "evening": 2}
+    for day in days:
+        day_num = day.get("day_number", "?")
+        stops = day.get("stops", [])
+        prev_rank = -1
+        for i, stop in enumerate(stops):
+            slot = stop.get("suggested_time_of_day", "")
+            rank = _TIME_RANK.get(slot, -1)
+            if rank < prev_rank:
+                issues.append(
+                    f"Day {day_num}: stop #{i + 1} '{stop.get("name", "?")}' "
+                    f"has suggested_time_of_day='{slot}' which is out of order "
+                    f"(previous was '{stops[i - 1].get("suggested_time_of_day", "?")}')"
+                )
+            prev_rank = rank
+
     return issues
 
 
@@ -166,10 +253,15 @@ async def run_validation_agent(state: TripState, on_retry=None) -> TripState:
     if prog_issues:
         prog_context = f"\n\nProgrammatic issues found (non-critical):\n" + "\n".join(f"- {i}" for i in prog_issues)
 
+    # Strip heavy fields (photos, maps_link, address, amenities) before
+    # sending to the LLM — these are irrelevant for quality validation
+    # and cause token limit exceeded errors on Groq free tier.
+    stripped = _strip_unnecessary_fields(optimized)
+
     prompt = f"""
 User Request: {user_message}
 Optimized Itinerary:
-{json.dumps(optimized, indent=2, ensure_ascii=False)}{prog_context}
+{json.dumps(stripped, indent=2, ensure_ascii=False)}{prog_context}
 
 Validate the itinerary now.
     """
