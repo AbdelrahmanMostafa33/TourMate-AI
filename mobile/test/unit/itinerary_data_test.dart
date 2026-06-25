@@ -63,5 +63,22 @@ void main() {
       expect(data.accommodationSuggestions, hasLength(1));
       expect(data.accommodationSuggestions.first.rating, 4.5);
     });
+
+    test('parses sparse pool-style stops without lat/lon', () {
+      final data = ItineraryData.fromJson({
+        'destination_city': 'Cairo',
+        'days': [
+          {
+            'day_number': 1,
+            'stops': [
+              {'id': 'place_001', 'name': 'Egyptian Museum'},
+            ],
+          },
+        ],
+      });
+
+      expect(data.destination, 'Cairo');
+      expect(data.days.first.stops.first.name, 'Egyptian Museum');
+    });
   });
 }

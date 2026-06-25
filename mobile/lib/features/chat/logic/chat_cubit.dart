@@ -124,10 +124,24 @@ class ChatCubit extends Cubit<ChatState> {
         },
       );
 
-      // 2. Connect WebSocket (without auto_msg to avoid regenerating the trip)
+      // 2. Hydrate itinerary cards from persisted trip data (history is text-only).
+      final tripDetail = await _repo.fetchTripDetail(tripId);
+      if (tripDetail != null) {
+        final itinerary = ItineraryData.fromTripDetail(tripDetail);
+        if (itinerary != null) {
+          _attachItineraryToHistory(itinerary);
+        }
+      }
+
+      // 3. Connect WebSocket (without auto_msg to avoid regenerating the trip)
       await _repo.connectToTrip(tripId, autoMsg: null);
       // Stream listener is set up by _onConnectionStateChanged(connected).
-      emit(ChatState.connected(messages: List.from(_messages), isTyping: false));
+      final hasItineraryCard = _messages.any((m) => m.itinerary != null);
+      emit(ChatState.connected(
+        messages: List.from(_messages),
+        isTyping: false,
+        refreshToken: hasItineraryCard ? 1 : 0,
+      ));
     } catch (e) {
       print('[ChatCubit] connectToTrip() failed: $e');
       if (!isClosed) {
@@ -255,16 +269,89 @@ class ChatCubit extends Cubit<ChatState> {
   void _emitConnected({required bool isTyping, bool bumpRefresh = false}) {
     if (isClosed) return;
 
-    final refreshToken = state.maybeWhen(
-      connected: (_, __, token, ___) => bumpRefresh ? token + 1 : token,
-      orElse: () => bumpRefresh ? 1 : 0,
+    final (refreshToken, isReconnecting) = state.maybeWhen(
+      connected: (_, __, token, reconnecting) =>
+          (bumpRefresh ? token + 1 : token, reconnecting),
+      orElse: () => (bumpRefresh ? 1 : 0, false),
     );
 
     emit(ChatState.connected(
       messages: List.from(_messages),
       isTyping: isTyping,
       refreshToken: refreshToken,
+      isReconnecting: isReconnecting,
     ));
+  }
+
+  Map<String, dynamic> _decodeEvent(dynamic event) {
+    if (event is String) {
+      return Map<String, dynamic>.from(jsonDecode(event) as Map);
+    }
+    if (event is Map) {
+      return Map<String, dynamic>.from(event);
+    }
+    throw FormatException('Unsupported WS payload: ${event.runtimeType}');
+  }
+
+  ItineraryData? _tryParseItinerary(dynamic raw) {
+    if (raw is! Map) return null;
+    try {
+      return ItineraryData.fromJson(Map<String, dynamic>.from(raw));
+    } catch (e) {
+      print('[ChatCubit] Failed to parse itinerary JSON: $e');
+      return null;
+    }
+  }
+
+  void _attachItinerary(ItineraryData itineraryData) {
+    if (_messages.isNotEmpty && !_messages.last.isUser) {
+      _messages[_messages.length - 1] = _messages.last.copyWith(
+        itinerary: itineraryData,
+        text: '',
+        isStreaming: false,
+      );
+    } else {
+      _messages.add(
+        ChatMessage(
+          text: '',
+          isUser: false,
+          isStreaming: false,
+          itinerary: itineraryData,
+        ),
+      );
+    }
+    _pendingItinerary = null;
+  }
+
+  void _attachItineraryToHistory(ItineraryData itineraryData) {
+    for (var i = _messages.length - 1; i >= 0; i--) {
+      if (_messages[i].isUser) continue;
+      if (_looksLikeItineraryMessage(_messages[i].text)) {
+        _messages[i] = _messages[i].copyWith(
+          itinerary: itineraryData,
+          text: '',
+        );
+        return;
+      }
+    }
+
+    for (var i = _messages.length - 1; i >= 0; i--) {
+      if (!_messages[i].isUser) {
+        _messages[i] = _messages[i].copyWith(
+          itinerary: itineraryData,
+          text: '',
+        );
+        return;
+      }
+    }
+  }
+
+  bool _looksLikeItineraryMessage(String text) {
+    final normalized = text.toLowerCase();
+    return normalized.contains('day 1') ||
+        normalized.contains('itinerary') ||
+        text.contains('🗓') ||
+        text.contains('✨');
   }
 
   void _applyPendingItineraryToLastAssistant() {
@@ -278,20 +365,14 @@ class ChatCubit extends Cubit<ChatState> {
     _pendingItinerary = null;
   }
 
-  void _attachItinerary(ItineraryData itineraryData) {
-    if (_messages.isNotEmpty && !_messages.last.isUser) {
-      _messages[_messages.length - 1] = _messages.last.copyWith(
-        itinerary: itineraryData,
-        text: '',
-      );
-      _pendingItinerary = null;
-    } else {
-      _pendingItinerary = itineraryData;
-    }
-  }
-
   Future<void> _handleEvent(dynamic event) async {
-    final data = jsonDecode(event) as Map<String, dynamic>;
+    final Map<String, dynamic> data;
+    try {
+      data = _decodeEvent(event);
+    } catch (e) {
+      print('[ChatCubit] Failed to decode WS event: $e');
+      return;
+    }
 
     switch (data["type"]) {
 
@@ -338,7 +419,10 @@ class ChatCubit extends Cubit<ChatState> {
         _buffer += data["data"];
 
         if (_messages.isNotEmpty && !_messages.last.isUser) {
-          _messages[_messages.length - 1] = _messages.last.copyWith(
+          final last = _messages.last;
+          if (last.itinerary != null) break;
+
+          _messages[_messages.length - 1] = last.copyWith(
             text: _buffer,
             isStreaming: true,
           );
@@ -353,6 +437,10 @@ class ChatCubit extends Cubit<ChatState> {
         break;
 
       case "done":
+        if (_pendingItinerary != null) {
+          _attachItinerary(_pendingItinerary!);
+        }
+
         if (_messages.isNotEmpty && !_messages.last.isUser) {
           final last = _messages.last;
           _messages[_messages.length - 1] = last.copyWith(
@@ -361,7 +449,7 @@ class ChatCubit extends Cubit<ChatState> {
           );
         }
 
-        _emitConnected(isTyping: false);
+        _emitConnected(isTyping: false, bumpRefresh: true);
         _buffer = "";
         break;
 
@@ -381,22 +469,30 @@ class ChatCubit extends Cubit<ChatState> {
         // The itinerary card already has the latest data from 'itinerary_data'.
         break;
 
-      case "itinerary_data":
-        // Full structured itinerary JSON arrived from the backend.
-        // Parse it and attach to the last assistant message.
-        final rawItinerary = data["data"];
-        if (rawItinerary is Map<String, dynamic>) {
-          try {
-            final itineraryData = ItineraryData.fromJson(rawItinerary);
-            _attachItinerary(itineraryData);
+      case "result":
+        final resultPayload = data["data"];
+        if (resultPayload is Map) {
+          final itinerary = _tryParseItinerary(resultPayload["itinerary"]);
+          if (itinerary != null) {
+            _attachItinerary(itinerary);
             final currentIsTyping = state.maybeWhen(
               connected: (_, isTyping, _, _) => isTyping,
               orElse: () => false,
             );
             _emitConnected(isTyping: currentIsTyping, bumpRefresh: true);
-          } catch (e) {
-            print('[ChatCubit] Failed to parse itinerary_data: $e');
           }
+        }
+        break;
+
+      case "itinerary_data":
+        final itinerary = _tryParseItinerary(data["data"]);
+        if (itinerary != null) {
+          _attachItinerary(itinerary);
+          final currentIsTyping = state.maybeWhen(
+            connected: (_, isTyping, _, _) => isTyping,
+            orElse: () => false,
+          );
+          _emitConnected(isTyping: currentIsTyping, bumpRefresh: true);
         }
         break;
 

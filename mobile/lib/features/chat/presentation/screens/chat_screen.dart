@@ -107,6 +107,7 @@ class _ChatViewState extends State<_ChatView> {
   final TextEditingController _inputController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
   int _lastMessageCount = 0;
+  int _lastRefreshToken = 0;
 
   /// Open a fresh chat: disconnect, clear state, connect anew.
   void _startNewChat() {
@@ -189,6 +190,9 @@ class _ChatViewState extends State<_ChatView> {
                       if (messages.length != _lastMessageCount) {
                         _lastMessageCount = messages.length;
                         _scrollToBottom();
+                      } else if (refreshToken != _lastRefreshToken) {
+                        _lastRefreshToken = refreshToken;
+                        _scrollToBottom();
                       } else if (isTyping && messages.isNotEmpty) {
                         _scrollToBottom();
                       }
@@ -208,7 +212,12 @@ class _ChatViewState extends State<_ChatView> {
                                 if (showTyping && i == messages.length) {
                                   return const _TypingIndicator();
                                 }
-                                return MessageBubble(msg: messages[i]);
+                                return MessageBubble(
+                                  key: ValueKey(
+                                    'msg-$i-${messages[i].itinerary != null}-$refreshToken',
+                                  ),
+                                  msg: messages[i],
+                                );
                               },
                             ),
                           ),

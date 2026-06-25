@@ -1,3 +1,11 @@
+import '../../../trips/data/models/trip_detail_model.dart';
+
+Map<String, dynamic>? _asJsonMap(dynamic value) {
+  if (value is Map<String, dynamic>) return value;
+  if (value is Map) return Map<String, dynamic>.from(value);
+  return null;
+}
+
 int _parseInt(dynamic value, [int defaultValue = 0]) {
   if (value == null) return defaultValue;
   if (value is int) return value;
@@ -17,6 +25,12 @@ int? _parseIntOrNull(dynamic value) {
 String _parseString(dynamic value, [String defaultValue = '']) {
   if (value == null) return defaultValue;
   return value.toString();
+}
+
+String? _parseStringOrNull(dynamic value) {
+  if (value == null) return null;
+  final text = value.toString().trim();
+  return text.isEmpty ? null : text;
 }
 
 String? _parsePhotoUrl(dynamic photos) {
@@ -43,23 +57,77 @@ class ItineraryData {
   });
 
   factory ItineraryData.fromJson(Map<String, dynamic> json) {
-    final daysList = (json['days'] as List<dynamic>?)
-            ?.map((d) => ItineraryDay.fromJson(d as Map<String, dynamic>))
-            .toList() ??
-        [];
+    final daysList = <ItineraryDay>[];
+    for (final rawDay in json['days'] as List<dynamic>? ?? []) {
+      final dayMap = _asJsonMap(rawDay);
+      if (dayMap == null) continue;
+      try {
+        daysList.add(ItineraryDay.fromJson(dayMap));
+      } catch (_) {
+        // Skip malformed day entries instead of failing the whole card.
+      }
+    }
+
+    final accommodations = <AccommodationSuggestion>[];
+    for (final rawHotel
+        in json['accommodation_suggestions'] as List<dynamic>? ?? []) {
+      final hotelMap = _asJsonMap(rawHotel);
+      if (hotelMap == null) continue;
+      try {
+        accommodations.add(AccommodationSuggestion.fromJson(hotelMap));
+      } catch (_) {}
+    }
 
     return ItineraryData(
-      destination: _parseString(json['destination'], 'Your Trip'),
+      destination: _parseString(
+        json['destination'] ?? json['destination_city'],
+        'Your Trip',
+      ),
       durationDays: _parseInt(json['duration_days'], daysList.length),
       days: daysList,
-      accommodationSuggestions:
-          (json['accommodation_suggestions'] as List<dynamic>?)
-                  ?.map(
-                    (a) =>
-                        AccommodationSuggestion.fromJson(a as Map<String, dynamic>),
-                  )
-                  .toList() ??
-              [],
+      accommodationSuggestions: accommodations,
+    );
+  }
+
+  /// Build card data from persisted trip detail (for chat history reload).
+  static ItineraryData? fromTripDetail(TripDetailModel trip) {
+    if (trip.itineraries.isEmpty) return null;
+
+    final itinerary = trip.itineraries.reduce(
+      (current, candidate) =>
+          candidate.versionNumber >= current.versionNumber ? candidate : current,
+    );
+    if (itinerary.days.isEmpty) return null;
+
+    return ItineraryData(
+      destination: trip.destination,
+      durationDays: trip.durationDays,
+      days: itinerary.days.map((day) {
+        return ItineraryDay(
+          dayNumber: day.dayNumber,
+          theme: day.theme ?? '',
+          stops: day.stops.map((stop) {
+            return ItineraryStop(
+              id: stop.placeId ?? stop.stopId,
+              name: stop.name ?? 'Unknown',
+              category: stop.category ?? '',
+              subCategory: stop.subCategory ?? '',
+              lat: stop.lat ?? 0,
+              lon: stop.lon ?? 0,
+              whyRecommended: stop.aiNotes ?? '',
+              estimatedDurationMinutes: stop.durationMinutes ?? 0,
+              suggestedTimeOfDay: stop.timeOfDay ?? '',
+              rating: stop.rating,
+              address: stop.address,
+              photoUrl: stop.photoUrl,
+              travelTimeToNextMinutes: stop.minutesFromPrevStop,
+              transportMode: stop.travelMode,
+              orderInDay: stop.orderInDay,
+            );
+          }).toList(),
+        );
+      }).toList(),
+      accommodationSuggestions: const [],
     );
   }
 }
@@ -83,12 +151,7 @@ class ItineraryDay {
       theme: _parseString(json['theme']),
       totalTravelTimeMinutes:
           (json['total_travel_time_minutes'] as num?)?.toDouble(),
-      stops: (json['stops'] as List<dynamic>?)
-              ?.map(
-                (s) => ItineraryStop.fromJson(s as Map<String, dynamic>),
-              )
-              .toList() ??
-          [],
+      stops: _parseStops(json['stops']),
     );
   }
 }
@@ -132,7 +195,7 @@ class ItineraryStop {
 
   factory ItineraryStop.fromJson(Map<String, dynamic> json) {
     return ItineraryStop(
-      id: _parseString(json['id']),
+      id: _parseString(json['id'] ?? json['place_id']),
       name: _parseString(json['name']),
       category: _parseString(json['category']),
       subCategory: _parseString(json['sub_category']),
@@ -144,11 +207,11 @@ class ItineraryStop {
           _parseInt(json['estimated_duration_minutes']),
       suggestedTimeOfDay: _parseString(json['suggested_time_of_day']),
       rating: (json['rating'] as num?)?.toDouble(),
-      address: json['address'] as String?,
-      photoUrl: _parsePhotoUrl(json['photos']),
+      address: _parseStringOrNull(json['address']),
+      photoUrl: _parsePhotoUrl(json['photos'] ?? json['photo']),
       travelTimeToNextMinutes:
           _parseIntOrNull(json['travel_time_to_next_minutes']),
-      transportMode: json['transport_mode'] as String?,
+      transportMode: _parseStringOrNull(json['transport_mode']),
       orderInDay: _parseIntOrNull(json['order_in_day']),
     );
   }
@@ -187,7 +250,21 @@ class AccommodationSuggestion {
       whyRecommended: _parseString(json['why_recommended']),
       rating: (json['rating'] as num?)?.toDouble(),
       photoUrl: _parsePhotoUrl(json['photos']),
-      address: json['address'] as String?,
+      address: _parseStringOrNull(json['address']),
     );
   }
+}
+
+List<ItineraryStop> _parseStops(dynamic rawStops) {
+  final stops = <ItineraryStop>[];
+  if (rawStops is! List) return stops;
+
+  for (final rawStop in rawStops) {
+    final stopMap = _asJsonMap(rawStop);
+    if (stopMap == null) continue;
+    try {
+      stops.add(ItineraryStop.fromJson(stopMap));
+    } catch (_) {}
+  }
+  return stops;
 }
