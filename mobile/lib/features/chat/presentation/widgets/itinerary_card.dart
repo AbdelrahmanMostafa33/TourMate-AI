@@ -33,6 +33,9 @@ class ItineraryCard extends StatelessWidget {
           // ── Days ────────────────────────────────────────
           ...itinerary.days.map((day) => _DaySection(day: day)),
 
+          // ── Hotels Section ───────────────────────────────
+          ..._buildHotelsSection(),
+
           // ── Accommodation ───────────────────────────────
           if (itinerary.accommodationSuggestions.isNotEmpty) ...[
             const Divider(height: 1),
@@ -111,6 +114,20 @@ class ItineraryCard extends StatelessWidget {
         ],
       ),
     );
+  }
+
+  List<Widget> _buildHotelsSection() {
+    final allHotelStops = itinerary.days
+        .expand((day) => day.stops)
+        .where((s) => s.category.toLowerCase() == 'hotel' || s.category.toLowerCase() == 'accommodation')
+        .toList();
+    
+    if (allHotelStops.isEmpty) return [];
+    
+    return [
+      const SizedBox(height: 8),
+      _HotelSection(hotels: allHotelStops),
+    ];
   }
 }
 
@@ -214,6 +231,7 @@ class _DaySection extends StatelessWidget {
       ),
     );
   }
+
 }
 
 // ── Stop Timeline Item ──────────────────────────────────────────────────────
@@ -468,6 +486,196 @@ class _StopTimelineItem extends StatelessWidget {
       default:
         return '';
     }
+  }
+}
+
+// ── Hotel Section ────────────────────────────────────────────────────────
+
+class _HotelSection extends StatelessWidget {
+  final List<ItineraryStop> hotels;
+
+  const _HotelSection({required this.hotels});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 20),
+      child: Container(
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            colors: [Colors.indigo.shade50, Colors.purple.shade50],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+          ),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: Colors.indigo.shade200, width: 1.5),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(6),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(8),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.indigo.withValues(alpha: 0.1),
+                        blurRadius: 8,
+                        offset: const Offset(0, 2),
+                      ),
+                    ],
+                  ),
+                  child: Icon(Icons.hotel_rounded, size: 18, color: Colors.indigo.shade700),
+                ),
+                const SizedBox(width: 10),
+                Text(
+                  'Where You\'ll Stay',
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w700,
+                    color: Colors.indigo.shade900,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            ...hotels.map((hotel) => Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: GestureDetector(
+                    onTap: () {
+                      if (hotel.id.isNotEmpty) {
+                        Navigator.of(context).pushNamed(
+                          '/place-detail',
+                          arguments: hotel.id,
+                        );
+                      }
+                    },
+                    child: Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(12),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withValues(alpha: 0.04),
+                            blurRadius: 8,
+                            offset: const Offset(0, 2),
+                          ),
+                        ],
+                      ),
+                      child: Row(
+                        children: [
+                          Container(
+                            width: 44,
+                            height: 44,
+                            decoration: BoxDecoration(
+                              gradient: LinearGradient(
+                                colors: [Colors.indigo.shade400, Colors.purple.shade400],
+                                begin: Alignment.topLeft,
+                                end: Alignment.bottomRight,
+                              ),
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            alignment: Alignment.center,
+                            child: const Icon(
+                              Icons.bed_rounded,
+                              color: Colors.white,
+                              size: 22,
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  hotel.name,
+                                  style: const TextStyle(
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w700,
+                                    color: Colors.black,
+                                  ),
+                                ),
+                                const SizedBox(height: 3),
+                                Row(
+                                  children: [
+                                    if (hotel.subCategory.isNotEmpty)
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                        decoration: BoxDecoration(
+                                          color: Colors.indigo.shade100,
+                                          borderRadius: BorderRadius.circular(6),
+                                        ),
+                                        child: Text(
+                                          hotel.subCategory,
+                                          style: TextStyle(
+                                            fontSize: 10,
+                                            color: Colors.indigo.shade700,
+                                            fontWeight: FontWeight.w600,
+                                          ),
+                                        ),
+                                      ),
+                                    if (hotel.rating != null) ...[
+                                      const SizedBox(width: 6),
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                        decoration: BoxDecoration(
+                                          color: Colors.amber.shade50,
+                                          borderRadius: BorderRadius.circular(6),
+                                        ),
+                                        child: Row(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            Text(
+                                              '⭐',
+                                              style: TextStyle(
+                                                fontSize: 9,
+                                                color: Colors.amber[700],
+                                              ),
+                                            ),
+                                            const SizedBox(width: 2),
+                                            Text(
+                                              hotel.rating!.toStringAsFixed(1),
+                                              style: TextStyle(
+                                                fontSize: 10,
+                                                color: Colors.amber[800],
+                                                fontWeight: FontWeight.w700,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    ],
+                                  ],
+                                ),
+                              ],
+                            ),
+                          ),
+                          Container(
+                            padding: const EdgeInsets.all(8),
+                            decoration: BoxDecoration(
+                              color: Colors.indigo.shade50,
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Icon(
+                              Icons.chevron_right,
+                              color: Colors.indigo.shade400,
+                              size: 20,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                )),
+          ],
+        ),
+      ),
+    );
   }
 }
 
