@@ -25,12 +25,15 @@ from ai_engine.services.operations import (
     _exec_add,
     _exec_change_hotel,
     _exec_reorder,
+    _exec_exchange,
     _exec_retheme,
     # Public API
     apply_operation,
     # Category
     _detect_category_hints,
     _reorder_pool_by_category,
+    filter_places_by_semantics,
+    place_matches_semantic_tag,
     # Context
     build_compact_context,
     # Schemas
@@ -615,16 +618,14 @@ class TestExecReorder:
         # Second stop (place_001) should NOT have travel time (it's last)
         assert "travel_time_to_next_minutes" not in result["days"][0]["stops"][1]
 
-    def test_reorder_assigns_time_slots_by_position(self):
+    def test_reorder_preserves_time_slots(self):
         op = ModifierResponse(
             op="REORDER", day_number=2, new_order=["rest_001", "place_004"],
         )
         result = _exec_reorder(BASE_ITINERARY, op)
 
-        # First stop gets "morning"
-        assert result["days"][1]["stops"][0]["suggested_time_of_day"] == "morning"
-        # Second stop gets "afternoon"
-        assert result["days"][1]["stops"][1]["suggested_time_of_day"] == "afternoon"
+        assert result["days"][1]["stops"][0]["suggested_time_of_day"] == "afternoon"
+        assert result["days"][1]["stops"][1]["suggested_time_of_day"] == "morning"
 
     def test_reorder_missing_ids_returns_unchanged(self):
         op = ModifierResponse(
@@ -666,6 +667,63 @@ class TestExecReorder:
         )
         _exec_reorder(BASE_ITINERARY, op)
         assert BASE_ITINERARY["days"][0]["stops"][0]["id"] == "place_001"
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Operation: EXCHANGE
+# ═══════════════════════════════════════════════════════════════════════════
+
+class TestExecExchange:
+
+    def test_exchange_restaurants_preserves_attraction_slots(self):
+        """Swapping two restaurants must not change attraction time slots."""
+        itinerary = copy.deepcopy(BASE_ITINERARY)
+        itinerary["days"][0]["stops"] = [
+            {
+                "id": "giza", "name": "Giza", "lat": 29.97, "lon": 31.13,
+                "suggested_time_of_day": "morning",
+                "travel_time_to_next_minutes": 10.0, "transport_mode": "driving",
+            },
+            {
+                "id": "sphinx", "name": "Sphinx", "lat": 29.97, "lon": 31.13,
+                "suggested_time_of_day": "morning",
+                "travel_time_to_next_minutes": 10.0, "transport_mode": "driving",
+            },
+            {
+                "id": "koshary", "name": "Koshary", "lat": 30.04, "lon": 31.23,
+                "suggested_time_of_day": "afternoon",
+                "travel_time_to_next_minutes": 10.0, "transport_mode": "driving",
+            },
+            {
+                "id": "nilo", "name": "il Nilo", "lat": 30.04, "lon": 31.23,
+                "suggested_time_of_day": "evening",
+            },
+        ]
+
+        op = ModifierResponse(op="EXCHANGE", place_id_a="koshary", place_id_b="nilo")
+        result = _exec_exchange(itinerary, op)
+        stops = {s["id"]: s for s in result["days"][0]["stops"]}
+
+        assert stops["giza"]["suggested_time_of_day"] == "morning"
+        assert stops["sphinx"]["suggested_time_of_day"] == "morning"
+        assert stops["koshary"]["suggested_time_of_day"] == "evening"
+        assert stops["nilo"]["suggested_time_of_day"] == "afternoon"
+
+    def test_exchange_missing_stop_adds_note(self):
+        op = ModifierResponse(op="EXCHANGE", place_id_a="missing", place_id_b="place_001")
+        result = _exec_exchange(BASE_ITINERARY, op)
+        assert "missing" in result.get("_modifier_note", "")
+
+    def test_dispatch_exchange(self):
+        itinerary = copy.deepcopy(BASE_ITINERARY)
+        itinerary["days"][0]["stops"] = [
+            {"id": "a", "name": "A", "lat": 30.0, "lon": 31.0, "suggested_time_of_day": "morning"},
+            {"id": "b", "name": "B", "lat": 30.0, "lon": 31.0, "suggested_time_of_day": "evening"},
+        ]
+        op = ModifierResponse(op="EXCHANGE", place_id_a="a", place_id_b="b")
+        result = apply_operation(itinerary, op, PLACE_POOL)
+        assert result["days"][0]["stops"][0]["id"] == "b"
+        assert result["days"][0]["stops"][1]["id"] == "a"
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -959,6 +1017,27 @@ class TestDetectCategoryHints:
     def test_detects_park_only_as_subcat(self):
         hints = _detect_category_hints("find a nice park")
         assert hints == {"category": ["attraction"], "sub_category": ["parks"]}
+
+    def test_detects_churches_semantic(self):
+        hints = _detect_category_hints("add churches to the trip")
+        assert "church" in hints.get("semantic", [])
+        assert "attraction" in hints.get("category", [])
+        assert "religious" in hints.get("sub_category", [])
+
+    def test_church_semantic_excludes_mosque(self):
+        mosque = {"id": "m1", "name": "Amr ibn al-As Mosque", "category": "attraction", "sub_category": "religious"}
+        church = {"id": "c1", "name": "Hanging Church", "category": "attraction", "sub_category": "religious"}
+        assert not place_matches_semantic_tag(mosque, "church")
+        assert place_matches_semantic_tag(church, "church")
+
+    def test_filter_churches_from_mixed_religious_pool(self):
+        pool = [
+            {"id": "m1", "name": "Amr ibn al-As Mosque", "category": "attraction", "sub_category": "religious"},
+            {"id": "c1", "name": "Hanging Church", "category": "attraction", "sub_category": "religious"},
+        ]
+        filtered = filter_places_by_semantics(pool, ["church"])
+        assert len(filtered) == 1
+        assert filtered[0]["id"] == "c1"
 
 
 # ═══════════════════════════════════════════════════════════════════════════

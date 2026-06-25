@@ -157,7 +157,63 @@ class _TokenTrackingCallback(BaseCallbackHandler):
         self.role = role
 
     def on_llm_end(self, response, **kwargs) -> None:
+        # Log response structure for debugging
+        logger.debug(
+            "[TokenTracker] Response type: %s, attributes: %s",
+            type(response).__name__,
+            [attr for attr in dir(response) if not attr.startswith('_')]
+        )
+        
+        # Try multiple paths to find token usage data
         llm_output = getattr(response, "llm_output", None) or {}
+        logger.debug("[TokenTracker] llm_output: %s", llm_output)
+        
+        # If llm_output is empty, try response metadata
+        if not llm_output or not llm_output.get("token_usage"):
+            response_metadata = getattr(response, "response_metadata", {}) or {}
+            logger.debug("[TokenTracker] response_metadata: %s", response_metadata)
+            if response_metadata.get("token_usage"):
+                llm_output = response_metadata
+        
+        # Also try direct token_usage attribute on response
+        if not llm_output or not llm_output.get("token_usage"):
+            direct_usage = getattr(response, "token_usage", None)
+            logger.debug("[TokenTracker] direct token_usage: %s", direct_usage)
+            if direct_usage:
+                llm_output = {"token_usage": direct_usage}
+        
+        # Try to get usage from generations (LangChain v0.1+ format)
+        if not llm_output or not llm_output.get("token_usage"):
+            generations = getattr(response, "generations", None)
+            logger.debug("[TokenTracker] generations: %s", generations)
+            if generations and generations:
+                # Check first generation's generation_info
+                gen_info = getattr(generations[0][0], "generation_info", None) if generations[0] else None
+                logger.debug("[TokenTracker] generation_info: %s", gen_info)
+                if gen_info and gen_info.get("token_usage"):
+                    llm_output = {"token_usage": gen_info["token_usage"]}
+        
+        # Try usage_metadata (newer LangChain versions)
+        if not llm_output or not llm_output.get("token_usage"):
+            usage_metadata = getattr(response, "usage_metadata", None)
+            logger.debug("[TokenTracker] usage_metadata: %s", usage_metadata)
+            if usage_metadata:
+                llm_output = {"token_usage": usage_metadata}
+        
+        # Try response_metadata['token_usage'] directly
+        if not llm_output or not llm_output.get("token_usage"):
+            resp_meta = getattr(response, "response_metadata", None)
+            if resp_meta:
+                logger.debug("[TokenTracker] response_metadata full: %s", resp_meta)
+        
+        # Debug logging if still no token usage found
+        if not llm_output or not llm_output.get("token_usage"):
+            logger.warning(
+                "[TokenTracker] No token_usage found in response for role=%s. "
+                "Checked: llm_output, response_metadata, token_usage, generations, usage_metadata",
+                self.role
+            )
+        
         token_tracker.record_from_llm_output(self.role, llm_output)
 
 

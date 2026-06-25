@@ -173,6 +173,24 @@ async def _process_message_inner(
     state.slots.merge(router_result.extracted)
     state.add_user_message(effective_message, metadata={"action": router_result.action})
 
+    # ── STEP 2: Fuse image features into slots if available ───────────────
+    image_acknowledgment = None
+    if image_features and image_features.get("confidence") != "low":
+        inferred_interests = image_features.get("inferred_interests", [])
+        if inferred_interests:
+            existing_interests = state.slots.interests or []
+            existing_lower = {i.lower() for i in existing_interests}
+            for interest in inferred_interests:
+                if interest.lower() not in existing_lower:
+                    existing_interests.append(interest)
+                    existing_lower.add(interest.lower())
+            state.slots.interests = existing_interests
+            logger.info(
+                "[ConversationAgent] Fused image interests into slots: %s",
+                inferred_interests,
+            )
+            image_acknowledgment = f"I noticed your interest in {', '.join(inferred_interests[:3])} from your photo!"
+
     action = router_result.action
 
     # ── HANDLE COMPLETED STATE FIRST ──────────────────────────────────────
@@ -189,9 +207,12 @@ async def _process_message_inner(
             )
         else:
             state.transition_to(ConversationPhase.SLOT_FILLING)
+            message = router_result.response
+            if image_acknowledgment:
+                message = f"{image_acknowledgment} {message}"
             response = {
                 "response_type": "clarification",
-                "message": router_result.response,
+                "message": message,
                 "itinerary": None,
                 "image_features": image_features,
             }
@@ -224,9 +245,12 @@ async def _process_message_inner(
         else:
             if state.phase != ConversationPhase.SLOT_FILLING:
                 state.transition_to(ConversationPhase.SLOT_FILLING)
+            message = router_result.response
+            if image_acknowledgment:
+                message = f"{image_acknowledgment} {message}"
             response = {
                 "response_type": "clarification",
-                "message": router_result.response,
+                "message": message,
                 "itinerary": None,
                 "image_features": image_features,
             }
@@ -235,9 +259,12 @@ async def _process_message_inner(
     elif action == "ask_clarification":
         if state.phase == ConversationPhase.GREETING:
             state.transition_to(ConversationPhase.SLOT_FILLING)
+        message = router_result.response
+        if image_acknowledgment:
+            message = f"{image_acknowledgment} {message}"
         response = {
             "response_type": "clarification",
-            "message": router_result.response,
+            "message": message,
             "itinerary": None,
             "image_features": image_features,
         }
@@ -268,18 +295,24 @@ async def _process_message_inner(
 
     # ── ACTION: ANSWER A QUESTION ──────────────────────────────────────────
     elif action == "answer_question":
+        message = router_result.response
+        if image_acknowledgment:
+            message = f"{image_acknowledgment} {message}"
         response = {
             "response_type": "chat",
-            "message": router_result.response,
+            "message": message,
             "itinerary": state.itinerary if state.phase == ConversationPhase.ITINERARY_REVIEW else None,
             "image_features": image_features,
         }
 
     # ── DEFAULT ACTION ─────────────────────────────────────────────────────
     else:
+        message = router_result.response or "I'm here to help!"
+        if image_acknowledgment:
+            message = f"{image_acknowledgment} {message}"
         response = {
             "response_type": "chat",
-            "message": router_result.response or "I'm here to help!",
+            "message": message,
             "itinerary": None,
             "image_features": image_features,
         }
@@ -495,7 +528,10 @@ async def _post_edit_optimize(
     if target_day and target_day not in affected:
         affected.append(target_day)
 
-    if not affected and edit_type in ("ADD_PLACE", "REPLACE_PLACE", "REORDER", "MOVE_DAY", "REMOVE", "SWAP", "ADD", "UNKNOWN"):
+    if not affected and edit_type in (
+        "ADD_PLACE", "REPLACE_PLACE", "REORDER", "MOVE_DAY", "REMOVE",
+        "SWAP", "ADD", "EXCHANGE", "UNKNOWN",
+    ):
         affected = [d.get("day_number") for d in modified.get("days", []) if d.get("day_number") is not None]
 
     if not affected:
@@ -535,6 +571,63 @@ def _itinerary_response(
     return response
 
 
+def _modifier_blocked_response(
+    state: ConversationState,
+    modifier_note: str,
+    image_features: Optional[dict],
+    agent_messages: list[str] | None = None,
+) -> dict:
+    """Return the unchanged itinerary with an explicit failure note (no full regen)."""
+    msgs = list(agent_messages or [])
+    if modifier_note:
+        msgs.append(f"[ModifierAgent] {modifier_note}")
+    message = _format_itinerary(state.itinerary)
+    if modifier_note:
+        message += f"\n\n⚠️ I couldn't apply that change: {modifier_note}"
+    return {
+        "response_type": "itinerary",
+        "message": message,
+        "itinerary": state.itinerary,
+        "image_features": image_features,
+        "pool_state": state.get_pool_state(),
+        "agent_messages": msgs,
+    }
+
+
+async def _apply_modifier_edit(
+    state: ConversationState,
+    effective_message: str,
+    preferences: dict,
+    classification: dict,
+    original_itinerary: dict,
+    image_features: Optional[dict],
+    agent_messages: list[str],
+) -> dict | None:
+    """Run modifier agent; return response dict if handled, else None."""
+    modified = await run_itinerary_modifier(
+        current_itinerary=original_itinerary,
+        modification_request=effective_message,
+        available_places=_available_pool(state),
+        preferences=preferences,
+    )
+    modifier_note = modified.pop("_modifier_note", "")
+    modifier_applied = _has_real_modifications(modified, original_itinerary)
+
+    if modifier_applied:
+        modified = await _post_edit_optimize(modified, original_itinerary, classification)
+        trailing_note = modified.pop("_modifier_note", "")
+        if trailing_note:
+            modifier_note = f"{modifier_note}\n{trailing_note}".strip()
+        if modifier_note:
+            agent_messages.append(f"[ModifierAgent] {modifier_note}")
+        return _itinerary_response(state, modified, image_features, agent_messages)
+
+    if modifier_note and is_surgical_edit(classification):
+        return _modifier_blocked_response(state, modifier_note, image_features, agent_messages)
+
+    return None
+
+
 async def _maybe_enrich_pools(
     state: ConversationState,
     modification_request: str,
@@ -551,7 +644,13 @@ async def _maybe_enrich_pools(
         state.itinerary,
         classification,
     )
-    if not need_db or reason not in ("missing_category", "insufficient_category", "low_coverage", "preference_shift"):
+    if not need_db or reason not in (
+        "missing_category",
+        "missing_semantic",
+        "insufficient_category",
+        "low_coverage",
+        "preference_shift",
+    ):
         return False
 
     enriched = await _enrich_candidate_pool_by_category(
@@ -603,6 +702,21 @@ def _has_real_modifications(mod: dict, orig: dict) -> bool:
     if orig_hotel_ids != new_hotel_ids:
         return True
 
+    def _stop_signature(itinerary: dict) -> list[tuple]:
+        sig = []
+        for day in itinerary.get("days", []):
+            day_num = day.get("day_number")
+            for stop in day.get("stops", []):
+                sig.append((
+                    day_num,
+                    stop.get("id"),
+                    stop.get("suggested_time_of_day"),
+                ))
+        return sig
+
+    if _stop_signature(orig) != _stop_signature(mod):
+        return True
+
     return False
 
 
@@ -650,14 +764,18 @@ async def _swap_accommodation_surgically(itinerary: dict, destination_city: str,
 
 
 async def _enrich_candidate_pool_by_category(modification_request: str, destination_city: str, existing_pool: list[dict]) -> list[dict] | None:
-    from ai_engine.services.operations import _detect_category_hints
+    from ai_engine.services.operations import (
+        _detect_category_hints,
+        filter_places_by_semantics,
+    )
     from ai_engine.tools.places_tool import get_places_for_city
 
     hints = _detect_category_hints(modification_request)
     cats: list[str] = hints.get("category", [])
     subcats: list[str] = hints.get("sub_category", [])
+    semantics: list[str] = hints.get("semantic", [])
 
-    if not cats and not subcats:
+    if not cats and not subcats and not semantics:
         logger.debug("[EnrichPool] No category hints in '%s'", modification_request[:60])
         return None
 
@@ -677,8 +795,11 @@ async def _enrich_candidate_pool_by_category(modification_request: str, destinat
                 continue
         matching.append(p)
 
+    if semantics:
+        matching = filter_places_by_semantics(matching, semantics)
+
     if not matching:
-        label = ", ".join(subcats or cats)
+        label = ", ".join(semantics or subcats or cats)
         logger.info("[EnrichPool] No places matching '%s' found in %s", label, destination_city)
         return None
 
@@ -841,21 +962,12 @@ async def _handle_modify_itinerary(
                 )
 
         # Rerank failed — try the modifier agent before full regeneration.
-        # The modifier can surgically add/swap places from the existing pool
-        # without throwing away the whole itinerary.
-        modified = await run_itinerary_modifier(
-            current_itinerary=state.itinerary,
-            modification_request=effective_message,
-            available_places=_available_pool(state),
-            preferences=preferences,
+        blocked = await _apply_modifier_edit(
+            state, effective_message, preferences, classification,
+            state.itinerary, image_features, agent_messages,
         )
-        modifier_applied = _has_real_modifications(modified, state.itinerary)
-        if modifier_applied:
-            modified = await _post_edit_optimize(modified, state.itinerary, classification)
-            modifier_note = modified.pop("_modifier_note", "")
-            if modifier_note:
-                agent_messages.append(f"[ModifierAgent] {modifier_note}")
-            return _itinerary_response(state, modified, image_features, agent_messages)
+        if blocked is not None:
+            return blocked
 
         return await _fallback_full_regeneration(
             user_id, state, effective_message, router_result, image_features, token,
@@ -901,20 +1013,12 @@ async def _handle_modify_itinerary(
                     )
 
     if is_surgical_edit(classification) or not is_regenerate_edit(classification):
-        modified = await run_itinerary_modifier(
-            current_itinerary=state.itinerary,
-            modification_request=effective_message,
-            available_places=_available_pool(state),
-            preferences=preferences,
+        blocked = await _apply_modifier_edit(
+            state, effective_message, preferences, classification,
+            state.itinerary, image_features, agent_messages,
         )
-        modifier_applied = _has_real_modifications(modified, state.itinerary)
-
-        if modifier_applied:
-            modified = await _post_edit_optimize(modified, state.itinerary, classification)
-            modifier_note = modified.pop("_modifier_note", "")
-            if modifier_note:
-                agent_messages.append(f"[ModifierAgent] {modifier_note}")
-            return _itinerary_response(state, modified, image_features, agent_messages)
+        if blocked is not None:
+            return blocked
 
     if _available_pool(state) and len(_available_pool(state)) > 5:
         adjustments = await interpret_preference_adjustment(effective_message, current_preferences=preferences)

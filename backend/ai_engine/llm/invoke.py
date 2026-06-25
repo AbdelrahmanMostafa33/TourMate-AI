@@ -202,12 +202,18 @@ async def invoke_with_fallback(
             if _is_transient_error(exc):
                 tried_keys.add(api_key)
                 transient_error_count += 1
+                # Apply backoff before retrying
+                backoff = min(
+                    _BASE_TRANSIENT_BACKOFF * (2 ** (transient_error_count - 1)),
+                    _MAX_TRANSIENT_BACKOFF,
+                )
                 logger.warning(
-                    "[Fallback] Key …%s transient-error on '%s' (attempt %d/%d, trying next key)",
-                    api_key[-4:], agent_role, attempt + 1, max_retries,
+                    "[Fallback] Key …%s transient-error on '%s' (attempt %d/%d, waiting %.1fs before retry)",
+                    api_key[-4:], agent_role, attempt + 1, max_retries, backoff,
                 )
                 if on_retry:
-                    await on_retry(attempt + 1, max_retries, "Server busy, retrying...")
+                    await on_retry(attempt + 1, max_retries, f"Server busy, waiting {backoff:.1f}s...")
+                await asyncio.sleep(backoff)
                 continue
 
             # Non-retryable error — raise immediately

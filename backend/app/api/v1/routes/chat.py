@@ -1,3 +1,4 @@
+import base64
 import logging
 from datetime import datetime
 from typing import Optional
@@ -236,6 +237,7 @@ async def process_message_stream(
     user_id:      str,
     token:        str,
     session_id:   Optional[str] = None,
+    image_bytes:  Optional[bytes] = None,
 ) -> Optional[str]:
     """Process a message with streaming token-by-token response.
 
@@ -266,6 +268,7 @@ async def process_message_stream(
         async for chunk in handle_chat_stream(
             user_id=user_id,
             user_message=user_text,
+            image_bytes=image_bytes,
             token=token,
             session_id=session_id,
             initial_pool_state=initial_pool_state,
@@ -524,8 +527,21 @@ async def websocket_new_chat(
         while True:
             data      = await websocket.receive_json()
             user_text = data.get("message", "").strip()
-            if not user_text:
+            
+            # Extract image data if present
+            image_bytes = None
+            image_data = data.get("image")
+            if image_data:
+                try:
+                    image_bytes = base64.b64decode(image_data)
+                except Exception as e:
+                    logger.warning("[ChatRoutes] Failed to decode image data: %s", e)
+            
+            if not user_text and not image_bytes:
                 continue
+
+            # Use placeholder message for image-only uploads
+            effective_message = user_text if user_text else "I uploaded an image for my trip."
 
             svc = ChatService(db)
 
@@ -533,7 +549,7 @@ async def websocket_new_chat(
                 lock = manager.get_lock(ws_key)
                 async with lock:
                     ai_session_id = await process_message_stream(
-                        user_text=user_text,
+                        user_text=effective_message,
                         trip=trip,
                         conversation=conversation,
                         profile_data=profile_data,
@@ -542,14 +558,15 @@ async def websocket_new_chat(
                         user_id=user_id,
                         token=token,
                         session_id=ai_session_id,
+                        image_bytes=image_bytes,
                     )
 
-                history_list.append({"role": "user", "content": user_text})
+                history_list.append({"role": "user", "content": effective_message})
                 if len(history_list) > 20:
                     history_list = history_list[-20:]
                 continue
 
-            pending_messages.append({"role": "user", "content": user_text})
+            pending_messages.append({"role": "user", "content": effective_message})
 
             await manager.send(ws_key, {"type": "typing"})
 
@@ -563,7 +580,8 @@ async def websocket_new_chat(
 
                 async for chunk in handle_chat_stream(
                     user_id=user_id,
-                    user_message=user_text,
+                    user_message=effective_message,
+                    image_bytes=image_bytes,
                     token=token,
                 ):
                     event_type = chunk.get("type")
@@ -676,7 +694,7 @@ async def websocket_new_chat(
                 await manager.send(ws_key, {"type": "actions", "data": updated_actions})
                 await manager.send(ws_key, {"type": "itinerary_updated"})
 
-            history_list.append({"role": "user",      "content": user_text})
+            history_list.append({"role": "user",      "content": effective_message})
             history_list.append({"role": "assistant", "content": full_response})
             if len(history_list) > 20:
                 history_list = history_list[-20:]
@@ -752,12 +770,25 @@ async def websocket_chat(
         while True:
             data      = await websocket.receive_json()
             user_text = data.get("message", "").strip()
-            if not user_text:
+            
+            # Extract image data if present
+            image_bytes = None
+            image_data = data.get("image")
+            if image_data:
+                try:
+                    image_bytes = base64.b64decode(image_data)
+                except Exception as e:
+                    logger.warning("[ChatRoutes] Failed to decode image data: %s", e)
+            
+            if not user_text and not image_bytes:
                 continue
+
+            # Use placeholder message for image-only uploads
+            effective_message = user_text if user_text else "I uploaded an image for my trip."
 
             async with lock:
                 ai_session_id = await process_message_stream(
-                    user_text=user_text,
+                    user_text=effective_message,
                     trip=trip,
                     conversation=conversation,
                     profile_data=profile_data,
@@ -766,6 +797,7 @@ async def websocket_chat(
                     user_id=user_id,
                     token=token,
                     session_id=ai_session_id,
+                    image_bytes=image_bytes,
                 )
 
     except WebSocketDisconnect:

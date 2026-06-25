@@ -23,6 +23,7 @@ from ai_engine.agents.itinerary_modifier_agent import run_itinerary_modifier
 from ai_engine.services.operations import (
     AddOperation,
     ChangeHotelOperation,
+    ExchangeOperation,
     RemoveOperation,
     ReorderOperation,
     ReThemeOperation,
@@ -420,6 +421,91 @@ class TestChangeHotelOperation:
         assert len(result["accommodation_suggestions"]) == 2
         assert result["accommodation_suggestions"][0]["id"] == "hotel_001"
         assert result["accommodation_suggestions"][1]["id"] == "hotel_002"
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# 4b. EXCHANGE Operation
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+class TestExchangeOperation:
+
+    @pytest.mark.asyncio
+    async def test_exchange_two_restaurants_on_same_day(self):
+        itinerary = copy.deepcopy(BASE_ITINERARY)
+        itinerary["days"][0]["stops"] = [
+            {
+                "id": "place_001", "name": "Egyptian Museum", "lat": 30.04, "lon": 31.23,
+                "suggested_time_of_day": "morning",
+                "travel_time_to_next_minutes": 10.0, "transport_mode": "driving",
+            },
+            {
+                "id": "rest_001", "name": "Abu Shukri", "lat": 30.04, "lon": 31.23,
+                "suggested_time_of_day": "afternoon",
+                "travel_time_to_next_minutes": 10.0, "transport_mode": "driving",
+            },
+            {
+                "id": "rest_002", "name": "Nubia Restaurant", "lat": 30.04, "lon": 31.23,
+                "suggested_time_of_day": "evening",
+            },
+        ]
+
+        operation = ExchangeOperation(place_id_a="rest_001", place_id_b="rest_002")
+
+        async def _mock_invoke(*args, **kwargs):
+            from ai_engine.services.operations import ModifierResponse
+            return ModifierResponse(operation=operation, note="Swapped lunch and dinner")
+
+        with patch(
+            "ai_engine.agents.itinerary_modifier_agent.invoke_with_fallback",
+            side_effect=_mock_invoke,
+        ):
+            result = await run_itinerary_modifier(
+                current_itinerary=itinerary,
+                modification_request="swap Abu Shukri with Nubia Restaurant",
+                available_places=MOCK_PLACES,
+                preferences=PREFERENCES,
+            )
+
+        stops = {s["id"]: s for s in result["days"][0]["stops"]}
+        assert stops["place_001"]["suggested_time_of_day"] == "morning"
+        assert stops["rest_001"]["suggested_time_of_day"] == "evening"
+        assert stops["rest_002"]["suggested_time_of_day"] == "afternoon"
+
+    @pytest.mark.asyncio
+    async def test_rejects_mosque_when_churches_requested(self):
+        places = MOCK_PLACES + [
+            {
+                "id": "mosque_1", "name": "Amr ibn al-As Mosque",
+                "category": "attraction", "sub_category": "religious",
+                "lat": 30.0, "lon": 31.0, "interest_tags": ["religious"],
+            },
+        ]
+
+        async def _mock_invoke(*args, **kwargs):
+            from ai_engine.services.operations import ModifierResponse
+            return ModifierResponse(
+                op="ADD",
+                day_number=2,
+                suggested_time_of_day="afternoon",
+                add_place_id="mosque_1",
+                why_recommended="Religious site",
+                note="Added mosque",
+            )
+
+        with patch(
+            "ai_engine.agents.itinerary_modifier_agent.invoke_with_fallback",
+            side_effect=_mock_invoke,
+        ):
+            result = await run_itinerary_modifier(
+                current_itinerary=BASE_ITINERARY,
+                modification_request="add churches to the trip",
+                available_places=places,
+                preferences=PREFERENCES,
+            )
+
+        stop_ids = [s["id"] for d in result["days"] for s in d["stops"]]
+        assert "mosque_1" not in stop_ids
 
 
 # ═══════════════════════════════════════════════════════════════════════════

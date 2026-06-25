@@ -14,7 +14,7 @@ from ai_engine.constants import (
     MODIFIER_POOL_DISPLAY,
     POOL_REFRESH_THRESHOLD,
 )
-from ai_engine.services.operations import _detect_category_hints
+from ai_engine.services.operations import _detect_category_hints, place_matches_semantic_hints
 
 
 def extract_used_place_ids(itinerary: dict | None) -> set[str]:
@@ -88,9 +88,10 @@ def get_fresh_pool(
 
 
 def _category_available(pool: list[dict], used_ids: set[str], hints: dict[str, list[str]]) -> int:
-    """Count unused pool places matching category hints."""
+    """Count unused pool places matching category and optional semantic hints."""
     cats = hints.get("category", [])
     subcats = hints.get("sub_category", [])
+    semantics = hints.get("semantic", [])
     count = 0
     for p in pool:
         pid = p.get("id", "")
@@ -101,6 +102,8 @@ def _category_available(pool: list[dict], used_ids: set[str], hints: dict[str, l
         if subcats and p_sub not in subcats:
             continue
         if cats and not subcats and p_cat not in cats:
+            continue
+        if semantics and not place_matches_semantic_hints(p, semantics):
             continue
         count += 1
     return count
@@ -144,7 +147,8 @@ def needs_database_query(
     if hints:
         available = _category_available(pool, used_ids, hints)
         if available == 0:
-            return True, "missing_category"
+            reason = "missing_semantic" if hints.get("semantic") else "missing_category"
+            return True, reason
         if available < 2 and any(kw in modification_request.lower() for kw in ("more", "another", "add", "extra")):
             return True, "insufficient_category"
 

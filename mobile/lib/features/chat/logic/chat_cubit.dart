@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../../core/errors/api_result.dart';
 import '../data/datasource/chat_ws_service.dart';
@@ -82,7 +83,7 @@ class ChatCubit extends Cubit<ChatState> {
       // Stream listener is set up by _onConnectionStateChanged(connected).
       emit(ChatState.connected(messages: _messages, isTyping: false));
     } catch (e) {
-      print('[ChatCubit] connect() failed: $e');
+      debugPrint('[ChatCubit] connect() failed: $e');
       if (!isClosed) {
         emit(ChatState.error("Failed to connect: $e"));
       }
@@ -91,7 +92,7 @@ class ChatCubit extends Cubit<ChatState> {
 
   /// Reconnect using the last connection mode (new chat or trip chat).
   Future<void> reconnect() async {
-    print('[ChatCubit] reconnect: lastTripId=$_lastTripId');
+    debugPrint('[ChatCubit] reconnect: lastTripId=$_lastTripId');
     if (_lastTripId != null) {
       return connectToTrip(_lastTripId!, autoMsg: null);
     }
@@ -102,7 +103,7 @@ class ChatCubit extends Cubit<ChatState> {
   /// Loads existing chat history first, then connects the WebSocket.
   Future<void> connectToTrip(String tripId, {String? autoMsg}) async {
     _lastTripId = tripId;
-    print('[ChatCubit] connectToTrip: tripId=$tripId');
+    debugPrint('[ChatCubit] connectToTrip: tripId=$tripId');
     emit(const ChatState.loading());
     try {
       // 1. Load existing chat history from REST API
@@ -110,7 +111,7 @@ class ChatCubit extends Cubit<ChatState> {
       _messages.clear();
       historyResult.when(
         success: (history) {
-          print('[ChatCubit] loaded ${history.length} history messages');
+          debugPrint('[ChatCubit] loaded ${history.length} history messages');
           for (final msg in history) {
             _messages.add(ChatMessage(
               text: msg.content,
@@ -120,7 +121,7 @@ class ChatCubit extends Cubit<ChatState> {
           }
         },
         failure: (e) {
-          print('[ChatCubit] history load failed: $e');
+          debugPrint('[ChatCubit] history load failed: $e');
         },
       );
 
@@ -143,7 +144,7 @@ class ChatCubit extends Cubit<ChatState> {
         refreshToken: hasItineraryCard ? 1 : 0,
       ));
     } catch (e) {
-      print('[ChatCubit] connectToTrip() failed: $e');
+      debugPrint('[ChatCubit] connectToTrip() failed: $e');
       if (!isClosed) {
         emit(ChatState.error("Failed to connect to trip chat: $e"));
       }
@@ -173,7 +174,7 @@ class ChatCubit extends Cubit<ChatState> {
 
     switch (wsState) {
       case WsConnectionState.connected:
-        print('[ChatCubit] WS state → connected (hasSubscription=${_subscription != null})');
+        debugPrint('[ChatCubit] WS state → connected (hasSubscription=${_subscription != null})');
         // Reconnected — always re-subscribe to the new channel's stream.
         _listenToStream();
         
@@ -225,7 +226,7 @@ class ChatCubit extends Cubit<ChatState> {
         break;
 
       case WsConnectionState.failed:
-        print('[ChatCubit] WS state → failed');
+        debugPrint('[ChatCubit] WS state → failed');
         emit(ChatState.error("Connection lost. Please try again."));
         break;
 
@@ -235,14 +236,14 @@ class ChatCubit extends Cubit<ChatState> {
     }
   }
 
-  void sendMessage(String message) {
-    if (message.trim().isEmpty) return;
+  void sendMessage(String message, {Uint8List? imageBytes}) {
+    if (message.trim().isEmpty && imageBytes == null) return;
 
-    _messages.add(ChatMessage(text: message, isUser: true));
+    _messages.add(ChatMessage(text: message, isUser: true, imageBytes: imageBytes));
     _resetPipeline();
     emit(ChatState.connected(messages: List.from(_messages), isTyping: true));
     _buffer = "";
-    _repo.sendMessage(message);
+    _repo.sendMessage(message, imageBytes: imageBytes);
 
     // ✅ Safety net: force-stop loading after 10 min if "done" never arrives
     // (pipeline can take 5+ min due to LLM calls and rate-limit retries)
@@ -270,7 +271,7 @@ class ChatCubit extends Cubit<ChatState> {
     if (isClosed) return;
 
     final (refreshToken, isReconnecting) = state.maybeWhen(
-      connected: (_, __, token, reconnecting) =>
+      connected: (_, _, token, reconnecting) =>
           (bumpRefresh ? token + 1 : token, reconnecting),
       orElse: () => (bumpRefresh ? 1 : 0, false),
     );
@@ -298,7 +299,7 @@ class ChatCubit extends Cubit<ChatState> {
     try {
       return ItineraryData.fromJson(Map<String, dynamic>.from(raw));
     } catch (e) {
-      print('[ChatCubit] Failed to parse itinerary JSON: $e');
+      debugPrint('[ChatCubit] Failed to parse itinerary JSON: $e');
       return null;
     }
   }
@@ -370,7 +371,7 @@ class ChatCubit extends Cubit<ChatState> {
     try {
       data = _decodeEvent(event);
     } catch (e) {
-      print('[ChatCubit] Failed to decode WS event: $e');
+      debugPrint('[ChatCubit] Failed to decode WS event: $e');
       return;
     }
 

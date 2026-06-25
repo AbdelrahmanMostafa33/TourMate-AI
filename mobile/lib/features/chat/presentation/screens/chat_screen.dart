@@ -1,7 +1,9 @@
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../../../core/network/service_locator.dart';
 import '../../../../core/network/api_services.dart';
+import '../../../../core/utils/image_picker_service.dart';
 import '../../data/models/chat_session_response.dart';
 import '../../data/repository/chat_repository.dart';
 import '../../logic/chat_cubit.dart';
@@ -106,8 +108,10 @@ class _ChatView extends StatefulWidget {
 class _ChatViewState extends State<_ChatView> {
   final TextEditingController _inputController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
+  final ImagePickerService _imagePicker = ImagePickerService();
   int _lastMessageCount = 0;
   int _lastRefreshToken = 0;
+  Uint8List? _selectedImageBytes;
 
   /// Open a fresh chat: disconnect, clear state, connect anew.
   void _startNewChat() {
@@ -143,11 +147,23 @@ class _ChatViewState extends State<_ChatView> {
     });
   }
 
+  Future<void> _pickImage() async {
+    final imageBytes = await _imagePicker.pickImageFromGallery();
+    if (imageBytes != null) {
+      setState(() => _selectedImageBytes = imageBytes);
+    }
+  }
+
+  void _clearImage() {
+    setState(() => _selectedImageBytes = null);
+  }
+
   void _sendMessage(ChatCubit cubit) {
     final text = _inputController.text.trim();
-    if (text.isEmpty) return;
-    cubit.sendMessage(text);
+    if (text.isEmpty && _selectedImageBytes == null) return;
+    cubit.sendMessage(text, imageBytes: _selectedImageBytes);
     _inputController.clear();
+    _clearImage();
     _scrollToBottom();
   }
 
@@ -445,7 +461,7 @@ class _ChatViewState extends State<_ChatView> {
   }
 
   Widget _buildError(String msg, ChatCubit cubit) {
-    print('[ChatScreen] _buildError: $msg');
+    debugPrint('[ChatScreen] _buildError: $msg');
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(24),
@@ -509,33 +525,82 @@ class _ChatViewState extends State<_ChatView> {
   Widget _buildInputBar(ChatCubit cubit) {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10),
-        decoration: BoxDecoration(
-          color: Colors.grey.shade100,
-          borderRadius: BorderRadius.circular(30),
-          border: Border.all(color: Colors.grey.shade300),
-        ),
-        child: Row(
-          children: [
-            const Icon(Icons.camera_alt_outlined),
-            const SizedBox(width: 8),
-            Expanded(
-              child: TextField(
-                controller: _inputController,
-                decoration: const InputDecoration(
-                  hintText: "Ask anything",
-                  border: InputBorder.none,
-                ),
-                onSubmitted: (_) => _sendMessage(cubit),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.end,
+        children: [
+          if (_selectedImageBytes != null)
+            Container(
+              margin: const EdgeInsets.only(bottom: 8),
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: Colors.grey.shade100,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Stack(
+                children: [
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(8),
+                    child: Image.memory(
+                      _selectedImageBytes!,
+                      height: 100,
+                      width: 100,
+                      fit: BoxFit.cover,
+                    ),
+                  ),
+                  Positioned(
+                    top: 4,
+                    right: 4,
+                    child: GestureDetector(
+                      onTap: _clearImage,
+                      child: Container(
+                        padding: const EdgeInsets.all(4),
+                        decoration: BoxDecoration(
+                          color: Colors.black54,
+                          shape: BoxShape.circle,
+                        ),
+                        child: const Icon(
+                          Icons.close,
+                          color: Colors.white,
+                          size: 16,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ),
-            IconButton(
-              icon: const Icon(Icons.send),
-              onPressed: () => _sendMessage(cubit),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10),
+            decoration: BoxDecoration(
+              color: Colors.grey.shade100,
+              borderRadius: BorderRadius.circular(30),
+              border: Border.all(color: Colors.grey.shade300),
             ),
-          ],
-        ),
+            child: Row(
+              children: [
+                GestureDetector(
+                  onTap: _pickImage,
+                  child: const Icon(Icons.camera_alt_outlined),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: TextField(
+                    controller: _inputController,
+                    decoration: const InputDecoration(
+                      hintText: "Ask anything",
+                      border: InputBorder.none,
+                    ),
+                    onSubmitted: (_) => _sendMessage(cubit),
+                  ),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.send),
+                  onPressed: () => _sendMessage(cubit),
+                ),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }

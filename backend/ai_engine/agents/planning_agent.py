@@ -314,11 +314,10 @@ Generate the itinerary now.
     # rate-limit (429) and transient (503) errors internally.
     #
     # If the LLM returns an itinerary with empty days (e.g. under load),
-    # we retry up to 2 additional times with error feedback so it can
-    # correct itself — this mirrors the old retry logic that was removed
-    # during the structured-output refactor.
+    # we retry up to 1 additional time with error feedback so it can
+    # correct itself. Reduced from 3 to 2 for production performance.
     # ----------------------------------------------------------------
-    max_planner_attempts = 3
+    max_planner_attempts = 2
     last_planner_error = None
     itinerary = None
 

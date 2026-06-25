@@ -60,10 +60,11 @@ class TestComputePoolMetadata:
 
 class TestNeedsDatabaseQuery:
     def test_sufficient_pool_for_reorder(self):
+        big_pool = SAMPLE_POOL * 8  # enough unused places to avoid low_coverage refresh
         need_db, reason = needs_database_query(
-            "move the museum to day 2",
-            SAMPLE_POOL,
-            SAMPLE_POOL[:4],
+            "reverse the stop order on day 1",
+            big_pool,
+            big_pool,
             SAMPLE_ITINERARY,
             {"edit_type": "REORDER"},
         )
@@ -80,6 +81,20 @@ class TestNeedsDatabaseQuery:
         )
         assert need_db is True
         assert reason == "missing_category"
+
+    def test_missing_semantic_triggers_db(self):
+        pool = SAMPLE_POOL + [
+            {"id": "m1", "name": "Amr ibn al-As Mosque", "category": "attraction", "sub_category": "religious"},
+        ]
+        need_db, reason = needs_database_query(
+            "add churches to the trip",
+            pool,
+            pool,
+            SAMPLE_ITINERARY,
+            {"edit_type": "ADD_PLACE", "target_category": "church"},
+        )
+        assert need_db is True
+        assert reason == "missing_semantic"
 
     def test_regenerate_requested(self):
         need_db, reason = needs_database_query(

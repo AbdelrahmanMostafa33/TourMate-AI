@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:flutter/foundation.dart';
 import '../../../../core/errors/api_result.dart';
 import '../../../../core/network/api_services.dart';
 import '../datasource/chat_ws_service.dart';
@@ -42,13 +43,13 @@ class ChatRepository {
     try {
       return await _api.getTripDetail(tripId);
     } catch (e) {
-      print('[ChatRepository] fetchTripDetail failed: $e');
+      debugPrint('[ChatRepository] fetchTripDetail failed: $e');
       return null;
     }
   }
 
-  void sendMessage(String message) {
-    _ws.sendMessage(message);
+  void sendMessage(String message, {Uint8List? imageBytes}) {
+    _ws.sendMessage(message, imageBytes: imageBytes);
   }
 
   void disconnect() {

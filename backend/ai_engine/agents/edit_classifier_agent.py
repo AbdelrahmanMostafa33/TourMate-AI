@@ -78,7 +78,7 @@ Edit types:
 - REORDER — change stop order within a day
 - MOVE_DAY — move a stop to another day
 - ADD_PLACE — insert a new stop from available options
-- REPLACE_PLACE — swap one stop for another
+- REPLACE_PLACE — swap one stop for another (use EXCHANGE when both are already in the itinerary)
 - CHANGE_HOTEL — change accommodation suggestions
 - RE_THEME — update a day's theme only
 - CHANGE_BUDGET — make trip cheaper or more luxury

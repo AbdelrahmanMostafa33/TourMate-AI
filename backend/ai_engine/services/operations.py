@@ -13,9 +13,10 @@ usage, and makes the modifier faster and more reliable.
 Operation types:
     - REMOVE:      Delete a specific stop by ID
     - SWAP:        Replace one stop with another from the available pool
+    - EXCHANGE:    Swap time slots (and positions) between two existing stops
     - ADD:         Insert a new stop from the pool into a specific day/time
     - CHANGE_HOTEL: Replace or add a hotel from the pool
-    - REORDER:     Change the order of stops within a day
+    - REORDER:     Change the order of stops within a day (preserves time slots)
     - RE_THEME:    Update a day's theme string
 """
 
@@ -85,6 +86,14 @@ class ChangeHotelOperation(BaseModel):
         default="",
         description="Reason why this hotel fits the user's request",
     )
+
+
+class ExchangeOperation(BaseModel):
+    """Swap time slots and positions between two stops already in the itinerary."""
+
+    op: Literal["EXCHANGE"] = "EXCHANGE"
+    place_id_a: str = Field(description="ID of the first stop to exchange")
+    place_id_b: str = Field(description="ID of the second stop to exchange")
 
 
 class ReorderOperation(BaseModel):
@@ -170,6 +179,14 @@ class ModifierResponse(BaseModel):
         default=None,
         description="New theme/title for the day (RE_THEME)",
     )
+    place_id_a: Optional[str] = Field(
+        default=None,
+        description="ID of the first stop to exchange (EXCHANGE)",
+    )
+    place_id_b: Optional[str] = Field(
+        default=None,
+        description="ID of the second stop to exchange (EXCHANGE)",
+    )
 
     @model_validator(mode="before")
     @classmethod
@@ -217,6 +234,63 @@ def _find_stop_index(stops: list[dict], place_id: str) -> int:
         if stop.get("id") == place_id:
             return i
     return -1
+
+
+def _find_stop_location(
+    itinerary: dict,
+    place_id: str,
+) -> tuple[Optional[dict], int, Optional[dict]]:
+    """Find a stop by ID. Returns (day_dict, stop_index, stop_dict) or (None, -1, None)."""
+    for day in itinerary.get("days", []):
+        stops = day.get("stops", [])
+        idx = _find_stop_index(stops, place_id)
+        if idx != -1:
+            return day, idx, stops[idx]
+    return None, -1, None
+
+
+_TIME_RANK = {"morning": 0, "afternoon": 1, "evening": 2}
+
+
+def _time_rank(slot: str) -> int:
+    return _TIME_RANK.get(slot or "", 1)
+
+
+def _sort_stops_by_time_slot(stops: list[dict]) -> list[dict]:
+    """Sort stops by time-of-day while preserving relative order within the same slot."""
+    indexed = list(enumerate(stops))
+    indexed.sort(key=lambda pair: (_time_rank(pair[1].get("suggested_time_of_day", "")), pair[0]))
+    return [stop for _, stop in indexed]
+
+
+def _fix_travel_times(stops: list[dict]) -> None:
+    """Ensure travel-time fields are consistent for an ordered stop list."""
+    for i, stop in enumerate(stops):
+        if i < len(stops) - 1:
+            if "travel_time_to_next_minutes" not in stop:
+                stop["travel_time_to_next_minutes"] = 10.0
+                stop["transport_mode"] = "driving"
+        else:
+            _remove_travel_time(stop)
+
+
+def _insert_stop_by_time_slot(stops: list[dict], new_stop: dict) -> list[dict]:
+    """Insert *new_stop* into *stops* at the position matching its time slot."""
+    time_slot = new_stop.get("suggested_time_of_day", "afternoon")
+    target_rank = _time_rank(time_slot)
+
+    insert_idx = len(stops)
+    for i, s in enumerate(stops):
+        s_rank = _time_rank(s.get("suggested_time_of_day", ""))
+        if s_rank > target_rank:
+            insert_idx = i
+            break
+        if s_rank == target_rank:
+            insert_idx = i + 1
+
+    updated = list(stops)
+    updated.insert(insert_idx, new_stop)
+    return updated
 
 
 def _remove_travel_time(stop: dict) -> None:
@@ -323,6 +397,13 @@ def _reattach_full_metadata(
 def _exec_remove(itinerary: dict, op: ModifierResponse) -> dict:
     """Execute a REMOVE operation."""
     modified = copy.deepcopy(itinerary)
+    
+    # Validate required field
+    if not op.place_id:
+        modified["_modifier_note"] = "Cannot apply REMOVE: missing required field 'place_id'"
+        logger.warning("[OperationExecutor] REMOVE: missing place_id")
+        return modified
+    
     removed = False
 
     for day in modified.get("days", []):
@@ -358,14 +439,33 @@ def _exec_remove(itinerary: dict, op: ModifierResponse) -> dict:
 def _exec_swap(itinerary: dict, op: ModifierResponse, place_pool: list[dict]) -> dict:
     """Execute a SWAP operation — replace one stop with another place."""
     modified = copy.deepcopy(itinerary)
-    day = _find_day(modified, op.day_number or 0)
+    
+    # Validate required fields
+    if not op.remove_place_id:
+        modified["_modifier_note"] = "Cannot apply SWAP: missing required field 'remove_place_id'"
+        logger.warning("[OperationExecutor] SWAP: missing remove_place_id")
+        return modified
+    
+    if not op.add_place_id:
+        modified["_modifier_note"] = "Cannot apply SWAP: missing required field 'add_place_id'"
+        logger.warning("[OperationExecutor] SWAP: missing add_place_id")
+        return modified
+    
+    if not op.day_number or op.day_number <= 0:
+        modified["_modifier_note"] = "Cannot apply SWAP: invalid or missing 'day_number'"
+        logger.warning("[OperationExecutor] SWAP: invalid day_number %s", op.day_number)
+        return modified
+    
+    day = _find_day(modified, op.day_number)
     if day is None:
+        modified["_modifier_note"] = f"Cannot apply SWAP: day {op.day_number} not found in itinerary"
         logger.warning("[OperationExecutor] SWAP: day %d not found", op.day_number)
         return modified
 
     stops = day.get("stops", [])
     idx = _find_stop_index(stops, op.remove_place_id)
     if idx == -1:
+        modified["_modifier_note"] = f"Cannot apply SWAP: stop '{op.remove_place_id}' not found in day {op.day_number}"
         logger.warning("[OperationExecutor] SWAP: stop %s not found in day %d", op.remove_place_id, op.day_number)
         return modified
 
@@ -425,8 +525,21 @@ def _exec_swap(itinerary: dict, op: ModifierResponse, place_pool: list[dict]) ->
 def _exec_add(itinerary: dict, op: ModifierResponse, place_pool: list[dict]) -> dict:
     """Execute an ADD operation — insert a new stop into a specific day/time."""
     modified = copy.deepcopy(itinerary)
-    day = _find_day(modified, op.day_number or 0)
+    
+    # Validate required fields
+    if not op.add_place_id:
+        modified["_modifier_note"] = "Cannot apply ADD: missing required field 'add_place_id'"
+        logger.warning("[OperationExecutor] ADD: missing add_place_id")
+        return modified
+    
+    if not op.day_number or op.day_number <= 0:
+        modified["_modifier_note"] = "Cannot apply ADD: invalid or missing 'day_number'"
+        logger.warning("[OperationExecutor] ADD: invalid day_number %s", op.day_number)
+        return modified
+    
+    day = _find_day(modified, op.day_number)
     if day is None:
+        modified["_modifier_note"] = f"Cannot apply ADD: day {op.day_number} not found in itinerary"
         logger.warning("[OperationExecutor] ADD: day %d not found", op.day_number)
         return modified
 
@@ -463,35 +576,8 @@ def _exec_add(itinerary: dict, op: ModifierResponse, place_pool: list[dict]) -> 
         "suggested_time_of_day": time_slot,
     }
 
-    # Decide where to insert based on time of day
-    stops = day.get("stops", [])
-    time_order = {"morning": 0, "afternoon": 1, "evening": 2}
-    target_rank = time_order.get(time_slot, 1)
-
-    insert_idx = len(stops)  # default: append
-    for i, s in enumerate(stops):
-        s_rank = time_order.get(s.get("suggested_time_of_day", ""), 1)
-        if s_rank > target_rank:
-            insert_idx = i
-            break
-        elif s_rank == target_rank:
-            # Insert after the last stop with the same time slot
-            insert_idx = i + 1
-
-    stops.insert(insert_idx, new_stop)
-
-    # If stop was inserted NOT at the end, the previous stop now needs
-    # a travel time to the new stop (set it to a reasonable default)
-    if insert_idx > 0:
-        prev_stop = stops[insert_idx - 1]
-        if "travel_time_to_next_minutes" not in prev_stop:
-            prev_stop["travel_time_to_next_minutes"] = 10.0
-            prev_stop["transport_mode"] = "driving"
-
-    # Remove travel time from the new last stop if it's now last
-    if insert_idx == len(stops) - 1:
-        _remove_travel_time(new_stop)
-
+    stops = _insert_stop_by_time_slot(day.get("stops", []), new_stop)
+    _fix_travel_times(stops)
     day["stops"] = stops
 
     logger.info(
@@ -505,6 +591,12 @@ def _exec_add(itinerary: dict, op: ModifierResponse, place_pool: list[dict]) -> 
 def _exec_change_hotel(itinerary: dict, op: ModifierResponse, place_pool: list[dict]) -> dict:
     """Execute a CHANGE_HOTEL operation — replace or add a hotel."""
     modified = copy.deepcopy(itinerary)
+    
+    # Validate required field
+    if not op.new_hotel_id:
+        modified["_modifier_note"] = "Cannot apply CHANGE_HOTEL: missing required field 'new_hotel_id'"
+        logger.warning("[OperationExecutor] CHANGE_HOTEL: missing new_hotel_id")
+        return modified
 
     # Find the new hotel in the pool
     new_hotel = None
@@ -586,24 +678,9 @@ def _exec_reorder(itinerary: dict, op: ModifierResponse) -> dict:
         )
         return modified
 
-    # Reorder according to new_order
+    # Reorder according to new_order (preserve each stop's time slot)
     reordered = [stop_index[pid] for pid in new_order]
-
-    # Fix travel times — each stop except the last gets a travel time
-    for i, s in enumerate(reordered):
-        if i < len(reordered) - 1:
-            # Keep existing travel time if available, otherwise default
-            if "travel_time_to_next_minutes" not in s:
-                s["travel_time_to_next_minutes"] = 10.0
-                s["transport_mode"] = "driving"
-        else:
-            _remove_travel_time(s)
-
-    # Update time-of-day suggestions based on position
-    time_slots = ["morning", "afternoon", "evening"]
-    for i, s in enumerate(reordered):
-        slot_idx = min(i, len(time_slots) - 1)
-        s["suggested_time_of_day"] = time_slots[slot_idx]
+    _fix_travel_times(reordered)
 
     day["stops"] = reordered
 
@@ -612,6 +689,63 @@ def _exec_reorder(itinerary: dict, op: ModifierResponse) -> dict:
         op.day_number, [s.get("id", "?") for s in reordered],
     )
 
+    return modified
+
+
+def _exec_exchange(itinerary: dict, op: ModifierResponse) -> dict:
+    """Exchange time slots and positions between two existing stops."""
+    modified = copy.deepcopy(itinerary)
+    place_a = op.place_id_a
+    place_b = op.place_id_b
+
+    if not place_a or not place_b:
+        modified["_modifier_note"] = "Cannot apply EXCHANGE: place_id_a and place_id_b are required"
+        logger.warning("[OperationExecutor] EXCHANGE: missing place IDs")
+        return modified
+
+    if place_a == place_b:
+        modified["_modifier_note"] = "Cannot apply EXCHANGE: both place IDs are the same"
+        return modified
+
+    day_a, idx_a, stop_a = _find_stop_location(modified, place_a)
+    day_b, idx_b, stop_b = _find_stop_location(modified, place_b)
+
+    if day_a is None or day_b is None:
+        missing = [pid for pid, loc in ((place_a, day_a), (place_b, day_b)) if loc is None]
+        modified["_modifier_note"] = f"Cannot apply EXCHANGE: stop(s) not found: {', '.join(missing)}"
+        logger.warning("[OperationExecutor] EXCHANGE: stop(s) not found: %s", missing)
+        return modified
+
+    slot_a = stop_a.get("suggested_time_of_day", "morning")
+    slot_b = stop_b.get("suggested_time_of_day", "morning")
+    stop_a["suggested_time_of_day"] = slot_b
+    stop_b["suggested_time_of_day"] = slot_a
+
+    if day_a is day_b:
+        day_a["stops"] = _sort_stops_by_time_slot(day_a.get("stops", []))
+        _fix_travel_times(day_a["stops"])
+    else:
+        day_num_a = day_a.get("day_number")
+        day_num_b = day_b.get("day_number")
+
+        day_a["stops"].pop(idx_a)
+        day_b["stops"].pop(idx_b)
+
+        day_a["stops"] = _insert_stop_by_time_slot(day_a.get("stops", []), stop_b)
+        day_b["stops"] = _insert_stop_by_time_slot(day_b.get("stops", []), stop_a)
+        _fix_travel_times(day_a["stops"])
+        _fix_travel_times(day_b["stops"])
+
+        logger.info(
+            "[OperationExecutor] EXCHANGED %s (day %s) ↔ %s (day %s)",
+            place_a, day_num_a, place_b, day_num_b,
+        )
+        return modified
+
+    logger.info(
+        "[OperationExecutor] EXCHANGED %s ↔ %s on day %d",
+        place_a, place_b, day_a.get("day_number"),
+    )
     return modified
 
 
@@ -673,6 +807,8 @@ def apply_operation(
         modified = _exec_change_hotel(itinerary, operation, place_pool or [])
     elif op_type == "REORDER":
         modified = _exec_reorder(itinerary, operation)
+    elif op_type == "EXCHANGE":
+        modified = _exec_exchange(itinerary, operation)
     elif op_type == "RE_THEME":
         modified = _exec_retheme(itinerary, operation)
     else:
@@ -728,7 +864,117 @@ _CATEGORY_KEYWORDS: dict[str, tuple[str | None, str | None]] = {
     "lodge": ("hotel", None),
     "hostel": ("hotel", None),
     "resort": ("hotel", None),
+    # Religious / cultural (semantic tags also applied — see below)
+    "church": ("attraction", "religious"),
+    "churches": ("attraction", "religious"),
+    "cathedral": ("attraction", "religious"),
+    "coptic": ("attraction", "religious"),
+    "mosque": ("attraction", "religious"),
+    "mosques": ("attraction", "religious"),
+    "synagogue": ("attraction", "religious"),
+    "temple": ("attraction", "religious"),
 }
+
+# Maps request keywords → canonical semantic tag for fine-grained pool filtering.
+_SEMANTIC_KEYWORD_MAP: dict[str, str] = {
+    "churches": "church",
+    "church": "church",
+    "cathedral": "church",
+    "chapel": "church",
+    "coptic": "church",
+    "basilica": "church",
+    "mosques": "mosque",
+    "mosque": "mosque",
+    "masjid": "mosque",
+    "synagogues": "synagogue",
+    "synagogue": "synagogue",
+    "temples": "temple",
+    "temple": "temple",
+}
+
+# Per-tag rules for matching places by name / tags (used when sub_category is too coarse).
+_SEMANTIC_RULES: dict[str, dict[str, list[str]]] = {
+    "church": {
+        "include": ["church", "cathedral", "chapel", "coptic", "basilica", "monastery"],
+        "exclude": ["mosque", "masjid"],
+    },
+    "mosque": {
+        "include": ["mosque", "masjid"],
+        "exclude": ["church", "cathedral", "chapel", "coptic", "synagogue"],
+    },
+    "synagogue": {
+        "include": ["synagogue", "jewish"],
+        "exclude": ["mosque", "church"],
+    },
+    "temple": {
+        "include": ["temple", "shrine"],
+        "exclude": [],
+    },
+}
+
+
+def _place_search_text(place: dict) -> str:
+    """Lowercase text blob used for semantic matching."""
+    parts = [
+        place.get("name") or "",
+        place.get("sub_category") or place.get("subcategory") or "",
+        " ".join(place.get("interest_tags") or []),
+    ]
+    return " ".join(parts).lower()
+
+
+def place_matches_semantic_tag(place: dict, semantic_tag: str) -> bool:
+    """Return True if *place* matches a canonical semantic tag (e.g. church vs mosque)."""
+    rules = _SEMANTIC_RULES.get(semantic_tag)
+    if not rules:
+        return True
+
+    name = (place.get("name") or "").lower()
+    text = _place_search_text(place)
+
+    for token in rules.get("exclude", []):
+        if token in name:
+            return False
+
+    for token in rules.get("include", []):
+        if token in text:
+            return True
+
+    return False
+
+
+def place_matches_semantic_hints(place: dict, semantic_hints: list[str]) -> bool:
+    """True when *place* matches at least one semantic hint (or hints are empty)."""
+    if not semantic_hints:
+        return True
+    return any(place_matches_semantic_tag(place, tag) for tag in semantic_hints)
+
+
+def filter_places_by_semantics(
+    places: list[dict],
+    semantic_hints: list[str],
+) -> list[dict]:
+    """Keep only places matching the requested semantic tags."""
+    if not semantic_hints:
+        return list(places)
+    return [p for p in places if place_matches_semantic_hints(p, semantic_hints)]
+
+
+def _detect_semantic_hints(modification_request: str) -> list[str]:
+    """Detect fine-grained semantic tags (church, mosque, …) from the request."""
+    request_lower = modification_request.lower()
+    seen: set[str] = set()
+    tags: list[str] = []
+
+    for keyword in sorted(_SEMANTIC_KEYWORD_MAP.keys(), key=len, reverse=True):
+        if keyword not in request_lower:
+            continue
+        tag = _SEMANTIC_KEYWORD_MAP[keyword]
+        if tag not in seen:
+            tags.append(tag)
+            seen.add(tag)
+
+    return tags
 
 
 def _detect_category_hints(modification_request: str) -> dict[str, list[str]]:
@@ -765,6 +1011,10 @@ def _detect_category_hints(modification_request: str) -> dict[str, list[str]]:
                 result.setdefault("sub_category", []).append(subcat)
                 seen_subcategories.add(subcat)
 
+    semantic = _detect_semantic_hints(modification_request)
+    if semantic:
+        result["semantic"] = semantic
+
     return result
 
 
@@ -787,8 +1037,10 @@ def _reorder_pool_by_category(
 
     cats: list[str] = category_hints.get("category", [])
     subcats: list[str] = category_hints.get("sub_category", [])
+    semantics: list[str] = category_hints.get("semantic", [])
 
-    matching: list[dict] = []
+    semantic_match: list[dict] = []
+    category_match: list[dict] = []
     non_matching: list[dict] = []
 
     for p in fresh_pool:
@@ -797,20 +1049,31 @@ def _reorder_pool_by_category(
 
         matches_category = not cats or p_cat in cats
         matches_subcategory = not subcats or p_subcat in subcats
+        matches_cat = matches_category and matches_subcategory
 
-        if matches_category and matches_subcategory:
-            matching.append(p)
+        if semantics and matches_cat and place_matches_semantic_hints(p, semantics):
+            semantic_match.append(p)
+        elif matches_cat:
+            category_match.append(p)
         else:
             non_matching.append(p)
 
-    if matching:
+    if semantic_match:
+        label = ", ".join(semantics) or ", ".join(subcats or cats) or "matching"
+        logger.info(
+            "[CategoryReorder] %s — %d semantic match(es) out of %d",
+            label, len(semantic_match), len(fresh_pool),
+        )
+        return semantic_match + category_match + non_matching
+
+    if category_match:
         label = ", ".join(subcats or cats) or "matching"
         logger.info(
             "[CategoryReorder] %s — %d matching place(s) out of %d",
-            label, len(matching), len(fresh_pool),
+            label, len(category_match), len(fresh_pool),
         )
 
-    return matching + non_matching
+    return category_match + non_matching
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -887,6 +1150,22 @@ def build_compact_context(
     # to the front so they survive the max_places cap.
     category_hints = _detect_category_hints(modification_request)
     fresh_pool = _reorder_pool_by_category(fresh_pool, category_hints)
+
+    semantics = category_hints.get("semantic", [])
+    if semantics:
+        lines.append(
+            f"Required place type: {', '.join(semantics)} — "
+            "pick ONLY places whose name/type matches (never substitute a different religion or category)."
+        )
+        semantic_matches = filter_places_by_semantics(fresh_pool, semantics)
+        if semantic_matches:
+            fresh_pool = semantic_matches + [p for p in fresh_pool if p not in semantic_matches]
+        else:
+            lines.append(
+                f"⚠ No unused places in the pool match {', '.join(semantics)} — "
+                "do NOT add a substitute; explain in `note` and leave the itinerary unchanged."
+            )
+        lines.append("")
 
     pool_section = fresh_pool[:max_places]
 

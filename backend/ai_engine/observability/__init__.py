@@ -5,5 +5,17 @@ from ai_engine.observability.tracing import (
     get_tracing_enabled,
     setup_langsmith,
 )
+from ai_engine.observability.metrics import (
+    metrics_collector,
+    record_agent_execution,
+    AgentMetrics,
+)
 
-__all__ = ["traced", "get_tracing_enabled", "setup_langsmith"]
+__all__ = [
+    "traced", 
+    "get_tracing_enabled", 
+    "setup_langsmith",
+    "metrics_collector",
+    "record_agent_execution",
+    "AgentMetrics",
+]

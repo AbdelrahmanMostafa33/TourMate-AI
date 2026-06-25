@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'package:flutter/foundation.dart';
 import 'package:stream_channel/stream_channel.dart';
 import 'package:web_socket_channel/io.dart';
 import '../../../../core/network/api_config.dart';
@@ -107,8 +108,12 @@ class ChatWebSocketService {
     await _connect();
   }
 
-  void sendMessage(String message) {
-    _channel?.sink.add(jsonEncode({"message": message}));
+  void sendMessage(String message, {Uint8List? imageBytes}) {
+    final payload = <String, dynamic>{"message": message};
+    if (imageBytes != null) {
+      payload["image"] = base64Encode(imageBytes);
+    }
+    _channel?.sink.add(jsonEncode(payload));
   }
 
   /// Explicitly disconnect. Disables automatic reconnection.
@@ -139,7 +144,7 @@ class ChatWebSocketService {
   Future<void> _connect() async {
     if (_state == WsConnectionState.connecting ||
         _state == WsConnectionState.connected) {
-      print('[WS] _connect: already $_state, skipping');
+      debugPrint('[WS] _connect: already $_state, skipping');
       return;
     }
 
@@ -148,7 +153,7 @@ class ChatWebSocketService {
     try {
       final token = await _authService.getToken();
       final url = _buildUrl(token);
-      print('[WS] _connect: url=${url.split('?').first}… (token=${token != null ? 'present' : 'null'})');
+      debugPrint('[WS] _connect: url=${url.split('?').first}… (token=${token != null ? 'present' : 'null'})');
       _channel = _channelFactory != null
           ? _channelFactory(url)
           : IOWebSocketChannel.connect(url) as StreamChannel<dynamic>;
@@ -164,20 +169,20 @@ class ChatWebSocketService {
           }
         },
         onError: (e) {
-          print('[WS] _connect: stream onError: $e');
+          debugPrint('[WS] _connect: stream onError: $e');
           _onConnectionLost();
         },
         onDone: () {
-          print('[WS] _connect: stream onDone (connection closed)');
+          debugPrint('[WS] _connect: stream onDone (connection closed)');
           _onConnectionLost();
         },
       );
 
       _reconnectAttempt = 0;
       _setState(WsConnectionState.connected);
-      print('[WS] _connect: connected OK');
+      debugPrint('[WS] _connect: connected OK');
     } catch (e) {
-      print('[WS] _connect: exception: $e');
+      debugPrint('[WS] _connect: exception: $e');
       _onConnectionLost();
     }
   }
