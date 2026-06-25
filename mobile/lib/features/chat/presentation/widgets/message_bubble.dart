@@ -1,4 +1,3 @@
-import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import '../../data/models/chat_message.dart';
 import 'itinerary_card.dart';

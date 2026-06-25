@@ -8,6 +8,7 @@ class TripSummaryModel extends Equatable {
   final String? endDate;
   final int numberOfTravelers;
   final String status;
+  final int? duration;
 
   const TripSummaryModel({
     required this.tripId,
@@ -17,10 +18,13 @@ class TripSummaryModel extends Equatable {
     this.endDate,
     required this.numberOfTravelers,
     required this.status,
+    this.duration,
   });
 
-  /// Computed duration in days from start/end dates
+  /// Computed duration in days — prefers server-computed `duration`, falls
+  /// back to date-range calculation, then returns 0.
   int get durationDays {
+    if (duration != null && duration! > 0) return duration!;
     if (startDate == null || endDate == null) return 0;
     try {
       final start = DateTime.parse(startDate!);
@@ -40,6 +44,7 @@ class TripSummaryModel extends Equatable {
       endDate: json['end_date'],
       numberOfTravelers: json['number_of_travelers'] ?? 1,
       status: json['status'] ?? '',
+      duration: json['duration'] as int?,
     );
   }
 
@@ -51,6 +56,7 @@ class TripSummaryModel extends Equatable {
     String? endDate,
     int? numberOfTravelers,
     String? status,
+    int? duration,
   }) {
     return TripSummaryModel(
       tripId: tripId ?? this.tripId,
@@ -60,12 +66,13 @@ class TripSummaryModel extends Equatable {
       endDate: endDate ?? this.endDate,
       numberOfTravelers: numberOfTravelers ?? this.numberOfTravelers,
       status: status ?? this.status,
+      duration: duration ?? this.duration,
     );
   }
 
   @override
   List<Object?> get props => [
         tripId, tripName, destination, startDate,
-        endDate, numberOfTravelers, status,
+        endDate, numberOfTravelers, status, duration,
       ];
 }

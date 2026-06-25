@@ -1,5 +1,6 @@
 import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../../../core/network/api_services.dart';
+import '../data/models/trip_profile_data.dart';
 import 'trip_detail_state.dart';
 
 class TripDetailCubit extends Cubit<TripDetailState> {
@@ -7,12 +8,22 @@ class TripDetailCubit extends Cubit<TripDetailState> {
 
   TripDetailCubit(this._api) : super(const TripDetailState.initial());
 
-  /// Fetch full trip detail by ID.
+  /// Fetch full trip detail and trip profile by ID.
   Future<void> fetchTripDetail(String tripId) async {
     emit(const TripDetailState.loading());
     try {
+      // Fetch trip detail first (required)
       final trip = await _api.getTripDetail(tripId);
-      emit(TripDetailState.loaded(trip));
+
+      // Fetch trip profile separately (optional — failures are ignored)
+      TripProfileData? profile;
+      try {
+        profile = await _api.getTripProfile(tripId);
+      } catch (_) {
+        // Profile is optional; continue without it
+      }
+
+      emit(TripDetailState.loaded(trip: trip, profile: profile));
     } catch (e) {
       emit(TripDetailState.error(e.toString()));
     }

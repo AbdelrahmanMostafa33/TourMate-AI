@@ -1,13 +1,13 @@
 import '../../../../core/errors/api_result.dart';
 import '../../../../core/network/api_services.dart';
-import '../models/full_profile_response.dart';
+import '../models/user_response.dart';
 
 class ProfileRepository {
   final ApiServices api;
 
   ProfileRepository(this.api);
 
-  Future<ApiResult<FullProfileResponse>> getProfile() async {
+  Future<ApiResult<UserResponse>> getProfile() async {
     try {
       final res = await api.getProfile();
       return ApiResult.success(res);
@@ -16,7 +16,7 @@ class ProfileRepository {
     }
   }
 
-  Future<ApiResult<FullProfileResponse>> updateProfile({
+  Future<ApiResult<UserResponse>> updateProfile({
     String? fullName,
     String? phoneNumber,
     String? homeCity,

@@ -172,8 +172,11 @@ class _TripsScreenState extends State<TripsScreen> {
     );
 
     return GestureDetector(
-      onTap: () {
-        Navigator.pushNamed(context, '/trip-detail', arguments: trip.tripId);
+      onTap: () async {
+        final cubit = context.read<TripsCubit>();
+        await Navigator.pushNamed(context, '/trip-detail', arguments: trip.tripId);
+        // Refresh the trip list after returning (e.g., after deleting a trip)
+        if (mounted) cubit.getTrips();
       },
       child: card,
     );

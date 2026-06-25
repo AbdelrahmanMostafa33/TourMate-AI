@@ -131,6 +131,7 @@ class TripSummary(BaseModel):
     end_date:             Optional[date]
     number_of_travelers:  int
     status:               TripStatus
+    duration:             Optional[int]   = None
 
     class Config:
         from_attributes = True

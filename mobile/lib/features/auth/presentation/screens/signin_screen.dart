@@ -62,31 +62,6 @@ class _SignInScreenState extends State<SignInScreen> {
     setState(() => loading = false);
   }
 
-  Future<void> googleLogin() async {
-    setState(() => loading = true);
-
-    try {
-      final firebase = locator<FirebaseAuthService>();
-      final repo = locator<AuthRepository>();
-
-      await firebase.signInWithGoogle();
-      await repo.login();
-
-      if (!mounted) return;
-
-      Navigator.pushReplacementNamed(context, "/home");
-    } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(handleAuthError(e)),
-          backgroundColor: Colors.red.shade700,
-        ),
-      );
-    }
-
-    setState(() => loading = false);
-  }
-
   @override
   void dispose() {
     emailController.dispose();
@@ -181,67 +156,6 @@ class _SignInScreenState extends State<SignInScreen> {
                                 fontWeight: FontWeight.w600,
                               ),
                             ),
-                    ),
-                  ),
-                  const SizedBox(height: 20),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: Divider(
-                          color: Colors.white.withValues(alpha: 0.3),
-                        ),
-                      ),
-                      Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 16),
-                        child: Text(
-                          "or",
-                          style: TextStyle(
-                            fontSize: 13,
-                            color: Colors.white.withValues(alpha: 0.7),
-                          ),
-                        ),
-                      ),
-                      Expanded(
-                        child: Divider(
-                          color: Colors.white.withValues(alpha: 0.3),
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 20),
-                  SizedBox(
-                    width: double.infinity,
-                    height: 54,
-                    child: OutlinedButton(
-                      onPressed: loading ? null : googleLogin,
-                      style: OutlinedButton.styleFrom(
-                        backgroundColor: Colors.white,
-                        foregroundColor: Colors.black87,
-                        side: BorderSide.none,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(16),
-                        ),
-                      ),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Image.asset(
-                            'assets/images/google.png',
-                            height: 22,
-                            width: 22,
-                            errorBuilder: (_, _, _) =>
-                                const Icon(Icons.g_mobiledata, size: 28),
-                          ),
-                          const SizedBox(width: 10),
-                          const Text(
-                            "Continue with Google",
-                            style: TextStyle(
-                              fontSize: 15,
-                              fontWeight: FontWeight.w500,
-                            ),
-                          ),
-                        ],
-                      ),
                     ),
                   ),
                   const SizedBox(height: 28),

@@ -139,10 +139,33 @@ async def get_all_trips(
 ):
     result = await db.execute(
         select(Trip)
+        .options(
+            selectinload(Trip.itineraries)
+            .selectinload(Itinerary.days)
+        )
         .where(Trip.user_id == current_user["uid"])
         .order_by(Trip.created_at.desc())
     )
-    return result.scalars().all()
+    trips = result.scalars().all()
+
+    # Compute duration from itinerary days for each trip
+    summaries = []
+    for t in trips:
+        day_count = 0
+        for itin in t.itineraries:
+            day_count += len(itin.days)
+        summaries.append(TripSummary(
+            trip_id=t.trip_id,
+            trip_name=t.trip_name,
+            destination=t.destination,
+            start_date=t.start_date,
+            end_date=t.end_date,
+            number_of_travelers=t.number_of_travelers,
+            status=t.status,
+            duration=day_count if day_count > 0 else None,
+        ))
+
+    return summaries
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -183,8 +206,21 @@ async def delete_trip(
     current_user: dict         = Depends(get_current_user),
     db:           AsyncSession = Depends(get_db),
 ):
+    """Delete a trip and cascade to all related data.
+
+    Deletes:
+      - The trip's conversation and all its messages
+      - The trip's AI-generated profile
+      - All itineraries, days, and stops
+      - Any images, bookings, and feedbacks
+    """
     result = await db.execute(
-        select(Trip).where(
+        select(Trip)
+        .options(
+            selectinload(Trip.conversation),
+            selectinload(Trip.trip_profiles),
+        )
+        .where(
             Trip.trip_id == trip_id,
             Trip.user_id == current_user["uid"],
         )
@@ -193,6 +229,17 @@ async def delete_trip(
     if not trip:
         raise HTTPException(status_code=404, detail="Trip not found")
 
+    # ── 1. Delete the conversation and its messages ───────────────────────
+    conversation = trip.conversation
+    if conversation:
+        # Null the FK so the trip row doesn't block conversation deletion
+        trip.conversation_id = None
+        trip.conversation = None
+        await db.flush()
+        await db.delete(conversation)  # cascades to messages via FK ondelete=CASCADE
+
+    # ── 2. Delete the trip — DB-level ON DELETE CASCADE handles           ──
+    #    itineraries → days → stops, trip_profiles, images, bookings, etc.
     await db.delete(trip)
     await db.commit()
     return {"message": "Trip deleted successfully"}
@@ -275,7 +322,11 @@ async def get_trip_profile_endpoint(
     current_user: dict         = Depends(get_current_user),
     db:           AsyncSession = Depends(get_db),
 ):
-    """Get the AI-generated trip profile for a specific trip."""
+    """Get the AI-generated trip profile for a specific trip.
+
+    Returns 404 if no profile exists — the mobile client handles
+    this gracefully and shows an empty state instead of crashing.
+    """
     result = await db.execute(
         select(Trip).where(
             Trip.trip_id == trip_id,

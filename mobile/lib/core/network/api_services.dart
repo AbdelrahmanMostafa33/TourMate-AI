@@ -1,9 +1,8 @@
 import 'package:dio/dio.dart';
 import 'package:retrofit/retrofit.dart';
 
-import '../../features/auth/data/models/full_profile_response.dart';
-import '../../features/auth/data/models/register_request.dart';
 import '../../features/auth/data/models/user_response.dart';
+import '../../features/auth/data/models/register_request.dart';
 import '../../features/chat/data/models/chat_history_message.dart';
 import '../../features/chat/data/models/chat_session_response.dart';
 import '../../features/explore/data/models/explore_filters_response.dart';
@@ -12,6 +11,7 @@ import '../../features/explore/data/models/place_model.dart';
 import '../../features/places/data/models/review_model.dart';
 import '../../features/saved/data/models/saved_place_item.dart';
 import '../../features/trips/data/models/trip_detail_model.dart';
+import '../../features/trips/data/models/trip_profile_data.dart';
 import '../../features/trips/data/models/trip_summary_model.dart';
 
 part 'api_services.g.dart';
@@ -33,11 +33,11 @@ abstract class ApiServices {
 
   /// GET PROFILE
   @GET("/api/v1/users/profile/full")
-  Future<FullProfileResponse> getProfile();
+  Future<UserResponse> getProfile();
 
   /// UPDATE PROFILE
   @PUT("/api/v1/users/profile")
-  Future<FullProfileResponse> updateProfile(
+  Future<UserResponse> updateProfile(
       @Body() Map<String, dynamic> body,
       );
 
@@ -54,6 +54,12 @@ abstract class ApiServices {
   /// GET TRIP DETAIL (includes itineraries, days, stops)
   @GET("/api/v1/trips/{trip_id}")
   Future<TripDetailModel> getTripDetail(
+      @Path('trip_id') String tripId,
+      );
+
+  /// GET TRIP PROFILE (budget, style, pace, interests)
+  @GET("/api/v1/trips/{trip_id}/profile")
+  Future<TripProfileData> getTripProfile(
       @Path('trip_id') String tripId,
       );
 

@@ -4,7 +4,9 @@ import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart' as latlong;
 import '../../../../core/network/service_locator.dart';
 import '../../../../core/network/api_services.dart';
+import '../../../chat/presentation/screens/chat_screen.dart';
 import '../../data/models/trip_detail_model.dart';
+import '../../data/models/trip_profile_data.dart';
 import '../../logic/trip_detail_cubit.dart';
 import '../../logic/trip_detail_state.dart';
 
@@ -39,7 +41,7 @@ class _TripDetailScreenState extends State<TripDetailScreen> {
                 child: CircularProgressIndicator(color: Colors.black),
               ),
               error: (message) => _buildError(context, message),
-              loaded: (trip) => _buildContent(context, trip),
+              loaded: (trip, profile) => _buildContent(context, trip, profile),
             );
           },
         ),
@@ -92,14 +94,17 @@ class _TripDetailScreenState extends State<TripDetailScreen> {
     );
   }
 
-  Widget _buildContent(BuildContext context, TripDetailModel trip) {
+  Widget _buildContent(BuildContext context, TripDetailModel trip, TripProfileData? profile) {
     return Column(
       children: [
         // ── Header ─────────────────────────────────────
-        _buildHeader(trip),
+        _buildHeader(context, trip),
 
         // ── Trip header card ─────────────────────────────
         _buildTripHeader(trip),
+
+        // ── Trip Preferences ─────────────────────────────
+        _buildTripPreferences(profile),
 
         // ── Tabs: Itinerary | Map ────────────────────────
         if (trip.itineraries.isNotEmpty) ...[
@@ -123,7 +128,7 @@ class _TripDetailScreenState extends State<TripDetailScreen> {
 
   // ── Header with back button, trip name, destination ────────────────────
 
-  Widget _buildHeader(TripDetailModel trip) {
+  Widget _buildHeader(BuildContext context, TripDetailModel trip) {
     return Container(
       padding: EdgeInsets.only(
         top: MediaQuery.of(context).padding.top + 8,
@@ -414,6 +419,177 @@ class _TripDetailScreenState extends State<TripDetailScreen> {
     }
   }
 
+  // ── Trip Preferences ────────────────────────────────────────────────────────
+
+  Widget _buildTripPreferences(TripProfileData? profile) {
+    final chips = <Widget>[];
+
+    if (profile != null) {
+      if (profile.budgetLevel != null) {
+        chips.add(_prefChip(
+          Icons.monetization_on_outlined,
+          _capitalize(profile.budgetLevel!),
+          const Color(0xFF2E7D32),
+          Colors.green.shade50,
+        ));
+      }
+
+      if (profile.travelStyle != null) {
+        chips.add(_prefChip(
+          Icons.map_outlined,
+          _capitalize(profile.travelStyle!),
+          const Color(0xFF1565C0),
+          Colors.blue.shade50,
+        ));
+      }
+
+      if (profile.pace != null) {
+        chips.add(_prefChip(
+          Icons.speed_outlined,
+          _capitalize(profile.pace!),
+          const Color(0xFF6A1B9A),
+          Colors.purple.shade50,
+        ));
+      }
+
+      if (profile.interests != null && profile.interests!.isNotEmpty) {
+        for (final interest in profile.interests!) {
+          chips.add(_prefChip(
+            Icons.favorite_outline,
+            _capitalize(interest),
+            const Color(0xFFC62828),
+            Colors.red.shade50,
+          ));
+        }
+      }
+
+      if (profile.foodPreferences != null && profile.foodPreferences!.isNotEmpty) {
+        for (final food in profile.foodPreferences!) {
+          chips.add(_prefChip(
+            Icons.restaurant_outlined,
+            _capitalize(food),
+            const Color(0xFFE65100),
+            Colors.orange.shade50,
+          ));
+        }
+      }
+
+      if (profile.accommodationPreferences != null && profile.accommodationPreferences!.isNotEmpty) {
+        for (final acc in profile.accommodationPreferences!) {
+          chips.add(_prefChip(
+            Icons.bed_outlined,
+            _capitalize(acc),
+            const Color(0xFF4E342E),
+            Colors.brown.shade50,
+          ));
+        }
+      }
+    }
+
+    final bool hasChips = chips.isNotEmpty;
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            colors: [Colors.grey.shade50, Colors.white],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+          ),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: Colors.grey.shade200),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(6),
+                  decoration: BoxDecoration(
+                    color: Colors.black,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: const Icon(
+                    Icons.tune_outlined,
+                    size: 14,
+                    color: Colors.white,
+                  ),
+                ),
+                const SizedBox(width: 10),
+                const Text(
+                  'Trip Preferences',
+                  style: TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w700,
+                    color: Colors.black,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            hasChips
+                ? Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: chips,
+                  )
+                : Row(
+                    children: [
+                      Icon(Icons.info_outline, size: 14, color: Colors.grey[400]),
+                      const SizedBox(width: 8),
+                      Text(
+                        profile == null
+                            ? 'Chat with TourMate to generate preferences'
+                            : 'No preferences set yet',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Colors.grey[500],
+                          fontStyle: FontStyle.italic,
+                        ),
+                      ),
+                    ],
+                  ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _prefChip(IconData icon, String label, Color color, Color bgColor) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: bgColor,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: color.withValues(alpha: 0.2)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 13, color: color),
+          const SizedBox(width: 5),
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+              color: color,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _capitalize(String s) {
+    if (s.isEmpty) return s;
+    return s[0].toUpperCase() + s.substring(1);
+  }
+
   // ── Empty State ───────────────────────────────────────────────────────────
 
   Widget _buildEmptyItinerary() {
@@ -512,14 +688,11 @@ class _TripDetailScreenState extends State<TripDetailScreen> {
   // ═══════════════════════════════════════════════════════════════════════════
 
   Widget _buildItineraryTab(TripDetailModel trip) {
-    return SingleChildScrollView(
+    return ListView(
       padding: const EdgeInsets.all(16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: trip.itineraries.map((itin) {
-          return _ItineraryTimeline(itinerary: itin);
-        }).toList(),
-      ),
+      children: trip.itineraries.map((itin) {
+        return _ItineraryTimeline(itinerary: itin);
+      }).toList(),
     );
   }
 
@@ -828,17 +1001,14 @@ class _TripDetailScreenState extends State<TripDetailScreen> {
     });
   }
   /// Navigate to the chat screen connected to this trip.
-  /// Navigates to /home (MainShell) so the bottom navbar is preserved.
-  /// The trip_id is passed as route arguments for MainShell to forward
-  /// to ChatScreen as initialTripId.
+  /// Pushes a new ChatScreen directly so the trip_id is always passed
+  /// correctly, regardless of route argument forwarding.
   void _continueChat(BuildContext context, TripDetailModel trip) {
-    Navigator.pushNamedAndRemoveUntil(
+    Navigator.push(
       context,
-      '/home',
-      (route) => false,
-      arguments: {
-        'trip_id': trip.tripId,
-      },
+      MaterialPageRoute(
+        builder: (_) => ChatScreen(initialTripId: trip.tripId),
+      ),
     );
   }
 
@@ -1089,216 +1259,222 @@ class _StopTimelineCard extends StatelessWidget {
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      child: Stack(
         children: [
-          // Timeline column
-          SizedBox(
-            width: 40,
-            child: Column(
-              children: [
-                const SizedBox(height: 6),
-                // Numbered circle
-                Container(
-                  width: 26,
-                  height: 26,
-                  decoration: BoxDecoration(
-                    color: timeColor,
-                    shape: BoxShape.circle,
-                    border: Border.all(color: Colors.white, width: 2),
-                    boxShadow: [
-                      BoxShadow(
-                        color: timeColor.withValues(alpha: 0.3),
-                        blurRadius: 4,
-                        offset: const Offset(0, 1),
-                      ),
-                    ],
-                  ),
-                  alignment: Alignment.center,
-                  child: Text(
-                    '$index',
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 11,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                ),
-                // Connecting line
-                if (!isLast)
-                  Expanded(
-                    child: Container(
-                      width: 2,
-                      color: Colors.grey.shade200,
-                    ),
-                  ),
-              ],
+          // Connecting line (positioned below the circle)
+          if (!isLast)
+            Positioned(
+              left: 20, // center of the 40px timeline
+              top: 50, // 6px padding + 26px circle + 18px buffer
+              bottom: 0,
+              child: Container(
+                width: 2,
+                color: Colors.grey.shade200,
+              ),
             ),
-          ),
-
-          // Stop card
-          Expanded(
-            child: Container(
-              margin: const EdgeInsets.only(left: 8),
-              child: Material(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(14),
-                child: InkWell(
-                  borderRadius: BorderRadius.circular(14),
-                  onTap: () {
-                    if (stop.placeId != null && stop.placeId!.isNotEmpty) {
-                      Navigator.of(context).pushNamed(
-                        '/place-detail',
-                        arguments: stop.placeId,
-                      );
-                    }
-                  },
-                  child: Container(
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(14),
-                      border: Border.all(color: Colors.grey.shade200),
-                    ),
-                    padding: const EdgeInsets.all(12),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        // Title row
-                        Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Expanded(
-                              child: Text(
-                                stop.name ?? 'Stop $index',
-                                style: const TextStyle(
-                                  fontSize: 14,
-                                  fontWeight: FontWeight.w600,
-                                  color: Colors.black,
-                                ),
-                              ),
-                            ),
-                            if (timeLabel.isNotEmpty)
-                              Container(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 6,
-                                  vertical: 2,
-                                ),
-                                decoration: BoxDecoration(
-                                  color: timeColor.withValues(alpha: 0.12),
-                                  borderRadius: BorderRadius.circular(8),
-                                ),
-                                child: Text(
-                                  '$timeEmoji $timeLabel',
-                                  style: TextStyle(
-                                    fontSize: 10,
-                                    color: timeColor,
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                                ),
-                              ),
-                          ],
+          // Content row
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Timeline circle
+              SizedBox(
+                width: 40,
+                child: Padding(
+                  padding: const EdgeInsets.only(top: 6),
+                  child: Center(
+                    child: Container(
+                      width: 26,
+                      height: 26,
+                      decoration: BoxDecoration(
+                        color: timeColor,
+                        shape: BoxShape.circle,
+                        border: Border.all(color: Colors.white, width: 2),
+                        boxShadow: [
+                          BoxShadow(
+                            color: timeColor.withValues(alpha: 0.3),
+                            blurRadius: 4,
+                            offset: const Offset(0, 1),
+                          ),
+                        ],
+                      ),
+                      alignment: Alignment.center,
+                      child: Text(
+                        '$index',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 11,
+                          fontWeight: FontWeight.w700,
                         ),
-
-                        const SizedBox(height: 8),
-
-                        // Metadata chips
-                        Wrap(
-                          spacing: 6,
-                          runSpacing: 4,
-                          children: [
-                            if (stop.durationMinutes != null &&
-                                stop.durationMinutes! > 0)
-                              _metaChip(
-                                '⏱ ${stop.durationMinutes} min',
-                                Colors.blue.shade50,
-                                Colors.blue.shade700,
-                              ),
-                            if (stop.category != null)
-                              _metaChip(
-                                _categoryLabel(stop.category!),
-                                Colors.purple.shade50,
-                                Colors.purple.shade700,
-                              ),
-                            if (stop.rating != null)
-                              _metaChip(
-                                '⭐ ${stop.rating!.toStringAsFixed(1)}',
-                                Colors.amber.shade50,
-                                Colors.amber.shade800,
-                              ),
-                            if (stop.estimatedCost != null &&
-                                stop.estimatedCost! > 0)
-                              _metaChip(
-                                '\$${stop.estimatedCost!.toStringAsFixed(0)}',
-                                Colors.green.shade50,
-                                Colors.green.shade700,
-                              ),
-                          ],
-                        ),
-
-                        // AI notes / why recommended
-                        if (stop.aiNotes != null && stop.aiNotes!.isNotEmpty) ...[
-                          const SizedBox(height: 8),
-                          Text(
-                            stop.aiNotes!,
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: Colors.grey[600],
-                              height: 1.3,
-                            ),
-                            maxLines: 3,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ],
-
-                        // Travel mode to next stop
-                        if (stop.travelMode != null &&
-                            stop.minutesFromPrevStop != null &&
-                            stop.minutesFromPrevStop! > 0) ...[
-                          const SizedBox(height: 6),
-                          Row(
-                            children: [
-                              Icon(
-                                _travelModeIcon(stop.travelMode!),
-                                size: 12,
-                                color: Colors.grey[400],
-                              ),
-                              const SizedBox(width: 4),
-                              Text(
-                                '${_travelModeLabel(stop.travelMode!)} · ${stop.minutesFromPrevStop} min',
-                                style: TextStyle(
-                                  fontSize: 11,
-                                  color: Colors.grey[400],
-                                ),
-                              ),
-                            ],
-                          ),
-                        ],
-
-                        // Address
-                        if (stop.address != null && stop.address!.isNotEmpty) ...[
-                          const SizedBox(height: 4),
-                          Row(
-                            children: [
-                              Icon(Icons.location_on_outlined,
-                                  size: 12, color: Colors.grey[400]),
-                              const SizedBox(width: 3),
-                              Expanded(
-                                child: Text(
-                                  stop.address!,
-                                  style: TextStyle(
-                                      fontSize: 11, color: Colors.grey[400]),
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ],
-                      ],
+                      ),
                     ),
                   ),
                 ),
               ),
-            ),
+              // Stop card
+              Expanded(
+                child: Container(
+                  margin: const EdgeInsets.only(left: 8),
+                  child: Material(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(14),
+                    child: InkWell(
+                      borderRadius: BorderRadius.circular(14),
+                      onTap: () {
+                        if (stop.placeId != null && stop.placeId!.isNotEmpty) {
+                          Navigator.of(context).pushNamed(
+                            '/place-detail',
+                            arguments: stop.placeId,
+                          );
+                        }
+                      },
+                      child: Container(
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(14),
+                          border: Border.all(color: Colors.grey.shade200),
+                        ),
+                        padding: const EdgeInsets.all(12),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            // Title row
+                            Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Expanded(
+                                  child: Text(
+                                    stop.name ?? 'Stop $index',
+                                    style: const TextStyle(
+                                      fontSize: 14,
+                                      fontWeight: FontWeight.w600,
+                                      color: Colors.black,
+                                    ),
+                                  ),
+                                ),
+                                if (timeLabel.isNotEmpty)
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 6,
+                                      vertical: 2,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: timeColor.withValues(alpha: 0.12),
+                                      borderRadius: BorderRadius.circular(8),
+                                    ),
+                                    child: Text(
+                                      '$timeEmoji $timeLabel',
+                                      style: TextStyle(
+                                        fontSize: 10,
+                                        color: timeColor,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                  ),
+                              ],
+                            ),
+
+                            const SizedBox(height: 8),
+
+                            // Metadata chips
+                            Wrap(
+                              spacing: 6,
+                              runSpacing: 4,
+                              children: [
+                                if (stop.durationMinutes != null &&
+                                    stop.durationMinutes! > 0)
+                                  _metaChip(
+                                    '⏱ ${stop.durationMinutes} min',
+                                    Colors.blue.shade50,
+                                    Colors.blue.shade700,
+                                  ),
+                                if (stop.category != null)
+                                  _metaChip(
+                                    _categoryLabel(stop.category!),
+                                    Colors.purple.shade50,
+                                    Colors.purple.shade700,
+                                  ),
+                                if (stop.rating != null)
+                                  _metaChip(
+                                    '⭐ ${stop.rating!.toStringAsFixed(1)}',
+                                    Colors.amber.shade50,
+                                    Colors.amber.shade800,
+                                  ),
+                                if (stop.estimatedCost != null &&
+                                    stop.estimatedCost! > 0)
+                                  _metaChip(
+                                    '\$${stop.estimatedCost!.toStringAsFixed(0)}',
+                                    Colors.green.shade50,
+                                    Colors.green.shade700,
+                                  ),
+                              ],
+                            ),
+
+                            // AI notes / why recommended
+                            if (stop.aiNotes != null && stop.aiNotes!.isNotEmpty) ...[
+                              const SizedBox(height: 8),
+                              Text(
+                                stop.aiNotes!,
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: Colors.grey[600],
+                                  height: 1.3,
+                                ),
+                                maxLines: 3,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ],
+
+                            // Travel mode to next stop
+                            if (stop.travelMode != null &&
+                                stop.minutesFromPrevStop != null &&
+                                stop.minutesFromPrevStop! > 0) ...[
+                              const SizedBox(height: 6),
+                              Row(
+                                children: [
+                                  Icon(
+                                    _travelModeIcon(stop.travelMode!),
+                                    size: 12,
+                                    color: Colors.grey[400],
+                                  ),
+                                  const SizedBox(width: 4),
+                                  Text(
+                                    '${_travelModeLabel(stop.travelMode!)} · ${stop.minutesFromPrevStop} min',
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      color: Colors.grey[400],
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ],
+
+                            // Address
+                            if (stop.address != null && stop.address!.isNotEmpty) ...[
+                              const SizedBox(height: 4),
+                              Row(
+                                children: [
+                                  Icon(Icons.location_on_outlined,
+                                      size: 12, color: Colors.grey[400]),
+                                  const SizedBox(width: 3),
+                                  Expanded(
+                                    child: Text(
+                                      stop.address!,
+                                      style: TextStyle(
+                                          fontSize: 11, color: Colors.grey[400]),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ],
           ),
         ],
       ),

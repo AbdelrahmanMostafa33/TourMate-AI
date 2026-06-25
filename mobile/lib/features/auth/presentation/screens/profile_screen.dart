@@ -2,10 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../../../core/network/service_locator.dart';
 import '../../data/datasource/firebase_auth_service.dart';
-import '../../data/models/full_profile_response.dart';
+import '../../data/models/user_response.dart';
 import '../../data/repository/profile_repository.dart';
 import '../../logic/profile_cubit.dart';
 import '../../logic/profile_state.dart';
+import '../widgets/persona_card.dart';
 import 'edit_profile_screen.dart';
 
 class ProfileScreen extends StatelessWidget {
@@ -50,7 +51,7 @@ class _ProfileView extends StatelessWidget {
     );
   }
 
-  Widget _buildProfileContent(BuildContext context, FullProfileResponse data) {
+  Widget _buildProfileContent(BuildContext context, UserResponse data) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -123,89 +124,15 @@ class _ProfileView extends StatelessWidget {
           _infoTile(Icons.phone_outlined, data.phoneNumber!),
         if (data.homeCity != null && data.homeCity!.isNotEmpty)
           _infoTile(Icons.location_city_outlined, data.homeCity!),
-        if (data.travelerPersona != null && data.travelerPersona!.isNotEmpty)
-          _infoTile(Icons.psychology_outlined, data.travelerPersona!),
+
+        const SizedBox(height: 20),
+
+        /// ================= TRAVELER PERSONA =================
+        PersonaCard(profile: data),
 
         const SizedBox(height: 24),
 
-        /// ================= TRIP PROFILE =================
-        if (data.tripProfile != null) ...[
-          _sectionHeader("Trip Preferences"),
-          const SizedBox(height: 12),
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(16),
-              boxShadow: [
-                BoxShadow(
-                  blurRadius: 10,
-                  color: Colors.black.withValues(alpha: 0.04),
-                ),
-              ],
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                if (data.tripProfile!.budgetLevel != null)
-                  _prefRow(
-                    Icons.attach_money,
-                    "Budget",
-                    data.tripProfile!.budgetLevel!,
-                  ),
-                if (data.tripProfile!.travelStyle != null)
-                  _prefRow(
-                    Icons.explore_outlined,
-                    "Style",
-                    data.tripProfile!.travelStyle!,
-                  ),
-                if (data.tripProfile!.pace != null)
-                  _prefRow(
-                    Icons.speed_outlined,
-                    "Pace",
-                    data.tripProfile!.pace!,
-                  ),
-              ],
-            ),
-          ),
-        ],
-
         const SizedBox(height: 24),
-
-        /// ================= INTERESTS =================
-        if (data.tripProfile?.interests != null &&
-            data.tripProfile!.interests!.isNotEmpty) ...[
-          _sectionHeader("Interests"),
-          const SizedBox(height: 12),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: data.tripProfile!.interests!.map((interest) {
-              return Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 14,
-                  vertical: 8,
-                ),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(20),
-                  border: Border.all(color: Colors.grey.shade200),
-                ),
-                child: Text(
-                  interest,
-                  style: TextStyle(
-                    fontSize: 13,
-                    color: Colors.grey[700],
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
-              );
-            }).toList(),
-          ),
-        ],
-
-        const Spacer(),
 
         /// ================= SETTINGS =================
         _sectionHeader("Settings"),
@@ -258,34 +185,6 @@ class _ProfileView extends StatelessWidget {
         fontWeight: FontWeight.w700,
         color: Colors.grey,
         letterSpacing: 1,
-      ),
-    );
-  }
-
-  Widget _prefRow(IconData icon, String label, String value) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 10),
-      child: Row(
-        children: [
-          Icon(icon, size: 16, color: Colors.grey[500]),
-          const SizedBox(width: 10),
-          Text(
-            "$label: ",
-            style: TextStyle(
-              fontSize: 13,
-              color: Colors.grey[600],
-              fontWeight: FontWeight.w500,
-            ),
-          ),
-          Text(
-            _capitalize(value),
-            style: const TextStyle(
-              fontSize: 13,
-              fontWeight: FontWeight.w600,
-              color: Colors.black87,
-            ),
-          ),
-        ],
       ),
     );
   }
@@ -355,11 +254,6 @@ class _ProfileView extends StatelessWidget {
         ),
       ),
     );
-  }
-
-  String _capitalize(String text) {
-    if (text.isEmpty) return text;
-    return text[0].toUpperCase() + text.substring(1).toLowerCase();
   }
 
   void _showLogoutDialog(BuildContext context) {

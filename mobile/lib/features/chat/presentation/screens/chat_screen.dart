@@ -421,7 +421,13 @@ class _ChatViewState extends State<_ChatView> {
           children: [
             if (hasBack)
               GestureDetector(
-                onTap: () => _startNewChat(),
+                onTap: () {
+                  if (Navigator.canPop(context)) {
+                    Navigator.pop(context);
+                  } else {
+                    _startNewChat();
+                  }
+                },
                 child: const Padding(
                   padding: EdgeInsets.all(4),
                   child: Icon(Icons.arrow_back_rounded, size: 20),

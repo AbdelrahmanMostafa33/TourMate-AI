@@ -2,12 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../../../core/network/service_locator.dart';
 import '../../../../core/widgets/city_picker.dart';
-import '../../data/models/full_profile_response.dart';
+import '../../data/models/user_response.dart';
 import '../../data/repository/profile_repository.dart';
 import '../../logic/profile_cubit.dart';
 import '../../logic/profile_state.dart';
 class EditProfileScreen extends StatelessWidget {
-  final FullProfileResponse profile;
+  final UserResponse profile;
 
   const EditProfileScreen({super.key, required this.profile});
 
@@ -21,7 +21,7 @@ class EditProfileScreen extends StatelessWidget {
 }
 
 class _EditProfileView extends StatefulWidget {
-  final FullProfileResponse profile;
+  final UserResponse profile;
 
   const _EditProfileView({required this.profile});
 
