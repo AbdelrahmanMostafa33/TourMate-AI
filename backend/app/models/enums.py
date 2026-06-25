@@ -60,6 +60,7 @@ class BookingType(str, PyEnum):
     restaurant = "restaurant"
     activity   = "activity"
     transport  = "transport"
+    flight     = "flight"
 
 
 class BookingProvider(str, PyEnum):
@@ -67,6 +68,7 @@ class BookingProvider(str, PyEnum):
     booking_com = "booking_com"
     expedia    = "expedia"
     airbnb     = "airbnb"
+    amadeus    = "amadeus"
     other      = "other"
 
 

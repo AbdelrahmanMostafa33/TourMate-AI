@@ -74,7 +74,9 @@ async def test_register(
 ):
     new_user = User(
         user_id      = str(uuid.uuid4()),
+        email        = body.email,
         full_name    = body.full_name,
+        home_city    = body.home_city,
         phone_number = body.phone_number,
     )
     db.add(new_user)

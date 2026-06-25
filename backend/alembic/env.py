@@ -1,6 +1,7 @@
 """Alembic environment config for PostgreSQL."""
 
 import os
+from dotenv import load_dotenv
 from logging.config import fileConfig
 
 from sqlalchemy import pool
@@ -9,6 +10,7 @@ from sqlalchemy import engine_from_config
 from alembic import context
 
 # ── Alembic Config ───────────────────────────────────────────────────────────
+load_dotenv()
 config = context.config
 
 if config.config_file_name is not None:

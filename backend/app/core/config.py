@@ -29,6 +29,10 @@ class Settings(BaseSettings):
     STRIPE_PUBLISHABLE_KEY: str = "pk_test_51Sug26AirNZX1E8p5g6fVMcFYxsTSu77v2GNSQ4fzcPwtIBdMFxdEqKAqYAsdD9ZSUFfWz65buMkngDCoCqQmlVC008tqZjMVo"
     STRIPE_WEBHOOK_SECRET: str = "whsec_0634fe269ef52d414dcd737485324c56b4f99170b995305a31505f804b15c997"
 
+    # === Amadeus (Flight Booking Simulation) ===
+    AMADEUS_CLIENT_ID: str = "mLjsVmui1JG5cVkLkjfeW6UrhSs8Fpue"
+    AMADEUS_CLIENT_SECRET: str = "FAeo2yaQAaNEPrKj"
+
     # === LangSmith (Observability) ===
     # Set these in your .env to enable tracing:
     #   LANGCHAIN_TRACING_V2=true

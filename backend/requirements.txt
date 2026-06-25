@@ -18,3 +18,5 @@ langsmith
 pytest
 pytest-asyncio
 redis
+aiosqlite
+amadeus

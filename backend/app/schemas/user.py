@@ -6,8 +6,9 @@ from datetime import datetime
 class RegisterRequest(BaseModel):
     """Create schema for User registration – aligns with model fields."""
     full_name:    str
+    email:        Optional[str] = None
     phone_number: Optional[str] = None
-    home_city: Optional[str] = None
+    home_city:    Optional[str] = None
 
 
 class UserUpdate(BaseModel):
