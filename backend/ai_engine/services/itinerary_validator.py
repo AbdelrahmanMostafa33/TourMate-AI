@@ -82,6 +82,8 @@ You will be provided with:
 1. Optimized Itinerary: The itinerary generated and optimized by previous agents.
 2. User Request: The original user request.
 3. Programmatic Check Results: Issues already caught by deterministic checks.
+4. Trip Profile: The user's declared travel preferences, which may have been enriched
+   by image analysis (e.g. a photo of a beach may have inferred ``travel_style``).
 
 Your task:
 - Focus on QUALITY issues that programmatic checks cannot catch:
@@ -89,6 +91,13 @@ Your task:
   - Are the themes per day coherent?
   - Is the pacing reasonable (not too rushed, not too empty)?
   - Do the recommendations match the user's request?
+  - Does the itinerary's stop selection match the user's declared ``travel_style``?
+    (e.g. ``"cultural"`` should include museums, landmarks, heritage sites;
+    ``"adventure"`` should favour outdoor / active stops;
+    ``"relaxation"`` should favour spa, beach, park stops)
+  - Does the itinerary's pacing align with the user's declared ``pace``?
+    (e.g. ``"relaxed"`` → 2–3 stops/day; ``"moderate"`` → 3–5;
+    ``"packed"`` → 5–7)
 - Rate the itinerary on a scale of 0-100.
 - Respond ONLY with a valid JSON object.
 
@@ -152,8 +161,31 @@ async def validate_itinerary(state: TripState, on_retry=None) -> TripState:
 
     stripped = _strip_unnecessary_fields(optimized)
 
+    # Build profile context (user's declared preferences including image-inferred ones)
+    profile = state.get("profile")
+    profile_context = ""
+    if profile:
+        parts = []
+        ts = profile.get("travel_style")
+        pc = profile.get("pace")
+        bl = profile.get("budget_level")
+        interests = profile.get("interests") or []
+        food_prefs = profile.get("food_preferences") or []
+        if ts:
+            parts.append(f"travel_style={ts}")
+        if pc:
+            parts.append(f"pace={pc}")
+        if bl:
+            parts.append(f"budget_level={bl}")
+        if interests:
+            parts.append(f"interests={', '.join(interests)}")
+        if food_prefs:
+            parts.append(f"food_preferences={', '.join(food_prefs)}")
+        if parts:
+            profile_context = "\nUser Profile: " + " | ".join(parts)
+
     prompt = f"""
-User Request: {user_message}
+User Request: {user_message}{profile_context}
 Optimized Itinerary:
 {json.dumps(stripped, indent=2, ensure_ascii=False)}{prog_context}
 

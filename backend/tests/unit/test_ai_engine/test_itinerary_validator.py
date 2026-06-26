@@ -301,6 +301,7 @@ class TestRunValidation:
         assert set(metrics.keys()) == {
             "category_diversity", "interest_alignment",
             "pacing", "geographic_coverage", "overall",
+            "travel_style_alignment", "pace_alignment",
         }
         for v in metrics.values():
             assert 0.0 <= v <= 1.0

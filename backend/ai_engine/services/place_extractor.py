@@ -99,8 +99,34 @@ _GENERIC_WORDS = {
     "the", "a", "an", "some", "this", "that",
     "nice", "good", "great", "new", "old", "big", "small",
     "place", "spot", "area", "location",
-    "restaurant", "hotel", "museum", "cafe", "shop", "store", "park", "bar", "club",
-    "one", "two", "more", "another",
+    # Places / categories (singular + plural)
+    "restaurant", "restaurants",
+    "hotel", "hotels",
+    "museum", "museums",
+    "cafe", "cafes", "café",
+    "shop", "shops", "store", "stores",
+    "park", "parks",
+    "bar", "bars",
+    "club", "clubs",
+    # Religious places
+    "church", "churches",
+    "mosque", "mosques",
+    "temple", "temples",
+    "synagogue", "synagogues",
+    "cathedral", "cathedrals",
+    "chapel", "chapels",
+    "monastery", "monasteries",
+    # Activity categories
+    "gallery", "galleries",
+    "theatre", "theater", "theaters",
+    "stadium", "stadiums",
+    "market", "markets",
+    "beach", "beaches",
+    "garden", "gardens",
+    "landmark", "landmarks",
+    "viewpoint", "viewpoints",
+    # Modifiers
+    "one", "two", "more", "another", "some", "several", "multiple",
 }
 """Words that are too generic to be a specific place name."""
 

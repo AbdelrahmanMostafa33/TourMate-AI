@@ -115,6 +115,24 @@ class ReThemeOperation(BaseModel):
     new_theme: str = Field(description="New theme/title for the day")
 
 
+class AdditionalAdd(BaseModel):
+    """An additional ADD operation within a multi-ADD response.
+
+    Used when the LLM wants to add more than one place in a single response
+    (e.g. "add churches" → add Hanging Church + St. George's Church).
+    """
+
+    add_place_id: str = Field(description="ID of the new place from the available pool")
+    day_number: int = Field(description="Day number to add to (1-based)")
+    suggested_time_of_day: Literal["morning", "afternoon", "evening"] = Field(
+        description="Time slot for the new stop"
+    )
+    why_recommended: str = Field(
+        default="",
+        description="Reason why this new stop fits the user's request",
+    )
+
+
 class ModifierResponse(BaseModel):
     """Structured response from the itinerary modifier LLM.
 
@@ -127,12 +145,24 @@ class ModifierResponse(BaseModel):
     The ``@model_validator`` also accepts the old nested format
     ``{"operation": SwapOperation(...), "note": "..."}`` for backward
     compatibility with existing test code.
+
+    For multi-ADD responses (e.g. "add several churches"), the LLM sets
+    ``op="ADD"`` and fills in the primary ``add_place_id``, then adds
+    extras via the ``additional_adds`` list.  The executor applies all of
+    them sequentially.
     """
 
     op: str = Field(description="The operation to perform")
     note: str = Field(
         default="",
         description="Brief human-readable explanation of changes made",
+    )
+    additional_adds: List[AdditionalAdd] = Field(
+        default_factory=list,
+        description="Extra ADD operations when the user wants multiple places of a type "
+        "(e.g. 'add churches' → primary ADD + additional_adds). "
+        "Each entry specifies place_id, day_number, time_of_day, and why_recommended. "
+        "Leave empty for single-ADD or non-ADD operations.",
     )
 
     # ── All fields from all operation types, all optional ──────────────
@@ -837,49 +867,49 @@ def apply_operation(
 # ═══════════════════════════════════════════════════════════════════════════════
 
 
-_CATEGORY_KEYWORDS: dict[str, tuple[str | None, str | None]] = {
-    # Attractions by subcategory
-    "museum": ("attraction", "museums"),
-    "park": ("attraction", "parks"),
-    "shopping": ("attraction", "shopping"),
-    "nightlife": ("attraction", "nightlife"),
-    "history": ("attraction", "history"),
-    "nature": ("attraction", "nature"),
-    "religious": ("attraction", "religious"),
-    "sightseeing": ("attraction", "sightseeing"),
-    "sports": ("attraction", "sports"),
-    "wellness": ("attraction", "wellness"),
-    "entertainment": ("attraction", "entertainment"),
-    "family": ("attraction", "family"),
-    "beach": ("attraction", "nature"),
-    "garden": ("attraction", "parks"),
-    # Restaurants
-    "restaurant": ("restaurant", None),
-    "food": ("restaurant", None),
-    "eat": ("restaurant", None),
-    "breakfast": ("restaurant", None),
-    "lunch": ("restaurant", None),
-    "dinner": ("restaurant", None),
-    "cafe": ("restaurant", None),
-    "coffee": ("restaurant", None),
-    "bakery": ("restaurant", None),
-    "street food": ("restaurant", None),
-    # Hotels
-    "hotel": ("hotel", None),
+# ── English category aliases (words that map to different subcategory values) ──
+# These cover common English travel terms whose mapping differs from the
+# literal subcategory value in the database (e.g. "museum" → subcategory "museums",
+# "church" → subcategory "religious").
+#
+# For subcategory values that DO match the user's word directly (e.g. "museums",
+# "parks", "history", "religious"), the pool-derived map handles them automatically.
+
+_ENGLISH_ALIAS_MAP: dict[str, tuple[str | None, str | None]] = {
+    # Attraction English aliases (word ≠ subcategory value)
+    "museum":      ("attraction", "museums"),
+    "park":        ("attraction", "parks"),
+    "garden":      ("attraction", "parks"),
+    "beach":       ("attraction", "nature"),
+    "shopping":      ("attraction", "shopping"),
+    "nightlife":     ("attraction", "nightlife"),
+    # Religious places — map to "religious" subcategory
+    "church":      ("attraction", "religious"),
+    "churches":    ("attraction", "religious"),
+    "cathedral":   ("attraction", "religious"),
+    "coptic":      ("attraction", "religious"),
+    "mosque":      ("attraction", "religious"),
+    "mosques":     ("attraction", "religious"),
+    "synagogue":   ("attraction", "religious"),
+    "temple":      ("attraction", "religious"),
+    # Restaurants (generic — no subcategory needed)
+    "restaurant":   ("restaurant", None),
+    "food":         ("restaurant", None),
+    "eat":          ("restaurant", None),
+    "breakfast":    ("restaurant", None),
+    "lunch":        ("restaurant", None),
+    "dinner":       ("restaurant", None),
+    "cafe":         ("restaurant", None),
+    "coffee":       ("restaurant", None),
+    "bakery":       ("restaurant", None),
+    "street food":  ("restaurant", None),
+    # Hotels (generic — no subcategory needed)
+    "hotel":         ("hotel", None),
     "accommodation": ("hotel", None),
-    "stay": ("hotel", None),
-    "lodge": ("hotel", None),
-    "hostel": ("hotel", None),
-    "resort": ("hotel", None),
-    # Religious / cultural (semantic tags also applied — see below)
-    "church": ("attraction", "religious"),
-    "churches": ("attraction", "religious"),
-    "cathedral": ("attraction", "religious"),
-    "coptic": ("attraction", "religious"),
-    "mosque": ("attraction", "religious"),
-    "mosques": ("attraction", "religious"),
-    "synagogue": ("attraction", "religious"),
-    "temple": ("attraction", "religious"),
+    "stay":          ("hotel", None),
+    "lodge":         ("hotel", None),
+    "hostel":        ("hotel", None),
+    "resort":        ("hotel", None),
 }
 
 # Maps request keywords → canonical semantic tag for fine-grained pool filtering.
@@ -984,8 +1014,187 @@ def _detect_semantic_hints(modification_request: str) -> list[str]:
     return tags
 
 
-def _detect_category_hints(modification_request: str) -> dict[str, list[str]]:
+_SUBCATEGORY_SIMILARITY_THRESHOLD = 0.3
+
+
+def _build_subcategory_texts(pool: list[dict]) -> dict[tuple[str, str], str]:
+    """Build descriptive texts for each unique (category, subcategory) pair in the pool.
+
+    Groups places by (category, subcategory) and for each group builds a text that
+    includes the subcategory name, interest_tags from all places in the group, and
+    cuisine_types (for restaurants). The resulting text is used for embedding
+    similarity comparison against user requests.
+
+    Args:
+        pool: List of place dicts with ``category``, ``sub_category``, ``interest_tags``,
+            and optionally ``cuisine_type``.
+
+    Returns:
+        Dict mapping ``(category, subcategory)`` → descriptive text string.
+    """
+    groups: dict[tuple[str, str], dict[str, set]] = {}
+    for p in pool:
+        cat = (p.get("category") or "").strip().lower()
+        sub = (p.get("sub_category") or p.get("subcategory") or "").strip().lower()
+        if not cat and not sub:
+            continue
+        key = (cat, sub)
+        if key not in groups:
+            groups[key] = {"tags": set(), "cuisines": set(), "names": set()}
+        for t in (p.get("interest_tags") or []):
+            if isinstance(t, str):
+                groups[key]["tags"].add(t.lower())
+        c = p.get("cuisine_type") or ""
+        if c:
+            groups[key]["cuisines"].add(c.lower())
+        n = p.get("name") or ""
+        if n:
+            # Take first 2 meaningful words from the name
+            words = [w for w in n.lower().split() if w not in ("the", "a", "an", "of", "in", "and", "&", "-")]
+            if words:
+                groups[key]["names"].add(" ".join(words[:2]))
+
+    result: dict[tuple[str, str], str] = {}
+    for (cat, sub), data in groups.items():
+        parts = [f"category: {cat}", f"type: {sub}"]
+        if data["tags"]:
+            parts.append(f"tags: {', '.join(sorted(data['tags']))}")
+        if data["cuisines"]:
+            parts.append(f"cuisine: {', '.join(sorted(data['cuisines']))}")
+        if data["names"]:
+            parts.append(f"examples: {', '.join(sorted(data['names']))}")
+        result[(cat, sub)] = ". ".join(parts)
+
+    return result
+
+
+def _embedding_category_hints(
+    modification_request: str,
+    pool: list[dict] | None = None,
+) -> dict[str, list[str]]:
+    """Detect category hints via embedding similarity when keyword matching fails.
+
+    Falls back to Gemini embeddings to find semantically similar subcategory values
+    from the pool. Only runs when *pool* is provided and contains places.
+
+    For each unique ``(category, subcategory)`` pair in the pool, builds a descriptive
+    text (including interest_tags, cuisine_type, and example names), embeds both the
+    request and the subcategory text, and returns hints for pairs where cosine
+    similarity exceeds ``_SUBCATEGORY_SIMILARITY_THRESHOLD`` (0.3).
+
+    The embedding text for each subcategory follows the same ``task: search result | query: ...``
+    format used throughout the codebase for consistency.
+
+    Args:
+        modification_request: The user's modification text (e.g. "add shrines").
+        pool: List of place dicts to derive subcategory texts from.
+
+    Returns:
+        Same format as ``_detect_category_hints`` — a dict with optional ``"category"``
+        and ``"sub_category"`` keys mapping to lists.  Returns ``{}`` when no match
+        is found or embeddings are unavailable.
+    """
+    if not pool:
+        return {}
+
+    subcat_texts = _build_subcategory_texts(pool)
+    if not subcat_texts:
+        return {}
+
+    # Lazy import to avoid circular dependency at module level
+    try:
+        from ai_engine.services.embedding_service import cosine_similarity, embed_query
+    except ImportError:
+        logger.warning("[EmbeddingFallback] Could not import embedding service")
+        return {}
+
+    # Embed the request
+    request_embedding = embed_query(f"task: search result | query: find places matching: {modification_request}")
+    if request_embedding is None:
+        logger.info("[EmbeddingFallback] Request embedding failed — skipping")
+        return {}
+
+    # Embed each subcategory text and find matches
+    seen_categories: set[str] = set()
+    seen_subcategories: set[str] = set()
+    result: dict[str, list[str]] = {}
+
+    for (cat, sub), text in subcat_texts.items():
+        subcat_embedding = embed_query(f"task: search result | query: {text}")
+        if subcat_embedding is None:
+            continue
+
+        sim = cosine_similarity(request_embedding, subcat_embedding)
+        logger.debug(
+            "[EmbeddingFallback] '%s' — %s/%s similarity=%.3f",
+            modification_request[:40], cat, sub, sim,
+        )
+
+        if sim >= _SUBCATEGORY_SIMILARITY_THRESHOLD:
+            if cat and cat not in seen_categories:
+                result.setdefault("category", []).append(cat)
+                seen_categories.add(cat)
+            if sub and sub not in seen_subcategories:
+                result.setdefault("sub_category", []).append(sub)
+                seen_subcategories.add(sub)
+
+    if result:
+        label = ", ".join(result.get("sub_category", result.get("category", [])))
+        logger.info(
+            "[EmbeddingFallback] Found %d matching subcategories: %s (sim threshold=%.2f)",
+            len(result.get("sub_category", [])), label, _SUBCATEGORY_SIMILARITY_THRESHOLD,
+        )
+
+    return result
+
+
+def _extract_subcategories_from_pool(pool: list[dict]) -> dict[str, tuple[str | None, str | None]]:
+    """Build a keyword map from the distinct subcategory values in the place pool.
+
+    Each distinct ``sub_category`` value in the pool becomes a keyword that maps
+    to its own category.  This makes the category detection automatically adapt
+    to whatever subcategory values exist in each city's data (e.g. "shrines",
+    "temples", "buddhist", "water sports") without any hardcoded mapping.
+
+    Example, if the pool contains::
+
+        [{"category": "attraction", "sub_category": "museums"}, ...]
+
+    The map will include: ``{"museums": ("attraction", "museums"), ...}``
+
+    Args:
+        pool: List of place dicts with ``category`` and ``sub_category`` keys.
+
+    Returns:
+        A dict keyed by subcategory value (lowercase), mapping to
+        ``(category, subcategory)`` tuples.
+    """
+    subcat_map: dict[str, tuple[str | None, str | None]] = {}
+    for p in pool:
+        sub = (p.get("sub_category") or "").strip().lower()
+        cat = (p.get("category") or "").strip().lower()
+        if sub:
+            # Only set if not already present (first wins or skip)
+            if sub not in subcat_map:
+                subcat_map[sub] = (cat, sub)
+        elif cat and cat not in subcat_map:
+            # Places with no subcategory still contribute their category
+            subcat_map[cat] = (cat, None)
+    return subcat_map
+
+
+def _detect_category_hints(
+    modification_request: str,
+    pool: list[dict] | None = None,
+) -> dict[str, list[str]]:
     """Detect category/subcategory hints from the user's modification request.
+
+    Uses two sources:
+    1. ``_ENGLISH_ALIAS_MAP`` — hand-written English aliases for common terms
+       (e.g. "museum" → subcategory "museums", "church" → "religious")
+    2. ``pool`` — if provided, extracts distinct subcategory values from the
+       pool so city-specific categories (e.g. "shrines", "water sports") are
+       automatically matched without hardcoding.
 
     Collects ALL matching keywords (not just the first) so a request like
     "add a museum and a restaurant" promotes both types.  Duplicate
@@ -995,7 +1204,7 @@ def _detect_category_hints(modification_request: str) -> dict[str, list[str]]:
     so they survive the ``max_places`` cap.
 
     Example::
-        >>> _detect_category_hints("add a museum to day 2")
+        >>> _detect_category_hints("add a museum to day 2", pool)
         {'category': ['attraction'], 'sub_category': ['museums']}
 
         >>> _detect_category_hints("change the hotel")
@@ -1009,7 +1218,8 @@ def _detect_category_hints(modification_request: str) -> dict[str, list[str]]:
     seen_categories: set[str] = set()
     seen_subcategories: set[str] = set()
 
-    for keyword, (cat, subcat) in _CATEGORY_KEYWORDS.items():
+    # 1. Check English aliases
+    for keyword, (cat, subcat) in _ENGLISH_ALIAS_MAP.items():
         if keyword in request_lower:
             if cat and cat not in seen_categories:
                 result.setdefault("category", []).append(cat)
@@ -1017,6 +1227,18 @@ def _detect_category_hints(modification_request: str) -> dict[str, list[str]]:
             if subcat and subcat not in seen_subcategories:
                 result.setdefault("sub_category", []).append(subcat)
                 seen_subcategories.add(subcat)
+
+    # 2. Check pool-derived subcategories (auto-detect city-specific values)
+    if pool is not None:
+        pool_map = _extract_subcategories_from_pool(pool)
+        for keyword, (cat, subcat) in pool_map.items():
+            if keyword in request_lower:
+                if cat and cat not in seen_categories:
+                    result.setdefault("category", []).append(cat)
+                    seen_categories.add(cat)
+                if subcat and subcat not in seen_subcategories:
+                    result.setdefault("sub_category", []).append(subcat)
+                    seen_subcategories.add(subcat)
 
     semantic = _detect_semantic_hints(modification_request)
     if semantic:
@@ -1274,7 +1496,19 @@ def build_compact_context(
 
     # Detect category from the user's request and promote matching places
     # to the front so they survive the max_places cap.
-    category_hints = _detect_category_hints(modification_request)
+    category_hints = _detect_category_hints(modification_request, pool=available_places)
+
+    # If keyword matching returned empty, try embedding-based fallback
+    # to catch semantically similar subcategories not in any keyword map.
+    if not category_hints and available_places:
+        embedding_hints = _embedding_category_hints(modification_request, pool=available_places)
+        if embedding_hints:
+            logger.info(
+                "[BuildContext] Embedding fallback detected: %s",
+                embedding_hints.get("sub_category", embedding_hints.get("category", [])),
+            )
+            category_hints = embedding_hints
+
     fresh_pool = _reorder_pool_by_category(fresh_pool, category_hints)
 
     semantics = category_hints.get("semantic", [])

@@ -32,6 +32,8 @@ from ai_engine.services.operations import (
     # Category
     _detect_category_hints,
     _reorder_pool_by_category,
+    _build_subcategory_texts,
+    _embedding_category_hints,
     filter_places_by_semantics,
     place_matches_semantic_tag,
     # Context
@@ -1195,3 +1197,54 @@ class TestBuildCompactContext:
         available_section = context.split("Available places")[1] if "Available places" in context else ""
         assert "place_001" not in available_section
         assert "hotel_001" not in available_section
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Embedding Fallback: _build_subcategory_texts
+# ═══════════════════════════════════════════════════════════════════════════
+
+class TestBuildSubcategoryTexts:
+
+    def test_groups_by_category_and_subcategory(self):
+        pool = [
+            {"name": "Museum A", "category": "attraction", "sub_category": "museums", "interest_tags": ["history", "art"], "cuisine_type": ""},
+            {"name": "Park B", "category": "attraction", "sub_category": "parks", "interest_tags": ["nature"], "cuisine_type": ""},
+            {"name": "Resto C", "category": "restaurant", "sub_category": "local cuisine", "interest_tags": ["food"], "cuisine_type": "egyptian"},
+        ]
+        texts = _build_subcategory_texts(pool)
+        assert len(texts) == 3
+
+    def test_merges_interest_tags_for_same_subcategory(self):
+        pool = [
+            {"name": "A", "category": "attraction", "sub_category": "museums", "interest_tags": ["history"], "cuisine_type": ""},
+            {"name": "B", "category": "attraction", "sub_category": "museums", "interest_tags": ["art", "ancient"], "cuisine_type": ""},
+        ]
+        texts = _build_subcategory_texts(pool)
+        key = ("attraction", "museums")
+        text = texts[key]
+        assert "history" in text
+        assert "art" in text
+        assert "ancient" in text
+
+    def test_includes_cuisine_type(self):
+        pool = [
+            {"name": "R", "category": "restaurant", "sub_category": "local", "interest_tags": ["food"], "cuisine_type": "egyptian"},
+        ]
+        texts = _build_subcategory_texts(pool)
+        text = texts[("restaurant", "local")]
+        assert "egyptian" in text
+
+    def test_empty_pool_returns_empty_dict(self):
+        assert _build_subcategory_texts([]) == {}
+
+    def test_places_without_category_or_subcategory_skipped(self):
+        pool = [{"name": "X", "category": "", "sub_category": "", "interest_tags": []}]
+        assert _build_subcategory_texts(pool) == {}
+
+    def test_includes_example_names(self):
+        pool = [
+            {"name": "The Grand Museum", "category": "attraction", "sub_category": "museums", "interest_tags": [], "cuisine_type": ""},
+        ]
+        texts = _build_subcategory_texts(pool)
+        text = texts[("attraction", "museums")]
+        assert "grand museum" in text  # "The" is filtered out, "Grand Museum" stays

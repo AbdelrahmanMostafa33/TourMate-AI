@@ -157,7 +157,8 @@ def needs_database_query(
     pool = filtered_places or candidate_places or []
     used_ids = extract_used_place_ids(itinerary)
     unused = get_fresh_pool(pool, used_ids)
-    hints = _detect_category_hints(modification_request)
+    pool = filtered_places or candidate_places or []
+    hints = _detect_category_hints(modification_request, pool=pool)
 
     if _is_major_preference_change(classification):
         edit_type = (classification or {}).get("edit_type", "").upper()
@@ -447,7 +448,7 @@ async def find_place_for_add(
                                     db_match.get("id"),
                                     best_sim,
                                 )
-                                return db_match
+                                return [db_match]
 
                         logger.info(
                             "[HybridSearch] DB vector search: best similarity=%.3f "
@@ -500,10 +501,10 @@ async def find_place_for_add(
             best_place.get("id"),
             best_similarity,
         )
-        return best_place
+        return [best_place]
 
     logger.info(
         "[HybridSearch] No suitable match found (best similarity: %.3f)",
         best_similarity if best_place else 0.0,
     )
-    return None
+    return []

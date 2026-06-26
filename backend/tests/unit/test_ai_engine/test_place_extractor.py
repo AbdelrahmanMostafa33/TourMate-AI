@@ -26,7 +26,7 @@ class TestPlaceNameExtraction:
         
         with patch('ai_engine.services.place_extractor.invoke_with_fallback') as mock_invoke:
             mock_invoke.return_value = PlaceNameExtraction(
-                place_name="Grand Egyptian Museum",
+                place_names=["Grand Egyptian Museum"],
                 confidence=1.0,
                 action="add"
             )
@@ -99,7 +99,7 @@ class TestExtractionHelpers:
     def test_is_high_confidence_true(self):
         """Test high confidence detection."""
         extraction = PlaceNameExtraction(
-            place_name="Grand Egyptian Museum",
+            place_names=["Grand Egyptian Museum"],
             confidence=0.8,
             action="add"
         )
@@ -186,7 +186,7 @@ class TestHybridSearch:
         
         with patch('ai_engine.services.pool_manager.extract_place_name') as mock_extract:
             mock_extract.return_value = PlaceNameExtraction(
-                place_name="Grand Egyptian Museum",
+                place_names=["Grand Egyptian Museum"],
                 confidence=1.0,
                 action="add"
             )
@@ -200,8 +200,9 @@ class TestHybridSearch:
             )
             
             assert result is not None
-            assert result["id"] == "gem_001"
-            assert result["name"] == "Grand Egyptian Museum"
+            assert len(result) > 0
+            assert result[0]["id"] == "gem_001"
+            assert result[0]["name"] == "Grand Egyptian Museum"
 
     @pytest.mark.asyncio
     async def test_hybrid_search_low_confidence_fallback(self):
@@ -227,7 +228,7 @@ class TestHybridSearch:
                 preferences=None
             )
             
-            assert result is None  # Should fall back to standard modifier flow
+            assert result == []  # Should fall back to standard modifier flow
 
     @pytest.mark.asyncio
     async def test_hybrid_search_city_mismatch(self):
@@ -241,7 +242,7 @@ class TestHybridSearch:
         
         with patch('ai_engine.services.pool_manager.extract_place_name') as mock_extract:
             mock_extract.return_value = PlaceNameExtraction(
-                place_name="Grand Egyptian Museum",
+                place_names=["Grand Egyptian Museum"],
                 confidence=1.0,
                 action="add"
             )
@@ -255,7 +256,8 @@ class TestHybridSearch:
             )
             
             assert result is not None
-            assert result["id"] == "gem_002"  # Should match Cairo version
+            assert len(result) > 0
+            assert result[0]["id"] == "gem_002"  # Should match Cairo version
 
     @pytest.mark.asyncio
     async def test_hybrid_search_empty_request(self):
@@ -270,7 +272,7 @@ class TestHybridSearch:
             preferences=None
         )
         
-        assert result is None
+        assert result == []
 
 
 if __name__ == "__main__":

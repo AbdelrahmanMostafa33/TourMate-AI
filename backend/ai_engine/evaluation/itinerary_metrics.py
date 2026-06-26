@@ -34,10 +34,12 @@ from ai_engine.tools.haversine import haversine
 
 # ── Composite Weights ─────────────────────────────────────────────────────────
 
-_WEIGHT_DIVERSITY = 0.30   # Category diversity (evenness + mixing)
-_WEIGHT_INTEREST  = 0.35   # Interest alignment (most important to users)
-_WEIGHT_PACING    = 0.20   # Pacing / load balance
-_WEIGHT_COVERAGE  = 0.15   # Geographic spread
+_WEIGHT_DIVERSITY  = 0.15   # Category diversity (evenness + mixing)
+_WEIGHT_INTEREST   = 0.35   # Interest alignment (incl. food prefs — most important)
+_WEIGHT_PACING     = 0.10   # Objective pacing / load balance
+_WEIGHT_PACE_ALIGN = 0.10   # Pacing alignment with user's preferred pace
+_WEIGHT_STYLE_ALIGN= 0.15   # Travel-style alignment with user's preferred style
+_WEIGHT_COVERAGE   = 0.15   # Geographic spread
 
 # ── Pacing Thresholds ────────────────────────────────────────────────────────
 
@@ -66,6 +68,44 @@ _INTEREST_TO_SUBCATEGORY: dict[str, list[str]] = {
     "food":          [],   # matched via food_preferences instead of subcategory
     "adventure":     ["adventure", "sports", "nature", "outdoor"],
     "sightseeing":   ["sightseeing", "landmark", "monument", "viewpoint"],
+}
+
+
+# ── Travel-Style to Subcategory Mapping ────────────────────────────────────
+
+_TRAVEL_STYLE_TO_SUBCATEGORIES: dict[str, list[str]] = {
+    "cultural":     ["museum", "history", "historical", "landmark", "monument",
+                     "art", "gallery", "heritage", "cultural", "sightseeing",
+                     "religious", "mosque", "church", "temple", "shrine",
+                     "architecture"],
+    "adventure":    ["adventure", "sports", "hiking", "nature", "outdoor",
+                     "trekking", "climbing", "cycling", "water sports",
+                     "desert safari", "diving", "snorkeling"],
+    "romantic":     ["romantic", "viewpoint", "scenic", "sunset",
+                     "fine dining", "garden", "waterfront", "boat",
+                     "cruise", "couples", "private"],
+    "family":       ["family", "park", "entertainment", "kids",
+                     "amusement", "zoo", "aquarium", "playground"],
+    "relaxation":   ["wellness", "spa", "beach", "relaxation", "hamam",
+                     "yoga", "meditation", "leisure", "garden", "park",
+                     "resort"],
+    "solo":         [],       # solo travelers enjoy everything
+    "business":     ["business", "conference", "networking", "coworking"],
+}
+
+
+# ── Pace Stop/Duration Ranges ────────────────────────────────────────────
+
+_PACE_STOP_RANGES: dict[str, tuple[int, int]] = {
+    "relaxed":   (2, 3),
+    "moderate":  (3, 5),
+    "packed":    (5, 7),
+}
+
+_PACE_DURATION_RANGES: dict[str, tuple[int, int]] = {
+    "relaxed":   (180, 360),   # 3–6 hours
+    "moderate":  (240, 480),   # 4–8 hours
+    "packed":    (420, 720),   # 7–12 hours
 }
 
 
@@ -417,6 +457,127 @@ def score_geographic_coverage(itinerary: dict) -> float:
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
+# Metric: Travel-Style Alignment
+# ═══════════════════════════════════════════════════════════════════════════════
+
+
+def score_travel_style_alignment(
+    itinerary: dict,
+    profile: Optional[dict] = None,
+) -> float:
+    """
+    Evaluate how well the itinerary's stop subcategories match the user's
+    preferred travel style (e.g. ``"cultural"``, ``"adventure"``, ``"romantic"``).
+
+    Each travel style is mapped to a set of relevant subcategories via
+    :data:`_TRAVEL_STYLE_TO_SUBCATEGORIES`.  The score is the fraction of stops
+    whose ``sub_category`` falls within the mapped subcategories for the user's
+    declared travel style.
+
+    Returns:
+        Float 0.0–1.0, higher = better alignment.  Returns 0.5 (neutral)
+        when no travel style is declared or when the style has an empty
+        mapping (e.g. ``solo`` — solo travelers enjoy everything).
+    """
+    if not profile:
+        return 0.5
+
+    travel_style = _normalize(profile.get("travel_style") or "")
+    if not travel_style:
+        return 0.5  # neutral — no style to match against
+
+    # Neutral for styles with no specific subcategory filter
+    relevant_subcats = _TRAVEL_STYLE_TO_SUBCATEGORIES.get(travel_style)
+    if relevant_subcats is None or len(relevant_subcats) == 0:
+        return 0.5  # e.g. "solo" — everything fits
+
+    stops = _get_all_stops(itinerary)
+    if not stops:
+        return 0.0
+
+    matching = 0
+    for stop in stops:
+        stop_subcat = _get_subcategory(stop)
+        if stop_subcat in relevant_subcats:
+            matching += 1
+
+    return round(matching / len(stops), 4)
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Metric: Pace Alignment
+# ═══════════════════════════════════════════════════════════════════════════════
+
+
+def score_pace_alignment(
+    itinerary: dict,
+    profile: Optional[dict] = None,
+) -> float:
+    """
+    Evaluate how well the itinerary's actual pacing matches the user's
+    preferred pace (``"relaxed"`` / ``"moderate"`` / ``"packed"``).
+
+    Unlike :func:`score_pacing` (which measures *objective* pacing quality),
+    this metric checks *subjective* alignment with the user's stated preference.
+
+    For each day:
+        1. **Stop-count alignment** — is the number of stops within the
+           ideal range for this pace? (50% weight)
+        2. **Duration alignment** — is the total estimated duration within
+           the ideal range for this pace? (50% weight)
+
+    Returns:
+        Float 0.0–1.0, higher = better aligned.  Returns 0.5 (neutral)
+        when no pace preference is declared.
+    """
+    if not profile:
+        return 0.5
+
+    pace = _normalize(profile.get("pace") or "")
+    if not pace:
+        return 0.5  # neutral — no pace to match against
+
+    stop_range = _PACE_STOP_RANGES.get(pace)
+    dur_range = _PACE_DURATION_RANGES.get(pace)
+    if stop_range is None or dur_range is None:
+        return 0.5  # unknown pace value
+
+    days = itinerary.get("days", [])
+    if not days:
+        return 0.0
+
+    day_scores: list[float] = []
+    for day in days:
+        n_stops = len(day.get("stops", []))
+        total_dur = sum(
+            s.get("estimated_duration_minutes", 60) for s in day.get("stops", [])
+        )
+
+        # ── Stop-count alignment ───────────────────────────────────────
+        stop_min, stop_max = stop_range
+        if stop_min <= n_stops <= stop_max:
+            stop_score = 1.0
+        elif n_stops < stop_min:
+            stop_score = n_stops / stop_min
+        else:
+            stop_score = max(0.0, 1.0 - (n_stops - stop_max) * 0.15)
+
+        # ── Duration alignment ─────────────────────────────────────────
+        dur_min, dur_max = dur_range
+        if dur_min <= total_dur <= dur_max:
+            dur_score = 1.0
+        elif total_dur < dur_min:
+            dur_score = total_dur / dur_min
+        else:
+            dur_score = max(0.0, 1.0 - (total_dur - dur_max) * 0.002)
+
+        day_scores.append(0.50 * stop_score + 0.50 * dur_score)
+
+    avg = sum(day_scores) / len(day_scores) if day_scores else 0.0
+    return round(avg, 4)
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
 # Composite API
 # ═══════════════════════════════════════════════════════════════════════════════
 
@@ -432,7 +593,7 @@ def compute_all_metrics(
         itinerary: The generated itinerary dict (``optimized_itinerary``
             or ``draft_itinerary`` from TripState).
         profile: Optional :class:`~ai_engine.graph.state.TripProfile` dict
-            with user interests and food preferences.
+            with user interests, travel_style, pace, and food_preferences.
 
     Returns:
         A dict with per-metric scores (0.0–1.0) and an ``overall`` composite::
@@ -442,6 +603,8 @@ def compute_all_metrics(
                 "interest_alignment": 0.72,
                 "pacing": 0.91,
                 "geographic_coverage": 0.65,
+                "travel_style_alignment": 0.80,
+                "pace_alignment": 0.75,
                 "overall": 0.78,
             }
     """
@@ -449,12 +612,16 @@ def compute_all_metrics(
     interest = score_interest_alignment(itinerary, profile)
     pacing = score_pacing(itinerary)
     coverage = score_geographic_coverage(itinerary)
+    style_align = score_travel_style_alignment(itinerary, profile)
+    pace_align = score_pace_alignment(itinerary, profile)
 
     overall = (
         _WEIGHT_DIVERSITY * diversity
         + _WEIGHT_INTEREST * interest
         + _WEIGHT_PACING * pacing
         + _WEIGHT_COVERAGE * coverage
+        + _WEIGHT_STYLE_ALIGN * style_align
+        + _WEIGHT_PACE_ALIGN * pace_align
     )
 
     return {
@@ -462,6 +629,8 @@ def compute_all_metrics(
         "interest_alignment": interest,
         "pacing": pacing,
         "geographic_coverage": coverage,
+        "travel_style_alignment": style_align,
+        "pace_alignment": pace_align,
         "overall": round(overall, 4),
     }
 

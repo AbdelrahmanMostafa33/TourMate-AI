@@ -20,6 +20,7 @@ import re
 from langchain_core.messages import HumanMessage, SystemMessage
 
 from ai_engine.services.operations import (
+    AdditionalAdd,
     ModifierResponse,
     _detect_category_hints,
     _find_best_day_for_place,
@@ -46,9 +47,10 @@ MODIFIER_SYSTEM_INSTRUCTION = (
     "  • EXCHANGE — Swap time slots between two stops ALREADY in the itinerary "
     "(e.g. swap lunch and dinner restaurants). "
     "Fields: op=\"EXCHANGE\", place_id_a, place_id_b\n"
-    "  • ADD — Insert a new stop from the pool. "
+    "  • ADD — Insert one or more new stops from the pool. "
     "Fields: op=\"ADD\", day_number, suggested_time_of_day (morning/afternoon/evening), "
-    "add_place_id, why_recommended\n"
+    "add_place_id, why_recommended. "
+    "For multiple additions, also fill `additional_adds` list (see below).\n"
     "  • CHANGE_HOTEL — Replace/add a hotel. "
     "Fields: op=\"CHANGE_HOTEL\", old_hotel_id (optional), new_hotel_id, why_recommended\n"
     "  • REORDER — Change visit sequence within a day WITHOUT changing time slots. "
@@ -73,7 +75,18 @@ MODIFIER_SYSTEM_INSTRUCTION = (
     "explain clearly in `note`. Do NOT substitute a different type of place.\n"
     "9. Explain your reasoning briefly in the `note` field.\n"
     "10. NEVER leave required fields (place_id, add_place_id, remove_place_id, new_hotel_id) "
-    "as null or empty. Always provide the exact ID from the lists."
+    "as null or empty. Always provide the exact ID from the lists.\n"
+    "\n"
+    "MULTI-ADD (for adding several places of the same type):\n"
+    "When the user asks to add multiple places (e.g. \"add churches\", \"add more restaurants\"), "
+    "set the primary ADD fields (add_place_id, day_number, etc.) for the first place, "
+    "then list additional places in the `additional_adds` array.\n"
+    "Each entry in `additional_adds` must have:\n"
+    "  - add_place_id (EXACT ID from Available Places list)\n"
+    "  - day_number (1-based)\n"
+    "  - suggested_time_of_day (morning/afternoon/evening)\n"
+    "  - why_recommended (brief reason)\n"
+    "Aim for 2-4 additional adds at most — don't overload the itinerary."
 )
 
 
@@ -160,7 +173,12 @@ async def run_itinerary_modifier(
 
     prompt = (
         f"{context}\n\n"
-        "Output the single operation that best fulfills the user's request."
+        "Output the operation(s) that best fulfill the user's request.\n"
+        "- For single additions: use the primary ADD fields (add_place_id, day_number, etc.).\n"
+        "- For multiple additions (e.g. 'add churches', 'add several restaurants'): "
+        "fill the primary ADD fields for the first place, "
+        "then list the rest in `additional_adds`.\n"
+        "- Leave `additional_adds` empty for non-ADD operations or single adds."
     )
 
     messages = [
@@ -224,7 +242,7 @@ async def run_itinerary_modifier(
                 "[ModifierAgent] ADD operation missing required add_place_id — attempting auto-selection"
             )
             # Auto-select the best matching place from the pool
-            hints = _detect_category_hints(modification_request)
+            hints = _detect_category_hints(modification_request, pool=available_places)
             semantics = hints.get("semantic", [])
             
             # Filter places by semantic hints if available
@@ -339,6 +357,42 @@ async def run_itinerary_modifier(
                     i + 1, len(remaining), place.get("name"),
                 )
 
+        # ── Apply additional_adds from LLM response ─────────────────
+        # The LLM can specify extra ADD operations in additional_adds
+        # (used when the user wants multiple places of the same type).
+        extra_names: list[str] = []
+        if response.op == "ADD" and response.additional_adds:
+            logger.info(
+                "[ModifierAgent] Applying %d additional ADD operations from LLM",
+                len(response.additional_adds),
+            )
+            for i, add_op in enumerate(response.additional_adds):
+                sub_op = ModifierResponse(
+                    op="ADD",
+                    add_place_id=add_op.add_place_id,
+                    day_number=add_op.day_number,
+                    suggested_time_of_day=add_op.suggested_time_of_day,
+                    why_recommended=add_op.why_recommended or f"Additional place matching your request",
+                    note="",
+                )
+                modified = apply_operation(
+                    itinerary=modified,
+                    operation=sub_op,
+                    place_pool=available_places,
+                )
+                # Extract name from pool for logging
+                pool_name = next(
+                    (p.get("name", "") for p in (available_places or [])
+                     if p.get("id") == add_op.add_place_id),
+                    add_op.add_place_id,
+                )
+                extra_names.append(pool_name)
+                logger.info(
+                    "[ModifierAgent] Applied additional ADD %d/%d: %s",
+                    i + 1, len(response.additional_adds), pool_name,
+                )
+            added_names.extend(extra_names)
+
         # Build a combined note about all added places
         notes = []
         if response.note:
@@ -369,7 +423,7 @@ def _validate_modifier_result(
     place_pool: list[dict],
 ) -> bool:
     """Reject ADD/SWAP when the chosen place violates semantic category constraints."""
-    hints = _detect_category_hints(modification_request)
+    hints = _detect_category_hints(modification_request, pool=place_pool)
     semantics = hints.get("semantic", [])
     if not semantics or operation.op not in ("ADD", "SWAP"):
         return True
@@ -384,3 +438,5 @@ def _validate_modifier_result(
         return True
 
     return place_matches_semantic_hints(place, semantics)
+
+

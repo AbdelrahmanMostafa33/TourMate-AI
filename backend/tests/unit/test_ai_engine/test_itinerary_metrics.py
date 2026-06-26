@@ -221,6 +221,8 @@ class TestComputeAllMetrics:
             "interest_alignment",
             "pacing",
             "geographic_coverage",
+            "travel_style_alignment",
+            "pace_alignment",
             "overall",
         }
         assert set(metrics.keys()) == expected_keys

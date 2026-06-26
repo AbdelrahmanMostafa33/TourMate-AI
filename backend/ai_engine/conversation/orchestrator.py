@@ -788,7 +788,7 @@ async def _enrich_candidate_pool_by_category(modification_request: str, destinat
     )
     from ai_engine.tools.places_tool import get_places_for_city
 
-    hints = _detect_category_hints(modification_request)
+    hints = _detect_category_hints(modification_request, pool=existing_pool)
     cats: list[str] = hints.get("category", [])
     subcats: list[str] = hints.get("sub_category", [])
     semantics: list[str] = hints.get("semantic", [])
