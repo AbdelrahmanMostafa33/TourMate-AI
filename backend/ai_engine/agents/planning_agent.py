@@ -75,8 +75,9 @@ You will receive:
 
 ### Candidate selection
 - For each stop, copy `id`, `name`, `lat`, `lon`, `interest_tags` **exactly** as given — do not invent places.
-- Prefer places whose `interest_tags` overlap with the user's interests.
-- If a place has no matching `interest_tags`, only include it if the `score` is very high (>85).
+- For attractions, prefer places whose `interest_tags` overlap with the user's interests.
+- Restaurants do not have `interest_tags` — use their `cuisine_type` field to match food preferences instead.
+- If a place (attraction) has no matching `interest_tags`, only include it if the `score` is very high (>85).
 - **CRITICAL: Every user interest from the User Profile must appear in at least one stop across the entire itinerary.** Check the user's interests list and verify each one is covered before finalizing. For example, if the user is interested in nightlife, include at least one stop with `sub_category: "nightlife"`. If they want shopping, include at least one `sub_category: "shopping"` stop. Use the `sub_category` field on each candidate to match interests.
   - Interest-to-subcategory mapping: history→"history", nightlife→"nightlife", shopping→"shopping", parks→"parks", museums→"museums", culture→"museums", nature→"nature", religious→"religious", family→"family", family activities→"family", sports→"sports", wellness→"wellness", entertainment→"entertainment", sightseeing→"sightseeing".
   - **Before outputting, scan your itinerary: does every user interest have at least one matching stop? If not, keep selecting until all interests are represented.**
@@ -194,9 +195,17 @@ def _trim_for_prompt(place: dict) -> dict:
         "lon": place["lon"],
         "score": round(place.get("composite_score", place.get("popularity_score", 0)), 1),
     }
-    # Keep sub_category + interest_tags for attractions/restaurants so the
-    # LLM can match against user interests and enforce category diversity.
-    if place.get("category") != "hotel":
+    # Keep sub_category + interest_tags for attractions so the
+    # LLM can match against user interests and enforce diversity.
+    # Restaurants are excluded — their interest_tags are all generic
+    # (e.g. ["restaurant"]) and provide no signal. They use cuisine_type instead.
+    if place.get("category") == "restaurant":
+        sub = place.get("sub_category", "")
+        if sub:
+            trimmed["sub_category"] = sub
+        if place.get("cuisine_type"):
+            trimmed["cuisine_type"] = place["cuisine_type"]
+    elif place.get("category") != "hotel":
         sub = place.get("sub_category", "")
         if sub:
             trimmed["sub_category"] = sub
@@ -205,9 +214,6 @@ def _trim_for_prompt(place: dict) -> dict:
             # Limit to top 3 interest tags to save tokens — the planner
             # has enough info from category + sub_category + truncated tags.
             trimmed["interest_tags"] = tags[:3]
-    # Include cuisine_type for restaurants so the LLM can match food preferences
-    if place.get("category") == "restaurant" and place.get("cuisine_type"):
-        trimmed["cuisine_type"] = place["cuisine_type"]
     # Include accommodation_type for hotels (amenities and redundant
     # interest_tags are omitted — category="hotel" is sufficient).
     if place.get("category") == "hotel":
@@ -406,6 +412,12 @@ Generate the itinerary now.
                     stop["lat"] = full.get("lat", 0.0)
                 if not stop.get("lon"):
                     stop["lon"] = full.get("lon", 0.0)
+
+    # Strip empty interest_tags from restaurant stops (they're noise).
+    for day in itinerary.get("days", []):
+        for stop in day.get("stops", []):
+            if stop.get("category") == "restaurant" and not stop.get("interest_tags"):
+                stop.pop("interest_tags", None)
 
     # Enrich accommodation suggestions.
     for hotel in itinerary.get("accommodation_suggestions", []):

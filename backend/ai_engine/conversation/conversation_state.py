@@ -78,7 +78,7 @@ class TripSlots:
     travel_dates:        Optional[str] = None        # "June 15-20, 2026" or "next summer"
     group_size:          Optional[int] = None         # number of travelers
     traveler_group_type: Optional[str] = None          # "solo" | "couple" | "family" | "friends" | "business"
-    special_requests:    Optional[str] = None
+    special_requests:    Optional[List[str]] = None
 
     # ── Profile Preferences (required) ─────────────────────────────
     budget_level:                   Optional[str] = None   # "budget" | "moderate" | "luxury"
@@ -194,7 +194,11 @@ class TripSlots:
                 setattr(self, list_field, combined)
 
         if not self.interests and intent.get("special_requests"):
-            self.interests = [intent["special_requests"]]
+            raw = intent["special_requests"]
+            if isinstance(raw, list):
+                self.interests = list(raw)
+            else:
+                self.interests = [raw]
 
 
 # ── Message History Entry ─────────────────────────────────────────────────────
@@ -411,7 +415,11 @@ class ConversationState:
         if self.slots.traveler_group_type:
             lines.append(f"Traveler group: {self.slots.traveler_group_type}")
         if self.slots.special_requests:
-            lines.append(f"Special requests: {self.slots.special_requests}")
+            sr = self.slots.special_requests
+            if isinstance(sr, list):
+                lines.append(f"Special requests: {', '.join(sr)}")
+            else:
+                lines.append(f"Special requests: {sr}")
         if self.slots.budget_level:
             lines.append(f"Budget: {self.slots.budget_level}")
         if self.slots.travel_style:

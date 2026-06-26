@@ -8,7 +8,8 @@ Provides a single function ``invoke_with_fallback()`` that:
 4. On rate-limit (429): tries the next key immediately
 5. On transient error (503): applies exponential backoff, then retries
 6. On request-too-large (413): raises immediately (cycling keys won't help)
-7. On any other error: raises immediately
+7. On schema validation error (400): retries up to 2 times (LLM non-determinism often resolves it)
+8. On any other error: raises immediately
 """
 
 from __future__ import annotations
@@ -81,6 +82,29 @@ def _is_request_too_large_error(exc: Exception) -> bool:
     )
 
 
+def _is_schema_validation_error(exc: Exception) -> bool:
+    """Check whether an exception is a 400 schema/tool call validation error.
+
+    This happens when the LLM returns structured output that doesn't match
+    the Pydantic schema (e.g. expected string but got array). Retrying
+    the same prompt often resolves this due to LLM non-determinism.
+    """
+    msg = str(exc).lower()
+    return any(
+        kw in msg
+        for kw in (
+            "tool call validation failed",
+            "did not match schema",
+            "tool_use_failed",
+            "invalid_request_error",
+        )
+    )
+
+
+# Maximum schema validation retries before giving up
+_MAX_SCHEMA_RETRIES = 2
+
+
 # ══════════════════════════════════════════════════════════════════════════════
 # invoke_with_fallback
 # ══════════════════════════════════════════════════════════════════════════════
@@ -130,6 +154,7 @@ async def invoke_with_fallback(
     last_error: Exception | None = None
     tried_keys: set[str] = set()
     transient_error_count = 0
+    schema_retry_count = 0
 
     for attempt in range(max_retries):
         api_key = key_manager.get_key(provider)
@@ -215,6 +240,30 @@ async def invoke_with_fallback(
                     await on_retry(attempt + 1, max_retries, f"Server busy, waiting {backoff:.1f}s...")
                 await asyncio.sleep(backoff)
                 continue
+
+            # 400 Schema/Tool Call Validation Error — retry with same key
+            # LLM non-determinism often resolves this on the next attempt
+            if _is_schema_validation_error(exc):
+                schema_retry_count += 1
+                if schema_retry_count <= _MAX_SCHEMA_RETRIES:
+                    logger.warning(
+                        "[Fallback] Key …%s schema validation error on '%s' "
+                        "(schema_retry %d/%d, retrying with same key)",
+                        api_key[-4:], agent_role,
+                        schema_retry_count, _MAX_SCHEMA_RETRIES,
+                    )
+                    if on_retry:
+                        await on_retry(
+                            schema_retry_count, _MAX_SCHEMA_RETRIES,
+                            f"Schema validation error, retrying (attempt {schema_retry_count}/{_MAX_SCHEMA_RETRIES})..."
+                        )
+                    continue
+                logger.error(
+                    "[Fallback] Key …%s schema validation error on '%s' — "
+                    "exhausted %d retries. Raising.",
+                    api_key[-4:], agent_role, _MAX_SCHEMA_RETRIES,
+                )
+                raise
 
             # Non-retryable error — raise immediately
             raise

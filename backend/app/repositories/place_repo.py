@@ -408,6 +408,55 @@ class PlaceRepository(BaseRepository):
             "maps_link": place.maps_link,
         }
 
+    async def find_by_name_exact(
+        self,
+        name: str,
+        city: Optional[str] = None,
+        country: Optional[str] = None,
+    ) -> Optional[dict]:
+        """
+        Fast exact name match for place search.
+
+        This is the first layer in hybrid search - attempts to find places
+        by exact or fuzzy name match before falling back to vector search.
+
+        Args:
+            name: Place name to search for (supports partial matching)
+            city: Optional city filter for disambiguation
+            country: Optional country filter for disambiguation
+
+        Returns:
+            Single best matching place dict, or None if no match found.
+        """
+        if not name:
+            return None
+
+        query = (
+            select(Place)
+            .options(
+                selectinload(Place.attraction_details),
+                selectinload(Place.restaurant_details),
+                selectinload(Place.hotel_details),
+            )
+            .where(Place.name.ilike(f"%{name}%"))
+        )
+
+        # Add city filter if provided
+        if city:
+            query = query.where(func.lower(Place.city) == city.lower())
+
+        # Add country filter if provided
+        if country:
+            query = query.where(func.lower(Place.country) == country.lower())
+
+        # Order by popularity to get the best match
+        query = query.order_by(Place.popularity_score.desc().nullslast()).limit(1)
+
+        result = await self.session.execute(query)
+        place = result.scalar_one_or_none()
+
+        return self._place_to_dict(place) if place else None
+
     async def get_explore_filters(self, q: Optional[str] = None) -> dict:
         """
         Query the database for location suggestions and category options.

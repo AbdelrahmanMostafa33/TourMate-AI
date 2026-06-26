@@ -59,6 +59,8 @@ from ai_engine.services.pool_manager import (
     merge_pool_enrichment,
     needs_database_query,
 )
+from ai_engine.tools.slot_normalizer import _ACCOMMODATION_KEYWORDS, map_accommodation_to_type
+from ai_engine.tools.places_tool import get_places_for_city
 
 # Direct agent imports for re-ranking (skip retrieval, go straight to rank→plan→optimize→validate)
 from ai_engine.services.candidate_scorer import score_candidates
@@ -429,13 +431,22 @@ async def handle_chat_stream(user_id, user_message, image_bytes=None, token=None
         yield chunk
 
     if response and response.get("response_type") == "itinerary" and response.get("itinerary"):
-        result_data = {"message": response.get("message", ""), "itinerary": response["itinerary"], "phase": phase_value}
+        result_data = {
+            "message": response.get("message", ""),
+            "itinerary": response["itinerary"],
+            "phase": phase_value,
+            "session_id": state.session_id,
+        }
         if response.get("profile"):
             result_data["profile"] = response["profile"]
         if response.get("explanation"):
             result_data["explanation"] = response["explanation"]
+        if response.get("agent_messages"):
+            result_data["agent_messages"] = response["agent_messages"]
         if response.get("agent_metrics"):
             result_data["agent_metrics"] = response["agent_metrics"]
+        if response.get("validation"):
+            result_data["validation"] = response["validation"]
         if response.get("pool_state"):
             result_data["pool_state"] = response["pool_state"]
         yield {"type": "result", "data": result_data}
@@ -449,8 +460,13 @@ async def handle_chat_stream(user_id, user_message, image_bytes=None, token=None
 async def _stream_text(text: str):
     lines = text.split("\n")
     for i, line in enumerate(lines):
-        for word in line.split():
-            yield {"type": "text", "content": word + " "}
+        # Preserve leading whitespace for indentation
+        leading = len(line) - len(line.lstrip())
+        indent = line[:leading]
+        words = line.strip().split()
+        for j, word in enumerate(words):
+            content = (indent if j == 0 else "") + word + " "
+            yield {"type": "text", "content": content}
         if i < len(lines) - 1:
             yield {"type": "text", "content": "\n"}
 
@@ -721,9 +737,6 @@ def _has_real_modifications(mod: dict, orig: dict) -> bool:
 
 
 async def _swap_accommodation_surgically(itinerary: dict, destination_city: str, acc_add: list[str]) -> dict | None:
-    from ai_engine.tools.slot_normalizer import map_accommodation_to_type
-    from ai_engine.tools.places_tool import get_places_for_city
-
     if not acc_add:
         logger.warning("[AccommodationSwap] Empty acc_add — nothing to swap")
         return None
@@ -827,6 +840,52 @@ def _build_conversation_context(state) -> str:
     return "\n".join(lines)
 
 
+def _is_accommodation_type_change(modification_request: str) -> str | None:
+    """Detect if the user is asking to change accommodation type (e.g. 'resorts instead of hotels').
+
+    Returns the canonical accommodation type string (e.g. 'resort', 'hostel', 'luxury', 'hotel')
+    if an accommodation type change is detected, or None otherwise.
+    """
+    msg_lower = modification_request.lower()
+
+    # Patterns that indicate an accommodation type change:
+    # "provide resorts instead of hotels"
+    # "switch to resorts"
+    # "change to luxury hotels"
+    # "use hostels instead"
+    # "replace with resorts"
+    # "resorts instead"
+    # "i want resorts"
+    # "give me resorts"
+
+    # Check for "instead of" / "instead" patterns
+    has_instead = "instead" in msg_lower
+    has_switch = any(kw in msg_lower for kw in ("switch to", "change to", "replace with", "use "))
+    has_want = any(kw in msg_lower for kw in ("i want ", "give me ", "provide ", "show me "))
+
+    if not (has_instead or has_switch or has_want):
+        return None
+
+    # Extract the accommodation type keyword mentioned
+    # Use word-boundary matching and break on FIRST match since
+    # _ACCOMMODATION_KEYWORDS lists specific phrases first.
+    # This ensures "boutique hotel" → luxury (not overwritten by "hotel").
+    matched_type = None
+    for keyword, acc_type in _ACCOMMODATION_KEYWORDS:
+        if keyword in msg_lower:
+            matched_type = acc_type
+            break
+
+    if matched_type:
+        logger.info(
+            "[AccommodationTypeChange] Detected accommodation type change: %s in '%s'",
+            matched_type, modification_request[:60],
+        )
+        return matched_type
+
+    return None
+
+
 def _format_itinerary(itinerary: dict) -> str:
     if not itinerary:
         return "I wasn't able to generate a complete itinerary. Please try again."
@@ -874,9 +933,9 @@ def _format_itinerary(itinerary: dict) -> str:
                 detail_bits.append(f"⭐ {rating}")
             if detail_bits:
                 sep = " · "
-                lines.append(f"    {sep.join(detail_bits)}")
+                lines.append(f"      {sep.join(detail_bits)}")
             if why:
-                lines.append(f"    💡 {why}")
+                lines.append(f"      💡 {why}")
 
         lines.append("")
 
@@ -894,7 +953,7 @@ def _format_itinerary(itinerary: dict) -> str:
                 line += f" ⭐ {rating}"
             lines.append(line)
             if why:
-                lines.append(f"    💡 {why}")
+                lines.append(f"      💡 {why}")
 
     lines.append("")
     lines.append("💡 You can ask me to modify any part of this itinerary, or say 'approve' to save it!")
@@ -910,6 +969,31 @@ async def _handle_modify_itinerary(
     image_features: Optional[dict],
     token: Optional[str],
 ) -> dict:
+    # ── Early check: accommodation type change (e.g. "resorts instead of hotels") ──
+    # This intercepts BEFORE the classifier so that accommodation type changes are
+    # handled by _swap_accommodation_surgically (which replaces ALL hotels) rather
+    # than the modifier agent (which only changes one hotel at a time).
+    acc_type_change = _is_accommodation_type_change(effective_message)
+    if acc_type_change and state.itinerary and state.slots.destination_city:
+        logger.info(
+            "[ConversationAgent] Intercepted accommodation type change: %s → '%s'",
+            effective_message[:60], acc_type_change,
+        )
+        # Update slots with new accommodation preference
+        state.slots.accommodation_preferences = [acc_type_change]
+        surgically_swapped = await _swap_accommodation_surgically(
+            itinerary=state.itinerary,
+            destination_city=state.slots.destination_city,
+            acc_add=[acc_type_change],
+        )
+        if surgically_swapped:
+            return _itinerary_response(
+                state,
+                surgically_swapped,
+                image_features,
+                agent_messages=[f"[AccommodationSwap] Updated all accommodations to {acc_type_change} — stops preserved"],
+            )
+
     classification = await classify_edit(effective_message, state.itinerary)
     edit_type = classification.get("edit_type", "UNKNOWN")
     agent_messages = [f"[EditClassifier] {edit_type}: {classification.get('reasoning', '')}"]
@@ -1079,9 +1163,11 @@ async def _fallback_full_regeneration(
     state.plan_started_at = datetime.now(timezone.utc).isoformat()
 
     extracted = dict(router_result.extracted)
-    extracted["special_requests"] = (
-        f"{state.slots.special_requests or ''} | Modification: {effective_message}"
-    ).strip(" | ")
+    # Merge existing special requests (from slots) with the modification prompt
+    existing = state.slots.special_requests or []
+    if isinstance(existing, str):  # backward compat: old Redis data may be a string
+        existing = [existing]
+    extracted["special_requests"] = list(existing) + [f"Modification: {effective_message}"]
 
     result = await _handle_plan_trip(user_id, effective_message, extracted, image_features, token, state)
 

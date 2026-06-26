@@ -2,7 +2,6 @@
 
 Usage:
     python chat.py
-
 Commands:
     /quit, /exit   — Exit the chat
     /reset          — Start a new conversation (new session)
@@ -12,6 +11,7 @@ Commands:
     /session        — Show session info (ID, phase, turn count)
     /export         — Export itinerary + pipeline trace to JSON file
 """
+
 
 import asyncio
 import json
@@ -39,7 +39,7 @@ logging.getLogger("sqlalchemy.engine").setLevel(logging.WARNING)
 from ai_engine.observability import setup_langsmith
 setup_langsmith()
 
-from ai_engine.conversation.orchestrator import handle_chat
+from ai_engine.conversation.orchestrator import handle_chat_stream
 from ai_engine.conversation.redis_memory import get_session_manager
 from ai_engine.llm import token_tracker
 
@@ -66,13 +66,7 @@ def print_header():
 """)
 
 
-def print_user_msg(msg: str):
-    print(f"\n{GREEN}{BOLD}You:{RESET} {msg}")
-
-
-def print_bot_msg(msg: str):
-    print(f"\n{CYAN}{BOLD}TourMate:{RESET} {msg}")
-
+_ARROW = f"{CYAN}{BOLD}> {RESET}"
 
 
 def print_debug(result: dict):
@@ -390,43 +384,54 @@ async def chat_loop():
 """)
             continue
 
-        # ── Send message to AI ───────────────────────────────────────
+        # ── Send message to AI (streaming) ──────────────────────────
         turn += 1
-        print(f"{DIM}(Turn {turn}){RESET}", end="")
+        print(f"{DIM}(Turn {turn}){RESET}")
+
+        text_printed = False
+        last_result = None
 
         try:
-            result = await handle_chat(
+            async for chunk in handle_chat_stream(
                 user_id=user_id,
                 user_message=user_input,
                 session_id=session_id,
-            )
+            ):
+                event_type = chunk.get("type")
+
+                if event_type == "session":
+                    session_id = chunk["data"]["session_id"]
+
+                elif event_type == "progress":
+                    msg = chunk["data"].get("message", "")
+                    print(f"  {YELLOW}⏳ {msg}{RESET}")
+
+                elif event_type == "phase":
+                    new_phase = chunk["data"].get("phase")
+                    if debug_mode:
+                        print(f"  {DIM}→ Phase: {new_phase}{RESET}")
+
+                elif event_type == "text":
+                    if not text_printed:
+                        print(f"\n{_ARROW}", end="", flush=True)
+                        text_printed = True
+                    content = chunk.get("content", "")
+                    print(content, end="", flush=True)
+
+                elif event_type == "result":
+                    last_result = chunk.get("data")
+
+                elif event_type == "done":
+                    if text_printed:
+                        print()  # newline after streaming
+
         except Exception as e:
             print(f"\n{RED}Error: {e}{RESET}\n")
             continue
 
-        # Update session tracking
-        session_id = result.get("session_id", session_id)
-
-        # Print response
-        message = result.get("message", "")
-        response_type = result.get("response_type", "")
-        phase = result.get("phase", "")
-
-        if response_type == "itinerary":
-            print_bot_msg(message)
-        elif response_type == "clarification":
-            print_bot_msg(message)
-        elif response_type == "chat":
-            print_bot_msg(message)
-        else:
-            print_bot_msg(message or "(empty response)")
-
-        # Track last result for /export
-        last_result = result
-
         # Debug output
-        if debug_mode:
-            print_debug(result)
+        if debug_mode and last_result:
+            print_debug(last_result)
 
     # Cleanup
     try:

@@ -29,6 +29,7 @@ from typing import List, Literal, Optional
 from pydantic import BaseModel, Field, model_validator
 
 from ai_engine.constants import MODIFIER_POOL_DISPLAY
+from ai_engine.tools.haversine import haversine
 
 logger = logging.getLogger(__name__)
 
@@ -499,12 +500,15 @@ def _exec_swap(itinerary: dict, op: ModifierResponse, place_pool: list[dict]) ->
         "lat": new_place.get("lat", 0),
         "lon": new_place.get("lon", 0),
         "cuisine_type": new_place.get("cuisine_type"),
-        "interest_tags": new_place.get("interest_tags", []),
         "why_recommended": op.new_why_recommended or new_place.get("why_recommended", ""),
         "estimated_duration_minutes": new_place.get("estimated_duration_minutes")
             or new_place.get("duration_minutes", 60),
         "suggested_time_of_day": stops[idx].get("suggested_time_of_day", "morning"),
     }
+    # Only include interest_tags if they're non-empty (restaurants don't have them).
+    tags = new_place.get("interest_tags", [])
+    if tags:
+        new_stop["interest_tags"] = tags
 
     # Carry over travel time from the old stop if the new stop isn't last
     if old_travel_time is not None:
@@ -569,12 +573,15 @@ def _exec_add(itinerary: dict, op: ModifierResponse, place_pool: list[dict]) -> 
         "lat": new_place.get("lat", 0),
         "lon": new_place.get("lon", 0),
         "cuisine_type": new_place.get("cuisine_type"),
-        "interest_tags": new_place.get("interest_tags", []),
         "why_recommended": op.why_recommended or new_place.get("why_recommended", ""),
         "estimated_duration_minutes": new_place.get("estimated_duration_minutes")
             or new_place.get("duration_minutes", 60),
         "suggested_time_of_day": time_slot,
     }
+    # Only include interest_tags if they're non-empty (restaurants don't have them).
+    tags = new_place.get("interest_tags", [])
+    if tags:
+        new_stop["interest_tags"] = tags
 
     stops = _insert_stop_by_time_slot(day.get("stops", []), new_stop)
     _fix_travel_times(stops)
@@ -1074,6 +1081,125 @@ def _reorder_pool_by_category(
         )
 
     return category_match + non_matching
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Day Scoring for Place Insertion
+# ═══════════════════════════════════════════════════════════════════════════════
+
+# Default daily activity budget in minutes (8 hours for sightseeing)
+_DAY_BUDGET_MINUTES = 480
+
+
+def _score_day_for_place(
+    day: dict,
+    new_place: dict,
+) -> float:
+    """
+    Score how well a single day fits a new place (0.0–1.0).
+
+    Three factors, each weighted:
+      - Free time (0.4): does the day have enough remaining minutes?
+      - Category balance (0.3): avoid packing too many of the same type into one day
+      - Proximity (0.3): how close is the new place to existing stops?
+
+    Returns a float in [0.0, 1.0] where higher = better fit.
+    """
+    stops = day.get("stops", [])
+    new_cat = (new_place.get("category") or "").lower()
+    new_duration = new_place.get("estimated_duration_minutes") or 60
+    new_lat = new_place.get("lat")
+    new_lon = new_place.get("lon")
+
+    # ── Factor 1: Free time (weight 0.4) ────────────────────────────
+    used_minutes = sum(
+        s.get("estimated_duration_minutes") or 60
+        for s in stops
+    )
+    remaining = _DAY_BUDGET_MINUTES - used_minutes
+    if remaining >= new_duration:
+        free_score = 1.0
+    elif remaining > 0:
+        free_score = remaining / new_duration  # partial fit
+    else:
+        free_score = 0.0  # completely full
+
+    # ── Factor 2: Category balance (weight 0.3) ─────────────────────
+    same_cat_count = sum(
+        1 for s in stops
+        if (s.get("category") or "").lower() == new_cat
+    )
+    if same_cat_count == 0:
+        balance_score = 1.0
+    elif same_cat_count == 1:
+        balance_score = 0.6
+    else:
+        balance_score = 0.2  # 2+ same-category stops → crowded
+
+    # ── Factor 3: Geographic proximity (weight 0.3) ─────────────────
+    if new_lat is not None and new_lon is not None and stops:
+        distances = []
+        for s in stops:
+            slat = s.get("lat")
+            slon = s.get("lon")
+            if slat is not None and slon is not None:
+                distances.append(haversine(new_lat, new_lon, slat, slon))
+        if distances:
+            avg_distance = sum(distances) / len(distances)
+            if avg_distance <= 1.0:
+                proximity_score = 1.0
+            elif avg_distance <= 5.0:
+                proximity_score = 0.7
+            elif avg_distance <= 10.0:
+                proximity_score = 0.4
+            else:
+                proximity_score = 0.1
+        else:
+            proximity_score = 0.5  # no coordinate data to compare
+    else:
+        proximity_score = 0.5  # neutral when no location data
+
+    # ── Weighted combination ────────────────────────────────────────
+    score = (
+        free_score * 0.4
+        + balance_score * 0.3
+        + proximity_score * 0.3
+    )
+    return round(score, 3)
+
+
+def _find_best_day_for_place(
+    itinerary: dict,
+    new_place: dict,
+) -> tuple[int | None, float]:
+    """
+    Find the day with the highest score for inserting *new_place*.
+
+    Args:
+        itinerary: Full itinerary dict with ``days`` list.
+        new_place: Place dict with ``category``, ``lat``, ``lon``,
+            ``estimated_duration_minutes``.
+
+    Returns:
+        ``(best_day_number, best_score)`` or ``(None, 0.0)`` if no days exist.
+    """
+    days = itinerary.get("days", [])
+    if not days:
+        return None, 0.0
+
+    best_day: int | None = None
+    best_score = -1.0
+
+    for day in days:
+        day_num = day.get("day_number")
+        if day_num is None:
+            continue
+        score = _score_day_for_place(day, new_place)
+        if score > best_score:
+            best_score = score
+            best_day = day_num
+
+    return best_day, best_score
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

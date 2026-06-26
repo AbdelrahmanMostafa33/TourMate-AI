@@ -128,7 +128,7 @@ class TestTripSlots:
             duration_days=3,
             travel_dates="2026-07-01 to 2026-07-03",
             group_size=2,
-            special_requests="museums and food",
+            special_requests=["museums and food"],
             budget_level="luxury",
             travel_style="romantic",
             pace="relaxed",
@@ -142,7 +142,7 @@ class TestTripSlots:
         assert restored.destination_country == "Egypt"
         assert restored.duration_days == 3
         assert restored.group_size == 2
-        assert restored.special_requests == "museums and food"
+        assert restored.special_requests == ["museums and food"]
         assert restored.budget_level == "luxury"
         assert restored.travel_style == "romantic"
         assert restored.pace == "relaxed"
@@ -178,10 +178,10 @@ class TestTripSlots:
 
     def test_merge_accumulates_interests(self):
         slots = TripSlots()
-        slots.merge({"special_requests": "museums"})
+        slots.merge({"special_requests": ["museums"]})
         assert slots.interests == ["museums"]
         # Second merge should not overwrite interests (already set)
-        slots.merge({"special_requests": "food"})
+        slots.merge({"special_requests": ["food"]})
         assert slots.interests == ["museums"]  # unchanged
 
     def test_merge_profile_fields(self):

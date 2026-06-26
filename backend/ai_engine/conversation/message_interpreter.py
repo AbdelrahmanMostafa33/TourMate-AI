@@ -14,7 +14,7 @@ import logging
 from typing import Dict, Any, List, Optional, Literal
 
 from pydantic import BaseModel, Field
-from langchain_core.messages import SystemMessage, HumanMessage
+from langchain_core.messages import BaseMessage, SystemMessage, HumanMessage, AIMessage
 
 from ai_engine.llm import invoke_with_fallback
 from ai_engine.conversation.conversation_state import (
@@ -56,9 +56,9 @@ class ExtractedSlots(BaseModel):
         default=None,
         description="Traveler group type: 'solo', 'couple', 'family', 'friends', or 'business'",
     )
-    special_requests: Optional[str] = Field(
+    special_requests: Optional[List[str]] = Field(
         default=None,
-        description="Any special requirements or requests",
+        description="Any special requirements or requests (e.g. ['add Grand Egyptian Museum'])",
     )
     budget_level: Optional[str] = Field(
         default=None,
@@ -130,9 +130,6 @@ class InterpretationResult:
 
 INTERPRETER_SYSTEM_PROMPT = """You are TourMate AI, a travel planning assistant having a conversation with a user.
 
-## Conversation History
-{conversation_history}
-
 ## Current State
 - Phase: {phase}
 - Destination: {destination}
@@ -150,9 +147,6 @@ INTERPRETER_SYSTEM_PROMPT = """You are TourMate AI, a travel planning assistant 
 - Last question asked about: {last_question_field}
 {itinerary_context}
 
-## Current Message
-The user just said: "{user_message}"
-
 ## IMPORTANT: Disambiguation
 The 'Last question asked about' field tells you which slot you were asking about in your previous response.
 If the user gives a short single-word answer, they are almost certainly answering THAT specific question —
@@ -163,37 +157,31 @@ Examples:
 - If last question was 'budget_level' and user says 'high' → budget_level: 'high', NOT interests
 - If last question was 'interests' and user says 'nature' → interests: ['nature'], NOT pace
 
-## Instructions
-1. **Extract ONLY from the Current Message above** — do NOT extract information from the Conversation History. The history is for context only.
-2. Extract any travel information from the user's message into the "extracted" field
-3. If the user provided their destination + duration → set action to "plan_trip" immediately. Smart defaults will handle everything else.
-4. NEVER ask for information they already provided — check the Current State above
-5. Always acknowledge what the user said before asking for more
-6. If destination or duration is missing, ask for ONE thing at a time — start with destination, then duration.
-7. NEVER ask about budget, pace, style, interests, food, accommodation, traveler count, dates, or traveler group — those are all handled by smart defaults.
-8. If they ask a travel question, answer it naturally and helpfully
-9. If they approve an itinerary, confirm it warmly
-10. If they request changes to an itinerary, acknowledge and set action to "modify_itinerary"
-11. Be warm but concise — no filler words
-12. Respond in the same language the user writes in
-13. NEVER confirm or ask "Is that correct?" — if the user provides a clear answer, accept it immediately.
+## Action Priority (highest to lowest — pick the FIRST that matches)
+
+1. **(HIGHEST) modify_itinerary** — If phase is "itinerary_review" and the user asks to add, remove, change, swap, update, or modify ANYTHING in their itinerary, ALWAYS use this action. This takes priority over every other rule, including plan_trip.
+
+2. **approve_itinerary** — If the user approves, confirms, or says the itinerary looks good.
+
+3. **answer_question** — If the user asks a general travel question (e.g. "what's the best time to visit?", "how far is the museum from the hotel?").
+
+4. **plan_trip** — Only when the user provides destination + duration for a NEW trip. If there's already an itinerary shown in the Current State above, do NOT use this — use modify_itinerary instead.
+
+5. **(LOWEST) ask_clarification** — When more information is needed.
+
+## General Instructions
+1. Extract any travel information from the user's message into the "extracted" field
+2. NEVER ask for information they already provided — check the Current State above
+3. Always acknowledge what the user said before asking for more
+4. If destination or duration is missing, ask for ONE thing at a time — start with destination, then duration.
+5. NEVER ask about budget, pace, style, interests, food, accommodation, traveler count, dates, or traveler group — those are all handled by smart defaults.
+6. Be warm but concise — no filler words
+7. Respond in the same language the user writes in
+8. NEVER confirm or ask "Is that correct?" — if the user provides a clear answer, accept it immediately.
 """
 
 
 # ── Context Building ─────────────────────────────────────────────────────────
-
-def _build_conversation_history(state: ConversationState, max_messages: int = 10) -> str:
-    recent = state.history[-max_messages:]
-    if not recent:
-        return "(No previous messages — this is the start of the conversation)"
-
-    lines = []
-    for msg in recent:
-        role = "User" if msg.role == "user" else "TourMate"
-        content = msg.content[:400]
-        lines.append(f"{role}: {content}")
-    return "\n".join(lines)
-
 
 def _build_itinerary_summary(state: ConversationState) -> str:
     if not state.itinerary:
@@ -267,7 +255,6 @@ def _build_extracted_dict(extracted: ExtractedSlots) -> dict:
 @traced(name="message_interpreter", tags=["conversation", "interpreter"], metadata={"component": "message_interpreter"})
 async def interpret_message(state: ConversationState, user_message: str) -> InterpretationResult:
     """Single context-aware LLM call with structured output."""
-    history_text = _build_conversation_history(state)
     slots = state.slots
     missing = slots.missing_required()
     missing_str = ", ".join(missing) if missing else "none — all info collected!"
@@ -276,8 +263,7 @@ async def interpret_message(state: ConversationState, user_message: str) -> Inte
     if state.phase == ConversationPhase.ITINERARY_REVIEW:
         itinerary_context = _build_itinerary_summary(state)
 
-    prompt = INTERPRETER_SYSTEM_PROMPT.format(
-        conversation_history=history_text,
+    system_prompt = INTERPRETER_SYSTEM_PROMPT.format(
         phase=state.phase.value,
         destination=slots.destination_city or "not yet provided",
         duration=f"{slots.duration_days} days" if slots.duration_days else "not yet provided",
@@ -293,13 +279,21 @@ async def interpret_message(state: ConversationState, user_message: str) -> Inte
         missing_fields=missing_str,
         last_question_field=state.last_question_field or "(first message, no previous question)",
         itinerary_context=itinerary_context,
-        user_message=user_message,
     )
 
-    messages = [
-        SystemMessage(content=prompt),
-        HumanMessage(content="Extract information and respond now."),
-    ]
+    # Build messages with proper HumanMessage/AIMessage turns
+    messages: list[BaseMessage] = [SystemMessage(content=system_prompt)]
+
+    # Add conversation history as proper message turns (last 10 messages)
+    for msg in state.history[-10:]:
+        if msg.role == "user":
+            messages.append(HumanMessage(content=msg.content))
+        elif msg.role == "assistant":
+            messages.append(AIMessage(content=msg.content))
+        # Skip system messages
+
+    # Add the user's current message as a HumanMessage
+    messages.append(HumanMessage(content=user_message))
 
     interpreter_output: Optional[InterpreterOutput] = None
     try:
@@ -313,10 +307,26 @@ async def interpret_message(state: ConversationState, user_message: str) -> Inte
         extracted = _build_extracted_dict(interpreter_output.extracted)
         response_text = interpreter_output.response
     else:
-        logger.error("Message interpreter LLM failed with all keys exhausted")
+        logger.error("Message interpreter LLM failed after all retries")
         extracted = {}
         action = "answer_question"
-        response_text = "I'm having trouble connecting to my AI service. Please try again in a moment."
+        response_text = (
+            "I understood your request, but I'm having trouble "
+            "processing it on my end. Could you please rephrase that?"
+        )
+
+    # Safety override: if user is in itinerary_review phase and the LLM
+    # chose something other than modify_itinerary, check if the message
+    # sounds like a modification request.
+    if state.phase == ConversationPhase.ITINERARY_REVIEW and action != "modify_itinerary":
+        msg_lower = user_message.lower()
+        modification_keywords = ["add ", "remove ", "delete ", "change ", "swap ", "switch ", "replace ", "update ", "modify ", "insert ", "include ", "exclude ", "put ", "drop ", "take out", "get rid of"]
+        if any(kw in msg_lower for kw in modification_keywords):
+            logger.info(
+                "[Interpreter] Safety override: '%s' → modify_itinerary (phase=%s, action=%s)",
+                user_message[:60], state.phase.value, action,
+            )
+            action = "modify_itinerary"
 
     if interpreter_output is not None and any([
         interpreter_output.extracted.destination_city,

@@ -687,7 +687,7 @@ class TestNormalizeExtractedSlots:
 
     def test_unknown_values_pass_through(self):
         """Values the normalizer doesn't recognize pass through as-is."""
-        raw = {"destination_city": "New Destination", "special_requests": "surprise me"}
+        raw = {"destination_city": "New Destination", "special_requests": ["surprise me"]}
         result = normalize_extracted_slots(raw)
         assert result["destination_city"] == "New Destination"
-        assert result["special_requests"] == "surprise me"
+        assert result["special_requests"] == ["surprise me"]

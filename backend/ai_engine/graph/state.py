@@ -99,7 +99,7 @@ class TripState(TypedDict):
     destination_country: Optional[str]
     duration_days:       Optional[int]
     travel_dates:        Optional[str]
-    special_requests:    Optional[str]
+    special_requests:    Optional[list[str]]
     group_size:          Optional[int]
     traveler_group_type: Optional[str]
     missing_fields:      list[str]     # fields the user hasn't provided yet

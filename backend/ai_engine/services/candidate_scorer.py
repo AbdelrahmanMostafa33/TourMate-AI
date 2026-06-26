@@ -136,7 +136,17 @@ def _diversity_optimize(
     scored_places: list[tuple[dict, float]],
     duration_days: int,
 ) -> list[dict]:
-    """Select the final candidate set with diversity constraints."""
+    """Select the final candidate set with diversity constraints.
+
+    Ensures **category-level** diversity (attraction / restaurant / hotel)
+    and **subcategory-level** diversity within attractions (history, museums,
+    nightlife, parks, etc.), so the planner isn't starved of variety.
+
+    Subcategory diversity uses a **round-robin** strategy: one place from
+    each subcategory in turn, repeating until the category cap is reached.
+    This guarantees that even with tight caps (e.g. 4 attractions for a
+    1-day trip), multiple subcategories are represented.
+    """
     category_caps = {
         "attraction": min(duration_days * 4, 18),
         "restaurant": min(duration_days * 3, 12),
@@ -147,12 +157,53 @@ def _diversity_optimize(
     for place, score in scored_places:
         cat = place.get("category", "other")
         by_category.setdefault(cat, []).append((place, score))
+
     for cat in by_category:
         by_category[cat].sort(key=lambda x: x[1], reverse=True)
-    selected = []
+
+    selected: list[tuple[dict, float]] = []
+
     for cat, items in by_category.items():
         cap = category_caps.get(cat, category_caps["_default"])
-        selected.extend(items[:cap])
+
+        if cat == "attraction":
+            # ── Subcategory round-robin ────────────────────────────
+            # Group attractions by subcategory, then pick one from each
+            # in rotation so that museums, history, nightlife, parks,
+            # etc. all get at least one slot before any subcategory
+            # gets a second.
+            by_subcat: dict[str, list[tuple[dict, float]]] = {}
+            for place, score in items:
+                sub = (place.get("sub_category") or "").lower() or "other"
+                by_subcat.setdefault(sub, []).append((place, score))
+
+            subcat_names = sorted(by_subcat.keys())
+            subcat_idx = {sub: 0 for sub in subcat_names}
+            cat_selected: list[tuple[dict, float]] = []
+            seen_ids: set[str] = set()
+
+            while len(cat_selected) < cap:
+                added = False
+                for sub in subcat_names:
+                    if len(cat_selected) >= cap:
+                        break
+                    idx = subcat_idx[sub]
+                    if idx < len(by_subcat[sub]):
+                        place, score = by_subcat[sub][idx]
+                        pid = place.get("id", "")
+                        if pid not in seen_ids:
+                            cat_selected.append((place, score))
+                            seen_ids.add(pid)
+                        subcat_idx[sub] = idx + 1
+                        added = True
+                if not added:
+                    break  # exhausted all subcategories
+
+            selected.extend(cat_selected)
+        else:
+            selected.extend(items[:cap])
+
+    # Final sort: highest-scored places first (preserves diversity)
     selected.sort(key=lambda x: x[1], reverse=True)
     return [p for p, _ in selected[:MAX_TOTAL_CANDIDATES]]
 
