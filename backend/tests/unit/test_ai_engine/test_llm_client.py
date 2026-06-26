@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 from langchain_core.messages import HumanMessage
-from app.external.llm_client import get_planning_llm, get_fast_llm, get_reasoning_llm, analyze_image
+from app.external.llm_client import get_planning_llm, get_fast_llm, get_reasoning_llm
 
 
 def test_gemini_text():
@@ -68,9 +68,17 @@ def test_gemini_fast():
     assert response.content and len(response.content) > 0
 
 
-def test_gemini_vision():
-    """Test with a real image file — place any .jpg in the tests/ folder."""
-    import os
+async def test_gemini_vision():
+    """
+    Test vision via ``invoke_with_fallback``.
+
+    Replaces the old ``analyze_image`` call which was synchronous and
+    lacked key rotation / rate-limit backoff.  The canonical vision API
+    is now ``ai_engine.vision.image_analyzer.analyze_travel_image``.
+    """
+    from ai_engine.llm.invoke import invoke_with_fallback
+    from ai_engine.prompts.vision_prompt import VISION_EXTRACTION_PROMPT
+
     test_image = Path(__file__).parent / "sample.jpg"
     if not test_image.exists():
         print("[SKIP] No sample.jpg found in tests/ - skipping vision test.")
@@ -79,36 +87,27 @@ def test_gemini_vision():
     with open(test_image, "rb") as f:
         image_bytes = f.read()
 
-    result = analyze_image(image_bytes, 
-                           """
-                            You are an image analysis engine for a travel planning app.
+    import base64
+    b64 = base64.b64encode(image_bytes).decode("utf-8")
 
-                            Return your response as VALID JSON only. No explanation, no extra text.
+    message = HumanMessage(content=[
+        {
+            "type": "image_url",
+            "image_url": {"url": f"data:image/jpeg;base64,{b64}"},
+        },
+        {
+            "type": "text",
+            "text": VISION_EXTRACTION_PROMPT,
+        },
+    ])
 
-                            Schema:
-                            {
-                            "destination_type": string,         // one word (e.g. beach, city, desert, mountain, historical)
-                            "atmosphere": [string],             // 2-4 tags
-                            "best_for": [string],               // 2-4 traveler types
-                            "activities": [string],             // 2-5 activities
-                            "best_season": string,              // one of: summer, winter, spring, autumn, all_year
-                            "budget": string,                   // one of: budget, mid_range, luxury
-                            "trip_tags": [string]               // exactly 5 hashtags, lowercase, no spaces
-                            }
+    response = await invoke_with_fallback("vision", [message])
+    print(f"[OK] Vision response: {response.content[:200]}...")
+    assert response.content and len(response.content) > 0
 
-                            Rules:
-                            - Output MUST be valid JSON.
-                            - Do not include markdown or code blocks.
-                            - Use lowercase for all values.
-                            - Keep answers concise.
-                            - If unsure, make a reasonable guess.
-
-                            Output:
-    """)
-    print(f"[OK] Vision response: {result}")
-    assert result and len(result) > 0
 
 if __name__ == "__main__":
+    import asyncio
     test_gemini_text()
     test_gemini_fast()
-    test_gemini_vision()
+    asyncio.run(test_gemini_vision())

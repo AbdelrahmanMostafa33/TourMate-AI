@@ -27,3 +27,7 @@ Rules:
    set inferred_interests to [], and set confidence to "low".
 5. Never include extra keys. Never add explanations outside the JSON object.
 """
+
+# ── System prompt for the image-analysis pipeline ───────────────────────────
+# Used by the ``vision`` agent role (Gemini 2.5 Flash, native multimodal).
+# Powered by invoke_with_fallback in ai_engine.llm.invoke.

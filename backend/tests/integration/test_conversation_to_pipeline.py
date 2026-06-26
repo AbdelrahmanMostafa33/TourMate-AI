@@ -376,8 +376,9 @@ class TestItineraryReviewPhase:
     @patch("ai_engine.conversation.orchestrator.interpret_message")
     @patch("ai_engine.conversation.orchestrator.trip_graph", new_callable=AsyncMock)
     @patch("ai_engine.conversation.orchestrator.load_mock_profile")
+    @patch("ai_engine.conversation.orchestrator.classify_edit")
     async def test_modification_re_runs_pipeline(
-        self, mock_profile, mock_graph, mock_route, mock_get_manager
+        self, mock_classify, mock_profile, mock_graph, mock_route, mock_get_manager
     ):
         """User requests change → pipeline re-runs."""
         manager, _ = _create_session_manager()
@@ -385,7 +386,9 @@ class TestItineraryReviewPhase:
         mock_profile.return_value = {"user_id": "user1"}
         mock_graph.ainvoke.return_value = {
             "optimized_itinerary": {
-                "days": [{"day_number": 1, "stops": []}],
+                "destination": "Cairo",
+                "duration_days": 2,
+                "days": [{"day_number": 1, "theme": "Explore", "stops": []}],
                 "accommodation_suggestions": [],
             },
             "is_valid": True,
@@ -408,7 +411,13 @@ class TestItineraryReviewPhase:
         )
         await handle_chat("user1", "Plan me a 2-day trip to Cairo")
 
-        # Request modification
+        # Request modification — patch classify_edit so it triggers full regeneration
+        # rather than going through the modifier agent (which needs pool data the
+        # test doesn't provide).
+        mock_classify.return_value = {
+            "edit_type": "REGENERATE",
+            "reasoning": "test-forces full regeneration",
+        }
         mock_route.return_value = _make_result(
             "modify_itinerary",
             response="Updating your itinerary!",
@@ -503,6 +512,8 @@ class TestImageProcessingIntegration:
         self, mock_analyze, mock_route, mock_get_manager
     ):
         """Image features from analyze_travel_image are included in response."""
+        from ai_engine.schemas.vision_schema import VisionFeatures
+
         manager, _ = _create_session_manager()
         mock_get_manager.return_value = manager
         mock_route.return_value = _make_result(
@@ -510,14 +521,15 @@ class TestImageProcessingIntegration:
             response="Nice beach photo!",
         )
 
-        mock_analyze.return_value = {
-            "vibe": "sunny beach",
-            "confidence": "high",
-            "inferred_interests": ["beach", "relaxation"],
-        }
+        mock_analyze.return_value = VisionFeatures(
+            vibe="sunny beach",
+            confidence="high",
+            inferred_interests=["beach", "relaxation"],
+        )
 
         from ai_engine.conversation.orchestrator import handle_chat
         result = await handle_chat("user1", "", image_bytes=b"fake_image_bytes")
 
         assert result["image_features"] is not None
-        assert result["image_features"]["vibe"] == "sunny beach"
+        # image_features is a VisionFeatures model — access by attribute
+        assert result["image_features"].vibe == "sunny beach"

@@ -1,66 +1,86 @@
 # backend/ai_engine/vision/image_analyzer.py
+"""Multimodal image analysis — extracts travel preferences from user-uploaded images.
+
+Uses ``invoke_with_fallback`` (``ai_engine.llm.invoke``) with the ``vision``
+agent role, which resolves to **Gemini 2.5 Flash** via the shared LLM registry.
+
+This module implements FR #08 — multimodal input support.
+"""
+
+from __future__ import annotations
+
 import json
+import logging
 
-from app.external.llm_client import analyze_image
+import base64
+from langchain_core.messages import HumanMessage
+
+from ai_engine.llm.invoke import invoke_with_fallback
 from ai_engine.prompts.vision_prompt import VISION_EXTRACTION_PROMPT
-from ai_engine.vision.feature_extractor import extract_and_validate
+from ai_engine.schemas.vision_schema import VisionFeatures
 from ai_engine.tools.json_utils import extract_json_from_llm_output
+from ai_engine.vision.feature_extractor import extract_and_validate
+
+logger = logging.getLogger(__name__)
 
 
+async def analyze_travel_image(image_bytes: bytes) -> VisionFeatures:
+    """Analyse a travel-related image and extract structured preferences.
 
-def analyze_travel_image(image_bytes: bytes) -> dict:
-    """
-    Sends an image to Llama 4 Scout (Groq Vision) and extracts
-    structured travel preference features.
+    Sends the image to Gemini 2.5 Flash via ``invoke_with_fallback`` (which
+    handles key rotation, rate-limit backoff, and transient-error retry) and
+    returns a validated ``VisionFeatures`` instance.
 
-    This implements FR #08 — multimodal input support.
-    Users can upload a travel-style image (e.g., a beach photo,
-    a busy market) and the system infers their preferences from it
-    without requiring any explicit text input.
-
-    The extracted features are later merged into the user's behavioral
-    profile via multimodal_fusion.py before the itinerary pipeline runs.
+    The caller (orchestrator) merges the result into the user's trip profile
+    via ``multimodal_fusion.fuse_image_with_profile()`` before the itinerary
+    pipeline runs.
 
     Args:
-        image_bytes: Raw image bytes (JPEG or PNG). Comes from Firebase
-                     Storage download or direct upload in the request.
+        image_bytes: Raw image bytes (JPEG or PNG) from the upload request.
 
     Returns:
-        A validated feature dict:
-            {
-                "environment_type": "urban" | "nature" | ... | None,
-                "activity_style":   "relaxing" | "adventurous" | ... | None,
-                "vibe":             str | None,
-                "inferred_interests": list[str],
-                "confidence":       "high" | "medium" | "low"
-            }
-        On any failure, returns the safe fallback (all None/empty, confidence "low").
+        A validated ``VisionFeatures`` model.  On any failure, returns the
+        zero-signal fallback (``confidence="low"``) so the chat flow never
+        crashes because of a bad image.
     """
     try:
-        # Call Gemini via the llm_client helper.
-        # analyze_image() handles base64 encoding internally.
-        raw_response: str = analyze_image(image_bytes, VISION_EXTRACTION_PROMPT)
+        raw_response: str = await _call_vision_llm(image_bytes)
 
         # Extract JSON from LLM output (handles preamble, markdown fences,
-        # trailing commentary — unlike str.strip() which strips characters)
+        # trailing commentary).
         cleaned = extract_json_from_llm_output(raw_response)
-
         parsed = json.loads(cleaned)
         return extract_and_validate(parsed)
 
-    except (json.JSONDecodeError, ValueError, AttributeError, Exception):
-        # Never crash the chat flow because of a bad image.
-        # Return a low-confidence empty result — the pipeline continues
-        # without image features.
-        return _safe_fallback()
+    except (json.JSONDecodeError, ValueError, AttributeError, Exception) as exc:
+        logger.warning(
+            "[Vision] Image analysis failed (falling back to low-confidence): %s",
+            exc,
+        )
+        return VisionFeatures.fallback()
 
 
-def _safe_fallback() -> dict:
-    """Returns a zero-signal feature dict used when extraction fails."""
-    return {
-        "environment_type":   None,
-        "activity_style":     None,
-        "vibe":               None,
-        "inferred_interests": [],
-        "confidence":         "low",
-    }
+async def _call_vision_llm(image_bytes: bytes) -> str:
+    """Build a multimodal message and invoke the vision LLM.
+
+    Uses ``invoke_with_fallback`` so the call is automatically retried across
+    available API keys with exponential backoff on transients.
+    """
+    b64 = base64.b64encode(image_bytes).decode("utf-8")
+
+    message = HumanMessage(content=[
+        {
+            "type": "image_url",
+            "image_url": {"url": f"data:image/jpeg;base64,{b64}"},
+        },
+        {
+            "type": "text",
+            "text": VISION_EXTRACTION_PROMPT,
+        },
+    ])
+
+    response = await invoke_with_fallback(
+        agent_role="vision",
+        messages=[message],
+    )
+    return response.content

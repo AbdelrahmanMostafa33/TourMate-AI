@@ -74,6 +74,9 @@ from ai_engine.vision.image_analyzer import analyze_travel_image
 # Fusion logic: merges image signals into user travel profile
 from ai_engine.vision.multimodal_fusion import fuse_image_with_profile
 
+# Typed vision features model
+from ai_engine.schemas.vision_schema import VisionFeatures
+
 # Profile loaders (real backend vs fallback mock profile)
 from ai_engine.tools.profile_tool import load_trip_profile, load_mock_profile
 
@@ -116,7 +119,7 @@ async def _process_message(
     user_id: str,
     state: ConversationState,
     effective_message: str,
-    image_features: Optional[dict],
+    image_features: Optional[VisionFeatures],
     token: Optional[str],
 ) -> dict:
     """Core routing logic shared by handle_chat and handle_chat_stream."""
@@ -136,7 +139,7 @@ async def _process_message_inner(
     user_id: str,
     state: ConversationState,
     effective_message: str,
-    image_features: Optional[dict],
+    image_features: Optional[VisionFeatures],
     token: Optional[str],
 ) -> dict:
     """Inner routing logic — wrapped by _process_message for error safety."""
@@ -177,8 +180,8 @@ async def _process_message_inner(
 
     # ── STEP 2: Fuse image features into slots if available ───────────────
     image_acknowledgment = None
-    if image_features and image_features.get("confidence") != "low":
-        inferred_interests = image_features.get("inferred_interests", [])
+    if image_features and image_features.confidence != "low":
+        inferred_interests = image_features.inferred_interests
         if inferred_interests:
             existing_interests = state.slots.interests or []
             existing_lower = {i.lower() for i in existing_interests}
@@ -332,9 +335,9 @@ def _prepare_message(user_message: Optional[str]) -> str:
     return effective_message
 
 
-def _parse_image(image_bytes: Optional[bytes]) -> Optional[dict]:
+async def _parse_image(image_bytes: Optional[bytes]) -> Optional[VisionFeatures]:
     if image_bytes:
-        return analyze_travel_image(image_bytes)
+        return await analyze_travel_image(image_bytes)
     return None
 
 
@@ -364,7 +367,7 @@ async def handle_chat(
         manager = await get_session_manager()
         state = await manager.resume_or_create(user_id, session_id)
         effective_message = _prepare_message(user_message)
-        image_features = _parse_image(image_bytes)
+        image_features = await _parse_image(image_bytes)
         response = await _process_message(user_id, state, effective_message, image_features, token)
         await manager.save(state)
         await manager.extend_ttl(state.session_id)
@@ -390,7 +393,7 @@ async def handle_chat_stream(user_id, user_message, image_bytes=None, token=None
         yield {"type": "session", "data": {"session_id": state.session_id, "phase": state.phase.value}}
 
         effective_message = _prepare_message(user_message)
-        image_features = _parse_image(image_bytes)
+        image_features = await _parse_image(image_bytes)
 
         from ai_engine.graph.progress import get_progress_queue, remove_progress_queue
 
@@ -563,7 +566,7 @@ async def _post_edit_optimize(
 def _itinerary_response(
     state: ConversationState,
     modified: dict,
-    image_features: Optional[dict],
+    image_features: Optional[VisionFeatures],
     agent_messages: list[str] | None = None,
     validation: dict | None = None,
 ) -> dict:
@@ -590,7 +593,7 @@ def _itinerary_response(
 def _modifier_blocked_response(
     state: ConversationState,
     modifier_note: str,
-    image_features: Optional[dict],
+    image_features: Optional[VisionFeatures],
     agent_messages: list[str] | None = None,
 ) -> dict:
     """Return the unchanged itinerary with an explicit failure note (no full regen)."""
@@ -616,7 +619,7 @@ async def _apply_modifier_edit(
     preferences: dict,
     classification: dict,
     original_itinerary: dict,
-    image_features: Optional[dict],
+    image_features: Optional[VisionFeatures],
     agent_messages: list[str],
 ) -> dict | None:
     """Run modifier agent; return response dict if handled, else None."""
@@ -966,7 +969,7 @@ async def _handle_modify_itinerary(
     state: ConversationState,
     effective_message: str,
     router_result,
-    image_features: Optional[dict],
+    image_features: Optional[VisionFeatures],
     token: Optional[str],
 ) -> dict:
     # ── Early check: accommodation type change (e.g. "resorts instead of hotels") ──
@@ -1152,7 +1155,7 @@ async def _fallback_full_regeneration(
     state: ConversationState,
     effective_message: str,
     router_result,
-    image_features: Optional[dict],
+    image_features: Optional[VisionFeatures],
     token: Optional[str],
     modifier_applied: bool,
     accommodations_updated: bool,
@@ -1192,7 +1195,7 @@ async def _rerank_and_replan(
     state: ConversationState,
     adjustments: dict,
     effective_message: str,
-    image_features: Optional[dict] = None,
+    image_features: Optional[VisionFeatures] = None,
     token: Optional[str] = None,
 ) -> dict | None:
     try:
@@ -1284,7 +1287,7 @@ async def _handle_plan_trip(user_id, user_message, extracted, image_features, to
         else:
             profile = load_mock_profile(trip_id=trip_id)
 
-        if image_features and image_features.get("confidence") != "low":
+        if image_features and image_features.confidence != "low":
             profile = fuse_image_with_profile(profile, image_features)
 
         s = state.slots if state else None

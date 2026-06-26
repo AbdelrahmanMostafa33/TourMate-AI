@@ -1,22 +1,9 @@
 # backend/ai_engine/constants.py
 
 # ══════════════════════════════════════════════════════════════════════════════
-# Gemini Models — used ONLY for planning (reasoning) and vision (multimodal)
-# Free tier: 20 RPD per model — conserve carefully!
+# Model configuration is now in ``ai_engine/llm/config.py`` (AGENT_LLM_REGISTRY).
+# New code should use ``get_llm_for_agent(role)`` instead of hard-coding models.
 # ══════════════════════════════════════════════════════════════════════════════
-GEMINI_PLANNING_MODEL = "gemini-2.5-flash"      # Itinerary generation
-GEMINI_VISION_MODEL   = "gemini-2.5-flash"      # Image understanding
-GEMINI_TEMPERATURE    = 0.7
-GEMINI_MAX_TOKENS     = 8192
-
-# ══════════════════════════════════════════════════════════════════════════════
-# Groq Models — used for classification, extraction, validation, general chat
-# Free tier: 14.4K RPD (llama-3.1-8b), 1K RPD (llama-3.3-70b) — huge headroom
-# ══════════════════════════════════════════════════════════════════════════════
-GROQ_FAST_MODEL      = "llama-3.1-8b-instant"    # Intent parse, preference, validation
-GROQ_REASONING_MODEL = "llama-3.3-70b-versatile"  # General chat, itinerary review Q&A
-GROQ_TEMPERATURE     = 0.2
-GROQ_MAX_TOKENS      = 2048
 
 # === Conversation Agent ===
 # Timeout for PLAN_GENERATION phase — if exceeded, session resets to SLOT_FILLING

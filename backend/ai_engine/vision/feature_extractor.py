@@ -1,30 +1,34 @@
 # backend/ai_engine/vision/feature_extractor.py
+"""Validation layer for raw VLM (vision-language model) JSON output.
+
+Takes the unvalidated dict from the LLM response and produces a clean
+``VisionFeatures`` instance with guaranteed field types and safe defaults.
+"""
+
+from __future__ import annotations
 
 from typing import Optional
+
+from ai_engine.schemas.vision_schema import VisionFeatures
 
 VALID_ENVIRONMENTS = {"urban", "nature", "beach", "desert", "mountain", "mixed"}
 VALID_ACTIVITY_STYLES = {"relaxing", "adventurous", "cultural", "culinary", "mixed"}
 VALID_CONFIDENCE = {"high", "medium", "low"}
 
 
-def extract_and_validate(raw: dict) -> dict:
-    """
-    Cleans and validates the raw dict returned by the VLM.
+def extract_and_validate(raw: dict) -> VisionFeatures:
+    """Validate and normalise the raw VLM response dict into a ``VisionFeatures``.
 
-    Ensures all keys exist, types are correct, and enum values are valid.
-    Any invalid or unexpected value is replaced with a safe default
-    so downstream code never has to do defensive checks.
+    Every key is type-checked and enum-constrained.  Invalid or missing values
+    are replaced with safe defaults so downstream code never needs defensive
+    null checks.
 
     Args:
-        raw: The dict parsed from the VLM JSON response.
+        raw: The dict parsed from the VLM JSON response (may have missing/
+             invalid keys).
 
     Returns:
-        A clean, validated feature dict with guaranteed structure:
-            - environment_type: str | None
-            - activity_style:   str | None
-            - vibe:             str | None
-            - inferred_interests: list[str]  (max 5 items, strings only)
-            - confidence:       "high" | "medium" | "low"
+        A validated ``VisionFeatures`` instance.
     """
     # --- environment_type ---
     env = raw.get("environment_type")
@@ -53,10 +57,10 @@ def extract_and_validate(raw: dict) -> dict:
     conf = raw.get("confidence", "low")
     confidence: str = conf if conf in VALID_CONFIDENCE else "low"
 
-    return {
-        "environment_type": environment_type,
-        "activity_style":   activity_style,
-        "vibe":             vibe,
-        "inferred_interests": inferred_interests,
-        "confidence":       confidence,
-    }
+    return VisionFeatures(
+        environment_type=environment_type,
+        activity_style=activity_style,
+        vibe=vibe,
+        inferred_interests=inferred_interests,
+        confidence=confidence,  # type: ignore[arg-type]
+    )

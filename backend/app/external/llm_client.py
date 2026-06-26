@@ -42,10 +42,24 @@ def analyze_image(image_bytes: bytes, prompt: str) -> str:
     """
     Send an image + text prompt to Gemini 2.5 Flash (native multimodal).
 
+    .. deprecated::
+       Use ``ai_engine.vision.image_analyzer.analyze_travel_image`` instead,
+       which is async, runs through ``invoke_with_fallback`` (key rotation,
+       rate-limit backoff), and returns a typed ``VisionFeatures`` model.
+
     Args:
         image_bytes: raw image bytes (JPEG or PNG)
         prompt: instruction for what to extract from the image
     """
+    import warnings
+    warnings.warn(
+        "analyze_image is deprecated — use "
+        "ai_engine.vision.image_analyzer.analyze_travel_image instead. "
+        "It is async, uses invoke_with_fallback, and returns VisionFeatures.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
+
     b64 = base64.b64encode(image_bytes).decode("utf-8")
 
     message = HumanMessage(content=[
