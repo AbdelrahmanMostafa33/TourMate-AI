@@ -539,11 +539,22 @@ async def _post_edit_optimize(
     original: dict,
     classification: dict | None = None,
 ) -> dict:
-    """Run day-level OSRM optimization after structural delta edits."""
+    """Post-edit optimization: rebalance clustered slots, then run OSRM routing."""
     edit_type = (classification or {}).get("edit_type", "").upper()
     if edit_type in ("RE_THEME", "CHANGE_HOTEL"):
         return modified
 
+    # Step 1: Rebalance slot clustering before route optimization
+    from ai_engine.services.operations import _rebalance_clustered_slots
+    try:
+        rebalanced = _rebalance_clustered_slots(modified)
+        if rebalanced is not modified:
+            logger.info("[ConversationAgent] Rebalanced clustered slots after edit")
+            modified = rebalanced
+    except Exception as exc:
+        logger.warning("[ConversationAgent] Slot rebalancing failed: %s", exc)
+
+    # Step 2: Detect affected days for route optimization
     affected = _detect_affected_days(original, modified)
     target_day = (classification or {}).get("target_day")
     if target_day and target_day not in affected:

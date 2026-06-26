@@ -24,6 +24,7 @@ from ai_engine.services.operations import (
     ModifierResponse,
     _detect_category_hints,
     _find_best_day_for_place,
+    _find_best_day_and_slot_for_place,
     apply_operation,
     build_compact_context,
     place_matches_semantic_hints,
@@ -328,7 +329,13 @@ async def run_itinerary_modifier(
         # If the user asked to add multiple places (e.g. "add X and Y"),
         # apply each remaining pre-selected place as a separate ADD
         # operation on the accumulating modified itinerary.
+        # Uses smart distribution: tracks used slots per day across the batch
+        # to avoid clustering same-category places in the same slot.
         added_names = [pre_selected_places[0].get("name", "")] if pre_selected_places and response.op == "ADD" else []
+        used_slots_per_day: dict[int, set[str]] = {}
+        if response.day_number and response.suggested_time_of_day:
+            used_slots_per_day.setdefault(response.day_number, set()).add(response.suggested_time_of_day)
+
         if pre_selected_places and response.op == "ADD" and len(pre_selected_places) > 1:
             remaining = pre_selected_places[1:]
             logger.info(
@@ -337,12 +344,16 @@ async def run_itinerary_modifier(
                 [p.get("name") for p in remaining],
             )
             for i, place in enumerate(remaining):
-                best_day, _ = _find_best_day_for_place(modified, place)
+                best_day, best_slot = _find_best_day_and_slot_for_place(
+                    modified, place, used_slots_per_day,
+                )
+                # Track this assignment for subsequent additions
+                used_slots_per_day.setdefault(best_day, set()).add(best_slot)
                 sub_op = ModifierResponse(
                     op="ADD",
                     add_place_id=place.get("id"),
-                    day_number=best_day or 1,
-                    suggested_time_of_day="afternoon",
+                    day_number=best_day,
+                    suggested_time_of_day=best_slot,
                     why_recommended=f"Also matched your request for '{place.get('name')}'",
                     note="",
                 )
@@ -353,13 +364,15 @@ async def run_itinerary_modifier(
                 )
                 added_names.append(place.get("name", ""))
                 logger.info(
-                    "[ModifierAgent] Applied sequential ADD %d/%d: %s",
-                    i + 1, len(remaining), place.get("name"),
+                    "[ModifierAgent] Applied sequential ADD %d/%d: %s → Day %d (%s)",
+                    i + 1, len(remaining), place.get("name"), best_day, best_slot,
                 )
 
         # ── Apply additional_adds from LLM response ─────────────────
         # The LLM can specify extra ADD operations in additional_adds
         # (used when the user wants multiple places of the same type).
+        # We override the LLM's suggested slot/day if it would cause clustering
+        # with already-placed stops in this batch.
         extra_names: list[str] = []
         if response.op == "ADD" and response.additional_adds:
             logger.info(
@@ -367,11 +380,27 @@ async def run_itinerary_modifier(
                 len(response.additional_adds),
             )
             for i, add_op in enumerate(response.additional_adds):
+                # Look up the place in the pool for category-aware slot selection
+                source_place = next(
+                    (p for p in (available_places or [])
+                     if p.get("id") == add_op.add_place_id),
+                    None,
+                )
+                if source_place:
+                    # Override LLM's slot if it would cause clustering
+                    best_day, best_slot = _find_best_day_and_slot_for_place(
+                        modified, source_place, used_slots_per_day,
+                    )
+                else:
+                    best_day = add_op.day_number
+                    best_slot = add_op.suggested_time_of_day
+
+                used_slots_per_day.setdefault(best_day, set()).add(best_slot)
                 sub_op = ModifierResponse(
                     op="ADD",
                     add_place_id=add_op.add_place_id,
-                    day_number=add_op.day_number,
-                    suggested_time_of_day=add_op.suggested_time_of_day,
+                    day_number=best_day,
+                    suggested_time_of_day=best_slot,
                     why_recommended=add_op.why_recommended or f"Additional place matching your request",
                     note="",
                 )
@@ -388,8 +417,8 @@ async def run_itinerary_modifier(
                 )
                 extra_names.append(pool_name)
                 logger.info(
-                    "[ModifierAgent] Applied additional ADD %d/%d: %s",
-                    i + 1, len(response.additional_adds), pool_name,
+                    "[ModifierAgent] Applied additional ADD %d/%d: %s → Day %d (%s)",
+                    i + 1, len(response.additional_adds), pool_name, best_day, best_slot,
                 )
             added_names.extend(extra_names)
 

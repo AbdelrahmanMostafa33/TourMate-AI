@@ -281,6 +281,7 @@ def _find_stop_location(
 
 
 _TIME_RANK = {"morning": 0, "afternoon": 1, "evening": 2}
+_AVAILABLE_SLOTS = ["morning", "afternoon", "evening"]
 
 
 def _time_rank(slot: str) -> int:
@@ -1422,6 +1423,157 @@ def _find_best_day_for_place(
             best_day = day_num
 
     return best_day, best_score
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Slot & Day Distribution — avoids clustering similar places
+# ═══════════════════════════════════════════════════════════════════════════════
+
+
+def _count_same_category_in_slot(
+    day: dict,
+    new_place: dict,
+    time_slot: str,
+) -> int:
+    """Count how many stops in the same time slot share category+subcategory."""
+    new_cat = (new_place.get("category") or "").lower()
+    new_sub = (new_place.get("sub_category") or "").lower()
+    count = 0
+    for stop in day.get("stops", []):
+        if stop.get("suggested_time_of_day") != time_slot:
+            continue
+        stop_cat = (stop.get("category") or "").lower()
+        stop_sub = (stop.get("sub_category") or "").lower()
+        if stop_cat == new_cat and stop_sub == new_sub:
+            count += 1
+    return count
+
+
+def _find_best_day_and_slot_for_place(
+    itinerary: dict,
+    new_place: dict,
+    used_slots_per_day: dict[int, set[str]] | None = None,
+) -> tuple[int, str]:
+    """Find the best (day_number, time_slot) combination for inserting a new place.
+
+    Combines day-level scoring from ``_score_day_for_place`` with slot-level
+    clustering avoidance.  ``used_slots_per_day`` tracks slots already consumed
+    in the current batch of additions so multiple places get spread out.
+    """
+    days = itinerary.get("days", [])
+    if not days:
+        return (1, "afternoon")
+
+    used_slots_per_day = used_slots_per_day or {}
+
+    best_day_num = 1
+    best_slot = "afternoon"
+    best_score = float("-inf")
+
+    for day in days:
+        day_num = day.get("day_number", 1)
+
+        # Use the day-level scoring from _score_day_for_place
+        day_score = _score_day_for_place(day, new_place)
+
+        # For each slot in this day, compute the combined score
+        for slot in _AVAILABLE_SLOTS:
+            combined = day_score * 2.0  # Base: day-level fit
+
+            # Penalize if this slot was already used in this batch for this day
+            day_used = used_slots_per_day.get(day_num, set())
+            if slot in day_used:
+                combined -= 3.0
+
+            # Penalize same-category clustering in this slot
+            same_cat = _count_same_category_in_slot(day, new_place, slot)
+            combined -= same_cat * 4.0
+
+            if combined > best_score:
+                best_score = combined
+                best_day_num = day_num
+                best_slot = slot
+
+    return (best_day_num, best_slot)
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Post-edit Rebalancing — fixes clustering after all operations are applied
+# ═══════════════════════════════════════════════════════════════════════════════
+
+
+def _rebalance_clustered_slots(itinerary: dict) -> dict:
+    """Post-edit pass: detect and fix slot clustering of same-category stops.
+
+    Scans each day for time slots containing 2+ stops with the same
+    (category, sub_category) pair, then moves the excess stop(s) to a
+    different available slot within the same day.  Re-sorts stops after
+    adjustments.
+
+    Returns the original *itinerary* unchanged if no adjustments were needed.
+    """
+    modified = copy.deepcopy(itinerary)
+    adjusted = False
+
+    for day in modified.get("days", []):
+        stops = day.get("stops", [])
+        if len(stops) < 2:
+            continue
+
+        # Build groups: (category, sub_category, time_slot) → list of stop indices
+        groups: dict[tuple[str, str, str], list[int]] = {}
+        for i, stop in enumerate(stops):
+            key = (
+                (stop.get("category") or "").lower(),
+                (stop.get("sub_category") or "").lower(),
+                stop.get("suggested_time_of_day", "afternoon"),
+            )
+            groups.setdefault(key, []).append(i)
+
+        # Find groups with 2+ same-category stops crammed into the same slot
+        for (cat, sub, slot), indices in groups.items():
+            if len(indices) < 2:
+                continue
+
+            # Move the excess stops to different slots
+            for idx in indices[1:]:
+                stop = stops[idx]
+                available_slots = [s for s in _AVAILABLE_SLOTS if s != slot]
+                moved = False
+                for alt_slot in available_slots:
+                    # Check if the alternative slot already has the same category
+                    conflict = False
+                    for s in stops:
+                        if s is stop:
+                            continue
+                        if (
+                            (s.get("category") or "").lower() == cat
+                            and (s.get("sub_category") or "").lower() == sub
+                            and s.get("suggested_time_of_day") == alt_slot
+                        ):
+                            conflict = True
+                            break
+                    if not conflict:
+                        stop["suggested_time_of_day"] = alt_slot
+                        adjusted = True
+                        moved = True
+                        logger.info(
+                            "[Rebalance] Moved '%s' from %s to %s on day %d",
+                            stop.get("name", "?"), slot, alt_slot,
+                            day.get("day_number"),
+                        )
+                        break
+                if not moved:
+                    logger.debug(
+                        "[Rebalance] Could not move '%s' — all other slots also have '%s' stops",
+                        stop.get("name", "?"), sub or cat,
+                    )
+
+        if adjusted:
+            day["stops"] = _sort_stops_by_time_slot(stops)
+            _fix_travel_times(day["stops"])
+
+    return modified if adjusted else itinerary
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
