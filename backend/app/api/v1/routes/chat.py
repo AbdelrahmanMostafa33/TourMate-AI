@@ -19,6 +19,7 @@ from app.models.itinerary import Itinerary, Day, ItineraryStop
 from app.models.chat import Conversation, Message
 from app.models.profile import TripProfile
 from app.services.chat_service import ChatService
+from app.services.image_service import ImageService
 from app.ws.manager import manager
 
 router = APIRouter()
@@ -259,6 +260,7 @@ async def process_message_stream(
     approve_action = None
     profile_from_ai = None
     pool_state_from_ai = None
+    image_features_from_result = None
 
     initial_pool_state = await svc.load_pool_for_trip(trip.trip_id)
 
@@ -315,6 +317,9 @@ async def process_message_stream(
                         profile_from_ai = result["profile"]
                     if result.get("pool_state"):
                         pool_state_from_ai = result["pool_state"]
+
+                # Capture image_features for DB persistence later
+                image_features_from_result = result.get("image_features")
 
             elif event_type == "done":
                 await manager.send(ws_key, {"type": "done", "data": None})
@@ -481,6 +486,19 @@ async def process_message_stream(
         except Exception as sync_err:
             logger.warning("[ChatRoutes] Redis sync failed (non-fatal): %s", sync_err)
 
+    # ── Persist image features to DB (non-critical) ──────────────────────
+    if image_features_from_result and image_features_from_result.has_signal:
+        try:
+            img_svc = ImageService(db)
+            await img_svc.create_image_with_features(
+                trip_id=trip.trip_id,
+                vision_features=image_features_from_result,
+            )
+            await db.commit()
+        except Exception as img_err:
+            logger.warning("[ChatRoutes] Failed to persist image features (non-fatal): %s", img_err)
+            await db.rollback()
+
     await db.commit()
 
     # ── Notify Flutter that trip was approved (after commit) ──────────────
@@ -574,6 +592,7 @@ async def websocket_new_chat(
             actions       = []
             profile_data_from_ai = None
             pool_state_from_ai = None
+            image_features_from_result = None
 
             try:
                 from ai_engine.conversation.orchestrator import handle_chat_stream
@@ -615,6 +634,9 @@ async def websocket_new_chat(
                         if result.get("pool_state"):
                             pool_state_from_ai = result["pool_state"]
 
+                        # Capture image_features for DB persistence later
+                        image_features_from_result = result.get("image_features")
+
                     elif event_type == "done":
                         await manager.send(ws_key, {"type": "done"})
 
@@ -649,6 +671,20 @@ async def websocket_new_chat(
                                 content=msg["content"],
                             )
                         pending_messages = []
+
+                        # ── Persist image features if available ──────────────
+                        if image_features_from_result and image_features_from_result.has_signal:
+                            try:
+                                img_svc = ImageService(db)
+                                await img_svc.create_image_with_features(
+                                    trip_id=trip.trip_id,
+                                    vision_features=image_features_from_result,
+                                )
+                            except Exception as img_err:
+                                logger.warning(
+                                    "[ChatRoutes] Failed to persist image features (non-fatal): %s",
+                                    img_err,
+                                )
 
                         await db.commit()
 

@@ -2,12 +2,11 @@
 import uuid
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
 
 from app.core.database import get_db
 from app.core.security import get_current_user
-from app.models.image import Image
 from app.schemas.image import ImageResponse
+from app.services.image_service import ImageService
 
 router = APIRouter()
 
@@ -18,10 +17,23 @@ async def get_images_for_trip(
     current_user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    result = await db.execute(
-        select(Image).where(Image.trip_id == trip_id)
-    )
-    return result.scalars().all()
+    """Return all images for a trip, each with extracted features eagerly loaded."""
+    svc = ImageService(db)
+    return await svc.get_images_for_trip(trip_id)
+
+
+@router.get("/{image_id}", response_model=ImageResponse)
+async def get_image_with_features(
+    image_id: str,
+    current_user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Return a single image with its extracted features eagerly loaded."""
+    svc = ImageService(db)
+    image = await svc.get_image_with_features(image_id)
+    if not image:
+        raise HTTPException(status_code=404, detail="Image not found")
+    return image
 
 
 @router.delete("/{image_id}")
@@ -30,12 +42,9 @@ async def delete_image(
     current_user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    result = await db.execute(
-        select(Image).where(Image.image_id == image_id)
-    )
-    image = result.scalar_one_or_none()
-    if not image:
+    svc = ImageService(db)
+    deleted = await svc.delete_image(image_id)
+    if not deleted:
         raise HTTPException(status_code=404, detail="Image not found")
-    await db.delete(image)
     await db.commit()
     return {"message": "Image deleted"}

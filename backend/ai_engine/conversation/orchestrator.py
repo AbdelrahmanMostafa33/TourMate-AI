@@ -181,20 +181,20 @@ async def _process_message_inner(
     # ── STEP 2: Fuse image features into slots if available ───────────────
     image_acknowledgment = None
     if image_features and image_features.confidence != "low":
-        inferred_interests = image_features.inferred_interests
-        if inferred_interests:
+        img_interests = image_features.interests
+        if img_interests:
             existing_interests = state.slots.interests or []
             existing_lower = {i.lower() for i in existing_interests}
-            for interest in inferred_interests:
+            for interest in img_interests:
                 if interest.lower() not in existing_lower:
                     existing_interests.append(interest)
                     existing_lower.add(interest.lower())
             state.slots.interests = existing_interests
             logger.info(
                 "[ConversationAgent] Fused image interests into slots: %s",
-                inferred_interests,
+                img_interests,
             )
-            image_acknowledgment = f"I noticed your interest in {', '.join(inferred_interests[:3])} from your photo!"
+            image_acknowledgment = f"I noticed your interest in {', '.join(img_interests[:3])} from your photo!"
 
     action = router_result.action
 
@@ -452,6 +452,8 @@ async def handle_chat_stream(user_id, user_message, image_bytes=None, token=None
             result_data["validation"] = response["validation"]
         if response.get("pool_state"):
             result_data["pool_state"] = response["pool_state"]
+        if response.get("image_features"):
+            result_data["image_features"] = response["image_features"]
         yield {"type": "result", "data": result_data}
 
     yield {"type": "done", "data": None}

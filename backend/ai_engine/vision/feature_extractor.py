@@ -12,7 +12,9 @@ from typing import Optional
 from ai_engine.schemas.vision_schema import VisionFeatures
 
 VALID_ENVIRONMENTS = {"urban", "nature", "beach", "desert", "mountain", "mixed"}
-VALID_ACTIVITY_STYLES = {"relaxing", "adventurous", "cultural", "culinary", "mixed"}
+VALID_TRAVEL_STYLES = {"romantic", "adventure", "family", "business", "solo", "cultural", "relaxation"}
+VALID_PACES = {"relaxed", "moderate", "packed"}
+VALID_BUDGET = {"budget", "moderate", "luxury"}
 VALID_CONFIDENCE = {"high", "medium", "low"}
 
 
@@ -30,37 +32,57 @@ def extract_and_validate(raw: dict) -> VisionFeatures:
     Returns:
         A validated ``VisionFeatures`` instance.
     """
-    # --- environment_type ---
-    env = raw.get("environment_type")
-    environment_type: Optional[str] = env if env in VALID_ENVIRONMENTS else None
-
-    # --- activity_style ---
-    style = raw.get("activity_style")
-    activity_style: Optional[str] = style if style in VALID_ACTIVITY_STYLES else None
-
-    # --- vibe ---
-    vibe_raw = raw.get("vibe")
-    vibe: Optional[str] = str(vibe_raw).strip() if isinstance(vibe_raw, str) else None
-
-    # --- inferred_interests ---
-    raw_interests = raw.get("inferred_interests", [])
+    # --- interests (replaces old inferred_interests) ---
+    raw_interests = raw.get("interests", [])
     if not isinstance(raw_interests, list):
         raw_interests = []
-    # Keep only string items, strip whitespace, cap at 5
-    inferred_interests = [
+    interests = [
         str(i).strip().lower()
         for i in raw_interests
         if isinstance(i, str) and str(i).strip()
     ][:5]
+
+    # --- travel_style ---
+    ts = raw.get("travel_style")
+    travel_style: Optional[str] = ts if ts in VALID_TRAVEL_STYLES else None
+
+    # --- pace ---
+    p = raw.get("pace")
+    pace: Optional[str] = p if p in VALID_PACES else None
+
+    # --- food_preferences ---
+    raw_food = raw.get("food_preferences", [])
+    if not isinstance(raw_food, list):
+        raw_food = []
+    food_preferences = [
+        str(f).strip().lower()
+        for f in raw_food
+        if isinstance(f, str) and str(f).strip()
+    ][:5]
+
+    # --- budget_level ---
+    bl = raw.get("budget_level")
+    budget_level: Optional[str] = bl if bl in VALID_BUDGET else None
+
+    # --- environment_type ---
+    env = raw.get("environment_type")
+    environment_type: Optional[str] = env if env in VALID_ENVIRONMENTS else None
+
+    # --- vibe ---
+    vibe_raw = raw.get("vibe")
+    vibe: Optional[str] = str(vibe_raw).strip() if isinstance(vibe_raw, str) else None
 
     # --- confidence ---
     conf = raw.get("confidence", "low")
     confidence: str = conf if conf in VALID_CONFIDENCE else "low"
 
     return VisionFeatures(
+        interests=interests,
+        travel_style=travel_style,
+        pace=pace,
+        food_preferences=food_preferences,
+        budget_level=budget_level,
         environment_type=environment_type,
-        activity_style=activity_style,
         vibe=vibe,
-        inferred_interests=inferred_interests,
         confidence=confidence,  # type: ignore[arg-type]
     )

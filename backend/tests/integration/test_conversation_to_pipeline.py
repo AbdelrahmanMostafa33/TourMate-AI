@@ -524,7 +524,7 @@ class TestImageProcessingIntegration:
         mock_analyze.return_value = VisionFeatures(
             vibe="sunny beach",
             confidence="high",
-            inferred_interests=["beach", "relaxation"],
+            interests=["beach", "relaxation"],
         )
 
         from ai_engine.conversation.orchestrator import handle_chat

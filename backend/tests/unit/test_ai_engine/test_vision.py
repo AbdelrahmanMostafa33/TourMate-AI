@@ -22,9 +22,12 @@ from ai_engine.tools.profile_tool import load_mock_profile
 
 VALID_VLM_RESPONSE = json.dumps({
     "environment_type": "urban",
-    "activity_style":   "cultural",
+    "travel_style":     "cultural",
+    "pace":             "moderate",
     "vibe":             "busy historic bazaar",
-    "inferred_interests": ["history", "food", "architecture"],
+    "interests": ["history", "food", "architecture"],
+    "food_preferences": ["street food"],
+    "budget_level":     "moderate",
     "confidence": "high",
 })
 
@@ -43,8 +46,8 @@ class TestAnalyzeTravelImage:
         result: VisionFeatures = await analyze_travel_image(b"fake_image_bytes")
 
         assert result.environment_type == "urban"
-        assert result.activity_style == "cultural"
-        assert "history" in result.inferred_interests
+        assert result.travel_style == "cultural"
+        assert "history" in result.interests
         assert result.confidence == "high"
 
     @pytest.mark.asyncio
@@ -61,7 +64,7 @@ class TestAnalyzeTravelImage:
         result = await analyze_travel_image(b"fake_image_bytes")
 
         assert result.confidence == "low"
-        assert result.inferred_interests == []
+        assert result.interests == []
         assert result.environment_type is None
 
     @pytest.mark.asyncio
@@ -71,7 +74,7 @@ class TestAnalyzeTravelImage:
         result = await analyze_travel_image(b"fake_image_bytes")
 
         assert result.confidence == "low"
-        assert result.inferred_interests == []
+        assert result.interests == []
 
     @pytest.mark.asyncio
     @patch("ai_engine.vision.image_analyzer.invoke_with_fallback")
@@ -81,7 +84,7 @@ class TestAnalyzeTravelImage:
 
         assert isinstance(result, VisionFeatures)
         assert result.environment_type is not None
-        assert len(result.inferred_interests) == 3
+        assert len(result.interests) == 3
         assert result.confidence == "high"
 
 
@@ -93,62 +96,85 @@ class TestExtractAndValidate:
     def test_valid_dict_passes_through(self):
         raw = {
             "environment_type": "beach",
-            "activity_style":   "relaxing",
+            "travel_style":     "relaxation",
+            "pace":             "relaxed",
             "vibe":             "sunny coastline",
-            "inferred_interests": ["beaches", "swimming"],
+            "interests": ["beaches", "swimming"],
+            "food_preferences": ["seafood"],
+            "budget_level":     "moderate",
             "confidence": "high",
         }
         result = extract_and_validate(raw)
         assert isinstance(result, VisionFeatures)
         assert result.environment_type == "beach"
+        assert result.travel_style == "relaxation"
+        assert result.pace == "relaxed"
+        assert "beaches" in result.interests
+        assert "seafood" in result.food_preferences
+        assert result.budget_level == "moderate"
         assert result.confidence == "high"
 
     def test_invalid_environment_becomes_none(self):
-        raw = {"environment_type": "INVALID", "activity_style": None,
-               "vibe": None, "inferred_interests": [], "confidence": "low"}
+        raw = {"environment_type": "INVALID", "travel_style": "INVALID",
+               "pace": "INVALID", "budget_level": "INVALID",
+               "vibe": None, "interests": [], "food_preferences": [],
+               "confidence": "low"}
         result = extract_and_validate(raw)
         assert result.environment_type is None
+        assert result.travel_style is None
+        assert result.pace is None
+        assert result.budget_level is None
 
     def test_interests_capped_at_five(self):
         raw = {
-            "environment_type": None, "activity_style": None, "vibe": None,
-            "inferred_interests": ["a", "b", "c", "d", "e", "f", "g"],
+            "environment_type": None, "travel_style": None,
+            "pace": None, "budget_level": None,
+            "vibe": None,
+            "interests": ["a", "b", "c", "d", "e", "f", "g"],
+            "food_preferences": [],
             "confidence": "medium",
         }
         result = extract_and_validate(raw)
-        assert len(result.inferred_interests) == 5
+        assert len(result.interests) == 5
 
     def test_non_list_interests_becomes_empty(self):
         raw = {
-            "environment_type": None, "activity_style": None, "vibe": None,
-            "inferred_interests": "history",   # string instead of list
+            "environment_type": None, "travel_style": None,
+            "pace": None, "budget_level": None,
+            "vibe": None,
+            "interests": "history",   # string instead of list
+            "food_preferences": [],
             "confidence": "low",
         }
         result = extract_and_validate(raw)
-        assert result.inferred_interests == []
+        assert result.interests == []
 
     def test_missing_keys_get_safe_defaults(self):
         result = extract_and_validate({})
         assert result.confidence == "low"
-        assert result.inferred_interests == []
+        assert result.interests == []
         assert result.environment_type is None
 
     def test_has_signal_property(self):
         """``has_signal`` returns True for high/medium with interests."""
-        low = extract_and_validate({"confidence": "low", "inferred_interests": []})
+        low = extract_and_validate({"confidence": "low", "interests": []})
         assert low.has_signal is False
 
         high = extract_and_validate({
             "confidence": "high",
-            "inferred_interests": ["food"],
+            "interests": ["food"],
         })
         assert high.has_signal is True
 
     def test_fallback_classmethod(self):
         fallback = VisionFeatures.fallback()
         assert fallback.confidence == "low"
-        assert fallback.inferred_interests == []
+        assert fallback.interests == []
+        assert fallback.food_preferences == []
         assert fallback.environment_type is None
+        assert fallback.travel_style is None
+        assert fallback.pace is None
+        assert fallback.budget_level is None
         assert fallback.has_signal is False
 
 
@@ -163,9 +189,12 @@ class TestFuseImageWithProfile:
     def _features(self, **overrides) -> VisionFeatures:
         defaults = {
             "environment_type": "nature",
-            "activity_style": "adventurous",
+            "travel_style": "adventure",
+            "pace": "moderate",
             "vibe": "mountain trail",
-            "inferred_interests": ["hiking", "photography"],
+            "interests": ["hiking", "photography"],
+            "food_preferences": [],
+            "budget_level": None,
             "confidence": "high",
         }
         defaults.update(overrides)
@@ -182,9 +211,9 @@ class TestFuseImageWithProfile:
         profile = self._base_profile()
         image_features = self._features(
             environment_type="urban",
-            activity_style="cultural",
+            travel_style="cultural",
             vibe=None,
-            inferred_interests=["history"],  # already in profile
+            interests=["history"],  # already in profile
         )
         updated = fuse_image_with_profile(profile, image_features)
         assert updated["interests"].count("history") == 1
@@ -194,9 +223,9 @@ class TestFuseImageWithProfile:
         original_interests = list(profile["interests"])
         image_features = self._features(
             environment_type="beach",
-            activity_style="relaxing",
+            travel_style="relaxation",
             vibe=None,
-            inferred_interests=["surfing"],
+            interests=["surfing"],
         )
         fuse_image_with_profile(profile, image_features)
         assert profile["interests"] == original_interests
@@ -206,9 +235,9 @@ class TestFuseImageWithProfile:
         profile = self._base_profile()
         image_features = self._features(
             environment_type=None,
-            activity_style=None,
+            travel_style=None,
             vibe=None,
-            inferred_interests=["extra-interest"],
+            interests=["extra-interest"],
             confidence="low",
         )
         updated = fuse_image_with_profile(profile, image_features)

@@ -2,30 +2,37 @@
 
 VISION_EXTRACTION_PROMPT = """
 You are a travel preference analyst for TourMate AI.
-Analyze the travel-related image provided and extract the user's likely travel preferences.
+Analyze the travel-related image provided and extract the user's likely trip preferences.
 Respond ONLY with a valid JSON object — no prose, no markdown, no code fences.
 
 JSON schema:
 {
+  "interests": list[string],
+  "travel_style": "romantic" | "adventure" | "family" | "business" | "solo" | "cultural" | "relaxation" | null,
+  "pace": "relaxed" | "moderate" | "packed" | null,
+  "food_preferences": list[string],
+  "budget_level": "budget" | "moderate" | "luxury" | null,
   "environment_type": "urban" | "nature" | "beach" | "desert" | "mountain" | "mixed" | null,
-  "activity_style": "relaxing" | "adventurous" | "cultural" | "culinary" | "mixed" | null,
   "vibe": string | null,
-  "inferred_interests": list[string],
   "confidence": "high" | "medium" | "low"
 }
 
 Rules:
-1. inferred_interests must contain between 1 and 5 travel interest keywords.
+1. interests must contain between 1 and 5 travel interest keywords.
    Examples: "history", "food", "hiking", "art", "architecture", "nightlife", "beaches".
-2. vibe is a short phrase describing the image atmosphere (max 8 words).
-   Examples: "peaceful coastal town", "busy street market", "ancient ruins at sunset".
-3. confidence reflects how clearly the image signals travel preferences:
-   - "high"   → clearly travel-related with obvious preference signals
-   - "medium" → travel-related but signals are ambiguous
-   - "low"    → not travel-related or too abstract to extract anything useful
-4. If the image is not travel-related, set environment_type, activity_style, and vibe to null,
-   set inferred_interests to [], and set confidence to "low".
-5. Never include extra keys. Never add explanations outside the JSON object.
+2. food_preferences — cuisine or food-style hints from the image (e.g. "street food", "seafood").
+   Leave as empty list if no food signals are visible.
+3. travel_style — map the image mood to one of the valid enums if clear, else null.
+4. pace — infer from the scene's energy level (relaxed beach -> "relaxed", busy market -> "packed").
+5. budget_level — infer from visual cues if possible (luxury resort -> "luxury", hostel -> "budget").
+6. environment_type and vibe are optional descriptors for logging / explainability.
+7. confidence reflects how clearly the image signals travel preferences:
+   - "high"   -> clearly travel-related with obvious preference signals
+   - "medium" -> travel-related but signals are ambiguous
+   - "low"    -> not travel-related or too abstract to extract anything useful
+8. If the image is not travel-related, set all enum fields to null, list fields to [],
+   environment_type and vibe to null, and confidence to "low".
+9. Never include extra keys. Never add explanations outside the JSON object.
 """
 
 # ── System prompt for the image-analysis pipeline ───────────────────────────
