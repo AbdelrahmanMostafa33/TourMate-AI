@@ -24,10 +24,10 @@ class TestAgentRegistry:
         assert config.max_tokens == 2048
 
     def test_preference_reranker_config(self):
-        """preference_reranker → Groq Llama 3.1 8B, fast + cheap."""
+        """preference_reranker → Groq Llama 3.3 70B, low temp for consistent reranking."""
         config = AGENT_LLM_REGISTRY["preference_reranker"]
         assert config.provider == Provider.GROQ
-        assert config.model == "llama-3.1-8b-instant"
+        assert config.model == "llama-3.3-70b-versatile"
         assert config.temperature == 0.2
         assert config.max_tokens == 2048
 
@@ -88,9 +88,9 @@ class TestAgentRegistry:
             )
 
     def test_known_role_count(self):
-        """The registry should have exactly 7 agent roles."""
-        assert len(AGENT_LLM_REGISTRY) == 7, (
-            f"Expected 7 agent roles, got {len(AGENT_LLM_REGISTRY)}. "
+        """The registry should have exactly 9 agent roles."""
+        assert len(AGENT_LLM_REGISTRY) == 9, (
+            f"Expected 9 agent roles, got {len(AGENT_LLM_REGISTRY)}. "
             "If you added a new agent, update this test."
         )
 

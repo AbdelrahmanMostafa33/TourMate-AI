@@ -370,6 +370,20 @@ async def process_message_stream(
             trip.trip_id,
         )
 
+        # ── Update traveler_persona based on this approved trip ────────
+        try:
+            from app.services.profile_service import update_traveler_persona
+            await update_traveler_persona(
+                user_id=user_id,
+                trip_id=trip.trip_id,
+                db=db,
+            )
+        except Exception as persona_err:
+            logger.warning(
+                "[ChatRoutes] Failed to update traveler persona (non-fatal): %s",
+                persona_err,
+            )
+
         was_approved = True
 
     # ── Execute actions ──────────────────────────────────────────────────

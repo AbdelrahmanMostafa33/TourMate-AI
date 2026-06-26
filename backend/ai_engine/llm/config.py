@@ -51,12 +51,13 @@ class LLMConfig:
 # ══════════════════════════════════════════════════════════════════════════════
 
 AGENT_LLM_REGISTRY: Dict[str, LLMConfig] = {
-    # ── Groq — classification, extraction, validation (massive RPD headroom) ──
+    # ── Groq — classification, extraction, validation, persona updates (massive RPD headroom) ──
     "extractor":           LLMConfig(Provider.GROQ,   "llama-3.3-70b-versatile", temperature=0.1, max_tokens=512),
     "router":              LLMConfig(Provider.GROQ,   "llama-3.3-70b-versatile",  temperature=0.2, max_tokens=2048),
     "preference_reranker": LLMConfig(Provider.GROQ,   "llama-3.3-70b-versatile", temperature=0.2, max_tokens=2048),
     "validator":           LLMConfig(Provider.GROQ,   "llama-3.3-70b-versatile",  temperature=0.2, max_tokens=2048),
     "review_qa":           LLMConfig(Provider.GROQ,   "llama-3.3-70b-versatile",  temperature=0.7, max_tokens=8192),
+    "persona_updater":     LLMConfig(Provider.GROQ,   "llama-3.3-70b-versatile",  temperature=0.3, max_tokens=512),
 
     # ── Gemini — planning (reasoning), vision (multimodal), modification — 20 RPD ──
     "modifier":            LLMConfig(Provider.GEMINI, "gemini-2.5-flash",  temperature=0.0, max_tokens=8192),

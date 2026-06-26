@@ -1,6 +1,6 @@
 # app/models/user.py
 
-from sqlalchemy import Column, String, DateTime
+from sqlalchemy import Column, String, DateTime, JSON
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from app.core.database import Base
@@ -16,6 +16,7 @@ class User(Base):
     registration_date = Column(DateTime, default=func.now())
     home_city         = Column(String, nullable=True)
     traveler_persona  = Column(String, nullable=True)
+    preference_counts = Column(JSON, nullable=False, server_default='{}')
     updated_at        = Column(DateTime, default=func.now(), onupdate=func.now())
 
     # Relationships
