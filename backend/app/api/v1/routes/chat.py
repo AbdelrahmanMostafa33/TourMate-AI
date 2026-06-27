@@ -286,6 +286,9 @@ async def process_message_stream(
                 full_response += content
                 await manager.send(ws_key, {"type": "token", "data": content})
 
+            elif event_type == "progress":
+                await manager.send(ws_key, chunk)
+
             elif event_type == "phase":
                 await manager.send(ws_key, chunk)
 
@@ -627,6 +630,9 @@ async def websocket_new_chat(
                         content        = chunk.get("content", "")
                         full_response += content
                         await manager.send(ws_key, {"type": "token", "data": content})
+
+                    elif event_type == "progress":
+                        await manager.send(ws_key, chunk)
 
                     elif event_type == "phase":
                         await manager.send(ws_key, chunk)

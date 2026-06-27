@@ -168,6 +168,18 @@ class _ChatViewState extends State<_ChatView> {
     _scrollToBottom();
   }
 
+  /// Called when the user taps the green "Approve Itinerary" button.
+  void _sendApprove(ChatCubit cubit) {
+    cubit.sendMessage('approve');
+  }
+
+  /// Called when the user selects a hotel option to start booking.
+  void _selectHotel(ChatCubit cubit, dynamic hotel) {
+    // In the future, this will trigger the booking flow.
+    // For now, send a message to the backend indicating the selection.
+    cubit.sendMessage('book');
+  }
+
   @override
   Widget build(BuildContext context) {
     final cubit = context.read<ChatCubit>();
@@ -230,11 +242,13 @@ class _ChatViewState extends State<_ChatView> {
                                   return const _TypingIndicator();
                                 }
                                 return MessageBubble(
-                                  key: ValueKey(
-                                    'msg-$i-${messages[i].itinerary != null}-$refreshToken',
-                                  ),
-                                  msg: messages[i],
-                                );
+                                key: ValueKey(
+                                  'msg-$i-${messages[i].itinerary != null}-$refreshToken',
+                                ),
+                                msg: messages[i],
+                                onApproveItinerary: () => _sendApprove(cubit),
+                                onSelectHotel: (hotel) => _selectHotel(cubit, hotel),
+                              );
                               },
                             ),
                           ),
@@ -575,25 +589,37 @@ class _ChatViewState extends State<_ChatView> {
               border: Border.all(color: Colors.grey.shade300),
             ),
             child: Row(
+              crossAxisAlignment: CrossAxisAlignment.end,
               children: [
-                GestureDetector(
-                  onTap: _pickImage,
-                  child: const Icon(Icons.camera_alt_outlined),
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: GestureDetector(
+                    onTap: _pickImage,
+                    child: const Icon(Icons.camera_alt_outlined),
+                  ),
                 ),
                 const SizedBox(width: 8),
                 Expanded(
                   child: TextField(
                     controller: _inputController,
+                    maxLines: 4,
+                    minLines: 1,
+                    textInputAction: TextInputAction.newline,
                     decoration: const InputDecoration(
                       hintText: "Ask anything",
                       border: InputBorder.none,
+                      isDense: true,
+                      contentPadding: EdgeInsets.symmetric(vertical: 10),
                     ),
                     onSubmitted: (_) => _sendMessage(cubit),
                   ),
                 ),
-                IconButton(
-                  icon: const Icon(Icons.send),
-                  onPressed: () => _sendMessage(cubit),
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: IconButton(
+                    icon: const Icon(Icons.send),
+                    onPressed: () => _sendMessage(cubit),
+                  ),
                 ),
               ],
             ),

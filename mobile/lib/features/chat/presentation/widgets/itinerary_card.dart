@@ -3,8 +3,13 @@ import '../../data/models/itinerary_data.dart';
 
 class ItineraryCard extends StatelessWidget {
   final ItineraryData itinerary;
+  final VoidCallback? onApprove;
 
-  const ItineraryCard({super.key, required this.itinerary});
+  const ItineraryCard({
+    super.key,
+    required this.itinerary,
+    this.onApprove,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -42,6 +47,12 @@ class ItineraryCard extends StatelessWidget {
             _AccommodationSection(
               suggestions: itinerary.accommodationSuggestions,
             ),
+          ],
+
+          // ── Approve Button ──────────────────────────────
+          if (onApprove != null) ...[
+            const Divider(height: 1),
+            _ApproveButton(onApprove: onApprove!),
           ],
         ],
       ),
@@ -792,6 +803,44 @@ class _AccommodationSection extends StatelessWidget {
                 ),
               )),
         ],
+      ),
+    );
+  }
+}
+
+// ── Approve Button ───────────────────────────────────────────────────────────
+
+class _ApproveButton extends StatelessWidget {
+  final VoidCallback onApprove;
+
+  const _ApproveButton({required this.onApprove});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 16, 20, 20),
+      child: SizedBox(
+        width: double.infinity,
+        child: ElevatedButton.icon(
+          onPressed: onApprove,
+          icon: const Icon(Icons.check_circle_rounded, size: 20),
+          label: const Text(
+            'Approve Itinerary',
+            style: TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          style: ElevatedButton.styleFrom(
+            backgroundColor: const Color(0xFF22C55E),
+            foregroundColor: Colors.white,
+            padding: const EdgeInsets.symmetric(vertical: 16),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+            ),
+            elevation: 0,
+          ),
+        ),
       ),
     );
   }

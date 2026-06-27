@@ -1,18 +1,43 @@
 import 'package:flutter/material.dart';
 import '../../data/models/chat_message.dart';
 import 'itinerary_card.dart';
+import 'hotel_options_list.dart';
 
 class MessageBubble extends StatelessWidget {
   final ChatMessage msg;
+  final VoidCallback? onApproveItinerary;
+  final void Function(dynamic)? onSelectHotel;
 
-  const MessageBubble({super.key, required this.msg});
+  const MessageBubble({
+    super.key,
+    required this.msg,
+    this.onApproveItinerary,
+    this.onSelectHotel,
+  });
 
   @override
   Widget build(BuildContext context) {
+    // ── Hotel Options Card ───────────────────────────────────────
+    if (msg.hotelOptions != null) {
+      return Align(
+        alignment: Alignment.centerLeft,
+        child: HotelOptionsList(
+          payload: msg.hotelOptions!,
+          onSelectHotel: onSelectHotel,
+        ),
+      );
+    }
+
+    // ── Itinerary Card ───────────────────────────────────────────
     if (msg.itinerary != null) {
       return Align(
         alignment: Alignment.centerLeft,
-        child: ItineraryCard(itinerary: msg.itinerary!),
+        child: ItineraryCard(
+          itinerary: msg.itinerary!,
+          onApprove: msg.itinerary!.accommodationSuggestions.isEmpty && !msg.isUser
+              ? onApproveItinerary
+              : null,
+        ),
       );
     }
 
