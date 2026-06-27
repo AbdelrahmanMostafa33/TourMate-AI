@@ -9,6 +9,7 @@ class ReviewModel extends Equatable {
   final String? comment;
   final String? reviewDate;
   final int likesCount;
+  final bool likedByUser;
   final String? userName;
 
   const ReviewModel({
@@ -19,6 +20,7 @@ class ReviewModel extends Equatable {
     this.comment,
     this.reviewDate,
     this.likesCount = 0,
+    this.likedByUser = false,
     this.userName,
   });
 
@@ -49,6 +51,7 @@ class ReviewModel extends Equatable {
       comment: json['comment'] as String?,
       reviewDate: json['review_date'] as String?,
       likesCount: (json['likes_count'] as num?)?.toInt() ?? 0,
+      likedByUser: json['liked_by_user'] as bool? ?? false,
       userName: json['user_name'] as String?,
     );
   }
@@ -61,6 +64,7 @@ class ReviewModel extends Equatable {
     String? comment,
     String? reviewDate,
     int? likesCount,
+    bool? likedByUser,
     String? userName,
   }) {
     return ReviewModel(
@@ -71,6 +75,7 @@ class ReviewModel extends Equatable {
       comment: comment ?? this.comment,
       reviewDate: reviewDate ?? this.reviewDate,
       likesCount: likesCount ?? this.likesCount,
+      likedByUser: likedByUser ?? this.likedByUser,
       userName: userName ?? this.userName,
     );
   }
@@ -78,7 +83,7 @@ class ReviewModel extends Equatable {
   @override
   List<Object?> get props => [
         reviewId, userId, placeId, rating, comment,
-        reviewDate, likesCount, userName,
+        reviewDate, likesCount, likedByUser, userName,
       ];
 }
 

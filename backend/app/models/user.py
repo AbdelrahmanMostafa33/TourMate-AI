@@ -24,4 +24,5 @@ class User(Base):
     conversations    = relationship("Conversation",    back_populates="user", cascade="all, delete-orphan")
     reviews          = relationship("Review",          back_populates="user")
     saved_places     = relationship("SavedPlace",      back_populates="user", cascade="all, delete-orphan")
+    review_likes     = relationship("ReviewLike",      back_populates="user", cascade="all, delete-orphan")
 

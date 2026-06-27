@@ -13,3 +13,12 @@ async def get_current_user(authorization: str = Header(...)):
         raise HTTPException(status_code=401, detail="Invalid or expired token")
 
     return user
+
+
+async def get_optional_user(authorization: str | None = Header(None)):
+    """Like get_current_user but returns None when no token is provided."""
+    if not authorization or not authorization.startswith("Bearer "):
+        return None
+
+    token = authorization.split("Bearer ")[1]
+    return verify_token(token)

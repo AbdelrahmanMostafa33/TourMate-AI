@@ -7,6 +7,7 @@ import '../../data/repository/auth_repository.dart';
 import '../../data/repository/profile_repository.dart';
 import '../widgets/custom_textfield.dart';
 import '../../../../core/errors/auth_error_handler.dart';
+import '../../../../core/widgets/app_snackbar.dart';
 
 class SignInScreen extends StatefulWidget {
   const SignInScreen({super.key});
@@ -36,27 +37,15 @@ class _SignInScreenState extends State<SignInScreen> {
       final profile = await profileRepo.getProfile();
       if (!mounted) return;
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Welcome back!")),
-      );
+      AppSnackbar.success(context, 'Welcome back! ✨');
 
       if (profile is Success) {
         Navigator.pushReplacementNamed(context, "/home");
       } else if (profile is Failure) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text((profile as Failure).message),
-            backgroundColor: Colors.red,
-          ),
-        );
+        AppSnackbar.error(context, (profile as Failure).message);
       }
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(handleAuthError(e)),
-          backgroundColor: Colors.red.shade700,
-        ),
-      );
+      AppSnackbar.error(context, handleAuthError(e));
     }
 
     setState(() => loading = false);

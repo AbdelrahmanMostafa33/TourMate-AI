@@ -105,6 +105,65 @@ class ReviewsCubit extends Cubit<ReviewsState> {
     }
   }
 
+  // ── Toggle Like ──────────────────────────────────────────
+
+  /// Toggle like/unlike on a review with optimistic UI update.
+  Future<void> toggleLike(String reviewId) async {
+    // Optimistic update: update local state immediately
+    state.maybeWhen(
+      loaded: (data, submitting, sort, filter) {
+        final updatedReviews = data.reviews.map((r) {
+          if (r.reviewId == reviewId) {
+            return r.copyWith(
+              likesCount: r.likedByUser
+                  ? r.likesCount - 1
+                  : r.likesCount + 1,
+              likedByUser: !r.likedByUser,
+            );
+          }
+          return r;
+        }).toList();
+
+        emit(ReviewsState.loaded(
+          data: data.copyWith(reviews: updatedReviews),
+          isSubmitting: submitting,
+          sortBy: sort,
+          filterRating: filter,
+        ));
+      },
+      orElse: () {},
+    );
+
+    try {
+      await _api.likeReview(reviewId);
+    } catch (e) {
+      // Revert optimistic update on failure
+      state.maybeWhen(
+        loaded: (data, submitting, sort, filter) {
+          final revertedReviews = data.reviews.map((r) {
+            if (r.reviewId == reviewId) {
+              return r.copyWith(
+                likesCount: r.likedByUser
+                    ? r.likesCount + 1
+                    : r.likesCount - 1,
+                likedByUser: !r.likedByUser,
+              );
+            }
+            return r;
+          }).toList();
+
+          emit(ReviewsState.loaded(
+            data: data.copyWith(reviews: revertedReviews),
+            isSubmitting: submitting,
+            sortBy: sort,
+            filterRating: filter,
+          ));
+        },
+        orElse: () {},
+      );
+    }
+  }
+
   // ── Delete ───────────────────────────────────────────────
 
   /// Delete a review by ID.

@@ -6,8 +6,8 @@ from sqlalchemy import select, func
 from sqlalchemy.orm import selectinload
 
 from app.core.database import get_db
-from app.core.security import get_current_user
-from app.models.review import Review
+from app.core.security import get_current_user, get_optional_user
+from app.models.review import Review, ReviewLike
 from app.models.user import User
 from app.schemas.review import ReviewCreate, ReviewUpdate, ReviewResponse
 
@@ -74,6 +74,7 @@ async def get_my_reviews(
 @router.get("/place/{place_id}")
 async def get_reviews_for_place(
     place_id: str,
+    current_user: dict | None = Depends(get_optional_user),
     db: AsyncSession = Depends(get_db),
 ):
     # ── Fetch reviews with user data ───────────────────────────────────
@@ -86,6 +87,17 @@ async def get_reviews_for_place(
         .order_by(Review.review_date.desc())
     )
     reviews = result.scalars().unique().all()
+
+    # ── Compute which reviews the current user liked ───────────────────
+    liked_review_ids: set[str] = set()
+    if current_user is not None and reviews:
+        like_result = await db.execute(
+            select(ReviewLike.review_id).where(
+                ReviewLike.user_id == current_user["uid"],
+                ReviewLike.review_id.in_([r.review_id for r in reviews]),
+            )
+        )
+        liked_review_ids = {row[0] for row in like_result.all()}
 
     # ── Compute average rating ─────────────────────────────────────────
     avg_result = await db.execute(
@@ -100,14 +112,15 @@ async def get_reviews_for_place(
         "average_rating": round(float(avg_rating), 2) if avg_rating else None,
         "reviews": [
             {
-                "review_id":   r.review_id,
-                "user_id":     r.user_id,
-                "place_id":    r.place_id,
-                "rating":      r.rating,
-                "comment":     r.comment,
-                "review_date": r.review_date,
-                "likes_count": r.likes_count,
-                "user_name":   r.user.full_name if r.user else None,
+                "review_id":    r.review_id,
+                "user_id":      r.user_id,
+                "place_id":     r.place_id,
+                "rating":       r.rating,
+                "comment":      r.comment,
+                "review_date":  r.review_date,
+                "likes_count":  r.likes_count,
+                "liked_by_user": r.review_id in liked_review_ids,
+                "user_name":    r.user.full_name if r.user else None,
             }
             for r in reviews
         ],
@@ -164,7 +177,7 @@ async def update_review(
 
 
 # ═════════════════════════════════════════════════════════════════════════════
-# POST /reviews/{review_id}/like  –  Like a review (increment likes_count)
+# POST /reviews/{review_id}/like  –  Toggle like on a review
 # ═════════════════════════════════════════════════════════════════════════════
 
 @router.post("/{review_id}/like", response_model=ReviewResponse)
@@ -180,7 +193,27 @@ async def like_review(
     if not review:
         raise HTTPException(status_code=404, detail="Review not found")
 
-    review.likes_count = (review.likes_count or 0) + 1
+    # ── Check if user already liked this review ───────────────────────
+    existing_like = await db.execute(
+        select(ReviewLike).where(
+            ReviewLike.user_id == current_user["uid"],
+            ReviewLike.review_id == review_id,
+        )
+    )
+    like = existing_like.scalar_one_or_none()
+
+    if like:
+        # Unlike: remove the like record and decrement count
+        await db.delete(like)
+        review.likes_count = max(0, (review.likes_count or 0) - 1)
+    else:
+        # Like: add the like record and increment count
+        db.add(ReviewLike(
+            user_id=current_user["uid"],
+            review_id=review_id,
+        ))
+        review.likes_count = (review.likes_count or 0) + 1
+
     await db.commit()
     await db.refresh(review)
     return review

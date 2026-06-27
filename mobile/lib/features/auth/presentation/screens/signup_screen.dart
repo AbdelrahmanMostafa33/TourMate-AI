@@ -7,6 +7,7 @@ import '../../data/models/register_request.dart';
 import '../../data/repository/auth_repository.dart';
 import '../widgets/custom_textfield.dart';
 import '../../../../core/errors/auth_error_handler.dart';
+import '../../../../core/widgets/app_snackbar.dart';
 
 class SignUpScreen extends StatefulWidget {
   const SignUpScreen({super.key});
@@ -74,11 +75,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
 
       if (!mounted) return;
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text("Account created! Sign in to continue."),
-        ),
-      );
+      AppSnackbar.success(context, 'Account created! Sign in to continue.');
 
       Navigator.pushReplacementNamed(context, "/signin");
     } catch (e) {
@@ -90,16 +87,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
 
   void _showError(String message) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(message),
-        backgroundColor: Colors.red.shade700,
-        behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(12),
-        ),
-      ),
-    );
+    AppSnackbar.error(context, message);
   }
 
   @override
