@@ -21,6 +21,7 @@ class MainShell extends StatefulWidget {
 
 class _MainShellState extends State<MainShell> {
   int currentIndex = 0;
+  String? _pendingAutoMessage;
 
   @override
   Widget build(BuildContext context) {
@@ -73,14 +74,24 @@ class _MainShellState extends State<MainShell> {
 
     switch (currentIndex) {
       case 0:
+        final autoMsg = _pendingAutoMessage;
+        _pendingAutoMessage = null; // consume it — only send once
         return ChatScreen(
           initialTripId: initialTripId,
+          autoMessage: autoMsg,
           onTripCreated: () {
             context.read<TripsCubit>().getTrips();
           },
         );
       case 1:
-        return const TripsScreen();
+        return TripsScreen(
+          onStartChatWithMessage: (msg) {
+            setState(() {
+              _pendingAutoMessage = msg;
+              currentIndex = 0;
+            });
+          },
+        );
       case 2:
         return const ExploreScreen();
       case 3:

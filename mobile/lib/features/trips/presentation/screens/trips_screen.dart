@@ -6,7 +6,9 @@ import '../../logic/trips_cubit.dart';
 import '../../logic/trips_state.dart';
 
 class TripsScreen extends StatefulWidget {
-  const TripsScreen({super.key});
+  final void Function(String autoMessage)? onStartChatWithMessage;
+
+  const TripsScreen({super.key, this.onStartChatWithMessage});
 
   @override
   State<TripsScreen> createState() => _TripsScreenState();
@@ -35,10 +37,14 @@ class _TripsScreenState extends State<TripsScreen> {
             child: ElevatedButton(
               onPressed: () async {
                 final cubit = context.read<TripsCubit>();
-                await Navigator.pushNamed(context, "/create-trip");
+                final result = await Navigator.pushNamed(context, "/create-trip");
 
-                /// 🔥 Refresh after creating trip
-                cubit.getTrips();
+                if (result is String && result.isNotEmpty) {
+                  widget.onStartChatWithMessage?.call(result);
+                } else {
+                  /// 🔥 Refresh if a trip was created normally (non-chat flow)
+                  cubit.getTrips();
+                }
               },
               style: ElevatedButton.styleFrom(
                 backgroundColor: Colors.black,
