@@ -1,7 +1,7 @@
 """Add review_likes table for tracking user review likes.
 
-Revision ID: 021_add_review_likes_table
-Revises: 020_add_flight_amadeus_enums
+Revision ID: 022_add_review_likes_table
+Revises: 021_add_flight_amadeus_enums
 Create Date: 2026-06-27
 
 Changes:
@@ -16,8 +16,8 @@ import sqlalchemy as sa
 
 
 # revision identifiers, used by Alembic.
-revision: str = "021_add_review_likes_table"
-down_revision: Union[str, None] = "020_add_flight_amadeus_enums"
+revision: str = "022_add_review_likes_table"
+down_revision: Union[str, None] = "021_add_flight_amadeus_enums"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

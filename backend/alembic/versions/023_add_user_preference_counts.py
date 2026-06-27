@@ -1,7 +1,7 @@
 """Add preference_counts JSON column to users table.
 
-Revision ID: 021_add_user_preference_counts
-Revises: 020_add_flight_amadeus_enums
+Revision ID: 023_add_user_preference_counts
+Revises: 022_add_review_likes_table
 Create Date: 2026-06-27
 
 Changes:
@@ -18,8 +18,8 @@ import sqlalchemy as sa
 
 
 # revision identifiers, used by Alembic.
-revision: str = "021_add_user_preference_counts"
-down_revision: Union[str, None] = "020_add_flight_amadeus_enums"
+revision: str = "023_add_user_preference_counts"
+down_revision: Union[str, None] = "022_add_review_likes_table"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

@@ -586,7 +586,7 @@ class FlightService:
             booking_id=booking_id,
             amount=total_price,
             currency=currency,
-            payment_method=PaymentMethod.card,
+            payment_method=PaymentMethod.credit_card,
             provider=PaymentProvider.stripe,
             stripe_payment_intent_id=data.payment_intent_id,
             transaction_reference=data.payment_intent_id,

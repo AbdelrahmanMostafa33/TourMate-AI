@@ -1,7 +1,7 @@
 """Add 'flight' to booking_type and 'amadeus' to booking_provider enums.
 
-Revision ID: 020_add_flight_amadeus_enums
-Revises: 019_add_candidate_pool_json
+Revision ID: 021_add_flight_amadeus_enums
+Revises: 020_fix_balanced_pace_data
 Create Date: 2026-06-25
 
 Changes:
@@ -19,8 +19,8 @@ from alembic import op
 
 
 # revision identifiers, used by Alembic.
-revision: str = "020_add_flight_amadeus_enums"
-down_revision: Union[str, None] = "019_add_candidate_pool_json"
+revision: str = "021_add_flight_amadeus_enums"
+down_revision: Union[str, None] = "020_fix_balanced_pace_data"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
