@@ -6,13 +6,14 @@ Reuses the existing ``Booking`` table (``booking_type=flight``,
 stored in the ``raw_response`` JSON column so no new tables are needed.
 
 Flow:
-  1. ``search_cities()``      → Amadeus API city/airport autocomplete → parsed list
-  2. ``resolve_city_to_iata()`` → single city name → IATA code
-  3. ``search_flights()``     → Amadeus API flight offers search → parsed offers
-  4. ``smart_search()``       → resolve city names + search (all-in-one)
-  5. ``get_trip_context()``   → trip data → pre-filled search suggestions
-  6. ``book_flight()``        → price + book via Amadeus API → Booking (confirmed)
-  7. ``cancel_flight_booking()`` → status transition to cancelled
+  1. ``search_cities()``              → Amadeus API city/airport autocomplete → parsed list
+  2. ``resolve_city_to_iata()``       → single city name → IATA code
+  3. ``search_flights()``             → Amadeus API flight offers search → parsed offers
+  4. ``smart_search()``               → resolve city names + search (all-in-one)
+  5. ``get_trip_context()``           → trip data → pre-filled search suggestions
+  6. ``initiate_flight_booking()``    → price offer + Stripe PaymentIntent (no DB save)
+  7. ``confirm_flight_booking()``     → verify Stripe + book via Amadeus → Booking + Payment + Receipt
+  8. ``cancel_flight_booking()``      → status transition to cancelled
 
 All service methods follow the same async patterns as ``BookingService``:
 never commit inside the service, always use ``selectinload``, raise
@@ -25,29 +26,34 @@ import re
 import random
 import string
 import logging
-from datetime import date, datetime
-from typing import Optional
+from datetime import datetime
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.models.booking import Booking, Payment
 from app.models.trip import Trip
 from app.models.user import User
-from app.models.enums import BookingType, BookingProvider, BookingStatus
 from app.schemas.flight import (
     FlightSearchRequest,
     FlightOfferItem,
-    FlightBookRequest,
-    FlightBookFromOfferRequest,
     CitySearchResult,
     SmartFlightSearchRequest,
     SmartFlightSearchResponse,
     TripFlightContext,
-    SaveFlightOfferRequest,
-    SavedFlightOfferResponse,
+    FlightBookInitiateRequest,
+    FlightBookInitiateResponse,
+    FlightBookConfirmRequest,
 )
+from app.models.enums import (
+    BookingType,
+    BookingProvider,
+    BookingStatus,
+    PaymentMethod,
+    PaymentProvider,
+    PaymentStatus,
+)
+from app.models.booking import Booking, Payment, Receipt
 from app.services.amadeus_client import amadeus_client
 
 logger = logging.getLogger(__name__)
@@ -67,10 +73,9 @@ def _generate_confirmation_number() -> str:
     return f"FLT-{_seg()}-{_seg()}"
 
 
-# ── in-memory store for saved flight offers ──────────────────────────────
-# Offers are transient selections — they don't survive server restarts.
-# Structure: { offer_id: {"user_id", "trip_id", "offer_index", "raw_offer"} }
-_saved_offers: dict[str, dict] = {}
+# ── flight service ────────────────────────────────────────────────────────
+# Flutter stores the raw_offer and priced_offer locally on the client side.
+# No server-side in-memory offer storage is needed.
 
 
 _IATA_RE = re.compile(r"^[A-Z]{3}$")
@@ -257,146 +262,6 @@ class FlightService:
             offers=offers,
         )
 
-    # ── save_offer / get_saved_offer ────────────────────────────────────────────
-
-    async def save_offer(self, user_id: str, data: SaveFlightOfferRequest) -> SavedFlightOfferResponse:
-        """Save a selected flight offer for later booking.
-
-        The user picks an offer from search results, we store it keyed by
-        ``offer_id`` so they can reference it during booking without passing
-        the full ``raw_offer`` again.
-
-        Args:
-            user_id: The authenticated user.
-            data:    The offer to save (trip + raw_offer).
-
-        Returns:
-            A ``SavedFlightOfferResponse`` with the generated offer_id
-            and parsed flight details.
-        """
-        offer_id = "OFR-" + "".join(random.choices(string.ascii_uppercase + string.digits, k=8))
-
-        # Parse key fields from the raw_offer for convenience
-        try:
-            segment = data.raw_offer["itineraries"][0]["segments"][0]
-            airline_code = segment.get("carrierCode", "")
-            flight_number = f"{airline_code}{segment.get('number', '')}"
-            origin_iata = segment["departure"]["iataCode"]
-            destination_iata = segment["arrival"]["iataCode"]
-            departure_at = datetime.fromisoformat(segment["departure"]["at"].replace("Z", "+00:00"))
-            arrival_at = datetime.fromisoformat(segment["arrival"]["at"].replace("Z", "+00:00"))
-        except (KeyError, IndexError, ValueError):
-            airline_code = ""
-            flight_number = ""
-            origin_iata = ""
-            destination_iata = ""
-            departure_at = None
-            arrival_at = None
-
-        total_price = float(data.raw_offer.get("price", {}).get("total", 0))
-        currency = data.raw_offer.get("price", {}).get("currency", "USD")
-
-        response = SavedFlightOfferResponse(
-            offer_id=offer_id,
-            trip_id=data.trip_id,
-            offer_index=data.offer_index,
-            origin_iata=origin_iata,
-            destination_iata=destination_iata,
-            airline_code=airline_code,
-            flight_number=flight_number,
-            total_price=total_price,
-            currency=currency,
-            departure_at=departure_at,
-            arrival_at=arrival_at,
-        )
-
-        # Store in-memory (server restart clears saved offers — acceptable
-        # for transient selections)
-        _saved_offers[offer_id] = {
-            "user_id": user_id,
-            "trip_id": data.trip_id,
-            "offer_index": data.offer_index,
-            "raw_offer": data.raw_offer,
-            "response": response,
-        }
-
-        logger.info(
-            "[FlightService] Saved offer %s for trip %s (user=%s)",
-            offer_id, data.trip_id, user_id,
-        )
-
-        return response
-
-    async def get_saved_offer(self, offer_id: str, user_id: str) -> SavedFlightOfferResponse | None:
-        """Retrieve a previously saved offer by ID.
-
-        Returns the full ``SavedFlightOfferResponse`` if found and owned by
-        the user, or ``None`` otherwise.
-        """
-        entry = _saved_offers.get(offer_id)
-        if not entry or entry["user_id"] != user_id:
-            return None
-        return entry["response"]  # Stored during save_offer()
-
-    async def get_saved_raw_offer(self, offer_id: str, user_id: str) -> dict | None:
-        """Retrieve the raw_offer dict from a saved offer.
-
-        Used by ``book_from_offer()`` to get the actual Amadeus offer data
-        without the frontend having to send it again.
-        """
-        entry = _saved_offers.get(offer_id)
-        if not entry or entry["user_id"] != user_id:
-            return None
-        return entry["raw_offer"]
-
-    # ── book_from_offer ───────────────────────────────────────────────────────
-
-    async def book_from_offer(
-        self,
-        offer_id: str,
-        user_id: str,
-        data: FlightBookFromOfferRequest,
-    ) -> Booking:
-        """Book a flight using a previously saved offer.
-
-        Looks up the saved ``raw_offer`` by ``offer_id``, verifies ownership,
-        builds a ``FlightBookRequest`` from the traveler data, and delegates
-        to ``book_flight()``.
-
-        Args:
-            offer_id: The ID returned by ``save_offer()``.
-            user_id:  The authenticated user.
-            data:     Traveler details (no raw_offer needed).
-
-        Returns:
-            The created ``Booking`` ORM object (not yet committed).
-
-        Raises:
-            ValueError: If the offer is not found, not owned by the user,
-                       or the booking fails.
-        """
-        raw_offer = await self.get_saved_raw_offer(offer_id, user_id)
-        if not raw_offer:
-            raise ValueError(f"Saved offer {offer_id} not found or not owned by this user")
-
-        # Build a standard FlightBookRequest from the saved offer + traveler data
-        book_request = FlightBookRequest(
-            trip_id=data.trip_id,
-            raw_offer=raw_offer,
-            traveler_first_name=data.traveler_first_name,
-            traveler_last_name=data.traveler_last_name,
-            traveler_date_of_birth=data.traveler_date_of_birth,
-            traveler_gender=data.traveler_gender,
-            traveler_email=data.traveler_email,
-            traveler_phone=data.traveler_phone,
-        )
-
-        return await self.book_flight(
-            trip_id=data.trip_id,
-            user_id=user_id,
-            data=book_request,
-        )
-
     # ── get_trip_context ──────────────────────────────────────────────────────
 
     async def get_trip_context(self, trip_id: str, user_id: str) -> TripFlightContext:
@@ -471,32 +336,143 @@ class FlightService:
             suggested_adults=trip.number_of_travelers or 1,
         )
 
-    # ── book_flight ───────────────────────────────────────────────────────────
+    # ── initiate_flight_booking ───────────────────────────────────────────────
 
-    async def book_flight(
+    async def initiate_flight_booking(
         self,
-        trip_id: str,
-        user_id: str,
-        data: FlightBookRequest,
-    ) -> Booking:
-        """Price a flight offer via Amadeus and create a confirmed Booking row.
+        data: FlightBookInitiateRequest,
+    ) -> FlightBookInitiateResponse:
+        """Initiate a flight booking — price the raw offer and create a Stripe PaymentIntent.
 
-        The booking is created directly in ``confirmed`` status because the
-        Amadeus booking *is* the confirmation — no separate payment step is
-        needed (simulated as a direct booking).
+        Accepts the ``raw_offer`` dict directly from search results.  Prices
+        the flight via Amadeus, creates a Stripe PaymentIntent with
+        ``automatic_payment_methods`` enabled, and returns the parsed
+        ``priced_offer`` (Flutter stores this and sends it back in confirm).
+
+        Does NOT touch the database — the actual booking happens in
+        ``confirm_flight_booking()`` after Stripe confirms payment.
 
         Args:
-            trip_id:  The trip to associate the booking with.
-            user_id:  The user making the booking.
-            data:     Booking details including traveler info and the raw offer.
+            data: Initiate request (raw_offer + trip_id).
+
+        Returns:
+            A ``FlightBookInitiateResponse`` with ``client_secret`` for
+            Flutter's Stripe Payment Sheet, the parsed ``priced_offer``
+            (needed for the confirm step), and flight summary fields.
+
+        Raises:
+            ValueError: If parsing the offer fails.
+        """
+        # 1. Price the offer via Amadeus (has fallback internally)
+        priced_offer = amadeus_client.price_flight(data.raw_offer)
+
+        # 2. Parse from priced offer (handle both wrapped and unwrapped structure)
+        if "flightOffers" in priced_offer:
+            flight_offer = priced_offer["flightOffers"][0]
+        else:
+            flight_offer = priced_offer
+
+        total_price = float(flight_offer["price"]["total"])
+        currency = flight_offer["price"]["currency"]
+        segment = flight_offer["itineraries"][0]["segments"][0]
+        last_segment = flight_offer["itineraries"][0]["segments"][-1]
+        origin = segment["departure"]["iataCode"]
+        destination = last_segment["arrival"]["iataCode"]
+        departure_at = datetime.fromisoformat(segment["departure"]["at"].replace("Z", "+00:00"))
+        arrival_at = datetime.fromisoformat(last_segment["arrival"]["at"].replace("Z", "+00:00"))
+        airline_code = flight_offer["validatingAirlineCodes"][0]
+        flight_number = f"{segment['carrierCode']}{segment['number']}"
+        cabin_class = flight_offer["travelerPricings"][0]["fareDetailsBySegment"][0]["cabin"]
+
+        # 3. Get airline name from Amadeus reference data
+        airline_name = airline_code
+        try:
+            r = amadeus_client._client.reference_data.airlines.get(
+                airlineCodes=airline_code
+            )
+            airline_name = r.data[0]["businessName"]
+        except Exception:
+            pass
+
+        # 4. Create Stripe PaymentIntent
+        import stripe
+        from app.core.config import settings
+        stripe.api_key = settings.STRIPE_SECRET_KEY
+
+        intent = stripe.PaymentIntent.create(
+            amount=int(total_price * 100),
+            currency=currency.lower(),
+            automatic_payment_methods={"enabled": True},
+            metadata={
+                "trip_id": data.trip_id,
+                "origin": origin,
+                "destination": destination,
+                "flight_number": flight_number,
+            },
+        )
+
+        # 5. Do NOT touch DB
+        # 6. Return response with priced_offer for Flutter to keep
+        logger.info(
+            "[FlightService] Initiated flight booking (flight=%s, cost=%.2f %s, stripe_pi=%s)",
+            flight_number, total_price, currency, intent["id"],
+        )
+
+        return FlightBookInitiateResponse(
+            client_secret=intent["client_secret"],
+            payment_intent_id=intent["id"],
+            priced_offer=flight_offer,
+            amount=total_price,
+            currency=currency,
+            origin_iata=origin,
+            destination_iata=destination,
+            departure_at=departure_at,
+            arrival_at=arrival_at,
+            airline_name=airline_name,
+            flight_number=flight_number,
+            cabin_class=cabin_class,
+        )
+
+    # ── confirm_flight_booking ────────────────────────────────────────────────
+
+    async def confirm_flight_booking(
+        self,
+        user_id: str,
+        data: FlightBookConfirmRequest,
+    ) -> Booking:
+        """Confirm a flight booking after Stripe payment succeeded.
+
+        Verifies the Stripe PaymentIntent status is ``succeeded``, calls
+        Amadeus to create the order with the ``priced_offer`` from the client,
+        then creates Booking + Payment + Receipt records.  Nothing is saved
+        to the DB unless BOTH Stripe and Amadeus succeed.
+
+        Args:
+            user_id: The authenticated user.
+            data:    Confirm request with payment_intent_id, priced_offer,
+                     and traveler info.
 
         Returns:
             The created ``Booking`` ORM object (not yet committed).
 
         Raises:
-            ValueError: If pricing or booking fails.
+            ValueError: If Stripe payment failed or Amadeus booking fails
+                       (with special "PAYMENT_RECEIVED_BOOKING_FAILED" message
+                       so the router can return a 402).
         """
-        # 1. Build traveler dict in Amadeus format
+        # ── 1. Verify Stripe PaymentIntent ──
+        import stripe
+        from app.core.config import settings
+        stripe.api_key = settings.STRIPE_SECRET_KEY
+
+        intent = stripe.PaymentIntent.retrieve(data.payment_intent_id)
+        if intent.status != "succeeded":
+            raise ValueError("Payment not completed")
+
+        # ── 2. Use the priced_offer from the client (Flutter stored it) ──
+        priced_offer = data.priced_offer
+
+        # ── 3. Build traveler dict in Amadeus format ──
         traveler = {
             "id": "1",
             "dateOfBirth": data.traveler_date_of_birth.isoformat(),
@@ -512,105 +488,124 @@ class FlightService:
                         "number": data.traveler_phone,
                         "deviceType": "MOBILE",
                         "countryCallingCode": "20",
-                    }
+                    },
                 ],
             },
             "documents": [],
         }
 
-        # 2/3. Price + Book via Amadeus
-        # Try pricing first, fall back to direct booking if pricing fails
-        # (some test environments don't support the pricing endpoint)
+        # ── 4. Call Amadeus Create Order ──
         try:
-            priced_offer = amadeus_client.price_flight(data.raw_offer)
             order = amadeus_client.book_flight(priced_offer, traveler)
-        except ValueError:
-            # Pricing failed — try booking directly from the search offer
-            logger.info(
-                "[FlightService] Pricing failed, attempting direct booking "
-                "from search offer for trip %s", trip_id
-            )
-            priced_offer = data.raw_offer
-            order = amadeus_client.book_flight(data.raw_offer, traveler)
+            amadeus_order_id = order.get("id", "UNKNOWN")
+        except Exception:
+            raise ValueError("PAYMENT_RECEIVED_BOOKING_FAILED")
 
-        amadeus_order_id = order.get("id", "")
+        # ── 5. Parse flight details from priced_offer ──
+        if "flightOffers" in priced_offer:
+            flight_offer = priced_offer["flightOffers"][0]
+        else:
+            flight_offer = priced_offer
 
-        # 4. Parse departure / arrival from the order, falling back to the raw offer
-        try:
-            order_itinerary = order["itineraries"][0]
-            order_segment = order_itinerary["segments"][0]
-            departure_at = datetime.fromisoformat(order_segment["departure"]["at"].replace("Z", "+00:00"))
-            arrival_at = datetime.fromisoformat(order_segment["arrival"]["at"].replace("Z", "+00:00"))
-            origin_iata = order_segment["departure"]["iataCode"]
-            destination_iata = order_segment["arrival"]["iataCode"]
-            airline_code = order_segment.get("carrierCode", "")
-            flight_number = f"{airline_code}{order_segment.get('number', '')}"
-        except (KeyError, IndexError):
-            # Fall back to parsing from the raw offer
-            offer_itinerary = data.raw_offer["itineraries"][0]
-            offer_segment = offer_itinerary["segments"][0]
-            departure_at = datetime.fromisoformat(offer_segment["departure"]["at"].replace("Z", "+00:00"))
-            arrival_at = datetime.fromisoformat(offer_segment["arrival"]["at"].replace("Z", "+00:00"))
-            origin_iata = offer_segment["departure"]["iataCode"]
-            destination_iata = offer_segment["arrival"]["iataCode"]
-            airline_code = offer_segment.get("carrierCode", "")
-            flight_number = f"{airline_code}{offer_segment.get('number', '')}"
+        total_price = float(flight_offer["price"]["total"])
+        currency = flight_offer["price"]["currency"]
+        segment = flight_offer["itineraries"][0]["segments"][0]
+        last_segment = flight_offer["itineraries"][0]["segments"][-1]
+        origin = segment["departure"]["iataCode"]
+        destination = last_segment["arrival"]["iataCode"]
+        departure_at = datetime.fromisoformat(segment["departure"]["at"].replace("Z", "+00:00"))
+        arrival_at = datetime.fromisoformat(last_segment["arrival"]["at"].replace("Z", "+00:00"))
+        airline_code = flight_offer["validatingAirlineCodes"][0]
+        flight_number = f"{segment['carrierCode']}{segment['number']}"
+        cabin_class = flight_offer["travelerPricings"][0]["fareDetailsBySegment"][0]["cabin"]
 
-        # Cabin class always from the raw offer (not in order response)
-        cabin_class = data.raw_offer.get("travelerPricings", [{}])[0] \
-            .get("fareDetailsBySegment", [{}])[0].get("cabin", "ECONOMY")
-
-        total_price = float(priced_offer.get("price", {}).get("total", 0))
-        currency = priced_offer.get("price", {}).get("currency", "USD")
-
-        # 5. Resolve airline name
-        airline_name = ""
+        # Airline name via Amadeus reference data
         try:
             response = amadeus_client._client.reference_data.airlines.get(
                 airlineCodes=airline_code
             )
-            if response.data:
-                airline_name = response.data[0].get("businessName", "")
+            airline_name = response.data[0]["businessName"]
         except Exception:
             airline_name = airline_code
 
-        # 6. Create the Booking row
+        # ── 6. Generate IDs ──
+        booking_id = _generate_flight_booking_id()
+        confirmation_number = _generate_confirmation_number()
+        payment_id = "PAY-" + "".join(random.choices(string.ascii_uppercase + string.digits, k=6))
+        receipt_id = "REC-" + "".join(random.choices(string.ascii_uppercase + string.digits, k=6))
+        seg1 = "".join(random.choices(string.ascii_uppercase + string.digits, k=4))
+        seg2 = "".join(random.choices(string.ascii_uppercase + string.digits, k=4))
+        receipt_number = f"RCPT-{seg1}-{seg2}"
+
+        # ── 7. Create Booking ORM ──
         booking = Booking(
-            booking_id=_generate_flight_booking_id(),
-            trip_id=trip_id,
+            booking_id=booking_id,
+            trip_id=data.trip_id,
             user_id=user_id,
-            place_id=None,
             booking_type=BookingType.flight,
             provider=BookingProvider.amadeus,
             provider_reference=amadeus_order_id,
-            confirmation_number=_generate_confirmation_number(),
+            confirmation_number=confirmation_number,
             start_datetime=departure_at,
             end_datetime=arrival_at,
             total_cost=total_price,
             currency=currency,
-            status=BookingStatus.confirmed,  # confirmed directly — Amadeus booking IS confirmation
+            status=BookingStatus.confirmed,
             raw_response={
-                "origin_iata": origin_iata,
-                "destination_iata": destination_iata,
+                "origin_iata": origin,
+                "destination_iata": destination,
                 "airline_code": airline_code,
                 "airline_name": airline_name,
                 "flight_number": flight_number,
                 "cabin_class": cabin_class,
-                "amadeus_offer_id": data.raw_offer.get("id"),
                 "amadeus_order_id": amadeus_order_id,
+                "stripe_payment_intent_id": data.payment_intent_id,
                 "traveler_name": f"{data.traveler_first_name} {data.traveler_last_name}",
-                "simulated": True,
+                "simulated": order.get("simulated", False),
                 "note": "Booked via Amadeus test environment",
             },
         )
 
-        self.db.add(booking)
-        logger.info(
-            "[FlightService] Created flight booking %s for trip %s "
-            "(airline=%s, flight=%s, cost=%.2f %s)",
-            booking.booking_id, trip_id, airline_code, flight_number,
-            total_price, currency,
+        # ── 8. Create Payment ORM ──
+        payment = Payment(
+            payment_id=payment_id,
+            booking_id=booking_id,
+            amount=total_price,
+            currency=currency,
+            payment_method=PaymentMethod.card,
+            provider=PaymentProvider.stripe,
+            stripe_payment_intent_id=data.payment_intent_id,
+            transaction_reference=data.payment_intent_id,
+            status=PaymentStatus.completed,
+            raw_response={
+                "stripe_status": "succeeded",
+                "payment_intent_id": data.payment_intent_id,
+            },
         )
+
+        # ── 9. Create Receipt ORM ──
+        receipt = Receipt(
+            receipt_id=receipt_id,
+            payment_id=payment_id,
+            receipt_number=receipt_number,
+            subtotal=total_price,
+            tax=0.0,
+            total=total_price,
+            currency=currency,
+        )
+
+        # ── 10. Add all to session (don't commit — let router commit) ──
+        self.db.add(booking)
+        self.db.add(payment)
+        self.db.add(receipt)
+
+        logger.info(
+            "[FlightService] Confirmed flight booking %s for trip %s "
+            "(airline=%s, flight=%s, cost=%.2f %s, stripe=%s)",
+            booking_id, data.trip_id, airline_code, flight_number,
+            total_price, currency, data.payment_intent_id,
+        )
+
         return booking
 
     # ── get_flight_booking ────────────────────────────────────────────────────

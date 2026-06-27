@@ -14,11 +14,13 @@ import '../widgets/pipeline_progress_widget.dart';
 class ChatScreen extends StatefulWidget {
   final VoidCallback? onTripCreated;
   final String? initialTripId;
+  final String? autoMessage;
 
   const ChatScreen({
     super.key,
     this.onTripCreated,
     this.initialTripId,
+    this.autoMessage,
   });
 
   @override
@@ -64,6 +66,8 @@ class _ChatScreenState extends State<ChatScreen> {
         final cubit = ChatCubit(locator<ChatRepository>());
         if (widget.initialTripId != null) {
           cubit.connectToTrip(widget.initialTripId!, autoMsg: null);
+        } else if (widget.autoMessage != null) {
+          cubit.connectWithAutoMessage(widget.autoMessage!);
         } else {
           cubit.connect();
         }

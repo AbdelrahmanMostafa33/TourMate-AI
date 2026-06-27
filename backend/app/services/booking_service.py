@@ -227,16 +227,12 @@ class BookingService:
         # ── Stripe sandbox payment (if available) ─────────────────────────
         if self._stripe is not None:
             try:
-                # Use a test card token so this works fully server-side
-                # without requiring the client to collect card details.
+                # Create PaymentIntent with automatic_payment_methods so
+                # the Flutter client can use the Stripe Payment Sheet.
                 intent = self._stripe.PaymentIntent.create(
                     amount=int(round(amount * 100)),  # cents
                     currency=currency,
-                    payment_method_data={
-                        "type": "card",
-                        "card": {"token": "tok_visa"},  # Stripe test token
-                    },
-                    confirm=True,
+                    automatic_payment_methods={"enabled": True},
                     metadata={
                         "booking_id": booking_id,
                         "trip_id":    booking.trip_id,
@@ -250,6 +246,7 @@ class BookingService:
                     "amount": intent["amount"],
                     "currency": intent["currency"],
                     "sandbox": True,
+                    "client_secret": intent.get("client_secret"),
                 }
                 logger.info(
                     "[BookingService] Stripe PaymentIntent %s created (status=%s) for booking %s",

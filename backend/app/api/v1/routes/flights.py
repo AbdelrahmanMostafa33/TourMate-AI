@@ -1,18 +1,19 @@
 """
-Flight booking routes — Amadeus flight booking simulation.
+Flight booking routes — Amadeus flight booking with Stripe payments.
 
 All flight bookings reuse the existing ``Booking`` table with
 ``booking_type=flight`` and ``provider=amadeus`` — no new tables created.
 
 Endpoints:
-  - ``GET    /flights/cities?...``        — City/airport autocomplete (public)
-  - ``POST   /flights/smart-search``      — Search by city name (public)
-  - ``POST   /flights/search``            — Search by IATA code (public, enhanced)
-  - ``POST   /flights/book``              — Book a flight (auth required)
-  - ``GET    /flights/{booking_id}``      — Get flight booking details
-  - ``GET    /flights/trip/{trip_id}``    — List flight bookings for a trip
-  - ``GET    /flights/trip/{trip_id}/context`` — Get trip context for pre-fill
-  - ``POST   /flights/{booking_id}/cancel`` — Cancel a flight booking
+  - ``GET    /flights/cities?...``             — City/airport autocomplete (public)
+  - ``POST   /flights/smart-search``           — Search by city name (public)
+  - ``POST   /flights/search``                 — Search by IATA code (public, enhanced)
+  - ``POST   /flights/book/initiate``          — Price raw offer + Stripe PaymentIntent (auth)
+  - ``POST   /flights/book/confirm``           — Confirm after Stripe success (auth)
+  - ``GET    /flights/trip/{trip_id}/context`` — Get trip context for pre-fill (auth)
+  - ``GET    /flights/{booking_id}``           — Get flight booking details (auth)
+  - ``GET    /flights/trip/{trip_id}``         — List flight bookings for a trip (auth)
+  - ``POST   /flights/{booking_id}/cancel``    — Cancel a flight booking (auth)
 """
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -27,23 +28,21 @@ from app.models.enums import BookingType
 from app.schemas.flight import (
     FlightSearchRequest,
     FlightOfferItem,
-    FlightBookRequest,
-    FlightBookFromOfferRequest,
     FlightBookingResponse,
     CitySearchResult,
     SmartFlightSearchRequest,
     SmartFlightSearchResponse,
     TripFlightContext,
-    SaveFlightOfferRequest,
-    SavedFlightOfferResponse,
+    FlightBookInitiateRequest,
+    FlightBookInitiateResponse,
+    FlightBookConfirmRequest,
 )
 from app.services.flight_service import FlightService
 
 router = APIRouter()
 
 
-# ── In-memory store for saved offers ────────────────────────────────────────
-# Offer storage is handled inside FlightService — no extra code needed here.────
+# ── flight routes ───────────────────────────────────────────────────────────
 
 async def _load_flight_booking(
     db: AsyncSession, booking_id: str,
@@ -142,69 +141,67 @@ async def search_flights(
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# POST /flights/offer
+# POST /flights/book/initiate
 # ═══════════════════════════════════════════════════════════════════════════════
 
-@router.post("/flights/offer", response_model=SavedFlightOfferResponse)
-async def save_offer(
-    data:         SaveFlightOfferRequest,
+@router.post("/flights/book/initiate", response_model=FlightBookInitiateResponse)
+async def initiate_flight_booking(
+    data:         FlightBookInitiateRequest,
     current_user: dict         = Depends(get_current_user),
     db:           AsyncSession = Depends(get_db),
 ):
-    """Save a selected flight offer for later booking (auth required).
+    """Initiate a flight booking — price the raw offer + create Stripe PaymentIntent.
 
-    After searching flights, the user picks an offer.  Call this endpoint
-    to save it.  The returned ``offer_id`` can be used later when booking
-    instead of passing the full ``raw_offer`` again.
-    """
-    svc = FlightService(db)
-    result = await svc.save_offer(current_user["uid"], data)
-    return result
+    Accepts ``raw_offer`` directly from search results (no separate save-offer
+    step needed).  Prices the flight via Amadeus, creates a Stripe
+    PaymentIntent with ``automatic_payment_methods``, and returns the
+    ``client_secret`` for the Payment Sheet plus the parsed ``priced_offer``
+    (Flutter stores this and sends it back in the confirm step).
 
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# GET /flights/offer/{offer_id}
-# ═══════════════════════════════════════════════════════════════════════════════
-
-@router.get("/flights/offer/{offer_id}", response_model=SavedFlightOfferResponse)
-async def get_saved_offer(
-    offer_id:     str,
-    current_user: dict         = Depends(get_current_user),
-    db:           AsyncSession = Depends(get_db),
-):
-    """Get details of a previously saved flight offer (auth required)."""
-    svc = FlightService(db)
-    result = await svc.get_saved_offer(offer_id, current_user["uid"])
-    if not result:
-        raise HTTPException(status_code=404, detail="Offer not found")
-    # result is a SavedFlightOfferResponse object from the service
-    return result
-
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# POST /flights/offer/{offer_id}/book
-# ═══════════════════════════════════════════════════════════════════════════════
-
-@router.post("/flights/offer/{offer_id}/book", response_model=FlightBookingResponse)
-async def book_from_offer(
-    offer_id:     str,
-    data:         FlightBookFromOfferRequest,
-    current_user: dict         = Depends(get_current_user),
-    db:           AsyncSession = Depends(get_db),
-):
-    """Book a flight from a previously saved offer (auth required).
-
-    Instead of sending the full ``raw_offer`` dict (which is large),
-    reference a saved ``offer_id`` and only send traveler details.
+    Does NOT save anything to the database.
     """
     svc = FlightService(db)
     try:
-        booking = await svc.book_from_offer(
-            offer_id=offer_id,
-            user_id=current_user["uid"],
-            data=data,
+        result = await svc.initiate_flight_booking(data)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    return result
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# POST /flights/book/confirm
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@router.post("/flights/book/confirm", response_model=FlightBookingResponse)
+async def confirm_flight_booking(
+    data:         FlightBookConfirmRequest,
+    current_user: dict         = Depends(get_current_user),
+    db:           AsyncSession = Depends(get_db),
+):
+    """Confirm a flight booking after Stripe payment succeeded.
+
+    Verifies the Stripe PaymentIntent status is ``succeeded``, calls Amadeus
+    to create the order, then creates Booking + Payment + Receipt records.
+    Nothing is saved unless BOTH Stripe and Amadeus succeed.
+
+    If Amadeus booking fails after payment is received, returns a 402 so the
+    frontend can inform the user a refund will be processed.
+    """
+    svc = FlightService(db)
+    try:
+        booking = await svc.confirm_flight_booking(
+            current_user["uid"], data,
         )
     except ValueError as exc:
+        if str(exc) == "PAYMENT_RECEIVED_BOOKING_FAILED":
+            raise HTTPException(
+                status_code=402,
+                detail={
+                    "message": "Payment received but booking failed.",
+                    "refund_status": "simulated_refund",
+                    "note": "Refund will be processed within 3-5 days.",
+                },
+            )
         raise HTTPException(status_code=400, detail=str(exc))
 
     await db.commit()
@@ -237,37 +234,6 @@ async def get_trip_flight_context(
         raise HTTPException(status_code=404, detail=str(exc))
     return context
 
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# POST /flights/book
-# ═══════════════════════════════════════════════════════════════════════════════
-
-@router.post("/flights/book", response_model=FlightBookingResponse)
-async def book_flight(
-    data:         FlightBookRequest,
-    current_user: dict         = Depends(get_current_user),
-    db:           AsyncSession = Depends(get_db),
-):
-    """Price and book a flight via Amadeus, creating a confirmed Booking row.
-
-    The booking is created directly in ``confirmed`` status because the
-    Amadeus booking *is* the confirmation — no separate payment step required.
-    """
-    svc = FlightService(db)
-    try:
-        booking = await svc.book_flight(
-            trip_id=data.trip_id,
-            user_id=current_user["uid"],
-            data=data,
-        )
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
-
-    await db.commit()
-
-    # Re-load with payment + receipt eager-loaded
-    booking = await _load_flight_booking(db, booking.booking_id)
-    return FlightBookingResponse.from_booking(booking)
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
