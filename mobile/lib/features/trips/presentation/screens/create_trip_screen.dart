@@ -1,21 +1,11 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_bloc/flutter_bloc.dart';
-import '../../../../core/network/service_locator.dart';
-import '../../../../core/widgets/app_snackbar.dart';
-import '../../data/models/create_trip_request.dart';
-import '../../data/repository/trips_repository.dart';
-import '../../logic/trips_cubit.dart';
-import '../../logic/trips_state.dart';
 
 class CreateTripScreen extends StatelessWidget {
   const CreateTripScreen({super.key});
 
   @override
   Widget build(BuildContext context) {
-    return BlocProvider(
-      create: (_) => TripsCubit(locator<TripsRepository>()),
-      child: const _CreateTripView(),
-    );
+    return const _CreateTripView();
   }
 }
 
@@ -33,6 +23,38 @@ class _CreateTripViewState extends State<_CreateTripView> {
 
   DateTime? _startDate;
   DateTime? _endDate;
+
+  /// Canonical interest tags that the AI understands — sourced from
+  /// the backend's INTEREST_SYNONYM_MAP in slot_normalizer.py.
+  static const _allInterests = [
+    "history",
+    "architecture",
+    "art",
+    "museums",
+    "food",
+    "shopping",
+    "nightlife",
+    "entertainment",
+    "nature",
+    "parks",
+    "beaches",
+    "adventure",
+    "sports",
+    "water sports",
+    "photography",
+    "sightseeing",
+    "local culture",
+    "music",
+    "festivals",
+    "religion",
+    "wine",
+    "science",
+    "technology",
+    "wellness",
+    "family",
+  ];
+
+  final _selectedInterests = <String>{};
 
   @override
   void dispose() {
@@ -66,79 +88,80 @@ class _CreateTripViewState extends State<_CreateTripView> {
     return "${date.day}/${date.month}/${date.year}";
   }
 
-  void _submit() {
+  String _buildAutoMessage() {
     final city = _cityController.text.trim();
     final country = _countryController.text.trim();
+    final destination = country.isNotEmpty ? "$city, $country" : city;
+
+    final parts = <String>["I want to plan a trip to $destination."];
+
+    if (_startDate != null && _endDate != null) {
+      final start = "${_startDate!.day}/${_startDate!.month}/${_startDate!.year}";
+      final end = "${_endDate!.day}/${_endDate!.month}/${_endDate!.year}";
+      parts.add("I'll be there from $start to $end.");
+    } else if (_startDate != null) {
+      final start = "${_startDate!.day}/${_startDate!.month}/${_startDate!.year}";
+      parts.add("I'll be arriving on $start.");
+    }
+
+    final travelers = int.tryParse(_travelersController.text.trim());
+    if (travelers != null && travelers > 0) {
+      parts.add("There will be $travelers of us.");
+    }
+
+    if (_selectedInterests.isNotEmpty) {
+      final sorted = _selectedInterests.toList()..sort();
+      parts.add("We're interested in ${sorted.join(', ')}.");
+    }
+
+    parts.add("Can you help me plan an itinerary?");
+    return parts.join(" ");
+  }
+
+  void _submit() {
+    final city = _cityController.text.trim();
     if (city.isEmpty) {
-      AppSnackbar.warning(context, 'City is required');
+      _showSnackbar('City is required');
       return;
     }
 
-    final destination = country.isNotEmpty ? "$city, $country" : city;
+    final autoMessage = _buildAutoMessage();
 
-    final request = CreateTripRequest(
-      destination: destination,
-      startDate: _startDate?.toIso8601String(),
-      endDate: _endDate?.toIso8601String(),
-      numberOfTravelers: int.tryParse(_travelersController.text.trim()),
+    Navigator.pop(context, autoMessage);
+  }
+
+  void _showSnackbar(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        behavior: SnackBarBehavior.floating,
+      ),
     );
-
-    context.read<TripsCubit>().createTrip(request);
   }
 
   @override
   Widget build(BuildContext context) {
-    return BlocListener<TripsCubit, TripsState>(
-      listener: (context, state) {
-        state.when(
-          initial: () {},
-          loading: () {},
-          creating: () {},
-          created: () {
-            AppSnackbar.success(context, 'Trip created! 🎉');
-            Navigator.pop(context);
-          },
-          loaded: (_) {},
-          error: (msg) {
-            AppSnackbar.error(context, msg);
-          },
-        );
-      },
-      child: Scaffold(
-        appBar: AppBar(
+    return Scaffold(
+      appBar: AppBar(
           leading: const BackButton(),
           title: null,
           actions: [
             Padding(
               padding: const EdgeInsets.only(right: 16, top: 8, bottom: 8),
-              child: BlocBuilder<TripsCubit, TripsState>(
-                builder: (context, state) {
-                  final isLoading = state.maybeWhen(creating: () => true, orElse: () => false);
-                  return ElevatedButton(
-                    onPressed: isLoading ? null : _submit,
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.black,
-                      foregroundColor: Colors.white,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      padding: const EdgeInsets.symmetric(horizontal: 16),
-                    ),
-                    child: isLoading
-                        ? const SizedBox(
-                      width: 16,
-                      height: 16,
-                      child: CircularProgressIndicator(
-                        color: Colors.white,
-                        strokeWidth: 2,
-                      ),
-                    )
-                        : const Text(
-                      "Create Trip",
-                      style: TextStyle(fontWeight: FontWeight.w500),
-                    ),
-                  );
-                },
+              child: ElevatedButton(
+                onPressed: _submit,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.black,
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                ),
+                child: const Text(
+                  "Create Trip",
+                  style: TextStyle(fontWeight: FontWeight.w500),
+                ),
               ),
             ),
           ],
@@ -219,6 +242,8 @@ class _CreateTripViewState extends State<_CreateTripView> {
                       keyboardType: TextInputType.number,
                       prefixIcon: Icons.people_outline,
                     ),
+                    const SizedBox(height: 12),
+                    _interestsSection(),
 
                     const SizedBox(height: 32),
                   ],
@@ -227,7 +252,52 @@ class _CreateTripViewState extends State<_CreateTripView> {
             ),
           ],
         ),
-      ),
+      );
+  }
+
+  Widget _interestsSection() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _sectionLabel("Interests"),
+        const SizedBox(height: 10),
+        Wrap(
+          spacing: 8,
+          runSpacing: 6,
+          children: _allInterests.map((interest) {
+            final selected = _selectedInterests.contains(interest);
+            return FilterChip(
+              label: Text(
+                interest,
+                style: TextStyle(
+                  fontSize: 13,
+                  color: selected ? Colors.white : Colors.black87,
+                  fontWeight: selected ? FontWeight.w600 : FontWeight.normal,
+                ),
+              ),
+              selected: selected,
+              selectedColor: Colors.black,
+              checkmarkColor: Colors.white,
+              backgroundColor: Colors.grey.shade100,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(20),
+                side: BorderSide(
+                  color: selected ? Colors.black : Colors.grey.shade300,
+                ),
+              ),
+              onSelected: (value) {
+                setState(() {
+                  if (value) {
+                    _selectedInterests.add(interest);
+                  } else {
+                    _selectedInterests.remove(interest);
+                  }
+                });
+              },
+            );
+          }).toList(),
+        ),
+      ],
     );
   }
 

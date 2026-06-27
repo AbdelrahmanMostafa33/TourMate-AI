@@ -90,6 +90,27 @@ class ChatCubit extends Cubit<ChatState> {
     }
   }
 
+  /// Connect as a new chat and immediately send the given auto-message.
+  /// Used by the trip creation form to pre-fill the conversation with
+  /// destination, dates, travelers, and interests.
+  Future<void> connectWithAutoMessage(String autoMessage) async {
+    _lastTripId = null;
+    emit(const ChatState.loading());
+    try {
+      await _repo.connect();
+      // Stream listener is set up by _onConnectionStateChanged(connected).
+      // Send the auto message immediately — the WebSocket is already connected
+      // and _repo.sendMessage writes directly to the channel sink.
+      sendMessage(autoMessage);
+      emit(ChatState.connected(messages: List.from(_messages), isTyping: true));
+    } catch (e) {
+      debugPrint('[ChatCubit] connectWithAutoMessage() failed: $e');
+      if (!isClosed) {
+        emit(ChatState.error("Failed to connect: $e"));
+      }
+    }
+  }
+
   /// Reconnect using the last connection mode (new chat or trip chat).
   Future<void> reconnect() async {
     debugPrint('[ChatCubit] reconnect: lastTripId=$_lastTripId');
