@@ -134,9 +134,14 @@ def embed_query(
     Returns:
         768-dimensional vector as a Python list, or **None** on failure.
     """
-    if not _embed_keys:
-        logger.warning("[EmbedService] No Gemini API key configured")
-        return None
+    vectors = _embed_multi([query_text])
+    return vectors[0] if vectors else None
+
+
+def _embed_multi(texts: list[str]) -> list[list[float] | None]:
+    """Internal: embed 1+ texts with key rotation."""
+    if not _embed_keys or not texts:
+        return [None] * len(texts)
 
     last_error = None
     for _ in range(len(_embed_keys)):
@@ -147,19 +152,19 @@ def embed_query(
             client = genai.Client(api_key=key)
             result = client.models.embed_content(
                 model=EMBEDDING_MODEL,
-                contents=query_text,
+                contents=texts,
                 config=types.EmbedContentConfig(
                     output_dimensionality=EMBEDDING_DIMS,
                 ),
             )
-            return result.embeddings[0].values
+            return [e.values for e in result.embeddings]
         except Exception as exc:
             last_error = exc
             logger.warning("[EmbedService] Key ...%s failed: %s", key[-4:], exc)
             continue
 
     logger.warning("[EmbedService] All keys failed: %s", last_error)
-    return None
+    return [None] * len(texts)
 
 
 # ── Similarity ───────────────────────────────────────────────────────────────

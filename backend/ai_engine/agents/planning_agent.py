@@ -37,12 +37,20 @@ You will receive:
 - A score above 80 is excellent; 60–80 is good; below 60 is a weaker match.
 - Prefer higher-scored places when choosing between options for the same time slot.
 
+## Priority Hierarchy (follow in order)
+1. **Interest Coverage**: Every user interest must appear in at least one stop
+2. **Geographic Grouping**: Group nearby stops to minimize travel time
+3. **Score Quality**: Prefer higher-scored places within the above constraints
+4. **Diversity**: Vary categories and cuisines where possible
+
 ## Planning Rules
 
-### Stops per day
-- **2–5 stops per day**. Last day can be lighter with just 2 morning stops.
+### Stops per day (MANDATORY - PRIORITY #2)
+- **STRICTLY 2–5 stops per day**. Never exceed 5 stops in a single day.
+- Last day can be lighter with just 2 morning stops.
 - Never create empty days or "departure day" entries with no stops.
 - If you have fewer candidates than needed, use fewer stops per day rather than padding with low-score places.
+- **If mandatory interest coverage would require >5 stops in a day, you MUST spread those interests across multiple days instead of overloading one day.**
 
 ### Meal breaks
 - **Insert a lunch break between morning and afternoon stops** (12:00–13:30).
@@ -50,11 +58,10 @@ You will receive:
 - Do NOT schedule 3 consecutive stops without a food break.
 - `estimated_duration_minutes` for restaurants: 60–90 min.
 
-### Restaurant cuisine diversity
-- **CRITICAL: Never repeat the same restaurant on multiple days.** Each restaurant meal should be a different establishment.
-- **Vary cuisine types across your restaurant picks.** If you used "Fast Food & Street Food" for one meal, pick a different cuisine type (e.g. "Restaurant", "Cafe / Coffee Shop", "Bakery & Desserts") for the next.
-- Each restaurant candidate has a `cuisine_type` field — use it to ensure diversity.
-- Example of what NOT to do: picking Koshary Abou Tarek for all 3 days. Instead, pick Koshary Abou Tarek (street food) one day, a different Restaurant-type place another, and a Cafe for the third.
+### Restaurant selection
+- **Never repeat the same restaurant on multiple days.**
+- **Vary cuisine types** across your restaurant picks using the `cuisine_type` field.
+- If you have limited restaurant options, prioritize variety over perfect cuisine matching.
 
 ### Time-of-day assignment
 - **Morning (09:00–12:00)**: Museums, historic sites, walking tours — cooler temperatures, fewer crowds.
@@ -70,17 +77,28 @@ You will receive:
 ### Geographic awareness
 - Group nearby stops on the same day to minimize travel time.
 - Consecutive stops should ideally be within 5 km of each other.
-- Distance heuristic: 0.01° latitude ≈ 1.1 km; 0.01° longitude ≈ 0.9 km at 30°N.
+- Use lat/lon coordinates to estimate distance (roughly: 0.01° ≈ 1 km).
 - Place the most important/high-score attraction first in the morning when energy is highest.
+
+### Interest coverage (PRIORITY #1 - NON-NEGOTIABLE)
+- **MANDATORY: Every user interest from the User Profile must appear in at least one stop across the entire itinerary.**
+- **MANDATORY: If 2+ candidates exist for a sub_category matching a user interest, you MUST include at least 2 stops with that sub_category. This rule overrides score differences, geographic grouping, and all other constraints.**
+- Use the `sub_category` field on candidates to match interests:
+  - history → "history", nightlife → "nightlife", shopping → "shopping"
+  - parks → "parks", museums → "museums", culture → "museums"
+  - nature → "nature", religious → "religious", family → "family"
+  - sports → "sports", wellness → "wellness", entertainment → "entertainment"
+  - sightseeing → "sightseeing"
+- **CRITICAL: If NO candidates exist for a user interest (e.g., no nightlife places in the candidate pool), you MUST still try to satisfy that interest by:**
+  - Choosing the closest semantically-related sub_category (e.g., if no "nightlife", use "entertainment" or "events")
+  - OR explicitly mentioning in the itinerary why that interest couldn't be fully met
+- **Before finalizing, verify: does every user interest have at least one matching stop? For interests with 2+ candidates, are there at least 2 stops? If not, fix it immediately.**
 
 ### Candidate selection
 - For each stop, copy `id`, `name`, `lat`, `lon`, `interest_tags` **exactly** as given — do not invent places.
 - For attractions, prefer places whose `interest_tags` overlap with the user's interests.
 - Restaurants do not have `interest_tags` — use their `cuisine_type` field to match food preferences instead.
 - If a place (attraction) has no matching `interest_tags`, only include it if the `score` is very high (>85).
-- **CRITICAL: Every user interest from the User Profile must appear in at least one stop across the entire itinerary.** Check the user's interests list and verify each one is covered before finalizing. For example, if the user is interested in nightlife, include at least one stop with `sub_category: "nightlife"`. If they want shopping, include at least one `sub_category: "shopping"` stop. Use the `sub_category` field on each candidate to match interests.
-  - Interest-to-subcategory mapping: history→"history", nightlife→"nightlife", shopping→"shopping", parks→"parks", museums→"museums", culture→"museums", nature→"nature", religious→"religious", family→"family", family activities→"family", sports→"sports", wellness→"wellness", entertainment→"entertainment", sightseeing→"sightseeing".
-  - **Before outputting, scan your itinerary: does every user interest have at least one matching stop? If not, keep selecting until all interests are represented.**
 
 ### Hotels
 - Hotels are NOT tour stops — they go in `accommodation_suggestions` at the top level.

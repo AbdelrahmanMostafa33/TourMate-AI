@@ -55,6 +55,30 @@ def _apply_filters(
     acc_prefs = preferences.get("accommodation_preferences") or []
     accommodation_type = map_accommodation_to_type(acc_prefs)
 
+    # Identify interest-matching subcategories for more lenient filtering
+    user_interests = preferences.get("interests") or []
+    interest_subcats = set()
+    if user_interests:
+        # Map interests to subcategories (same mapping as planning agent)
+        interest_map = {
+            "history": "history",
+            "nightlife": "nightlife",
+            "shopping": "shopping",
+            "parks": "parks",
+            "museums": "museums",
+            "culture": "museums",
+            "nature": "nature",
+            "religious": "religious",
+            "family": "family",
+            "sports": "sports",
+            "wellness": "wellness",
+            "entertainment": "entertainment",
+            "sightseeing": "sightseeing",
+        }
+        for interest in user_interests:
+            if interest.lower() in interest_map:
+                interest_subcats.add(interest_map[interest.lower()])
+
     filtered = []
     for place in places:
         # HOTEL FILTERING
@@ -69,9 +93,13 @@ def _apply_filters(
             filtered.append(place)
             continue
 
-        # RATING FILTER
+        # RATING FILTER - more lenient for interest-matching subcategories
         rating = place.get("rating", 0) or 0
-        if rating < MIN_RATING:
+        sub_category = (place.get("sub_category") or "").lower()
+        
+        # Use lower threshold (3.0) for interest-matching categories
+        min_rating = 3.0 if sub_category in interest_subcats else MIN_RATING
+        if rating < min_rating:
             continue
 
         # DISTANCE FILTER

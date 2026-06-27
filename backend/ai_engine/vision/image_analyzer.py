@@ -21,9 +21,12 @@ from ai_engine.schemas.vision_schema import VisionFeatures
 from ai_engine.tools.json_utils import extract_json_from_llm_output
 from ai_engine.vision.feature_extractor import extract_and_validate
 
+from ai_engine.observability import traced
+
 logger = logging.getLogger(__name__)
 
 
+@traced(name="vision_analyze_image", tags=["vision", "image_analysis"], metadata={"component": "image_analyzer"})
 async def analyze_travel_image(image_bytes: bytes) -> VisionFeatures:
     """Analyse a travel-related image and extract structured preferences.
 

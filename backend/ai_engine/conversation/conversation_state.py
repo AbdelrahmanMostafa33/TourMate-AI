@@ -105,9 +105,14 @@ class TripSlots:
         """Return the list of REQUIRED fields that are still None."""
         missing: List[str] = []
         if not self.destination_city:
-            missing.append("destination")
+            missing.append("city")
         if self.duration_days is None:
             missing.append("duration")
+        # Interests are ALWAYS required before planning.
+        # Users can provide interests by typing them, uploading an image,
+        # or explicitly opting out (interests=[] means "no preference").
+        if self.interests is None:
+            missing.append("interests")
         return missing
 
     def is_complete(self) -> bool:
@@ -185,13 +190,19 @@ class TripSlots:
 
         for list_field in ("interests", "food_preferences", "accommodation_preferences"):
             new_values = intent.get(list_field)
-            if new_values and isinstance(new_values, list):
-                existing = getattr(self, list_field) or []
-                combined = list(existing)
-                for v in new_values:
-                    if v not in combined:
-                        combined.append(v)
-                setattr(self, list_field, combined)
+            if new_values is not None and isinstance(new_values, list):
+                if new_values:
+                    # Merge non-empty list into existing (union, no duplicates)
+                    existing = getattr(self, list_field) or []
+                    combined = list(existing)
+                    for v in new_values:
+                        if v not in combined:
+                            combined.append(v)
+                    setattr(self, list_field, combined)
+                # Ignore empty lists from the LLM — they are often default
+                # values from structured output, not intentional opt-outs.
+                # The explicit opt-out case is handled upstream by the LLM
+                # choosing plan_trip + fill_defaults().
 
         if not self.interests and intent.get("special_requests"):
             raw = intent["special_requests"]

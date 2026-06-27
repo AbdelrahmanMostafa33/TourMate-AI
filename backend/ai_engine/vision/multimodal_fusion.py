@@ -11,11 +11,13 @@ from __future__ import annotations
 import logging
 
 from ai_engine.graph.state import TripProfile
+from ai_engine.observability import traced
 from ai_engine.schemas.vision_schema import VisionFeatures
 
 logger = logging.getLogger(__name__)
 
 
+@traced(name="vision_fuse_image", tags=["vision", "fusion"], metadata={"component": "multimodal_fusion"})
 def fuse_image_with_profile(
     profile: TripProfile,
     image_features: VisionFeatures,
