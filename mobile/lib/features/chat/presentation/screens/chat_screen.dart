@@ -80,7 +80,6 @@ class _ChatScreenState extends State<ChatScreen> {
         loadingSessions: _loadingSessions,
         activeTripId: _activeTripId,
         onSessionChanged: _onSessionChanged,
-        onRefreshSessions: _fetchChatSessions,
       ),
     );
   }
@@ -94,7 +93,6 @@ class _ChatView extends StatefulWidget {
   final bool loadingSessions;
   final String? activeTripId;
   final void Function(String?) onSessionChanged;
-  final VoidCallback onRefreshSessions;
 
   const _ChatView({
     required this.scaffoldKey,
@@ -102,7 +100,6 @@ class _ChatView extends StatefulWidget {
     required this.loadingSessions,
     this.activeTripId,
     required this.onSessionChanged,
-    required this.onRefreshSessions,
   });
 
   @override
@@ -455,15 +452,6 @@ class _ChatViewState extends State<_ChatView> {
               ),
             ),
             const Spacer(),
-            // Refresh button to reload sidebar sessions
-            if (showSidebarBtn)
-              GestureDetector(
-                onTap: widget.onRefreshSessions,
-                child: Padding(
-                  padding: const EdgeInsets.all(4),
-                  child: Icon(Icons.refresh_rounded, size: 18, color: Colors.grey[700]),
-                ),
-              ),
           ],
         ),
       ),

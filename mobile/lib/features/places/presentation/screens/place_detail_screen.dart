@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../../../../core/network/service_locator.dart';
 import '../../../../core/network/api_services.dart';
 import '../../../../core/widgets/app_snackbar.dart';
@@ -136,46 +137,20 @@ class _PlaceDetailView extends StatelessWidget {
   }
 
   Widget _buildPhotoHeader(PlaceModel place) {
-    if (place.hasPhoto) {
-      return Stack(
-        fit: StackFit.expand,
-        children: [
-          Image.network(
-            place.firstPhoto,
-            fit: BoxFit.cover,
-            loadingBuilder: (_, child, progress) {
-              if (progress == null) return child;
-              return Container(color: Colors.grey[900]);
-            },
-            errorBuilder: (_, _, _) =>
-                Container(color: Colors.grey[900]),
+    if (place.photoUrls.isEmpty) {
+      return Container(
+        color: Colors.grey[900],
+        child: Center(
+          child: Icon(
+            Icons.image_outlined,
+            size: 80,
+            color: Colors.grey[700],
           ),
-          // Gradient overlay for readability
-          DecoratedBox(
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topCenter,
-                end: Alignment.bottomCenter,
-                colors: [
-                  Colors.transparent,
-                  Colors.black.withValues(alpha: 0.6),
-                ],
-              ),
-            ),
-          ),
-        ],
+        ),
       );
     }
-    return Container(
-      color: Colors.grey[900],
-      child: Center(
-        child: Icon(
-          Icons.image_outlined,
-          size: 80,
-          color: Colors.grey[700],
-        ),
-      ),
-    );
+
+    return _PhotoCarousel(photoUrls: place.photoUrls);
   }
 
   Widget _buildTitleSection(PlaceModel place) {
@@ -314,37 +289,58 @@ class _PlaceDetailView extends StatelessWidget {
   }
 
   Widget _buildLocationSection(PlaceModel place) {
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: Colors.grey.shade50,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: Colors.grey.shade200),
-      ),
-      child: Row(
-        children: [
-          Icon(Icons.map_outlined, color: Colors.grey[600], size: 20),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  '${place.lat!.toStringAsFixed(4)}, ${place.lng!.toStringAsFixed(4)}',
-                  style: TextStyle(fontSize: 13, color: Colors.grey[700]),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  'Map coordinates',
-                  style: TextStyle(fontSize: 11, color: Colors.grey[400]),
-                ),
-              ],
+    return GestureDetector(
+      onTap: () => _openInGoogleMaps(place),
+      child: Container(
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: Colors.grey.shade50,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: Colors.grey.shade200),
+        ),
+        child: Row(
+          children: [
+            Icon(Icons.map_outlined, color: Colors.grey[600], size: 20),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    '${place.lat!.toStringAsFixed(4)}, ${place.lng!.toStringAsFixed(4)}',
+                    style: TextStyle(fontSize: 13, color: Colors.grey[700]),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    'Open in Google Maps',
+                    style: TextStyle(fontSize: 11, color: Colors.blue[600]),
+                  ),
+                ],
+              ),
             ),
-          ),
-          Icon(Icons.chevron_right, color: Colors.grey[400], size: 18),
-        ],
+            Icon(Icons.open_in_new, color: Colors.blue[400], size: 18),
+          ],
+        ),
       ),
     );
+  }
+
+  Future<void> _openInGoogleMaps(PlaceModel place) async {
+    final lat = place.lat;
+    final lng = place.lng;
+    if (lat == null || lng == null) return;
+
+    final uri = Uri.parse(
+      'https://www.google.com/maps/search/?api=1&query=$lat,$lng',
+    );
+    try {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    } catch (_) {
+      // Fallback: try launching in browser
+      try {
+        await launchUrl(uri, mode: LaunchMode.platformDefault);
+      } catch (_) {}
+    }
   }
 
   Widget _buildCategoryDetails(PlaceModel place) {
@@ -1265,5 +1261,99 @@ class _ReviewCard extends StatelessWidget {
     } catch (_) {
       return dateStr.length >= 10 ? dateStr.substring(0, 10) : dateStr;
     }
+  }
+}
+
+// ── Photo Carousel ────────────────────────────────────────────────────────────
+
+class _PhotoCarousel extends StatefulWidget {
+  final List<String> photoUrls;
+
+  const _PhotoCarousel({required this.photoUrls});
+
+  @override
+  State<_PhotoCarousel> createState() => _PhotoCarouselState();
+}
+
+class _PhotoCarouselState extends State<_PhotoCarousel> {
+  final PageController _pageController = PageController();
+  int _currentPage = 0;
+
+  @override
+  void dispose() {
+    _pageController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        PageView.builder(
+          controller: _pageController,
+          itemCount: widget.photoUrls.length,
+          onPageChanged: (index) => setState(() => _currentPage = index),
+          itemBuilder: (_, index) => Image.network(
+            widget.photoUrls[index],
+            fit: BoxFit.cover,
+            loadingBuilder: (_, child, progress) {
+              if (progress == null) return child;
+              return Container(color: Colors.grey[900]);
+            },
+            errorBuilder: (_, _, _) => Container(color: Colors.grey[900]),
+          ),
+        ),
+        // Gradient overlay for readability
+        DecoratedBox(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: [
+                Colors.transparent,
+                Colors.black.withValues(alpha: 0.6),
+              ],
+            ),
+          ),
+        ),
+        // Page indicator dots
+        if (widget.photoUrls.length > 1)
+          Positioned(
+            bottom: 16,
+            left: 0,
+            right: 0,
+            child: Center(
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: List.generate(
+                  widget.photoUrls.length,
+                  (i) => _PageDot(isActive: i == _currentPage),
+                ),
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+class _PageDot extends StatelessWidget {
+  final bool isActive;
+
+  const _PageDot({required this.isActive});
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 200),
+      margin: const EdgeInsets.symmetric(horizontal: 3),
+      width: isActive ? 10 : 6,
+      height: 6,
+      decoration: BoxDecoration(
+        color: isActive ? Colors.white : Colors.white38,
+        borderRadius: BorderRadius.circular(3),
+      ),
+    );
   }
 }

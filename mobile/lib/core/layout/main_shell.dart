@@ -41,7 +41,7 @@ class _MainShellState extends State<MainShell> {
 
             /// NAVBAR
             bottomNavigationBar: Padding(
-              padding: const EdgeInsets.only(bottom: 10, top: 5),
+              padding: const EdgeInsets.only(bottom: 16, top: 5),
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceAround,
                 children: [
