@@ -103,32 +103,6 @@ class FlightOfferItem(BaseModel):
         from_attributes = True
 
 
-# ─── Saved Offers ────────────────────────────────────────────────────────────
-
-class SaveFlightOfferRequest(BaseModel):
-    """Save a selected flight offer for later booking."""
-
-    trip_id: str
-    offer_index: int
-    raw_offer: dict
-
-
-class SavedFlightOfferResponse(BaseModel):
-    """Response after saving a flight offer."""
-
-    offer_id: str
-    trip_id: str
-    offer_index: int
-    origin_iata: str | None = None
-    destination_iata: str | None = None
-    airline_code: str | None = None
-    flight_number: str | None = None
-    total_price: float | None = None
-    currency: str | None = None
-    departure_at: datetime | None = None
-    arrival_at: datetime | None = None
-
-
 # ─── Trip Context ─────────────────────────────────────────────────────────────
 
 class TripFlightContext(BaseModel):
@@ -157,37 +131,55 @@ class TripFlightContext(BaseModel):
     suggested_adults: int = 1
 
 
-# ─── Booking ──────────────────────────────────────────────────────────────────
-
-class FlightBookRequest(BaseModel):
-    """Request payload to book a flight (create a Booking row + Amadeus order)."""
-
-    trip_id: str
-    raw_offer: dict
-    traveler_first_name: str
-    traveler_last_name: str
-    traveler_date_of_birth: date
-    traveler_gender: str  # "MALE" or "FEMALE"
-    traveler_email: str
-    traveler_phone: str
-
-    @field_validator("traveler_gender")
-    @classmethod
-    def validate_gender(cls, v: str) -> str:
-        upper = v.strip().upper()
-        if upper not in ("MALE", "FEMALE"):
-            raise ValueError("traveler_gender must be 'MALE' or 'FEMALE'")
-        return upper
+# ─── Booking (Stripe flow) ─────────────────────────────────────────────────────
 
 
-class FlightBookFromOfferRequest(BaseModel):
-    """Book a flight from a previously saved offer — no raw_offer needed.
+class FlightBookInitiateRequest(BaseModel):
+    """Initiate a flight booking — prices the offer and creates a Stripe PaymentIntent.
 
-    Instead of passing the full ``raw_offer`` dict (which can be very large),
-    the frontend references the ``offer_id`` returned by
-    ``POST /flights/offer`` and only sends the traveler details.
+    The frontend sends the ``raw_offer`` directly (from search results) and
+    ``trip_id``.  The server generates an internal ``offer_id``, prices the
+    flight via Amadeus, saves the priced offer in memory, and creates a
+    Stripe PaymentIntent with ``automatic_payment_methods`` enabled.
     """
 
+    raw_offer: dict
+    trip_id: str
+
+
+class FlightBookInitiateResponse(BaseModel):
+    """Response after initiating a flight booking.
+
+    Contains the ``client_secret`` (for Flutter's Stripe Payment Sheet),
+    the ``priced_offer`` (Flutter stores this and sends it back in confirm),
+    and flight summary fields for the UI to display.
+    """
+
+    client_secret: str
+    payment_intent_id: str
+    priced_offer: dict
+    amount: float
+    currency: str
+    origin_iata: str
+    destination_iata: str
+    departure_at: datetime
+    arrival_at: datetime
+    airline_name: str
+    flight_number: str
+    cabin_class: str
+
+
+class FlightBookConfirmRequest(BaseModel):
+    """Confirm a flight booking after Stripe payment succeeded.
+
+    The frontend sends back the ``payment_intent_id`` from Stripe (after
+    the Payment Sheet completes), the exact ``priced_offer`` from the
+    initiate response, and traveler details for the Amadeus booking.
+    Nothing is saved to the DB unless BOTH Stripe and Amadeus succeed.
+    """
+
+    payment_intent_id: str
+    priced_offer: dict
     trip_id: str
     traveler_first_name: str
     traveler_last_name: str
