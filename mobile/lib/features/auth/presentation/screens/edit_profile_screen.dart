@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../../../core/network/service_locator.dart';
 import '../../../../core/widgets/city_picker.dart';
+import '../../../../core/widgets/app_snackbar.dart';
 import '../../data/models/user_response.dart';
 import '../../data/repository/profile_repository.dart';
 import '../../logic/profile_cubit.dart';
@@ -133,12 +134,7 @@ class _EditProfileViewState extends State<_EditProfileView> {
         listener: (context, state) {
           state.whenOrNull(
             error: (message) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: Text(message),
-                  backgroundColor: Colors.red.shade700,
-                ),
-              );
+              AppSnackbar.error(context, message);
             },
           );
         },

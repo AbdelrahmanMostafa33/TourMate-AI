@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../../../core/network/service_locator.dart';
 import '../../../../core/network/api_services.dart';
+import '../../../../core/widgets/app_snackbar.dart';
 import '../../../../features/explore/data/models/place_model.dart';
 import '../../data/models/review_model.dart';
 import '../../data/repository/places_repository.dart';
@@ -632,6 +633,7 @@ class _ReviewsSection extends StatelessWidget {
                           review: review,
                           onEdit: () => _showEditReview(context, review),
                           onDelete: () => _showDeleteConfirm(context, review),
+                          onLike: () => context.read<ReviewsCubit>().toggleLike(review.reviewId),
                         ),
                       )),
                     ],
@@ -985,19 +987,9 @@ class _ReviewsSection extends StatelessWidget {
             if (ctx.mounted) {
               Navigator.pop(ctx);
               if (success) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('Review submitted!'),
-                    duration: Duration(seconds: 2),
-                  ),
-                );
+                AppSnackbar.success(context, 'Review submitted!');
               } else {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('Failed to submit review'),
-                    backgroundColor: Colors.red,
-                  ),
-                );
+                AppSnackbar.error(context, 'Failed to submit review');
               }
             }
           },
@@ -1030,19 +1022,9 @@ class _ReviewsSection extends StatelessWidget {
             if (ctx.mounted) {
               Navigator.pop(ctx);
               if (success) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('Review updated!'),
-                    duration: Duration(seconds: 2),
-                  ),
-                );
+                AppSnackbar.success(context, 'Review updated!');
               } else {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('Failed to update review'),
-                    backgroundColor: Colors.red,
-                  ),
-                );
+                AppSnackbar.error(context, 'Failed to update review');
               }
             }
           },
@@ -1075,19 +1057,9 @@ class _ReviewsSection extends StatelessWidget {
               final success = await cubit.deleteReview(review.reviewId);
               if (!context.mounted) return;
               if (success) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('Review deleted'),
-                    duration: Duration(seconds: 2),
-                  ),
-                );
+                AppSnackbar.info(context, 'Review deleted');
               } else {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('Failed to delete review'),
-                    backgroundColor: Colors.red,
-                  ),
-                );
+                AppSnackbar.error(context, 'Failed to delete review');
               }
             },
             child: const Text(
@@ -1110,11 +1082,13 @@ class _ReviewCard extends StatelessWidget {
   final ReviewModel review;
   final VoidCallback onEdit;
   final VoidCallback onDelete;
+  final VoidCallback onLike;
 
   const _ReviewCard({
     required this.review,
     required this.onEdit,
     required this.onDelete,
+    required this.onLike,
   });
 
   @override
@@ -1207,15 +1181,49 @@ class _ReviewCard extends StatelessWidget {
             ),
           ],
 
-          // Footer with user avatar + name
+          // Footer with like button + user avatar + name
           const SizedBox(height: 8),
           Row(
             children: [
-              Icon(Icons.favorite_border, size: 12, color: Colors.grey[400]),
-              const SizedBox(width: 4),
-              Text(
-                '${review.likesCount}',
-                style: TextStyle(fontSize: 11, color: Colors.grey[400]),
+              // Interactive like button
+              GestureDetector(
+                onTap: onLike,
+                behavior: HitTestBehavior.opaque,
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    AnimatedSwitcher(
+                      duration: const Duration(milliseconds: 200),
+                      transitionBuilder: (child, anim) => ScaleTransition(
+                        scale: anim,
+                        child: child,
+                      ),
+                      child: Icon(
+                        review.likedByUser
+                            ? Icons.favorite
+                            : Icons.favorite_border,
+                        key: ValueKey(review.likedByUser),
+                        size: 14,
+                        color: review.likedByUser
+                            ? Colors.red
+                            : Colors.grey[400],
+                      ),
+                    ),
+                    const SizedBox(width: 4),
+                    Text(
+                      '${review.likesCount}',
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: review.likedByUser
+                            ? Colors.red[400]
+                            : Colors.grey[400],
+                        fontWeight: review.likedByUser
+                            ? FontWeight.w600
+                            : FontWeight.normal,
+                      ),
+                    ),
+                  ],
+                ),
               ),
               const SizedBox(width: 12),
               // User avatar circle

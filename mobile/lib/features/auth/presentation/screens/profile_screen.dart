@@ -8,6 +8,7 @@ import '../../logic/profile_cubit.dart';
 import '../../logic/profile_state.dart';
 import '../widgets/persona_card.dart';
 import 'edit_profile_screen.dart';
+import '../../../../core/widgets/app_snackbar.dart';
 
 class ProfileScreen extends StatelessWidget {
   const ProfileScreen({super.key});
@@ -302,12 +303,7 @@ class _ProfileView extends StatelessWidget {
       );
     } catch (e) {
       if (!context.mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text("Failed to sign out: $e"),
-          backgroundColor: Colors.red,
-        ),
-      );
+        AppSnackbar.error(context, "Failed to sign out: $e");
     }
   }
 }

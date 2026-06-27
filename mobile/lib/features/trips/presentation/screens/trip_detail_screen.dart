@@ -4,6 +4,7 @@ import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart' as latlong;
 import '../../../../core/network/service_locator.dart';
 import '../../../../core/network/api_services.dart';
+import '../../../../core/widgets/app_snackbar.dart';
 import '../../../chat/presentation/screens/chat_screen.dart';
 import '../../data/models/trip_detail_model.dart';
 import '../../data/models/trip_profile_data.dart';
@@ -1057,17 +1058,9 @@ class _TripDetailScreenState extends State<TripDetailScreen> {
     if (!context.mounted) return;
 
     if (error != null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(error),
-          backgroundColor: Colors.red,
-          duration: const Duration(seconds: 5),
-        ),
-      );
+      AppSnackbar.error(context, error);
     } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Trip deleted')),
-      );
+      AppSnackbar.info(context, 'Trip deleted');
       Navigator.pop(context);
     }
   }

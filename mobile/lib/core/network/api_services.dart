@@ -133,6 +133,12 @@ abstract class ApiServices {
       @Path('review_id') String reviewId,
       );
 
+  /// LIKE / UNLIKE A REVIEW (toggle)
+  @POST("/api/v1/reviews/{review_id}/like")
+  Future<void> likeReview(
+      @Path('review_id') String reviewId,
+      );
+
   /// DELETE A TRIP
   @DELETE("/api/v1/trips/{trip_id}")
   Future<void> deleteTrip(

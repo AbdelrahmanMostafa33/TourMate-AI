@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../../../core/network/service_locator.dart';
+import '../../../../core/widgets/app_snackbar.dart';
 import '../../data/models/create_trip_request.dart';
 import '../../data/repository/trips_repository.dart';
 import '../../logic/trips_cubit.dart';
@@ -69,9 +70,7 @@ class _CreateTripViewState extends State<_CreateTripView> {
     final city = _cityController.text.trim();
     final country = _countryController.text.trim();
     if (city.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("City is required")),
-      );
+      AppSnackbar.warning(context, 'City is required');
       return;
     }
 
@@ -96,19 +95,12 @@ class _CreateTripViewState extends State<_CreateTripView> {
           loading: () {},
           creating: () {},
           created: () {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text("Trip created!")),
-            );
+            AppSnackbar.success(context, 'Trip created! 🎉');
             Navigator.pop(context);
           },
           loaded: (_) {},
           error: (msg) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Text(msg),
-                backgroundColor: Colors.red,
-              ),
-            );
+            AppSnackbar.error(context, msg);
           },
         );
       },
