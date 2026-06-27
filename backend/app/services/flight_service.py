@@ -99,7 +99,21 @@ def _parse_city_result(raw: dict) -> CitySearchResult:
 
 
 # ── service ───────────────────────────────────────────────────────────────────
-
+CITY_TO_IATA = {
+    "cairo": "CAI",
+    "istanbul": "IST",
+    "london": "LHR",
+    "dubai": "DXB",
+    "paris": "CDG",
+    "rome": "FCO",
+    "amsterdam": "AMS",
+    "madrid": "MAD",
+    "berlin": "BER",
+    "barcelona": "BCN",
+    "tokyo": "NRT",
+    "sydney": "SYD",
+    "miami": "MIA",
+}
 class FlightService:
     """Business logic for flight booking simulation via Amadeus."""
 
@@ -109,26 +123,26 @@ class FlightService:
     # ── public helpers (used by router) ───────────────────────────────────────
 
     def resolve_city_to_iata(self, city_name: str) -> CitySearchResult:
-        """Convert a city name (or partial name) to the best-matching IATA code.
-
-        Calls the Amadeus ``reference_data.locations`` API and returns the
-        *first* result that has an IATA code.
-
-        Args:
-            city_name: City name (e.g. ``\"Cairo\"``, ``\"London\"``).
-
-        Returns:
-            A ``CitySearchResult`` with the resolved IATA code.
-
-        Raises:
-            ValueError: If no matching city/airport is found.
-        """
-        raw_results = amadeus_client.search_cities(city_name, max_results=5)
-        for raw in raw_results:
-            iata = raw.get("iataCode", "")
-            if iata:
-                return _parse_city_result(raw)
-        raise ValueError(f"Could not resolve city name '{city_name}' to an IATA code")
+    # 1- dictionary
+     lower = city_name.lower().strip()
+     if lower in CITY_TO_IATA:
+        iata = CITY_TO_IATA[lower]
+        return CitySearchResult(
+            iata_code=iata,
+            city_name=city_name,
+            airport_name=None,
+            country_name="",
+            sub_type="AIRPORT"
+        )
+    
+    # 2- Amadeus
+     raw_results = amadeus_client.search_cities(city_name, max_results=5)
+     for raw in raw_results:
+        iata = raw.get("iataCode", "")
+        if iata:
+            return _parse_city_result(raw)
+    
+     raise ValueError(f"Could not resolve city name '{city_name}' to an IATA code")
 
     # ── search_cities ─────────────────────────────────────────────────────────
 
