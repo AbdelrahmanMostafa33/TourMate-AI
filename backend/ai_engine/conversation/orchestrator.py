@@ -328,11 +328,28 @@ async def _process_message_inner(
     return response
 
 
-def _prepare_message(user_message: Optional[str]) -> str:
+def _prepare_message(user_message: Optional[str], image_features: Optional[VisionFeatures] = None) -> str:
     effective_message = (user_message or "").strip()
-    if not effective_message:
-        effective_message = "I uploaded an image for my trip."
-    return effective_message
+    if effective_message:
+        return effective_message
+    # Build a descriptive fallback when the user only uploaded an image
+    # so the message interpreter can route the intent correctly.
+    if image_features and image_features.confidence != "low":
+        hints = []
+        if image_features.interests:
+            hints.append(f"interests={image_features.interests}")
+        if image_features.travel_style:
+            hints.append(f"style={image_features.travel_style}")
+        if image_features.pace:
+            hints.append(f"pace={image_features.pace}")
+        if image_features.budget_level:
+            hints.append(f"budget={image_features.budget_level}")
+        signal = ", ".join(hints) if hints else "low-signal"
+        return (
+            f"[Image uploaded — analysis: {signal}] "
+            "Plan a trip based on this image."
+        )
+    return "I uploaded an image for my trip."
 
 
 async def _parse_image(image_bytes: Optional[bytes]) -> Optional[VisionFeatures]:
@@ -366,8 +383,8 @@ async def handle_chat(
     async with lock:
         manager = await get_session_manager()
         state = await manager.resume_or_create(user_id, session_id)
-        effective_message = _prepare_message(user_message)
         image_features = await _parse_image(image_bytes)
+        effective_message = _prepare_message(user_message, image_features)
         response = await _process_message(user_id, state, effective_message, image_features, token)
         await manager.save(state)
         await manager.extend_ttl(state.session_id)
@@ -392,8 +409,8 @@ async def handle_chat_stream(user_id, user_message, image_bytes=None, token=None
 
         yield {"type": "session", "data": {"session_id": state.session_id, "phase": state.phase.value}}
 
-        effective_message = _prepare_message(user_message)
         image_features = await _parse_image(image_bytes)
+        effective_message = _prepare_message(user_message, image_features)
 
         from ai_engine.graph.progress import get_progress_queue, remove_progress_queue
 
@@ -1051,6 +1068,7 @@ async def _handle_modify_itinerary(
                 state=state,
                 adjustments=adjustments,
                 effective_message=effective_message,
+                image_features=image_features,
             )
             if reranked:
                 return _itinerary_response(
@@ -1102,6 +1120,7 @@ async def _handle_modify_itinerary(
                     state=state,
                     adjustments=adjustments,
                     effective_message=effective_message,
+                    image_features=image_features,
                 )
                 if reranked:
                     return _itinerary_response(
@@ -1144,6 +1163,7 @@ async def _handle_modify_itinerary(
                     state=state,
                     adjustments=adjustments,
                     effective_message=effective_message,
+                    image_features=image_features,
                 )
                 if reranked:
                     return _itinerary_response(
@@ -1226,6 +1246,28 @@ async def _rerank_and_replan(
                 if updated_prefs.get(key) is not None:
                     profile[key] = updated_prefs[key]
 
+            # ── Fuse image features into the profile if available ─────────────
+            vision_agent_msgs: list[str] = []
+            if image_features and image_features.confidence != "low":
+                from ai_engine.graph.state import TripProfile
+                profile_obj = TripProfile(**profile)
+                fused = fuse_image_with_profile(profile_obj, image_features)
+                profile = dict(fused)
+                logger.info(
+                    "[RerankReplan] Fused image features into profile: "
+                    "interests=%s, style=%s, pace=%s, budget=%s",
+                    image_features.interests,
+                    image_features.travel_style,
+                    image_features.pace,
+                    image_features.budget_level,
+                )
+                vision_agent_msgs.append(
+                    f"[VisionFusion] Merged image signals: "
+                    f"interests={image_features.interests}, "
+                    f"style={image_features.travel_style}, "
+                    f"pace={image_features.pace}"
+                )
+
             rerank_pool = state.filtered_places or state.candidate_places or []
             rerank_state = {
                 "filtered_places": rerank_pool,
@@ -1242,7 +1284,7 @@ async def _rerank_and_replan(
                 "validation": None,
                 "error": None,
                 "planning_attempts": 0,
-                "agent_messages": [],
+                "agent_messages": vision_agent_msgs,
             }
 
             rerank_state = await score_candidates(rerank_state)
@@ -1305,8 +1347,18 @@ async def _handle_plan_trip(user_id, user_message, extracted, image_features, to
 
         s = state.slots if state else None
 
+        # Only append Trip context when the user_message doesn't already have
+        # structured profile info (e.g. from image analysis or a previous context
+        # append). Avoids duplicating budget/style/pace/interests in the prompt.
         rich_user_message = user_message
-        if s and (s.interests or s.food_preferences or s.accommodation_preferences or s.travel_style or s.budget_level):
+        _already_has_context = (
+            user_message.startswith("[Image uploaded")
+            or " | Trip context:" in user_message
+        )
+        if not _already_has_context and s and (
+            s.interests or s.food_preferences or s.accommodation_preferences
+            or s.travel_style or s.budget_level
+        ):
             context_parts = []
             if s.budget_level:
                 context_parts.append(f"budget: {s.budget_level}")

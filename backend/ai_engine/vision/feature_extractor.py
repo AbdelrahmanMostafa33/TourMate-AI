@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from typing import Optional
 
+from ai_engine.observability import traced
 from ai_engine.schemas.vision_schema import VisionFeatures
 
 VALID_ENVIRONMENTS = {"urban", "nature", "beach", "desert", "mountain", "mixed"}
@@ -18,6 +19,7 @@ VALID_BUDGET = {"budget", "moderate", "luxury"}
 VALID_CONFIDENCE = {"high", "medium", "low"}
 
 
+@traced(name="vision_extract_validate", tags=["vision", "extraction"], metadata={"component": "feature_extractor"})
 def extract_and_validate(raw: dict) -> VisionFeatures:
     """Validate and normalise the raw VLM response dict into a ``VisionFeatures``.
 

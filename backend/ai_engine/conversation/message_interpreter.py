@@ -34,11 +34,16 @@ class ExtractedSlots(BaseModel):
 
     destination_city: Optional[str] = Field(
         default=None,
-        description="City name if mentioned (e.g. 'Cairo', 'Paris')",
+        description=(
+            "REQUIRED: City name ONLY. The system ONLY supports specific cities. "
+            "NEVER accept a country name (e.g. 'Egypt', 'France', 'USA') as a city. "
+            "Valid examples: 'Cairo', 'Luxor', 'Aswan', 'Paris'. "
+            "If the user gives a country name, set this to null and ask for a specific city."
+        ),
     )
     destination_country: Optional[str] = Field(
         default=None,
-        description="Country name if mentioned",
+        description="Country name — fill this only if the user explicitly mentions a country",
     )
     duration_days: Optional[str] = Field(
         default=None,
@@ -132,7 +137,7 @@ INTERPRETER_SYSTEM_PROMPT = """You are TourMate AI, a travel planning assistant 
 
 ## Current State
 - Phase: {phase}
-- Destination: {destination}
+- City: {destination}
 - Duration: {duration}
 - Budget: {budget}
 - Style: {style}
@@ -165,7 +170,7 @@ Examples:
 
 3. **answer_question** — If the user asks a general travel question (e.g. "what's the best time to visit?", "how far is the museum from the hotel?").
 
-4. **plan_trip** — Only when the user provides destination + duration for a NEW trip. If there's already an itinerary shown in the Current State above, do NOT use this — use modify_itinerary instead.
+4. **plan_trip** — Only when ALL required info (city + duration + interests) is collected. If there's already an itinerary shown in the Current State above, do NOT use this — use modify_itinerary instead.
 
 5. **(LOWEST) ask_clarification** — When more information is needed.
 
@@ -173,11 +178,25 @@ Examples:
 1. Extract any travel information from the user's message into the "extracted" field
 2. NEVER ask for information they already provided — check the Current State above
 3. Always acknowledge what the user said before asking for more
-4. If destination or duration is missing, ask for ONE thing at a time — start with destination, then duration.
-5. NEVER ask about budget, pace, style, interests, food, accommodation, traveler count, dates, or traveler group — those are all handled by smart defaults.
-6. Be warm but concise — no filler words
-7. Respond in the same language the user writes in
-8. NEVER confirm or ask "Is that correct?" — if the user provides a clear answer, accept it immediately.
+4. If the city or duration is missing, ask for ONE thing at a time — start with the city, then duration.
+   Ask for a SPECIFIC city name (e.g. "Cairo", "Luxor").
+   CRITICAL: The system has data ONLY for cities, NOT for countries.
+   - If the user says "Egypt", "France", or any country → do NOT set destination_city.
+     Instead, reply: "Which city in that country?" and leave destination_city as null.
+   - If the user says "Cairo" → set destination_city = "Cairo" and proceed.
+   - If the user says a city name in another country → that's fine as long as it's a city.
+
+5. **Interest question**: After the city + duration are both set, ask about their interests.
+   Tell them they can:
+   - Type their interests (e.g. "history, food, art")
+   - Upload a photo showing what they like (the system will analyse it)
+   - Say "no preference" / "surprise me" to skip (interests will be left empty)
+   If interests are already provided (from a previous turn or from an image), do NOT ask again.
+
+6. NEVER ask about budget, pace, style, food, accommodation, traveler count, dates, or traveler group — those are all handled by smart defaults.
+7. Be warm but concise — no filler words
+8. Respond in the same language the user writes in
+9. NEVER confirm or ask "Is that correct?" — if the user provides a clear answer, accept it immediately.
 """
 
 
@@ -335,7 +354,17 @@ async def interpret_message(state: ConversationState, user_message: str) -> Inte
         interpreter_output.extracted.travel_style,
     ]):
         if extracted.get("destination_city") and extracted.get("duration_days"):
-            if action not in ("approve_itinerary", "modify_itinerary"):
+            # Only force plan_trip if interests are meaningfully provided
+            # (non-empty list). The LLM's structured output may return `[]`
+            # as a default for Optional[List[str]] fields, which should NOT
+            # be treated as "interests provided."
+            extracted_interests = extracted.get("interests")
+            state_interests = state.slots.interests
+            interests_ok = (
+                bool(extracted_interests)              # user actively provided interests this turn
+                or state_interests is not None          # already handled in a previous turn
+            )
+            if interests_ok and action not in ("approve_itinerary", "modify_itinerary"):
                 action = "plan_trip"
 
     return InterpretationResult(
