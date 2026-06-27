@@ -139,9 +139,11 @@ class PersonaCard extends StatelessWidget {
     final backendPersona = profile.travelerPersona;
 
     if (backendPersona != null && backendPersona.isNotEmpty) {
+      // Derive a short name from the first sentence or use a generic title
+      final shortName = _derivePersonaName(backendPersona);
       return DerivedPersona(
-        name: backendPersona,
-        description: _defaultPersona.description,
+        name: shortName,
+        description: backendPersona,
         icon: _defaultPersona.icon,
         accentColor: _defaultPersona.accentColor,
         gradient: _defaultPersona.gradient,
@@ -151,6 +153,44 @@ class PersonaCard extends StatelessWidget {
     }
 
     return _defaultPersona;
+  }
+
+  /// Extract a short, readable title from the full persona description.
+  static String _derivePersonaName(String text) {
+    final lower = text.toLowerCase();
+
+    if (lower.contains('adventure') || lower.contains('thrill')) {
+      return 'Adventure Seeker';
+    }
+    if (lower.contains('luxury') || lower.contains('premium') || lower.contains('comfort')) {
+      return 'Luxury Traveler';
+    }
+    if (lower.contains('budget') && lower.contains('moderate')) {
+      return 'Balanced Explorer';
+    }
+    if (lower.contains('budget') || lower.contains('cheap') || lower.contains('save')) {
+      return 'Budget Traveler';
+    }
+    if (lower.contains('food') || lower.contains('cuisine') || lower.contains('culinary') || lower.contains('local cuisine')) {
+      return 'Food Explorer';
+    }
+    if (lower.contains('nature') || lower.contains('outdoor') || lower.contains('hike')) {
+      return 'Nature Lover';
+    }
+    if (lower.contains('cultural') || lower.contains('history') || lower.contains('museum')) {
+      return 'Culture Enthusiast';
+    }
+    if (lower.contains('slow') || lower.contains('relax')) {
+      return 'Slow Traveler';
+    }
+    if (lower.contains('fast') || lower.contains('quick')) {
+      return 'Fast Pacer';
+    }
+    if (lower.contains('sport') || lower.contains('active')) {
+      return 'Active Traveler';
+    }
+
+    return 'Your Travel Style';
   }
 
   static const _defaultPersona = DerivedPersona(

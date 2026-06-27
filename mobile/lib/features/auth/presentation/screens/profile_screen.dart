@@ -53,9 +53,10 @@ class _ProfileView extends StatelessWidget {
   }
 
   Widget _buildProfileContent(BuildContext context, UserResponse data) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
+    return SingleChildScrollView(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
         const SizedBox(height: 16),
 
         /// ================= HEADER =================
@@ -152,7 +153,8 @@ class _ProfileView extends StatelessWidget {
 
         const SizedBox(height: 32),
       ],
-    );
+    ),
+  );
   }
 
   Widget _infoTile(IconData icon, String text) {
