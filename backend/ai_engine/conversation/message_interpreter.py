@@ -110,11 +110,53 @@ class ExtractedSlots(BaseModel):
         ),
     )
 
+    # ── Flight Related ──────────────────────────────────────────────
+    origin_city: Optional[str] = Field(
+        default=None,
+        description=(
+            "The city the user will fly FROM (origin). "
+            "Only used during FLIGHT_SELECTION phase (e.g. 'Cairo', 'London')."
+        ),
+    )
+    selected_flight_number: Optional[int] = Field(
+        default=None,
+        description=(
+            "The 1-based index of the flight the user chose from the search results. "
+            "Only used for select_flight action (e.g. 'the first one' → 1, 'flight 2' → 2)."
+        ),
+    )
+    cabin_class: Optional[str] = Field(
+        default=None,
+        description=(
+            "The cabin class the user wants for flights. "
+            "Only used during FLIGHT_SELECTION phase. "
+            "Valid values: 'ECONOMY', 'PREMIUM_ECONOMY', 'BUSINESS', 'FIRST'. "
+            "Extract when user says things like 'first class', 'business class', 'economy'."
+        ),
+    )
+    is_round_trip: Optional[bool] = Field(
+        default=None,
+        description=(
+            "Whether the user wants a round-trip (both departure and return). "
+            "Only used during FLIGHT_SELECTION phase. "
+            "Set to true if user says 'round trip', 'return', 'both ways'. "
+            "Set to false if user says 'one-way', 'one way'. Leave null if not specified."
+        ),
+    )
+    return_date: Optional[str] = Field(
+        default=None,
+        description=(
+            "The return date for a round-trip flight (ISO format or natural language). "
+            "Only used during FLIGHT_SELECTION phase when is_round_trip is true. "
+            "Extract when user says 'returning on July 30', 'come back August 1'."
+        ),
+    )
+
 
 class InterpreterOutput(BaseModel):
     """Structured output from the message interpreter."""
 
-    action: Literal["plan_trip", "ask_clarification", "answer_question", "approve_itinerary", "modify_itinerary", "select_hotel"] = Field(
+    action: Literal["plan_trip", "ask_clarification", "answer_question", "approve_itinerary", "modify_itinerary", "select_hotel", "search_flights", "select_flight"] = Field(
         description=(
             "What to do next. One of: "
             "'plan_trip' (all info collected), "
@@ -122,7 +164,9 @@ class InterpreterOutput(BaseModel):
             "'answer_question' (user asked a question), "
             "'approve_itinerary' (user approved), "
             "'modify_itinerary' (user wants changes), "
-            "'select_hotel' (user is choosing a hotel from options presented)"
+            "'select_hotel' (user is choosing a hotel from options presented), "
+            "'search_flights' (user wants to search/see flights during FLIGHT_SELECTION phase), "
+            "'select_flight' (user picked a specific flight from the options)"
         )
     )
     extracted: ExtractedSlots = Field(
@@ -182,13 +226,17 @@ Examples:
 
 1. **(HIGHEST) modify_itinerary** — If phase is "itinerary_review" and the user asks to add, remove, change, swap, update, or modify ANYTHING in their itinerary, ALWAYS use this action. This takes priority over every other rule, including plan_trip.
 
-2. **approve_itinerary** — If the user approves, confirms, or says the itinerary looks good. ALSO used during hotel_selection phase when the user says "looks good", "approve", or "they all look good" to accept the default (first) hotel.
+2. **approve_itinerary** — If the user approves, confirms, or says the itinerary looks good. ALSO used during hotel_selection phase when the user says "looks good", "approve", or "they all look good" to accept the default (first) hotel. ALSO used during flight_selection phase when the user says "skip flights", "no flights", "go to hotels", "I don't need flights", or simply "approve".
 
 3. **select_hotel** — ONLY during hotel_selection phase. If the user picks a specific hotel (by number like "hotel 2" or by name like "the Marriott"), use this action. Extract the hotel name or number into selected_hotel_name / selected_hotel_number.
 
-4. **plan_trip** — Only when ALL required info (city + duration + interests) is collected. If there's already an itinerary shown in the Current State above, do NOT use this — use modify_itinerary instead.
+4. **search_flights** — ONLY during flight_selection phase. If the user provides an origin city (e.g. "from Cairo") or wants to see/search flights, use this action. Extract the origin_city if mentioned.
 
-5. **(LOWEST) ask_clarification** — When more information is needed.
+5. **select_flight** — ONLY during flight_selection phase. If the user picks a specific flight by number (e.g. "flight 2", "the first one", "option 3"), use this action. Extract selected_flight_number (1-based).
+
+6. **plan_trip** — Only when ALL required info (city + duration + interests) is collected. If there's already an itinerary shown in the Current State above, do NOT use this — use modify_itinerary instead.
+
+7. **(LOWEST) ask_clarification** — When more information is needed.
 
 ## General Instructions
 1. Extract any travel information from the user's message into the "extracted" field
@@ -246,6 +294,29 @@ def _build_itinerary_summary(state: ConversationState) -> str:
         hotel_names = [h.get("name", "?") for h in hotels[:3]]
         lines.append(f"Hotels: {', '.join(hotel_names)}")
 
+    # In FLIGHT_SELECTION phase, show flight search results if available
+    if state.phase == ConversationPhase.FLIGHT_SELECTION:
+        slots = state.slots
+        if slots.flight_search_results and not slots.selected_flight_offer:
+            lines.append("\n## Available Flights (choose one):")
+            for i, f in enumerate(slots.flight_search_results[:5], 1):
+                airline = f.get("airline_name", f.get("airline_code", "?"))
+                flight_num = f.get("flight_number", "?")
+                depart = f.get("departure_at_formatted", "")
+                arrival = f.get("arrival_at_formatted", "")
+                price = f.get("total_price", "?")
+                currency = f.get("currency", "")
+                origin = f.get("origin_iata", "")
+                dest = f.get("destination_iata", "")
+                lines.append(f"  {i}. {airline} {flight_num}: {origin}→{dest}, {depart}→{arrival}, {price} {currency}")
+            lines.append("\nThe user can pick a flight by number (e.g. 'flight 2') or name (e.g. 'the Emirates one').")
+        elif not slots.origin_city:
+            lines.append("\nAsk the user where they will be flying FROM (origin city).")
+        elif not slots.flight_search_results:
+            lines.append("\nAsk the user if they want to search for flights for this trip.")
+        else:
+            lines.append("\nA flight has been selected. Ask if the user wants to proceed, or if they'd like to see different options.")
+
     return "\n".join(lines)
 
 
@@ -273,6 +344,16 @@ _ACTION_ALIASES = {
     "modify": "modify_itinerary",
     "change": "modify_itinerary",
     "update": "modify_itinerary",
+    "search_flights": "search_flights",
+    "search_flight": "search_flights",
+    "show_flights": "search_flights",
+    "find_flights": "search_flights",
+    "look_for_flights": "search_flights",
+    "select_flight": "select_flight",
+    "pick_flight": "select_flight",
+    "choose_flight": "select_flight",
+    "book_flight": "select_flight",
+    "take_flight": "select_flight",
 }
 
 
@@ -300,6 +381,17 @@ def _build_extracted_dict(extracted: ExtractedSlots) -> dict:
         normalized["selected_hotel_name"] = extracted.selected_hotel_name
     if extracted.selected_hotel_number is not None:
         normalized["selected_hotel_number"] = extracted.selected_hotel_number
+    # Flight fields
+    if extracted.origin_city:
+        normalized["origin_city"] = extracted.origin_city
+    if extracted.selected_flight_number is not None:
+        normalized["selected_flight_number"] = extracted.selected_flight_number
+    if extracted.cabin_class:
+        normalized["cabin_class"] = extracted.cabin_class
+    if extracted.is_round_trip is not None:
+        normalized["is_round_trip"] = extracted.is_round_trip
+    if extracted.return_date:
+        normalized["return_date"] = extracted.return_date
     return normalized
 
 
@@ -313,7 +405,7 @@ async def interpret_message(state: ConversationState, user_message: str) -> Inte
     missing_str = ", ".join(missing) if missing else "none — all info collected!"
 
     itinerary_context = ""
-    if state.phase == ConversationPhase.ITINERARY_REVIEW:
+    if state.phase in (ConversationPhase.ITINERARY_REVIEW, ConversationPhase.FLIGHT_SELECTION, ConversationPhase.HOTEL_SELECTION):
         itinerary_context = _build_itinerary_summary(state)
 
     system_prompt = INTERPRETER_SYSTEM_PROMPT.format(
@@ -382,6 +474,35 @@ async def interpret_message(state: ConversationState, user_message: str) -> Inte
                 user_message[:60], state.phase.value, action,
             )
             action = "select_hotel"
+
+    # Safety override: if user is in flight_selection phase and the LLM
+    # chose something other than flight or approve actions, check if the
+    # message sounds like a flight query.
+    if state.phase == ConversationPhase.FLIGHT_SELECTION and action not in ("search_flights", "select_flight", "approve_itinerary"):
+        msg_lower = user_message.lower()
+        flight_keywords = ["fly", "flight", "from ", "airport", "book", "ticket", "plane", "class"]
+        number_keywords = ["first", "second", "third", "1st", "2nd", "3rd", "pick ", "choose ", "i'll take", "i want ", "number ", "option"]
+        if any(kw in msg_lower for kw in flight_keywords):
+            logger.info(
+                "[Interpreter] Safety override: '%s' → search_flights (phase=%s, action=%s)",
+                user_message[:60], state.phase.value, action,
+            )
+            action = "search_flights"
+        elif any(kw in msg_lower for kw in number_keywords):
+            logger.info(
+                "[Interpreter] Safety override: '%s' → select_flight (phase=%s, action=%s)",
+                user_message[:60], state.phase.value, action,
+            )
+            action = "select_flight"
+
+        # If the user provided a travel_date, round-trip flag, or return_date,
+        # route back to search_flights so _handle_search_flights can use them.
+        if extracted.get("travel_dates") or extracted.get("is_round_trip") is not None or extracted.get("return_date"):
+            logger.info(
+                "[Interpreter] Safety override: '%s' → search_flights (phase=%s)",
+                user_message[:60], state.phase.value,
+            )
+            action = "search_flights"
 
     # Safety override: if user is in itinerary_review phase and the LLM
     # chose something other than modify_itinerary, check if the message

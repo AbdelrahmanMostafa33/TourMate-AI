@@ -43,9 +43,14 @@ class ConversationPhase(str, Enum):
         Itinerary has been generated and presented to the user.  The user can
         approve, request changes, or ask questions about the plan.
 
+    FLIGHT_SELECTION:
+        User approved the stops.  The system searches for flights, presents
+        options, and the user selects a flight.  After selection, the system
+        transitions to HOTEL_SELECTION.
+
     HOTEL_SELECTION:
-        User approved the stops but needs to choose a hotel.  The system has
-        presented 2-3 hotel options and is waiting for the user's selection.
+        User selected (or skipped) a flight.  The system presents 2-3 hotel
+        options and waits for the user's selection.
 
     COMPLETED:
         User has approved the itinerary.  The conversation is finished but the
@@ -56,6 +61,7 @@ class ConversationPhase(str, Enum):
     SLOT_FILLING      = "slot_filling"
     PLAN_GENERATION   = "plan_generation"
     ITINERARY_REVIEW  = "itinerary_review"
+    FLIGHT_SELECTION  = "flight_selection"
     HOTEL_SELECTION   = "hotel_selection"
     COMPLETED         = "completed"
 
@@ -84,6 +90,14 @@ class TripSlots:
     group_size:          Optional[int] = None         # number of travelers
     traveler_group_type: Optional[str] = None          # "solo" | "couple" | "family" | "friends" | "business"
     special_requests:    Optional[List[str]] = None
+
+    # ── Flight Related ──────────────────────────────────────────────
+    origin_city:             Optional[str] = None       # "Cairo" — where user flies FROM
+    selected_flight_offer:   Optional[dict] = None      # The flight offer the user selected
+    flight_search_results:   Optional[List[dict]] = None  # Cached search results
+    preferred_cabin_class:   Optional[str] = None       # "ECONOMY" | "PREMIUM_ECONOMY" | "BUSINESS" | "FIRST"
+    is_round_trip:           Optional[bool] = None      # True if round-trip, False if one-way
+    return_date:             Optional[str] = None       # ISO date for return flight (round-trip only)
 
     # ── Profile Preferences (required) ─────────────────────────────
     budget_level:                   Optional[str] = None   # "budget" | "moderate" | "luxury"
@@ -172,6 +186,12 @@ class TripSlots:
             interests              = data.get("interests"),
             food_preferences       = data.get("food_preferences"),
             accommodation_preferences = data.get("accommodation_preferences"),
+            origin_city            = data.get("origin_city"),
+            selected_flight_offer  = data.get("selected_flight_offer"),
+            flight_search_results  = data.get("flight_search_results"),
+            preferred_cabin_class  = data.get("preferred_cabin_class"),
+            is_round_trip          = data.get("is_round_trip"),
+            return_date            = data.get("return_date"),
         )
 
     def merge(self, intent: Dict[str, Any]) -> None:
@@ -187,6 +207,10 @@ class TripSlots:
             "budget_level":           "budget_level",
             "travel_style":           "travel_style",
             "pace":                   "pace",
+            "cabin_class":            "preferred_cabin_class",
+            "is_round_trip":          "is_round_trip",
+            "return_date":            "return_date",
+            "origin_city":            "origin_city",
         }
         for intent_key, slot_key in field_map.items():
             value = intent.get(intent_key)

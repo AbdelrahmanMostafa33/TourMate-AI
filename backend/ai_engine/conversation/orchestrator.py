@@ -97,6 +97,13 @@ from ai_engine.llm import token_tracker
 # Explainability (human-readable explanations of pipeline decisions)
 from ai_engine.evaluation.explainability import format_full_explanation
 
+# Flight Selection Agent — conversational flight search
+from ai_engine.agents.flight_selection_agent import (
+    search_flights_for_trip,
+    format_flight_options,
+    extract_flight_selection,
+)
+
 
 # ── Shared Wrapper ────────────────────────────────────────────────────────────
 
@@ -287,98 +294,82 @@ async def _process_message_inner(
 
     # ── ACTION: APPROVE EXISTING ITINERARY ──────────────────────────────────
     elif action == "approve_itinerary":
-        # ── If already in HOTEL_SELECTION, "approve" means accept default ──
-        if state.phase == ConversationPhase.HOTEL_SELECTION:
-            hotels = (state.itinerary or {}).get("accommodation_suggestions", [])
-            if hotels:
-                state.itinerary["selected_hotel"] = hotels[0]
-            state.approve_itinerary(itinerary_id=None)
-            if state.itinerary and state.itinerary.get("accommodation_suggestions"):
-                final_message = _format_itinerary(state.itinerary, approved=True)
-                response = {
-                    "response_type": "itinerary",
-                    "message": final_message,
-                    "itinerary": state.itinerary,
-                    "image_features": None,
-                }
-            else:
-                response = {
-                    "response_type": "chat",
-                    "message": router_result.response,
-                    "itinerary": None,
-                    "image_features": None,
-                }
+        # Check accommodation type change FIRST, regardless of phase,
+        # so it's applied whether we go to FLIGHT_SELECTION or HOTEL_SELECTION.
+        acc_type_change = _is_accommodation_type_change(effective_message)
+        if acc_type_change:
+            logger.info(
+                "[ConversationAgent] Accommodation type change '%s' intercepted during approval",
+                acc_type_change,
+            )
+            _apply_accommodation_change(state.slots, acc_type_change)
 
-        # ── First-time approval: show hotel options, let user choose ──
-        else:
-            # Check if the user's message implies an accommodation type change
-            acc_type_change = _is_accommodation_type_change(effective_message)
+        # ── If already in HOTEL_SELECTION ──────────────────────────────
+        if state.phase == ConversationPhase.HOTEL_SELECTION:
+            # If the user asked for an accommodation type change (e.g. "provide resorts"),
+            # re-run hotel selection with the new preference instead of finalizing.
             if acc_type_change:
                 logger.info(
-                    "[ConversationAgent] Accommodation type change '%s' intercepted during approval",
+                    "[ConversationAgent] Re-running hotel selection with type '%s'",
                     acc_type_change,
                 )
-                state.slots.accommodation_preferences = [acc_type_change]
-
-            # Select hotels now that the stops are finalized
-            hotel_agent_msgs: list[str] = []
-            if state.itinerary and state.candidate_places:
-                approval_state = {
-                    "optimized_itinerary": state.itinerary,
-                    "draft_itinerary": None,
-                    "candidate_places": state.candidate_places,
-                    "profile": {
-                        "accommodation_preferences": state.slots.accommodation_preferences or [],
-                        "budget_level": state.slots.budget_level or "",
-                        "travel_style": state.slots.travel_style or "",
-                    },
-                    "agent_messages": [],
-                }
-                approval_result = await run_hotel_selection(approval_state)
-                hotel_itinerary = (
-                    approval_result.get("optimized_itinerary")
-                    or approval_result.get("draft_itinerary")
-                    or state.itinerary
+                response = await _run_hotel_selection_and_present(
+                    state, effective_message, image_features,
                 )
-                state.itinerary = hotel_itinerary
-                hotel_agent_msgs = approval_result.get("agent_messages", [])
-
-            # ── Accommodation type change during approval ────────────
-            if acc_type_change:
+            else:
+                hotels = (state.itinerary or {}).get("accommodation_suggestions", [])
+                if hotels:
+                    state.itinerary["selected_hotel"] = hotels[0]
+                state.approve_itinerary(itinerary_id=None)
                 if state.itinerary and state.itinerary.get("accommodation_suggestions"):
+                    final_message = _format_itinerary(state.itinerary, approved=True)
                     response = {
                         "response_type": "itinerary",
-                        "message": _format_itinerary(state.itinerary, approved=False),
+                        "message": final_message,
                         "itinerary": state.itinerary,
                         "image_features": None,
-                        "agent_messages": hotel_agent_msgs,
                     }
                 else:
                     response = {
                         "response_type": "chat",
-                        "message": f"Updated your accommodation to {acc_type_change}. "
-                                  "You can approve or modify further.",
+                        "message": router_result.response,
                         "itinerary": None,
                         "image_features": None,
                     }
-            else:
-                # Transition to hotel selection phase — stops are approved,
-                # user now picks their preferred hotel
-                state.transition_to(ConversationPhase.HOTEL_SELECTION)
-                hotel_prompt = _format_hotel_options(state.itinerary)
-                message = (
-                    f"✅ Your stops look great! Here are the hotel options:\n\n"
-                    f"{hotel_prompt}\n"
-                    f"Which hotel would you like to stay at? You can pick by number, "
-                    f"name, or just say 'looks good' to go with the first option."
-                )
-                response = {
-                    "response_type": "chat",
-                    "message": message,
-                    "itinerary": state.itinerary,
-                    "image_features": None,
-                    "agent_messages": hotel_agent_msgs,
-                }
+
+        # ── If in FLIGHT_SELECTION, "approve" means skip flights → show hotels ──
+        elif state.phase == ConversationPhase.FLIGHT_SELECTION:
+            # User is done with flights (or doesn't want them), proceed to hotels
+            response = await _run_hotel_selection_and_present(
+                state, effective_message, image_features,
+            )
+
+        # ── First-time approval: ask about flights before hotels ──
+        else:
+            state.transition_to(ConversationPhase.FLIGHT_SELECTION)
+            message = (
+                f"✅ Your stops look great! Before we find you a place to stay, "
+                f"would you like to book a flight for this trip? "
+                f"Where will you be flying from?"
+            )
+            response = {
+                "response_type": "chat",
+                "message": message,
+                "itinerary": state.itinerary,
+                "image_features": image_features,
+            }
+
+    # ── ACTION: SEARCH FLIGHTS (during flight_selection phase) ─────────────
+    elif action == "search_flights" and state.phase == ConversationPhase.FLIGHT_SELECTION:
+        response = await _handle_search_flights(
+            state, effective_message, router_result, image_features,
+        )
+
+    # ── ACTION: SELECT FLIGHT (during flight_selection phase) ──────────────
+    elif action == "select_flight" and state.phase == ConversationPhase.FLIGHT_SELECTION:
+        response = await _handle_select_flight(
+            state, effective_message, router_result, image_features,
+        )
 
     # ── ACTION: MODIFY EXISTING ITINERARY ───────────────────────────────────
     elif action == "modify_itinerary":
@@ -550,33 +541,428 @@ async def handle_chat_stream(user_id, user_message, image_bytes=None, token=None
     async for chunk in _stream_text(message):
         yield chunk
 
-    if response and response.get("response_type") == "itinerary" and response.get("itinerary"):
+    if response:
         result_data = {
             "message": response.get("message", ""),
-            "itinerary": response["itinerary"],
             "phase": phase_value,
             "session_id": state.session_id,
         }
-        if response.get("profile"):
-            result_data["profile"] = response["profile"]
-        if response.get("explanation"):
-            result_data["explanation"] = response["explanation"]
-        if response.get("agent_messages"):
-            result_data["agent_messages"] = response["agent_messages"]
-        if response.get("agent_metrics"):
-            result_data["agent_metrics"] = response["agent_metrics"]
-        if response.get("validation"):
-            result_data["validation"] = response["validation"]
-        if response.get("pool_state"):
-            result_data["pool_state"] = response["pool_state"]
-        if response.get("image_features"):
-            result_data["image_features"] = response["image_features"]
+
+        # Itinerary data
+        if response.get("response_type") == "itinerary" and response.get("itinerary"):
+            result_data["itinerary"] = response["itinerary"]
+
+        # Common optional fields
+        for field in ("profile", "explanation", "agent_messages", "agent_metrics", "validation", "pool_state", "image_features"):
+            if response.get(field):
+                result_data[field] = response[field]
+
+        # Flight booking data (for Flutter to process payment)
+        if response.get("flight_booking"):
+            result_data["flight_booking"] = response["flight_booking"]
+
+        # Flight search results (for Flutter to display)
+        if response.get("flight_search_results"):
+            result_data["flight_search_results"] = response["flight_search_results"]
+
         yield {"type": "result", "data": result_data}
 
     yield {"type": "done", "data": None}
 
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
+
+
+# ── Flight Selection Helpers ───────────────────────────────────────────────
+
+
+def _parse_date_to_iso(date_str: str | None) -> str | None:
+    """Parse a user-provided date string to ISO format (YYYY-MM-DD).
+
+    Tries common formats and falls back to None if parsing fails.
+    """
+    if not date_str:
+        return None
+    date_str = date_str.strip()
+
+    # Already ISO format
+    try:
+        datetime.strptime(date_str, "%Y-%m-%d")
+        return date_str
+    except ValueError:
+        pass
+
+    # Try common natural-language formats
+    for fmt in (
+        "%B %d, %Y", "%b %d, %Y",           # July 28, 2026 / Jul 28, 2026
+        "%B %d %Y", "%b %d %Y",              # July 28 2026 / Jul 28 2026
+        "%d %B %Y", "%d %b %Y",              # 28 July 2026 / 28 Jul 2026
+        "%d/%m/%Y", "%m/%d/%Y",              # 28/07/2026 / 07/28/2026
+        "%d-%m-%Y", "%m-%d-%Y",              # 28-07-2026 / 07-28-2026
+        "%Y/%m/%d",                           # 2026/07/28
+        "%d.%m.%Y",                            # 28.07.2026
+    ):
+        try:
+            parsed = datetime.strptime(date_str, fmt)
+            return parsed.strftime("%Y-%m-%d")
+        except ValueError:
+            continue
+
+    # Try numeric only (e.g. "07282026" → no, that's ambiguous)
+    # Try month-day without year (e.g. "July 28") — use current year
+    try:
+        parsed = datetime.strptime(f"{date_str} {datetime.now().year}", "%B %d %Y")
+        return parsed.strftime("%Y-%m-%d")
+    except ValueError:
+        pass
+    try:
+        parsed = datetime.strptime(f"{date_str} {datetime.now().year}", "%b %d %Y")
+        return parsed.strftime("%Y-%m-%d")
+    except ValueError:
+        pass
+
+    logger.info("[DateParser] Could not parse date: %r — falling back to 30-days-from-now default", date_str)
+    return None
+
+
+async def _handle_search_flights(
+    state: ConversationState,
+    effective_message: str,
+    router_result,
+    image_features: Optional[VisionFeatures],
+) -> dict:
+    """Handle the search_flights action — search and present flight options."""
+    extracted = router_result.extracted
+    origin = extracted.get("origin_city") or state.slots.origin_city
+
+    if not origin:
+        # Ask the user for origin city
+        message = "Where will you be flying from? Please tell me your departure city."
+        return {
+            "response_type": "chat",
+            "message": message,
+            "itinerary": state.itinerary,
+            "image_features": image_features,
+        }
+
+    # Store origin
+    state.slots.origin_city = origin
+    dest = state.slots.destination_city or ""
+    group_size = state.slots.group_size or 1
+
+    # ── Check for cabin class preference ────────────────────────────────
+    cabin_class = extracted.get("cabin_class") or state.slots.preferred_cabin_class
+    if cabin_class:
+        cabin_class = cabin_class.upper().strip()
+        valid_classes = {"ECONOMY", "PREMIUM_ECONOMY", "BUSINESS", "FIRST"}
+        if cabin_class not in valid_classes:
+            mapping = {
+                "FIRST CLASS": "FIRST", "FIRST-CLASS": "FIRST", "1ST CLASS": "FIRST",
+                "BUSINESS CLASS": "BUSINESS", "BUSINESS-CLASS": "BUSINESS",
+                "PREMIUM ECONOMY": "PREMIUM_ECONOMY", "PREMIUM": "PREMIUM_ECONOMY",
+                "ECONOMY CLASS": "ECONOMY", "ECONOMY-CLASS": "ECONOMY", "COACH": "ECONOMY",
+            }
+            cabin_class = mapping.get(cabin_class, None)
+        if cabin_class:
+            state.slots.preferred_cabin_class = cabin_class
+
+    # ── Auto-set round-trip from trip duration (Option A) ──────────────
+    # If the user has a multi-day trip planned, auto-infer round-trip and
+    # compute the return date from departure_date + duration_days.
+    # No need to ask "one-way or round-trip?" or "what date returning?".
+    if not state.slots.is_round_trip and state.slots.duration_days and state.slots.duration_days >= 1:
+        state.slots.is_round_trip = True
+        logger.info(
+            "[FlightSelection] Auto-set round-trip from duration=%d days",
+            state.slots.duration_days,
+        )
+
+    # Allow explicit override if the user said "one-way"
+    is_round_trip = extracted.get("is_round_trip")
+    if is_round_trip is not None:
+        state.slots.is_round_trip = is_round_trip
+
+    # ── Check for departure date ────────────────────────────────────────
+    travel_dates = extracted.get("travel_dates") or state.slots.travel_dates or None
+    if not travel_dates:
+        trip_hint = " round-trip" if state.slots.is_round_trip else ""
+        message = (
+            f"Great, flying from {origin} to {dest}! "
+            f"What date will you be departing? "
+            f"(e.g. July 28, 2026)"
+        )
+        return {
+            "response_type": "chat",
+            "message": message,
+            "itinerary": state.itinerary,
+            "image_features": image_features,
+        }
+
+    # Parse date to ISO format
+    departure_date = _parse_date_to_iso(travel_dates)
+
+    # ── Auto-compute return date from departure + duration ────────────
+    return_date = None
+    if state.slots.is_round_trip and departure_date and state.slots.duration_days:
+        try:
+            dep = datetime.strptime(departure_date, "%Y-%m-%d")
+            ret = dep + timedelta(days=state.slots.duration_days)
+            return_date = ret.strftime("%Y-%m-%d")
+            state.slots.return_date = return_date
+            logger.info(
+                "[FlightSelection] Auto-computed return date: %s (depart=%s + %d days)",
+                return_date, departure_date, state.slots.duration_days,
+            )
+        except (ValueError, TypeError):
+            logger.warning("[FlightSelection] Could not compute return date from %r", departure_date)
+
+    trip_type = "round-trip" if state.slots.is_round_trip else "one-way"
+    cabin_label = f" ({cabin_class})" if cabin_class else ""
+    return_label = f" → return {return_date}" if return_date else ""
+    logger.info(
+        "[FlightSelection] Searching %s flights: %s → %s (depart=%s%s, adults=%s, cabin=%s)",
+        trip_type, origin, dest, departure_date or "(30-day default)", return_label,
+        group_size, cabin_class or "any",
+    )
+
+    offers = await search_flights_for_trip(
+        origin_city=origin,
+        destination_city=dest,
+        departure_date=departure_date,
+        adults=group_size,
+        cabin_class=cabin_class,
+        return_date=return_date,
+    )
+    state.slots.flight_search_results = offers
+
+    if not offers:
+        filter_note = f" {cabin_class}" if cabin_class else ""
+        message = (
+            f"I couldn't find{filter_note} {trip_type} flights from {origin} to {dest} "
+            f"on {departure_date or 'that date'}"
+            f"{f' returning {return_date}' if return_date else ''}. "
+            f"Would you like to try a different origin city, date, "
+            f"cabin class, or proceed to hotels?"
+        )
+    else:
+        flight_text = format_flight_options(offers, cabin_class_filter=cabin_class)
+        header_note = f" {cabin_class}" if cabin_class else ""
+        return_note = f", returning {return_date}" if return_date else ""
+        message = (
+            f"Here are the available{header_note} {trip_type} flights "
+            f"from {origin} to {dest} on {departure_date}{return_note}:\n\n"
+            f"{flight_text}\n"
+            f"Which one catches your eye? (Just say the number or airline name.)"
+        )
+
+    return {
+        "response_type": "chat",
+        "message": message,
+        "itinerary": state.itinerary,
+        "image_features": image_features,
+        "flight_search_results": offers[:3] if offers else [],
+    }
+
+
+async def _handle_select_flight(
+    state: ConversationState,
+    effective_message: str,
+    router_result,
+    image_features: Optional[VisionFeatures],
+) -> dict:
+    """Handle the select_flight action — store selection and proceed to hotels.
+
+    If the user instead requests a different cabin class (e.g. "provide first class
+    flights"), we intercept it here and re-route to _handle_search_flights with
+    the updated cabin class preference — just like _handle_select_hotel intercepts
+    accommodation type changes.
+    """
+    # ── Check for cabin class request first ─────────────────────────
+    cabin_class = _is_cabin_class_request(effective_message)
+    if cabin_class:
+        logger.info(
+            "[SelectFlight] Cabin class request '%s' detected — re-routing to search",
+            cabin_class,
+        )
+        # Store the cabin class preference on slots so _handle_search_flights picks it up
+        state.slots.preferred_cabin_class = cabin_class
+        return await _handle_search_flights(
+            state, effective_message, router_result, image_features,
+        )
+
+    offers = state.slots.flight_search_results or []
+    extracted = router_result.extracted
+    selected_number = extracted.get("selected_flight_number")
+
+    selected = extract_flight_selection(effective_message, offers, selected_number)
+
+    if not selected:
+        # Could not determine which flight
+        message = (
+            "I didn't catch which flight you want. Please try again with "
+            "the number (e.g. 'flight 2') or airline name."
+        )
+        return {
+            "response_type": "chat",
+            "message": message,
+            "itinerary": state.itinerary,
+            "image_features": image_features,
+        }
+
+    # Store the selected flight offer in slots
+    state.slots.selected_flight_offer = selected
+
+    logger.info(
+        "[FlightSelection] User selected flight: %s %s (%s %s)",
+        selected.get("airline_name", ""),
+        selected.get("flight_number", ""),
+        selected.get("total_price", "?"),
+        selected.get("currency", ""),
+    )
+
+    # Build flight booking info for the Flutter client
+    flight_booking = {
+        "selected_offer": selected,
+        "origin_city": state.slots.origin_city,
+        "destination_city": state.slots.destination_city,
+        "airline": selected.get("airline_name", selected.get("airline_code", "")),
+        "flight_number": selected.get("flight_number", ""),
+        "total_price": selected.get("total_price", 0),
+        "currency": selected.get("currency", ""),
+        "raw_offer": selected.get("raw_offer"),
+        "trip_id": state.trip_id,
+        "is_round_trip": bool(state.slots.is_round_trip),
+    }
+    if state.slots.return_date:
+        flight_booking["return_date"] = state.slots.return_date
+
+    # Present a summary to the user, then proceed to hotel selection
+    airline = selected.get("airline_name", selected.get("airline_code", "?"))
+    flight_num = selected.get("flight_number", "")
+    price = selected.get("total_price", 0)
+    currency = selected.get("currency", "")
+    origin_iata = selected.get("origin_iata", "")
+    dest_iata = selected.get("destination_iata", "")
+    depart = selected.get("departure_at_formatted", "")
+    arrival = selected.get("arrival_at_formatted", "")
+
+    selection_msg = (
+        f"✈️ Great choice! You selected:\n"
+        f"**{airline} {flight_num}**: {origin_iata} → {dest_iata}\n"
+        f"{depart} → {arrival}\n"
+        f"**{price} {currency}**\n\n"
+        f"Your flight details are saved. You can book through our payment system.\n"
+        f"Now, let's find you a place to stay!"
+    )
+
+    # Proceed to hotel selection
+    hotel_response = await _run_hotel_selection_and_present(
+        state, effective_message, image_features,
+    )
+
+    # Combine the flight selection message with hotel options
+    hotel_message = hotel_response.get("message", "")
+    combined_message = f"{selection_msg}\n\n{hotel_message}"
+
+    return {
+        "response_type": "chat",
+        "message": combined_message,
+        "itinerary": state.itinerary,
+        "image_features": image_features,
+        "flight_booking": flight_booking,
+        "agent_messages": hotel_response.get("agent_messages", []),
+    }
+
+
+async def _run_hotel_selection_and_present(
+    state: ConversationState,
+    effective_message: str,
+    image_features: Optional[VisionFeatures],
+) -> dict:
+    """Run the hotel selection agent and present hotel options to the user.
+
+    This is called when transitioning from FLIGHT_SELECTION to HOTEL_SELECTION,
+    or when the user approves from ITINERARY_REVIEW with no flights needed.
+    """
+    # Check if the user's message implies an accommodation type change
+    acc_type_change = _is_accommodation_type_change(effective_message)
+    if acc_type_change:
+        logger.info(
+            "[ConversationAgent] Accommodation type change '%s' intercepted during approval",
+            acc_type_change,
+        )
+        _apply_accommodation_change(state.slots, acc_type_change)
+
+    # Select hotels now that the stops are finalized
+    hotel_agent_msgs: list[str] = []
+    if state.itinerary and state.candidate_places:
+        approval_state = {
+            "optimized_itinerary": state.itinerary,
+            "draft_itinerary": None,
+            "candidate_places": state.candidate_places,
+            "profile": {
+                "accommodation_preferences": state.slots.accommodation_preferences or [],
+                "budget_level": state.slots.budget_level or "",
+                "travel_style": state.slots.travel_style or "",
+            },
+            "agent_messages": [],
+        }
+        approval_result = await run_hotel_selection(approval_state)
+        hotel_itinerary = (
+            approval_result.get("optimized_itinerary")
+            or approval_result.get("draft_itinerary")
+            or state.itinerary
+        )
+        state.itinerary = hotel_itinerary
+        hotel_agent_msgs = approval_result.get("agent_messages", [])
+
+    # ── Accommodation type change during approval ────────────
+    if acc_type_change:
+        if state.itinerary and state.itinerary.get("accommodation_suggestions"):
+            return {
+                "response_type": "itinerary",
+                "message": _format_itinerary(state.itinerary, approved=False),
+                "itinerary": state.itinerary,
+                "image_features": image_features,
+                "agent_messages": hotel_agent_msgs,
+            }
+        else:
+            return {
+                "response_type": "chat",
+                "message": f"Updated your accommodation to {acc_type_change}. "
+                          "You can approve or modify further.",
+                "itinerary": None,
+                "image_features": image_features,
+            }
+
+    # Transition to hotel selection phase — user picks their preferred hotel
+    state.transition_to(ConversationPhase.HOTEL_SELECTION)
+    hotel_prompt = _format_hotel_options(state.itinerary)
+
+    # If the user has a selected flight, mention it
+    flight_note = ""
+    if state.slots.selected_flight_offer:
+        flight = state.slots.selected_flight_offer
+        airline = flight.get("airline_name", flight.get("airline_code", ""))
+        flight_num = flight.get("flight_number", "")
+        flight_note = (
+            f"✈️ Your flight ({airline} {flight_num}) is noted. "
+            f"You can book it through the payment section.\n\n"
+        )
+
+    message = (
+        f"{flight_note}Here are the hotel options:\n\n"
+        f"{hotel_prompt}\n"
+        f"Which hotel would you like to stay at? You can pick by number, "
+        f"name, or just say 'looks good' to go with the first option."
+    )
+    return {
+        "response_type": "chat",
+        "message": message,
+        "itinerary": state.itinerary,
+        "image_features": image_features,
+        "agent_messages": hotel_agent_msgs,
+    }
 
 
 async def _stream_text(text: str):
@@ -995,6 +1381,80 @@ def _build_conversation_context(state) -> str:
     return "\n".join(lines)
 
 
+def _apply_accommodation_change(slots, new_type: str) -> None:
+    """Apply accommodation type change with add/remove semantics.
+
+    Adds the new type to existing preferences without removing old ones,
+    so preferences accumulate over time rather than being overwritten.
+    """
+    current = list(slots.accommodation_preferences or [])
+    if new_type not in current:
+        current.append(new_type)
+    slots.accommodation_preferences = current
+
+
+def _is_cabin_class_request(modification_request: str) -> str | None:
+    """Detect if the user is asking for a specific cabin class during flight selection.
+
+    Returns the normalized cabin class (e.g. 'FIRST', 'BUSINESS', 'PREMIUM_ECONOMY',
+    'ECONOMY') if a cabin class request is detected, or None otherwise.
+
+    This intercepts phrases like "first class flights", "business class",
+    "premium economy", etc. during FLIGHT_SELECTION, so they aren't misrouted
+    as selecting the first flight option (number 1).
+    """
+    msg_lower = modification_request.lower()
+
+    # Check for explicit cabin class keywords with context words.
+    # These patterns indicate the user wants a *type* of flight, not a flight number.
+    # The presence of "class", "flights", "tickets", "seats", or "cabin" alongside
+    # a class keyword strongly suggests a cabin class request.
+    has_travel_context = any(kw in msg_lower for kw in (
+        "class", "flights", "flight", "tickets", "seats", "cabin",
+        "provide", "show", "give me", "i want", "change to",
+        "upgrade", "downgrade",
+    ))
+
+    if not has_travel_context:
+        return None
+
+    # Detect specific cabin class phrases (longest-first to avoid short-circuit).
+    # Only explicit compound phrases are matched — bare keywords like "first"
+    # are NOT included to avoid false positives on selection phrases like
+    # "I want the first one" (which means flight #1, not FIRST class).
+    cabin_patterns = [
+        # Longest compound phrases first (checked before shorter substrings)
+        ("premium economy", "PREMIUM_ECONOMY"),
+        ("premium-economy", "PREMIUM_ECONOMY"),
+        ("first class", "FIRST"),
+        ("first-class", "FIRST"),
+        ("1st class", "FIRST"),
+        ("business class", "BUSINESS"),
+        ("business-class", "BUSINESS"),
+        ("economy class", "ECONOMY"),
+        ("economy-class", "ECONOMY"),
+        # Common phrasings without the word "class" (e.g. "economy flights")
+        ("economy flights", "ECONOMY"),
+        ("economy tickets", "ECONOMY"),
+        ("economy seats", "ECONOMY"),
+        ("business flights", "BUSINESS"),
+        ("business tickets", "BUSINESS"),
+        ("coach flights", "ECONOMY"),
+        ("coach tickets", "ECONOMY"),
+        ("coach seats", "ECONOMY"),
+    ]
+
+    for keyword, cabin_type in cabin_patterns:
+        if keyword in msg_lower:
+            logger.info(
+                "[CabinClassRequest] Detected cabin class: %s in '%s'",
+                cabin_type, modification_request[:60],
+            )
+            return cabin_type
+
+    return None
+
+
 def _is_accommodation_type_change(modification_request: str) -> str | None:
     """Detect if the user is asking to change accommodation type (e.g. 'resorts instead of hotels').
 
@@ -1219,7 +1679,7 @@ async def _handle_modify_itinerary(
             effective_message[:60], acc_type_change,
         )
         # Update slots with new accommodation preference
-        state.slots.accommodation_preferences = [acc_type_change]
+        _apply_accommodation_change(state.slots, acc_type_change)
         surgically_swapped = await _swap_accommodation_surgically(
             itinerary=state.itinerary,
             destination_city=state.slots.destination_city,
@@ -1401,7 +1861,23 @@ async def _handle_select_hotel(
     ``selected_hotel_number`` from the user's message.  We match these
     against ``accommodation_suggestions`` to pick the chosen hotel,
     then finalize the itinerary and transition to COMPLETED.
+
+    If the user instead requests a change of accommodation type
+    (e.g. "provide resorts"), we intercept it here and re-run
+    hotel selection with the updated preference.
     """
+    # ── Check for accommodation type change first ─────────────────────
+    acc_type_change = _is_accommodation_type_change(effective_message)
+    if acc_type_change:
+        logger.info(
+            "[SelectHotel] Accommodation type change '%s' intercepted — re-running hotel selection",
+            acc_type_change,
+        )
+        _apply_accommodation_change(state.slots, acc_type_change)
+        return await _run_hotel_selection_and_present(
+            state, effective_message, image_features,
+        )
+
     extracted = router_result.extracted
     selected_name = extracted.get("selected_hotel_name", "")
     selected_number = extracted.get("selected_hotel_number")

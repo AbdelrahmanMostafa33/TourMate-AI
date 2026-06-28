@@ -120,6 +120,8 @@ class AmadeusClient:
         departure_date: str,
         adults: int = 1,
         max_results: int = 5,
+        travel_class: str | None = None,
+        return_date: str | None = None,
     ) -> list[dict]:
         """Search for flight offers between two airports on a given date.
 
@@ -129,6 +131,10 @@ class AmadeusClient:
             departure_date: ISO-8601 date string (``\"YYYY-MM-DD\"``).
             adults:         Number of adult passengers (default 1).
             max_results:    Maximum offers to return (default 5).
+            travel_class:   Optional cabin class filter (e.g. \"ECONOMY\",
+                            \"PREMIUM_ECONOMY\", \"BUSINESS\", \"FIRST\").
+            return_date:    Optional return date for round-trip search
+                            (ISO-8601 date string).
 
         Returns:
             A list of raw Amadeus offer dicts (``response.data``).
@@ -143,13 +149,18 @@ class AmadeusClient:
             )
 
         try:
-            response = self._client.shopping.flight_offers_search.get(
-                originLocationCode=origin.upper(),
-                destinationLocationCode=destination.upper(),
-                departureDate=departure_date,
-                adults=adults,
-                max=max_results,
-            )
+            params = {
+                "originLocationCode": origin.upper(),
+                "destinationLocationCode": destination.upper(),
+                "departureDate": departure_date,
+                "adults": adults,
+                "max": max_results,
+            }
+            if travel_class:
+                params["travelClass"] = travel_class.upper()
+            if return_date:
+                params["returnDate"] = return_date
+            response = self._client.shopping.flight_offers_search.get(**params)
             return response.data
         except Exception as exc:
             msg = self._format_error(exc)
