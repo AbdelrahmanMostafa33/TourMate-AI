@@ -515,25 +515,29 @@ async def handle_chat_stream(user_id, user_message, image_bytes=None, token=None
             _process_message(user_id, state, effective_message, image_features, token)
         )
 
-        is_planning = state.phase == ConversationPhase.PLAN_GENERATION
+        # Always consume the progress queue while the pipeline is running,
+        # regardless of the initial phase.  The phase may transition to
+        # PLAN_GENERATION *inside* _process_message (e.g. after slot-filling
+        # is complete), and graph nodes push progress events at that point.
+        # Without this loop, progress events sit in the queue and are never
+        # forwarded to the Flutter client.
+        try:
+            while not pipeline_task.done():
+                try:
+                    progress = await asyncio.wait_for(progress_queue.get(), timeout=0.1)
+                    yield {"type": "progress", "data": progress}
+                except asyncio.TimeoutError:
+                    continue
 
-        if is_planning:
-            try:
-                while not pipeline_task.done():
-                    try:
-                        progress = await asyncio.wait_for(progress_queue.get(), timeout=0.1)
-                        yield {"type": "progress", "data": progress}
-                    except asyncio.TimeoutError:
-                        continue
-
-                while True:
-                    try:
-                        progress = await asyncio.wait_for(progress_queue.get(), timeout=0.1)
-                        yield {"type": "progress", "data": progress}
-                    except asyncio.TimeoutError:
-                        break
-            finally:
-                remove_progress_queue(state.session_id)
+            # Drain any remaining events after the task finishes.
+            while True:
+                try:
+                    progress = await asyncio.wait_for(progress_queue.get(), timeout=0.1)
+                    yield {"type": "progress", "data": progress}
+                except asyncio.TimeoutError:
+                    break
+        finally:
+            remove_progress_queue(state.session_id)
 
         response = await pipeline_task
         await manager.save(state)

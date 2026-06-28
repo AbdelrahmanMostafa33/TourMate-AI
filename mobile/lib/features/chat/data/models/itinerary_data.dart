@@ -53,7 +53,7 @@ class ItineraryData {
     required this.destination,
     required this.durationDays,
     required this.days,
-    required this.accommodationSuggestions,
+    this.accommodationSuggestions = const [],
   });
 
   factory ItineraryData.fromJson(Map<String, dynamic> json) {
@@ -127,7 +127,6 @@ class ItineraryData {
           }).toList(),
         );
       }).toList(),
-      accommodationSuggestions: const [],
     );
   }
 }

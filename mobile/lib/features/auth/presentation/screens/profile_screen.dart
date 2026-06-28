@@ -53,9 +53,10 @@ class _ProfileView extends StatelessWidget {
   }
 
   Widget _buildProfileContent(BuildContext context, UserResponse data) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
+    return SingleChildScrollView(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
         const SizedBox(height: 16),
 
         /// ================= HEADER =================
@@ -91,30 +92,6 @@ class _ProfileView extends StatelessWidget {
                 ],
               ),
             ),
-            // Edit button
-            IconButton(
-              icon: Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: Colors.black,
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: const Icon(Icons.edit_outlined,
-                    color: Colors.white, size: 18),
-              ),
-              onPressed: () async {
-                final cubit = context.read<ProfileCubit>();
-                final result = await Navigator.push<bool>(
-                  context,
-                  MaterialPageRoute(
-                    builder: (_) => EditProfileScreen(profile: data),
-                  ),
-                );
-                if (result == true) {
-                  cubit.fetchProfile();
-                }
-              },
-            ),
           ],
         ),
 
@@ -139,7 +116,29 @@ class _ProfileView extends StatelessWidget {
         _sectionHeader("Settings"),
         const SizedBox(height: 12),
 
-        // Logout
+        // Edit Profile
+        _settingsTile(
+          context,
+          icon: Icons.edit_outlined,
+          title: "Edit Profile",
+          subtitle: "Update your personal information",
+          onTap: () async {
+            final cubit = context.read<ProfileCubit>();
+            final result = await Navigator.push<bool>(
+              context,
+              MaterialPageRoute(
+                builder: (_) => EditProfileScreen(profile: data),
+              ),
+            );
+            if (result == true) {
+              cubit.fetchProfile();
+            }
+          },
+        ),
+
+        const SizedBox(height: 8),
+
+        // Sign Out
         _settingsTile(
           context,
           icon: Icons.logout_rounded,
@@ -152,7 +151,8 @@ class _ProfileView extends StatelessWidget {
 
         const SizedBox(height: 32),
       ],
-    );
+    ),
+  );
   }
 
   Widget _infoTile(IconData icon, String text) {

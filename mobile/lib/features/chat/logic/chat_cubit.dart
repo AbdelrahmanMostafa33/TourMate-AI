@@ -7,6 +7,7 @@ import '../data/datasource/chat_ws_service.dart';
 import '../data/repository/chat_repository.dart';
 import '../data/models/chat_message.dart';
 import '../data/models/itinerary_data.dart';
+import '../data/models/hotel_option.dart';
 import 'chat_state.dart';
 
 /// A single step in the AI pipeline progress (visible to the UI).
@@ -423,10 +424,12 @@ class ChatCubit extends Cubit<ChatState> {
             ));
           }
 
-          emit(ChatState.connected(
-            messages: List.from(_messages),
-            isTyping: true,
-          ));
+          // Bump refreshToken so freezed sees a different state and
+          // BlocBuilder rebuilds — _messages hasn't changed (no new
+          // ChatMessage), so DeepCollectionEquality would otherwise
+          // consider the new state equal to the previous one and skip
+          // the UI update.
+          _emitConnected(isTyping: true, bumpRefresh: true);
         }
         break;
 
@@ -486,10 +489,6 @@ class ChatCubit extends Cubit<ChatState> {
         }
         break;
 
-      case "actions":
-        // Non-CREATE_TRIP actions (e.g. ADD_DAY, ADD_ACTIVITY) handled server-side.
-        // The itinerary card already has the latest data from 'itinerary_data'.
-        break;
 
       case "result":
         final resultPayload = data["data"];
@@ -515,6 +514,22 @@ class ChatCubit extends Cubit<ChatState> {
             orElse: () => false,
           );
           _emitConnected(isTyping: currentIsTyping, bumpRefresh: true);
+        }
+        break;
+
+      case "hotel_options":
+        final rawPayload = data["data"] as Map<String, dynamic>?;
+        if (rawPayload != null) {
+          final payload = HotelOptionsPayload.fromJson(rawPayload);
+          if (payload.options.isNotEmpty) {
+            _messages.add(ChatMessage(
+              text: payload.message ?? '',
+              isUser: false,
+              isStreaming: false,
+              hotelOptions: payload,
+            ));
+            _emitConnected(isTyping: false, bumpRefresh: true);
+          }
         }
         break;
 
