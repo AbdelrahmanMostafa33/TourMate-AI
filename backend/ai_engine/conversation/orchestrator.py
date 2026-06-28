@@ -1090,70 +1090,74 @@ def _format_itinerary(itinerary: dict, approved: bool = False) -> str:
     destination = itinerary.get("destination", "your destination")
     days = itinerary.get("days", [])
     hotels = itinerary.get("accommodation_suggestions", [])
+    selected_hotel = itinerary.get("selected_hotel")
 
     if approved:
-        # On approval, only show the hotel recommendations and approval
-        # message — the full itinerary was already shown during review.
         lines.append(f"✅ Your trip to {destination} has been approved!")
         lines.append("")
+        if selected_hotel:
+            lines.append(f"🏨 Chosen Hotel: {selected_hotel.get('name', 'Selected')}")
+            lines.append("")
     else:
         lines.append(f"✨ Here's your personalized {len(days)}-day itinerary for {destination}!")
         lines.append("")
 
-        for day in days:
-            day_num = day.get("day_number", "?")
-            theme = day.get("theme", "")
-            stops = day.get("stops", [])
+    # Always show the day-by-day stops
+    for day in days:
+        day_num = day.get("day_number", "?")
+        theme = day.get("theme", "")
+        stops = day.get("stops", [])
 
-            header = f"🗓 Day {day_num}"
-            if theme:
-                header += f" — {theme}"
-            lines.append(header)
+        header = f"🗓 Day {day_num}"
+        if theme:
+            header += f" — {theme}"
+        lines.append(header)
 
-            for idx, stop in enumerate(stops, 1):
-                name = stop.get("name", "Unknown")
-                time_slot = stop.get("suggested_time_of_day", "")
-                duration = stop.get("estimated_duration_minutes", 0)
-                why = stop.get("why_recommended", "")
-                rating = stop.get("rating")
-                cat = stop.get("category", "")
-                sub_cat = stop.get("sub_category", "")
-                tags = stop.get("interest_tags", [])
-                cuisine = stop.get("cuisine_type", "")
+        for idx, stop in enumerate(stops, 1):
+            name = stop.get("name", "Unknown")
+            time_slot = stop.get("suggested_time_of_day", "")
+            duration = stop.get("estimated_duration_minutes", 0)
+            why = stop.get("why_recommended", "")
+            rating = stop.get("rating")
+            cat = stop.get("category", "")
+            sub_cat = stop.get("sub_category", "")
+            tags = stop.get("interest_tags", [])
+            cuisine = stop.get("cuisine_type", "")
 
-                time_emoji = {"morning": "🌅", "afternoon": "☀️", "evening": "🌙"}.get(time_slot, "📍")
-                time_label = time_slot.capitalize() if time_slot else ""
+            time_emoji = {"morning": "🌅", "afternoon": "☀️", "evening": "🌙"}.get(time_slot, "📍")
+            time_label = time_slot.capitalize() if time_slot else ""
 
-                parts = [f"  {time_emoji} {name}"]
-                if time_label:
-                    parts.append(f"({time_label})")
-                if duration:
-                    parts.append(f"{duration} min")
-                lines.append(" • ".join(parts))
+            parts = [f"  {time_emoji} {name}"]
+            if time_label:
+                parts.append(f"({time_label})")
+            if duration:
+                parts.append(f"{duration} min")
+            lines.append(" • ".join(parts))
 
-                detail_bits = []
-                # Show sub_category first (more specific than category)
-                label = sub_cat.title() if sub_cat else (cat.title() if cat else "")
-                if label:
-                    detail_bits.append(label)
-                if rating:
-                    detail_bits.append(f"⭐ {rating}")
-                # Show cuisine type for restaurants
-                if cuisine and cat == "restaurant":
-                    detail_bits.append(f"🍲 {cuisine}")
-                # Show top 2 interest tags for attractions
-                if tags and cat != "restaurant":
-                    shown_tags = [t.title() for t in tags[:2] if t]
-                    if shown_tags:
-                        detail_bits.append(f"🎯 {', '.join(shown_tags)}")
-                if detail_bits:
-                    sep = " · "
-                    lines.append(f"      {sep.join(detail_bits)}")
-                if why:
-                    lines.append(f"      💡 {why}")
+            detail_bits = []
+            # Show sub_category first (more specific than category)
+            label = sub_cat.title() if sub_cat else (cat.title() if cat else "")
+            if label:
+                detail_bits.append(label)
+            if rating:
+                detail_bits.append(f"⭐ {rating}")
+            # Show cuisine type for restaurants
+            if cuisine and cat == "restaurant":
+                detail_bits.append(f"🍲 {cuisine}")
+            # Show top 2 interest tags for attractions
+            if tags and cat != "restaurant":
+                shown_tags = [t.title() for t in tags[:2] if t]
+                if shown_tags:
+                    detail_bits.append(f"🎯 {', '.join(shown_tags)}")
+            if detail_bits:
+                sep = " · "
+                lines.append(f"      {sep.join(detail_bits)}")
+            if why:
+                lines.append(f"      💡 {why}")
 
-            lines.append("")
+        lines.append("")
 
+    # Hotels section
     if hotels:
         lines.append("🏨 Where to Stay")
         for hotel in hotels:
@@ -1164,32 +1168,28 @@ def _format_itinerary(itinerary: dict, approved: bool = False) -> str:
             amenities = hotel.get("amenities", [])
             address = hotel.get("address", "")
             why = hotel.get("why_recommended", "")
+            is_selected = selected_hotel and hotel.get("id") == selected_hotel.get("id")
 
-            # Build type label: prefer sub_category (e.g. "Luxury Hotel"), fall back to accommodation_type
             type_label = sub_cat.title() if sub_cat else (acc_type.capitalize() if acc_type else "")
-
-            # Star rating display: show stars proportional to rating
             star_count = min(round(rating or 0), 5)
             stars_str = "⭐" * star_count if star_count > 0 else ""
 
-            line = f"  • {name}"
+            # Mark selected hotel with a checkmark
+            prefix = "  ✅ " if is_selected else "  • "
+            line = f"{prefix}{name}"
             if type_label:
                 line += f" ({type_label})"
             if rating:
                 line += f" {stars_str} {rating}"
             lines.append(line)
 
-            # Amenities on a sub-line
             if amenities:
                 am_str = ", ".join(a.capitalize() for a in amenities[:6])
                 if len(amenities) > 6:
                     am_str += f" +{len(amenities) - 6} more"
                 lines.append(f"      🏷 {am_str}")
-
-            # Address on a sub-line (compact)
             if address:
                 lines.append(f"      📍 {address[:60]}")
-
             if why:
                 lines.append(f"      💡 {why}")
 

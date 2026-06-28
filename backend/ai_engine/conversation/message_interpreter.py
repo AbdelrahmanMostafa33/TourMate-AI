@@ -368,6 +368,21 @@ async def interpret_message(state: ConversationState, user_message: str) -> Inte
             "processing it on my end. Could you please rephrase that?"
         )
 
+    # Safety override: if user is in hotel_selection phase and the LLM
+    # chose something other than select_hotel, check if the message
+    # sounds like they're picking a hotel.
+    if state.phase == ConversationPhase.HOTEL_SELECTION and action != "select_hotel":
+        msg_lower = user_message.lower()
+        hotel_keywords = ["hotel", "pick ", "choose ", "select ", "i'll take",
+                         "i want ", "number ", "first one", "second one", "third one",
+                         "looks good", "go with", "stay at"]
+        if any(kw in msg_lower for kw in hotel_keywords):
+            logger.info(
+                "[Interpreter] Safety override: '%s' → select_hotel (phase=%s, action=%s)",
+                user_message[:60], state.phase.value, action,
+            )
+            action = "select_hotel"
+
     # Safety override: if user is in itinerary_review phase and the LLM
     # chose something other than modify_itinerary, check if the message
     # sounds like a modification request.
