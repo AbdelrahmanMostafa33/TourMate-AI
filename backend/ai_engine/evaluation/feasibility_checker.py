@@ -11,7 +11,6 @@ Checks:
     - Consecutive same-category stops (diversity)
     - Distance between consecutive stops
     - Total number of days
-    - Accommodation suggestions count
 
 Usage::
 
@@ -101,12 +100,6 @@ def run_programmatic_checks(itinerary: dict) -> list[str]:
                         f"'{s2.get('name', '?')}' is {dist:.1f}km — too far"
                     )
 
-    hotels = itinerary.get("accommodation_suggestions", [])
-    if len(hotels) == 0:
-        issues.append("No accommodation suggestions provided")
-    elif len(hotels) > 5:
-        issues.append(f"{len(hotels)} hotel suggestions is too many (max 5)")
-
     _TIME_RANK = {"morning": 0, "afternoon": 1, "evening": 2}
     for day in days:
         day_num = day.get("day_number", "?")
@@ -124,4 +117,4 @@ def run_programmatic_checks(itinerary: dict) -> list[str]:
             prev_rank = rank
 
     return issues
-
+

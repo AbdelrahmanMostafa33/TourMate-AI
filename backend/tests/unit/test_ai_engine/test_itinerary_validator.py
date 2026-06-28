@@ -186,25 +186,19 @@ class TestRunProgrammaticChecks:
         far_issues = [i for i in issues if "too far" in i]
         assert far_issues == []
 
-    def test_no_accommodation_suggestions(self):
-        """Missing accommodation suggestions should flag."""
+    def test_no_accommodation_suggestions_ignored(self):
+        """Missing accommodation suggestions should NOT flag — handled post-approval."""
         itinerary = _make_itinerary(accommodation_suggestions=[])
         issues = run_programmatic_checks(itinerary)
-        assert any("accommodation" in i.lower() for i in issues)
+        accommodation_issues = [i for i in issues if "accommodation" in i.lower()]
+        assert accommodation_issues == []
 
-    def test_too_many_hotel_suggestions(self):
-        """More than 5 hotel suggestions should flag."""
-        hotels = [{"name": f"Hotel {i}"} for i in range(6)]
+    def test_many_hotel_suggestions_not_flagged(self):
+        """Hotel count is not validated — handled post-approval."""
+        hotels = [{"name": f"Hotel {i}"} for i in range(10)]
         itinerary = _make_itinerary(accommodation_suggestions=hotels)
         issues = run_programmatic_checks(itinerary)
-        assert any("hotel suggestions is too many" in i for i in issues)
-
-    def test_five_hotel_suggestions_ok(self):
-        """Exactly 5 hotel suggestions should pass."""
-        hotels = [{"name": f"Hotel {i}"} for i in range(5)]
-        itinerary = _make_itinerary(accommodation_suggestions=hotels)
-        issues = run_programmatic_checks(itinerary)
-        hotel_issues = [i for i in issues if "hotel suggestions" in i]
+        hotel_issues = [i for i in issues if "hotel" in i.lower() or "accommodation" in i.lower()]
         assert hotel_issues == []
 
     def test_missing_lat_lon_stops_no_crash(self):
@@ -230,7 +224,7 @@ class TestRunValidation:
         result = await validate_itinerary(state)
 
         assert result["is_valid"] is False
-        assert "No itinerary" in result["validation"]["issues"][0]
+        assert "No itinerary" in result["validation"]["issue"]
 
     @pytest.mark.asyncio
     async def test_error_state_sets_invalid(self):
@@ -313,7 +307,7 @@ class TestRunValidation:
         with patch("ai_engine.services.itinerary_validator.invoke_with_fallback", side_effect=Exception("API timeout")):
             result = await validate_itinerary(state)
 
-        assert "LLM validation failed" in str(result["validation"]["issues"])
+        assert "LLM validation failed" in result["validation"]["issue"]
 
     @pytest.mark.asyncio
     async def test_llm_invalid_json_falls_back(self):
@@ -355,8 +349,7 @@ class TestRunValidation:
     async def test_programmatic_issues_lower_llm_score(self):
         """Programmatic issues should reduce the LLM-assigned score."""
         itinerary = _make_itinerary(
-            days=[_make_day(1, [_make_stop()])],  # 1 stop = non-critical issue
-            accommodation_suggestions=[],  # missing hotels = non-critical
+            days=[_make_day(1, [_make_stop()])],  # 1 stop = 1 non-critical issue
         )
         llm_response = {
             "is_valid": True,
@@ -371,8 +364,8 @@ class TestRunValidation:
         with patch("ai_engine.services.itinerary_validator.invoke_with_fallback", return_value=mock_response):
             result = await validate_itinerary(state)
 
-        # 2 programmatic issues × 5 points = 10 points reduction
-        assert result["validation"]["score"] == 75
+        # 1 programmatic issue × 5 points = 5 points reduction
+        assert result["validation"]["score"] == 80
 
     @pytest.mark.asyncio
     async def test_user_message_included_in_prompt(self):

@@ -132,96 +132,7 @@ def _compute_composite_score(
     return round(composite, 4)
 
 
-# ── Semantic interest-to-subcategory matching ───────────────────────────────
-#
-# Instead of exact keyword mapping (which misses "night" → "nightlife"),
-# we use a single lightweight LLM call (via the `router` role — Groq, fast)
-# to semantically match the user's interests against the available place
-# subcategories.
-#
-# This naturally handles:
-#   - "night" → "nightlife" (semantically related)
-#   - "partying" → "nightlife", "entertainment" (related concepts)
-#   - "urban exploration" → "history", "sightseeing" (semantic overlap)
 
-_SEMANTIC_MATCH_SYSTEM_PROMPT = """You are a semantic router for a travel planning system.
-Your job: given a list of USER INTERESTS and a list of PLACE SUBCATEGORIES,
-output ONLY the subcategories that are semantically related to the user's interests.
-
-Rules:
-- Think about synonyms, related concepts, and semantic overlap.
-- If the user says "night", match "nightlife".
-- If the user says "partying", match "nightlife" and "entertainment".
-- If the user says "urban exploration", match "history", "sightseeing", and "shopping".
-- If the user says "desert", match "nature".
-- If the user says "culture", match "museums" and "history".
-- If the user says "food" or "dining", match nothing (food is handled by restaurant category).
-
-Respond with a comma-separated list of matching subcategory names ONLY.
-No explanation, no markdown, no extra text. If nothing matches, output "NONE".
-"""
-
-
-async def _compute_semantic_interest_subcats(
-    profile_interests: Optional[list[str]],
-    subcategory_names: list[str],
-) -> set[str]:
-    """
-    Use a single lightweight LLM call to semantically match user interests
-    to available place subcategories.
-
-    Args:
-        profile_interests: List of user interest strings (e.g.
-            ["nightlife", "food", "socializing"]).
-        subcategory_names: List of available subcategory names from the
-            place database (e.g. ["history", "museums", "nightlife", ...]).
-
-    Returns:
-        Set of subcategory names that semantically match the user's interests.
-    """
-    if not profile_interests or not subcategory_names:
-        return set()
-
-    try:
-        from langchain_core.messages import SystemMessage, HumanMessage
-        from ai_engine.llm.invoke import invoke_with_fallback
-
-        interests_str = ", ".join(profile_interests)
-        subcats_str = ", ".join(sorted(subcategory_names))
-        subcategory_names_set = {s.lower() for s in subcategory_names}
-
-        messages = [
-            SystemMessage(content=_SEMANTIC_MATCH_SYSTEM_PROMPT),
-            HumanMessage(
-                content=(
-                    f"User interests: [{interests_str}]\n"
-                    f"Available subcategories: [{subcats_str}]\n"
-                    "Which subcategories match?"
-                )
-            ),
-        ]
-
-        response = await invoke_with_fallback(
-            agent_role="router",
-            messages=messages,
-        )
-        raw = response.content.strip() if hasattr(response, "content") else str(response).strip()
-
-        if raw.upper() == "NONE" or not raw:
-            return set()
-
-        # Parse comma-separated list
-        matched: set[str] = set()
-        for part in raw.split(","):
-            name = part.strip().lower()
-            # Only include if it's an actual subcategory name
-            if name in subcategory_names_set:
-                matched.add(name)
-
-        return matched
-    except Exception as exc:
-        logger.warning("[CandidateScorer] LLM semantic match failed: %s — falling back to empty set", exc)
-        return set()
 
 
 def _diversity_optimize(
@@ -235,21 +146,28 @@ def _diversity_optimize(
     and **subcategory-level** diversity within attractions (history, museums,
     nightlife, parks, etc.), so the planner isn't starved of variety.
 
-    Uses a **3-phase selection** for attractions:
-    1. Interest-matching subcategories get 2 picks (semantic boost)
-    2. Every other subcategory gets 1 pick (baseline diversity)
-    3. Remaining slots filled via round-robin
+    Uses a **2-phase selection** for attractions when interests exist:
+    1. Interest-matching subcatgories get up to 4 picks each
+    2. Remaining slots filled via round-robin among interest-matching subcats
 
-    ``interest_subcats`` is pre-computed by ``_compute_semantic_interest_subcats``
-    using a lightweight LLM call, so it naturally handles semantic variations
-    like "night" → "nightlife" without exact keyword mapping.
+    **Non-matching subcategories are excluded entirely** — only places whose
+    subcategory semantically matches a user interest reach the planner.
+    Restaurants are always included (separate category cap), ensuring food
+    options regardless of interest match.
+
+    Falls back to broad diversity sampling when no interests are matched.
+
+    ``interest_subcats`` is pre-computed by the Place Retriever's
+    ``_compute_semantic_interest_subcats`` using a lightweight LLM call,
+    so it naturally handles semantic variations like "night" → "nightlife"
+    and "hiking" → "nature, parks" without exact keyword mapping.
     """
     if interest_subcats is None:
         interest_subcats = set()
 
     category_caps = {
-        "attraction": min(duration_days * 4, 18),
-        "restaurant": min(duration_days * 3, 12),
+        "attraction": min(duration_days * 8, 30),
+        "restaurant": min(duration_days * 2, 6),
         "hotel":      min(duration_days + 2, 7),
         "_default":   5,
     }
@@ -300,28 +218,52 @@ def _diversity_optimize(
                         return True
                 return False
 
-            # Phase 1: Interest-matching subcats get up to 2 picks
-            for sub in subcat_names:
-                if sub in interest_subcats and len(cat_selected) < cap:
-                    _pick_next(sub)  # first pick
-                    if len(cat_selected) < cap:
-                        _pick_next(sub)  # second pick
-
-            # Phase 2: Every OTHER subcategory gets up to 1 pick
-            for sub in subcat_names:
-                if sub not in interest_subcats and len(cat_selected) < cap:
-                    _pick_next(sub)
-
-            # Phase 3: Fill remaining slots up to cap (round-robin)
-            while len(cat_selected) < cap:
-                added = False
+            if interest_subcats:
+                # ── Interest-only selection ───────────────────────────────
+                # Only subcategories that semantically match user interests
+                # are included. Non-matching subcats are excluded entirely.
+                # Restaurants and hotels are handled by their own category caps.
+                #
+                # This guarantees 100% of attraction candidates are relevant
+                # to the user's declared interests.
+                #
+                # Phase 1: Interest-matching subcats get up to 4 picks each
                 for sub in subcat_names:
-                    if len(cat_selected) >= cap:
+                    if sub in interest_subcats and len(cat_selected) < cap:
+                        _pick_next(sub)
+                        if len(cat_selected) < cap:
+                            _pick_next(sub)
+                        if len(cat_selected) < cap:
+                            _pick_next(sub)
+                        if len(cat_selected) < cap:
+                            _pick_next(sub)
+
+                # Phase 2: Fill remaining slots with interest subcats round-robin
+                while len(cat_selected) < cap:
+                    added = False
+                    for sub in subcat_names:
+                        if sub in interest_subcats and len(cat_selected) < cap:
+                            if _pick_next(sub):
+                                added = True
+                    if not added:
                         break
-                    if _pick_next(sub):
-                        added = True
-                if not added:
-                    break
+            else:
+                # ── Fallback: no interest match → take top picks per subcat ──
+                # When interest_subcats is empty (no user interests or no match),
+                # fall back to sampling all subcategories for diversity.
+                for sub in subcat_names:
+                    if len(cat_selected) < cap:
+                        _pick_next(sub)
+
+                while len(cat_selected) < cap:
+                    added = False
+                    for sub in subcat_names:
+                        if len(cat_selected) >= cap:
+                            break
+                        if _pick_next(sub):
+                            added = True
+                    if not added:
+                        break
 
             selected.extend(cat_selected)
         elif cat == "hotel":
@@ -435,25 +377,17 @@ async def score_candidates(state: TripState) -> TripState:
         category_counts[cat] = category_counts.get(cat, 0) + 1
         scored.append((place, score))
 
-    # 6. Determine which subcategories semantically match user interests
-    # (using a single lightweight LLM call via the `router` role)
-    profile_interests = preferences.get("interests") if preferences else None
-    interest_subcats: set[str] = set()
-    if profile_interests:
-        subcat_names = sorted({
-            (p.get("sub_category") or "").lower() or "other"
-            for p in filtered
-        })
-        if subcat_names:
-            interest_subcats = await _compute_semantic_interest_subcats(
-                profile_interests, subcat_names,
-            )
-            logger.info(
-                "[CandidateScorer] LLM semantic interest→subcat: %d/%d subcats matched "
-                "(interests=%s)",
-                len(interest_subcats), len(subcat_names),
-                profile_interests,
-            )
+    # 6. Read pre-computed interest-to-subcategory match from state.
+    # The Place Retriever already ran the lightweight LLM semantic match
+    # and stored it in state["matched_interest_subcats"]. Reuse it here
+    # to avoid a duplicate LLM call.
+    interest_subcats: set[str] = state.get("matched_interest_subcats") or set()
+    if interest_subcats:
+        logger.info(
+            "[CandidateScorer] Using pre-computed interest→subcat match from retriever: "
+            "%d subcats matched",
+            len(interest_subcats),
+        )
 
     # 7. Diversity optimization with semantic interest boosting
     candidates = _diversity_optimize(scored, duration_days, interest_subcats)

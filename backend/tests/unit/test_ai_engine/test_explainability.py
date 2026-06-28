@@ -79,8 +79,8 @@ def _make_validation(**overrides) -> dict:
     base = {
         "is_valid": True,
         "score": 85,
-        "issues": ["Day 2: only 2 stop(s), add more activities"],
-        "suggestions": ["Consider adding a local food tour"],
+        "issue": "Day 2: only 2 stop(s), add more activities",
+        "suggestion": "Consider adding a local food tour",
         "metrics": {
             "category_diversity": 0.72,
             "interest_alignment": 0.88,
@@ -137,14 +137,11 @@ class TestExplainValidationDecision:
         quality_lines = [r for r in result if "good" in r.lower()]
         assert len(quality_lines) > 0
 
-    def test_feasibility_issues_separated(self):
-        validation = _make_validation(issues=[
-            "Day 1: 10 stops exceeds max of 8",
-            "Pacing could be improved",
-        ])
+    def test_feasibility_issue_included(self):
+        validation = _make_validation(issue="Day 1: 10 stops exceeds max of 8")
         result = explain_validation_decision(validation)
-        assert any("Feasibility" in r for r in result)
-        assert any("Pacing" in r for r in result)
+        assert any("Issue" in r for r in result)
+        assert any("exceeds max" in r for r in result)
 
 
 # ── Test: explain_metric_scores ────────────────────────────────────────────

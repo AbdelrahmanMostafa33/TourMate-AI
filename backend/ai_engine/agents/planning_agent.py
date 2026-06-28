@@ -40,7 +40,7 @@ You receive:
 
 3. **Interest coverage** — Every user interest must appear in at least one stop. If 2+ candidates share a sub_category matching an interest, include at least 2 stops from it. If no candidates match an interest, pick the closest semantic match or note the gap in the itinerary.
 
-4. **Candidate honesty** — Use only provided candidates. Copy id/name/lat/lon/interest_tags exactly. Do not invent places.
+4. **Candidate honesty** — Use only provided candidates. Copy id/name/lat/lon from candidates exactly. Do not invent places.
 
 5. **why_recommended** — Every stop needs 1–2 sentences explaining why it fits this specific user (reference their interests and the place's score).
 
@@ -51,8 +51,8 @@ You receive:
 - **Restaurants**: insert lunch between morning/afternoon. Never repeat a restaurant. Vary cuisine types.
 - **Time assignment**: morning → museums/historic, afternoon → indoor/markets, evening → restaurants/culture
 - **Score awareness**: prefer higher-scored places (80+ excellent, 60–80 good) when choosing between options
-- **Restaurants**: use `cuisine_type` for matching; they don't have interest_tags
-- **Attractions**: prefer places whose `interest_tags` overlap with user interests; skip if no overlap unless score >85
+- **Restaurants**: use `sub_category` and `cuisine_type` for matching
+- **Attractions**: prefer places whose `sub_category` matches user interests; skip if no match unless score >85
 
 ## Before Submitting
 
@@ -195,10 +195,9 @@ def _trim_for_prompt(place: dict) -> dict:
         "lon": place["lon"],
         "score": round(place.get("composite_score", place.get("popularity_score", 0)), 1),
     }
-    # Keep sub_category + interest_tags for attractions so the
-    # LLM can match against user interests and enforce diversity.
-    # Restaurants are excluded — their interest_tags are all generic
-    # (e.g. ["restaurant"]) and provide no signal. They use cuisine_type instead.
+    # Keep sub_category for attractions so the LLM can match against
+    # user interests. Restaurants use cuisine_type instead of sub_category
+    # for matching (e.g. "italian", "local cuisine").
     if place.get("category") == "restaurant":
         sub = place.get("sub_category", "")
         if sub:
@@ -209,11 +208,6 @@ def _trim_for_prompt(place: dict) -> dict:
         sub = place.get("sub_category", "")
         if sub:
             trimmed["sub_category"] = sub
-        tags = place.get("interest_tags", [])
-        if tags:
-            # Limit to top 3 interest tags to save tokens — the planner
-            # has enough info from category + sub_category + truncated tags.
-            trimmed["interest_tags"] = tags[:3]
     # Hotels are handled by the dedicated Hotel Agent, not the planner.
     # Hotel candidates are excluded from the planner's prompt entirely.
     return trimmed
@@ -238,6 +232,13 @@ async def run_planning_agent(state: TripState, on_retry=None) -> TripState:
     # If the pipeline loops back (e.g. after validation failure), leftover
     # values from the first pass can leak through.  Clear them so the
     # downstream nodes (optimizer → validator) start fresh.
+    #
+    # IMPORTANT: Read and preserve validation feedback BEFORE clearing,
+    # so the LLM knows why the previous itinerary was rejected.
+    prev_validation = state.get("validation")
+    prev_issue = (prev_validation or {}).get("issue", "") if prev_validation else ""
+    prev_suggestion = (prev_validation or {}).get("suggestion", "") if prev_validation else ""
+
     state["draft_itinerary"] = None
     state["optimized_itinerary"] = None
     state["is_valid"] = None
@@ -292,12 +293,28 @@ async def run_planning_agent(state: TripState, on_retry=None) -> TripState:
     # from the planner's prompt. Only attractions and restaurants are sent.
     attractions_restaurants = [p for p in trimmed if p.get("category") != "hotel"]
 
+    # ── Validation feedback from previous pipeline run ──────────
+    # If the pipeline looped back (validator → planner retry), include
+    # the validation issue and suggestion so the planner can fix them.
+    validation_feedback = ""
+    if prev_issue:
+        feedback_parts = [f"Previous itinerary was rejected: {prev_issue}"]
+        if prev_suggestion:
+            feedback_parts.append(f"Suggestion: {prev_suggestion}")
+        validation_feedback = (
+            f"\n\n## Feedback from previous attempt\n"
+        )
+        validation_feedback += "\n".join(f"- {p}" for p in feedback_parts)
+        validation_feedback += (
+            f"\nPlease address this feedback in your new itinerary."
+        )
+
     # Construct the user prompt
     prompt = f"""User Request: {synthesized_request}
 Trip Duration: {duration_days} days
 
 Candidate Attractions & Restaurants in {city} ({len(attractions_restaurants)}):
-{json.dumps(attractions_restaurants, indent=None, ensure_ascii=False)}
+{json.dumps(attractions_restaurants, indent=None, ensure_ascii=False)}{validation_feedback}
 
 Generate the itinerary now.
 """
@@ -447,11 +464,7 @@ Generate the itinerary now.
                 if not stop.get("lon"):
                     stop["lon"] = full.get("lon", 0.0)
 
-    # Strip empty interest_tags from restaurant stops (they're noise).
-    for day in itinerary.get("days", []):
-        for stop in day.get("stops", []):
-            if stop.get("category") == "restaurant" and not stop.get("interest_tags"):
-                stop.pop("interest_tags", None)
+
 
     # Store successful itinerary in workflow state.
     # Hotels are NOT enriched here — that's handled by the Hotel Agent.

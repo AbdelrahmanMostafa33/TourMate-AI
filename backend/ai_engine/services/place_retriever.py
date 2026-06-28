@@ -12,22 +12,269 @@ scoring/relevance layer. It answers: "Which places *could* be relevant?"
 The Candidate Scorer then answers: "Which places are *most* relevant?"
 """
 
-from typing import Optional
+import logging
+from typing import Optional, List
+
+from pydantic import BaseModel, Field
+
 from ai_engine.graph.state import TripState
 from ai_engine.tools.places_tool import get_places_for_city  # async
 from ai_engine.tools.haversine import haversine
 from ai_engine.tools.slot_normalizer import map_accommodation_to_type
+
+logger = logging.getLogger(__name__)
 
 
 # ── Filter thresholds ────────────────────────────────────────────────────────
 
 MIN_RATING = 3.5
 
+# Minimum rating threshold for places in subcategories that MATCH user interests
+# (more lenient than the default MIN_RATING, since we want to surface relevant options)
+MIN_RATING_INTEREST_MATCH = 3.0
+
 
 # Minimum popularity score to include a place (0 = no filter)
 MIN_POPULARITY = 0
 # Maximum distance from city center in km (None = no limit)
 MAX_DISTANCE_KM = 50
+
+
+# ── Semantic interest-to-subcategory matching prompt ─────────────────────────
+#
+# Uses a single lightweight LLM call (via the `router` role) to semantically
+# match the user's interests against the available place subcategories.
+# This replaces the simple keyword-based interest_map and runs BEFORE filtering
+# so the retriever can be more lenient with interest-matching places.
+#
+# This naturally handles:
+#   - "hiking" → "nature", "parks"
+#   - "photography" → "sightseeing", "nature"
+#   - "night" → "nightlife"
+#   - "culture" → "museums", "history"
+
+# ── Pydantic structured output for semantic interest-to-subcategory matching ──
+#
+# Using ``.with_structured_output()`` guarantees valid structured data from
+# the LLM via tool calling, eliminating fragile text-format parsing and
+# the inconsistency of comma-separated vs newline vs JSON text output.
+
+
+class SemanticCategoryMatch(BaseModel):
+    """
+    Structured output for semantic interest-to-subcategory matching.
+
+    The LLM fills ``matched_subcategories`` via tool calling, guaranteeing
+    a consistent list format regardless of model or temperature.
+    """
+
+    matched_subcategories: List[str] = Field(
+        default_factory=list,
+        description=(
+            "Subcategory names that semantically match one or more user interests. "
+            "Only include subcategories from the available list. "
+            "Leave empty if no valid match exists."
+        ),
+    )
+
+
+_SEMANTIC_MATCH_SYSTEM_PROMPT = """You are the Semantic Category Router for TourMate AI.
+
+## Objective
+
+Given:
+
+1. A list of user interests.
+2. A list of available place subcategories.
+
+Return the subcategories that have a strong semantic relationship with one or more user interests.
+
+Your purpose is high-precision filtering, not recommendation.
+
+---
+
+## Matching Principles
+
+Use semantic understanding rather than exact keyword matching.
+
+Consider:
+
+- synonyms
+- closely related concepts
+- common travel intent
+- domain-specific equivalents
+
+Only return a subcategory if the relationship is direct and unambiguous.
+
+If a mapping is uncertain, DO NOT return it.
+
+Precision is more important than recall.
+
+---
+
+## Canonical Mapping Rules
+
+Use the following mappings as authoritative.
+
+history
+→ history
+
+architecture
+→ history, sightseeing
+
+culture
+→ museums, history, religious
+
+art
+→ museums
+
+photography
+→ sightseeing, nature
+
+urban exploration
+→ sightseeing, history, shopping
+
+nature
+→ nature
+
+desert
+→ nature
+
+wildlife
+→ nature
+
+wilderness
+→ nature, parks
+
+hiking
+→ nature, parks
+
+adventure
+→ sports, nature
+
+sports
+→ sports
+
+night
+→ nightlife
+
+nightlife
+→ nightlife
+
+party
+→ nightlife, entertainment
+
+music
+→ entertainment, nightlife
+
+shopping
+→ shopping
+
+sightseeing
+→ sightseeing, history
+
+food
+→ (no match)
+
+dining
+→ (no match)
+
+---
+
+## Explicit Non-Matches
+
+Never infer any of the following:
+
+culture → ✗ nightlife, entertainment, family
+history → ✗ nightlife, family
+architecture → ✗ entertainment, nightlife, family
+adventure → ✗ entertainment, nightlife, family
+sightseeing → ✗ nightlife, family
+art → ✗ entertainment
+food → ✗ attractions
+dining → ✗ attractions
+
+---
+
+## Additional Rules
+
+- Never invent new subcategories.
+- Only return subcategories that exist in the provided PLACE SUBCATEGORIES list.
+- Ignore duplicate user interests.
+- Ignore interests that have no valid mapping.
+- Return each subcategory at most once.
+- If no valid subcategory exists, return an empty list.
+"""
+
+
+async def _compute_semantic_interest_subcats(
+    profile_interests: Optional[list[str]],
+    subcategory_names: list[str],
+) -> set[str]:
+    """
+    Use a single lightweight LLM call with structured output to semantically
+    match user interests to available place subcategories.
+
+    Uses ``.with_structured_output(SemanticCategoryMatch)`` so the LLM returns
+    data via tool calling, guaranteeing a consistent list format regardless
+    of model or temperature — eliminating the fragile comma-separated text
+    parsing that previously caused format inconsistencies.
+
+    Moved from candidate_scorer.py to run earlier in the pipeline — before
+    filtering — so the Place Retriever can be more lenient with places whose
+    subcategory matches a user interest.
+
+    Args:
+        profile_interests: List of user interest strings (e.g.
+            ["nightlife", "food", "socializing"]).
+        subcategory_names: List of available subcategory names from the
+            place database (e.g. ["history", "museums", "nightlife", ...]).
+
+    Returns:
+        Set of subcategory names that semantically match the user's interests.
+    """
+    if not profile_interests or not subcategory_names:
+        return set()
+
+    try:
+        from langchain_core.messages import SystemMessage, HumanMessage
+        from ai_engine.llm.invoke import invoke_with_fallback
+
+        interests_str = ", ".join(profile_interests)
+        subcats_str = ", ".join(sorted(subcategory_names))
+        subcategory_names_set = {s.lower() for s in subcategory_names}
+
+        messages = [
+            SystemMessage(content=_SEMANTIC_MATCH_SYSTEM_PROMPT),
+            HumanMessage(
+                content=(
+                    f"User interests: [{interests_str}]\n"
+                    f"Available subcategories: [{subcats_str}]\n"
+                    "Which subcategories match?"
+                )
+            ),
+        ]
+
+        response = await invoke_with_fallback(
+            agent_role="router",
+            messages=messages,
+            structured_output=SemanticCategoryMatch,
+        )
+
+        # Response is a SemanticCategoryMatch object (via tool calling)
+        # — no text parsing needed.
+        if response and hasattr(response, "matched_subcategories"):
+            matched: set[str] = set()
+            for name in response.matched_subcategories:
+                norm = name.strip().lower()
+                if norm in subcategory_names_set:
+                    matched.add(norm)
+            return matched
+        return set()
+
+    except Exception as exc:
+        logger.warning("[PlaceRetriever] LLM semantic match failed: %s — falling back to empty set", exc)
+        return set()
 
 
 def _compute_city_center(places: list[dict]) -> Optional[tuple[float, float]]:
@@ -44,40 +291,29 @@ def _apply_filters(
     places: list[dict],
     preferences: dict,
     city: str,
+    interest_subcats: Optional[set[str]] = None,
 ) -> list[dict]:
     """
     Apply structured filtering to a list of candidate places.
 
     The goal is to remove places that do not match the user's
     preferences while preserving accommodation options.
+
+    ``interest_subcats`` is a pre-computed set of subcategory names that
+    semantically match the user's interests (from the lightweight LLM
+    call in ``_compute_semantic_interest_subcats``). Places in these
+    subcategories get a more lenient rating threshold (3.0 vs 3.5) so
+    relevant options aren't filtered out before scoring.
+
+    If ``interest_subcats`` is None or empty, falls back to the default
+    rating threshold for all places.
     """
+    if interest_subcats is None:
+        interest_subcats = set()
+
     center = _compute_city_center(places)
     acc_prefs = preferences.get("accommodation_preferences") or []
     accommodation_type = map_accommodation_to_type(acc_prefs)
-
-    # Identify interest-matching subcategories for more lenient filtering
-    user_interests = preferences.get("interests") or []
-    interest_subcats = set()
-    if user_interests:
-        # Map interests to subcategories (same mapping as planning agent)
-        interest_map = {
-            "history": "history",
-            "nightlife": "nightlife",
-            "shopping": "shopping",
-            "parks": "parks",
-            "museums": "museums",
-            "culture": "museums",
-            "nature": "nature",
-            "religious": "religious",
-            "family": "family",
-            "sports": "sports",
-            "wellness": "wellness",
-            "entertainment": "entertainment",
-            "sightseeing": "sightseeing",
-        }
-        for interest in user_interests:
-            if interest.lower() in interest_map:
-                interest_subcats.add(interest_map[interest.lower()])
 
     filtered = []
     for place in places:
@@ -96,9 +332,10 @@ def _apply_filters(
         # RATING FILTER - more lenient for interest-matching subcategories
         rating = place.get("rating", 0) or 0
         sub_category = (place.get("sub_category") or "").lower()
-        
-        # Use lower threshold (3.0) for interest-matching categories
-        min_rating = 3.0 if sub_category in interest_subcats else MIN_RATING
+
+        # Use lower threshold for interest-matching categories so relevant
+        # options aren't filtered out before the scoring phase
+        min_rating = MIN_RATING_INTEREST_MATCH if sub_category in interest_subcats else MIN_RATING
         if rating < min_rating:
             continue
 
@@ -210,9 +447,11 @@ async def retrieve_places(state: TripState) -> TripState:
 
     Workflow:
     1. Load all available places for the destination.
-    2. Apply preference-based filtering.
-    3. Ensure a balanced mix of place categories.
-    4. Store the resulting candidates for the Candidate Scorer.
+    2. Run lightweight LLM semantic match to map user interests to subcategories.
+    3. Apply preference-based filtering (using the matched subcategories for
+       more lenient rating thresholds on interest-relevant places).
+    4. Ensure a balanced mix of place categories.
+    5. Store the resulting candidates + matched subcategories for the Candidate Scorer.
     """
     city = state.get("destination_city", "")
     duration_days = state.get("duration_days") or 3
@@ -224,7 +463,30 @@ async def retrieve_places(state: TripState) -> TripState:
         state["error"] = f"No places found for city: {city}"
         return state
 
-    filtered = _apply_filters(all_places, preferences, city)
+    # ── Semantic interest-to-subcategory matching ──────────────────────
+    # Run BEFORE filtering so the retriever knows which subcategories to
+    # be lenient with (lower rating threshold). The result is stored in
+    # state so the Candidate Scorer can reuse it without a duplicate LLM call.
+    profile_interests = preferences.get("interests") if preferences else None
+    interest_subcats: set[str] = set()
+    if profile_interests:
+        subcat_names = sorted({
+            (p.get("sub_category") or "").lower() or "other"
+            for p in all_places
+        })
+        if subcat_names:
+            interest_subcats = await _compute_semantic_interest_subcats(
+                profile_interests, subcat_names,
+            )
+            logger.info(
+                "[PlaceRetriever] LLM semantic interest→subcat: %d/%d subcats matched "
+                "(interests=%s)",
+                len(interest_subcats), len(subcat_names),
+                profile_interests,
+            )
+    state["matched_interest_subcats"] = interest_subcats
+
+    filtered = _apply_filters(all_places, preferences, city, interest_subcats)
 
     diverse = _cap_candidates(
         filtered,

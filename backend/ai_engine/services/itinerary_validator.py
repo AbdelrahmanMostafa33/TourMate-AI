@@ -49,14 +49,18 @@ def _strip_unnecessary_fields(itinerary: dict) -> dict:
         if key in itinerary:
             pruned[key] = itinerary[key]
 
+    # Strip accommodation suggestions entirely since they are handled
+    # in the post-approval hotel selection phase. Keeping them in the
+    # prompt wastes tokens and may trigger false-positive validation flags.
     hotels = itinerary.get("accommodation_suggestions", [])
-    pruned["accommodation_suggestions"] = []
-    for h in hotels:
-        pruned_h = {k: h[k] for k in _FIELDS_HOTEL_KEEP if k in h}
-        why = h.get("why_recommended", "")
-        if why:
-            pruned_h["why_recommended"] = why if len(why) <= _MAX_WHY_LENGTH else why[:_MAX_WHY_LENGTH - 3] + "..."
-        pruned["accommodation_suggestions"].append(pruned_h)
+    if hotels:
+        pruned["accommodation_suggestions"] = []
+        for h in hotels:
+            pruned_h = {k: h[k] for k in _FIELDS_HOTEL_KEEP if k in h}
+            why = h.get("why_recommended", "")
+            if why:
+                pruned_h["why_recommended"] = why if len(why) <= _MAX_WHY_LENGTH else why[:_MAX_WHY_LENGTH - 3] + "..."
+            pruned["accommodation_suggestions"].append(pruned_h)
 
     days = itinerary.get("days", [])
     pruned["days"] = []
@@ -98,6 +102,12 @@ Your task:
   - Does the itinerary's pacing align with the user's declared ``pace``?
     (e.g. ``"relaxed"`` → 2–3 stops/day; ``"moderate"`` → 3–5;
     ``"packed"`` → 5–7)
+
+**IMPORTANT**: Accommodation suggestions are handled in a separate
+post-approval phase and are NOT part of the pipeline. Do NOT penalize
+the itinerary for missing or having too few accommodation suggestions.
+Focus validation only on the day-by-day stops, themes, and routing.
+
 - Rate the itinerary on a scale of 0-100.
 - Respond ONLY with a valid JSON object.
 
@@ -105,8 +115,8 @@ JSON schema:
 {{
   "is_valid": boolean,
   "score": integer,
-  "issues": list[string],
-  "suggestions": list[string]
+  "issue": string,
+  "suggestion": string
 }}
 """
 
@@ -125,12 +135,12 @@ async def validate_itinerary(state: TripState, on_retry=None) -> TripState:
         state["validation"] = {
             "is_valid": False,
             "score": 0,
-            "issues": ["No itinerary to validate"],
+            "issue": "No itinerary to validate",
             "metrics": compute_all_metrics({}, state.get("profile")),
         }
         state["agent_messages"] = (
             state.get("agent_messages", [])
-            + ["[ItineraryValidator] valid=False score=0 issues=1 (no itinerary)"]
+            + ["[ItineraryValidator] valid=False score=0 (no itinerary)"]
         )
         return state
 
@@ -143,8 +153,8 @@ async def validate_itinerary(state: TripState, on_retry=None) -> TripState:
         state["validation"] = {
             "is_valid": False,
             "score": 30,
-            "issues": prog_issues,
-            "suggestions": ["Regenerate with fewer stops or shorter distances"],
+            "issue": "; ".join(critical),
+            "suggestion": "Regenerate with fewer stops or shorter distances",
             "metrics": compute_all_metrics(optimized, state.get("profile")),
         }
         state["agent_messages"] = (
@@ -209,11 +219,20 @@ Validate the itinerary now.
             raw = raw[brace_start:brace_end + 1]
         llm_result = json.loads(raw)
 
-        all_issues = prog_issues + llm_result.get("issues", [])
-        llm_result["issues"] = all_issues
+        # Merge all issues into a single string
+        llm_issue = llm_result.get("issue", "")
+        all_issue_parts = list(prog_issues)
+        if llm_issue:
+            all_issue_parts.append(llm_issue)
+        merged_issue = "; ".join(all_issue_parts) if all_issue_parts else ""
+
+        llm_suggestion = llm_result.get("suggestion", "")
 
         if prog_issues:
             llm_result["score"] = max(llm_result.get("score", 50) - len(prog_issues) * 5, 0)
+
+        llm_result["issue"] = merged_issue
+        llm_result["suggestion"] = llm_suggestion
 
         state["is_valid"] = llm_result.get("is_valid", True) and len(critical) == 0
         state["validation"] = llm_result
@@ -223,8 +242,8 @@ Validate the itinerary now.
         state["validation"] = {
             "is_valid": len(critical) == 0,
             "score": 50 if not prog_issues else 30,
-            "issues": prog_issues + [f"LLM validation failed: {str(e)}"],
-            "suggestions": [],
+            "issue": ("; ".join(prog_issues) + f"; LLM validation failed: {str(e)}") if prog_issues else f"LLM validation failed: {str(e)}",
+            "suggestion": "",
         }
 
     # Attach quantitative itinerary metrics to the validation result

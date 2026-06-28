@@ -65,7 +65,7 @@ async def main():
         if validation:
             print(f"    >>> Validation: valid={validation.get('is_valid')} "
                   f"score={validation.get('score')} "
-                  f"issues={len(validation.get('issues', []))}")
+                  f"issue={validation.get('issue', '')}")
 
         # Check itinerary
         itinerary = response.get("itinerary")

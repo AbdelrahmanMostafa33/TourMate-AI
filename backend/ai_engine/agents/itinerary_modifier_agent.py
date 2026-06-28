@@ -192,261 +192,291 @@ async def run_itinerary_modifier(
         HumanMessage(content=prompt),
     ]
 
-    try:
-        response: ModifierResponse = await invoke_with_fallback(
-            "modifier",
-            messages,
-            structured_output=ModifierResponse,
-        )
+    # ── Retry loop ───────────────────────────────────────────────────
+    # If the LLM returns an invalid operation or validation fails, retry
+    # with feedback about what went wrong.
+    max_modifier_attempts = 2
+    last_error = None
+    final_modified = None
 
-        if response is None:
-            logger.warning(
-                "[ModifierAgent] LLM returned None — returning original itinerary"
-            )
-            return current_itinerary
-
-        # ── Use pre-selected places if available and operation is ADD ───────
-        # Always override the LLM's add_place_id with the hybrid search result
-        # to prevent hallucinations and ensure exact matches
-        # Now supports multiple sequential ADD operations for "add X and Y"
-        if pre_selected_places and response.op == "ADD":
-            pre_selected_place = pre_selected_places[0]
-            response.add_place_id = pre_selected_place.get("id")
-            response.why_recommended = (
-                response.why_recommended or 
-                f"Matched your request for '{pre_selected_place.get('name')}'"
-            )
-            logger.info(
-                "[ModifierAgent] Overriding LLM add_place_id with hybrid search result: %s",
-                response.add_place_id
-            )
-            # Provide defaults for day_number and time slot if LLM omitted them
-            if not response.day_number or response.day_number <= 0:
-                original_day = response.day_number
-                best_day, best_score = _find_best_day_for_place(
-                    current_itinerary, pre_selected_place
+    for attempt in range(1, max_modifier_attempts + 1):
+        try:
+            if attempt > 1 and last_error:
+                # Rebuild prompt with error feedback
+                retry_prompt = (
+                    f"{context}\n\n"
+                    f"## Feedback from previous attempt\n"
+                    f"Your previous attempt was rejected: {last_error}\n"
+                    f"Please try a different approach — pay close attention "
+                    f"to the required fields for each operation type.\n\n"
+                    "Output the operation(s) that best fulfill the user's request.\n"
+                    "- For single additions: use the primary ADD fields."
                 )
-                response.day_number = best_day or 1
-                logger.info(
-                    "[ModifierAgent] Scored days for '%s' — best: Day %s (score=%.3f) "
-                    "(was: %s, defaulted to Day %s)",
-                    pre_selected_place.get("name"),
-                    best_day,
-                    best_score,
-                    original_day,
-                    response.day_number,
-                )
-            if not response.suggested_time_of_day:
-                response.suggested_time_of_day = "afternoon"
-                logger.info(
-                    "[ModifierAgent] Defaulting suggested_time_of_day to 'afternoon' for ADD"
-                )
-
-        # Validate required fields based on operation type
-        if response.op == "ADD" and not response.add_place_id:
-            logger.warning(
-                "[ModifierAgent] ADD operation missing required add_place_id — attempting auto-selection"
-            )
-            # Auto-select the best matching place from the pool
-            hints = _detect_category_hints(modification_request, pool=available_places)
-            semantics = hints.get("semantic", [])
-            
-            # Filter places by semantic hints if available
-            if semantics:
-                matching_places = [
-                    p for p in available_places 
-                    if place_matches_semantic_hints(p, semantics) and p.get("id")
+                attempt_messages = [
+                    SystemMessage(content=MODIFIER_SYSTEM_INSTRUCTION),
+                    HumanMessage(content=retry_prompt),
                 ]
             else:
-                matching_places = [p for p in available_places if p.get("id")]
-            
-            # Remove places already in itinerary
-            used_ids = set()
-            for day in current_itinerary.get("days", []):
-                for s in day.get("stops", []):
-                    used_ids.add(s.get("id", ""))
-            matching_places = [p for p in matching_places if p.get("id") not in used_ids]
-            
-            if matching_places:
-                # Select the highest-scored place
-                selected = max(
-                    matching_places,
-                    key=lambda p: p.get("composite_score", p.get("popularity_score", 0))
+                attempt_messages = list(messages)
+
+            response: ModifierResponse = await invoke_with_fallback(
+                "modifier",
+                attempt_messages,
+                structured_output=ModifierResponse,
+            )
+
+            if response is None:
+                last_error = "LLM returned no response"
+                logger.warning(
+                    "[ModifierAgent] Attempt %d/%d: LLM returned None",
+                    attempt, max_modifier_attempts,
                 )
-                response.add_place_id = selected.get("id")
-                response.day_number = response.day_number or 1
-                response.suggested_time_of_day = response.suggested_time_of_day or "afternoon"
-                logger.info(
-                    "[ModifierAgent] Auto-selected place %s for ADD operation",
-                    response.add_place_id
+                if attempt == max_modifier_attempts:
+                    return current_itinerary
+                continue
+
+            # ── Use pre-selected places if available and operation is ADD ───
+            if pre_selected_places and response.op == "ADD":
+                pre_selected_place = pre_selected_places[0]
+                response.add_place_id = pre_selected_place.get("id")
+                response.why_recommended = (
+                    response.why_recommended or 
+                    f"Matched your request for '{pre_selected_place.get('name')}'"
+                )
+                if not response.day_number or response.day_number <= 0:
+                    best_day, best_score = _find_best_day_for_place(
+                        current_itinerary, pre_selected_place
+                    )
+                    response.day_number = best_day or 1
+                if not response.suggested_time_of_day:
+                    response.suggested_time_of_day = "afternoon"
+
+            # ── Validate required fields per operation type ─────────
+            validation_error = _get_validation_error(response, available_places, modification_request, current_itinerary)
+            if validation_error:
+                last_error = validation_error
+                logger.warning(
+                    "[ModifierAgent] Attempt %d/%d: %s",
+                    attempt, max_modifier_attempts, validation_error,
+                )
+                if attempt == max_modifier_attempts:
+                    fallback = copy.deepcopy(current_itinerary)
+                    fallback["_modifier_note"] = validation_error
+                    return fallback
+                continue
+
+            logger.info(
+                "[ModifierAgent] Attempt %d/%d: LLM chose op=%s",
+                attempt, max_modifier_attempts, response.op,
+            )
+
+            modified = apply_operation(
+                itinerary=current_itinerary,
+                operation=response,
+                place_pool=available_places,
+            )
+
+            # ── Validate operation result ────────────────────────────
+            if not _validate_modifier_result(
+                modification_request,
+                response,
+                current_itinerary,
+                modified,
+                available_places,
+            ):
+                validation_error = response.note or "Operation does not match the requested modification category."
+                last_error = validation_error
+                logger.warning(
+                    "[ModifierAgent] Attempt %d/%d: validation failed: %s",
+                    attempt, max_modifier_attempts, validation_error,
+                )
+                if attempt == max_modifier_attempts:
+                    fallback = copy.deepcopy(current_itinerary)
+                    fallback["_modifier_note"] = validation_error
+                    return fallback
+                continue
+
+            # ── Success ────────────────────────────────────────────────
+            final_modified = modified
+            break
+
+        except Exception as exc:
+            last_error = str(exc)
+            logger.warning(
+                "[ModifierAgent] Attempt %d/%d failed with exception: %s",
+                attempt, max_modifier_attempts, exc,
+            )
+            if attempt == max_modifier_attempts:
+                logger.error(
+                    "[ModifierAgent] All %d attempts exhausted: %s",
+                    max_modifier_attempts, exc,
+                )
+                return current_itinerary
+            continue
+
+    if final_modified is None:
+        logger.warning("[ModifierAgent] No successful modification — returning original itinerary")
+        return current_itinerary
+
+    modified = final_modified
+
+    # ── Apply remaining pre-selected places sequentially ──────────────
+    # If the user asked to add multiple places (e.g. "add X and Y"),
+    # apply each remaining pre-selected place as a separate ADD
+    # operation on the accumulating modified itinerary.
+    # Uses smart distribution: tracks used slots per day across the batch
+    # to avoid clustering same-category places in the same slot.
+    added_names = [pre_selected_places[0].get("name", "")] if pre_selected_places and response.op == "ADD" else []
+    used_slots_per_day: dict[int, set[str]] = {}
+    if response.day_number and response.suggested_time_of_day:
+        used_slots_per_day.setdefault(response.day_number, set()).add(response.suggested_time_of_day)
+
+    if pre_selected_places and response.op == "ADD" and len(pre_selected_places) > 1:
+        remaining = pre_selected_places[1:]
+        logger.info(
+            "[ModifierAgent] Applying %d remaining ADD operations: %s",
+            len(remaining),
+            [p.get("name") for p in remaining],
+        )
+        for i, place in enumerate(remaining):
+            best_day, best_slot = _find_best_day_and_slot_for_place(
+                modified, place, used_slots_per_day,
+            )
+            used_slots_per_day.setdefault(best_day, set()).add(best_slot)
+            sub_op = ModifierResponse(
+                op="ADD",
+                add_place_id=place.get("id"),
+                day_number=best_day,
+                suggested_time_of_day=best_slot,
+                why_recommended=f"Also matched your request for '{place.get('name')}'",
+                note="",
+            )
+            modified = apply_operation(
+                itinerary=modified,
+                operation=sub_op,
+                place_pool=available_places,
+            )
+            added_names.append(place.get("name", ""))
+            logger.info(
+                "[ModifierAgent] Applied sequential ADD %d/%d: %s → Day %d (%s)",
+                i + 1, len(remaining), place.get("name"), best_day, best_slot,
+            )
+
+    # ── Apply additional_adds from LLM response ─────────────────
+    # The LLM can specify extra ADD operations in additional_adds
+    # (used when the user wants multiple places of the same type).
+    extra_names: list[str] = []
+    if response.op == "ADD" and response.additional_adds:
+        logger.info(
+            "[ModifierAgent] Applying %d additional ADD operations from LLM",
+            len(response.additional_adds),
+        )
+        for i, add_op in enumerate(response.additional_adds):
+            source_place = next(
+                (p for p in (available_places or [])
+                 if p.get("id") == add_op.add_place_id),
+                None,
+            )
+            if source_place:
+                best_day, best_slot = _find_best_day_and_slot_for_place(
+                    modified, source_place, used_slots_per_day,
                 )
             else:
-                fallback = copy.deepcopy(current_itinerary)
-                fallback["_modifier_note"] = "Cannot add place: No matching places available in the pool."
-                return fallback
+                best_day = add_op.day_number
+                best_slot = add_op.suggested_time_of_day
 
-        if response.op == "SWAP" and (not response.remove_place_id or not response.add_place_id):
-            logger.warning(
-                "[ModifierAgent] SWAP operation missing required place IDs — returning original itinerary"
+            used_slots_per_day.setdefault(best_day, set()).add(best_slot)
+            sub_op = ModifierResponse(
+                op="ADD",
+                add_place_id=add_op.add_place_id,
+                day_number=best_day,
+                suggested_time_of_day=best_slot,
+                why_recommended=add_op.why_recommended or f"Additional place matching your request",
+                note="",
             )
-            fallback = copy.deepcopy(current_itinerary)
-            fallback["_modifier_note"] = "Cannot swap: LLM did not specify which places to swap."
-            return fallback
-
-        if response.op == "REMOVE" and not response.place_id:
-            logger.warning(
-                "[ModifierAgent] REMOVE operation missing required place_id — returning original itinerary"
+            modified = apply_operation(
+                itinerary=modified,
+                operation=sub_op,
+                place_pool=available_places,
             )
-            fallback = copy.deepcopy(current_itinerary)
-            fallback["_modifier_note"] = "Cannot remove: LLM did not specify which place to remove."
-            return fallback
+            pool_name = next(
+                (p.get("name", "") for p in (available_places or [])
+                 if p.get("id") == add_op.add_place_id),
+                add_op.add_place_id,
+            )
+            extra_names.append(pool_name)
+            logger.info(
+                "[ModifierAgent] Applied additional ADD %d/%d: %s → Day %d (%s)",
+                i + 1, len(response.additional_adds), pool_name, best_day, best_slot,
+            )
+        added_names.extend(extra_names)
 
-        logger.info(
-            "[ModifierAgent] LLM chose op=%s (note=%s)",
-            response.op,
-            (response.note[:120] + "...") if len(response.note) > 120 else response.note,
+    # Build a combined note about all added places
+    notes = []
+    if response.note:
+        notes.append(response.note)
+    if len(added_names) > 1:
+        notes.append(f"Added {len(added_names)} places: {', '.join(added_names)}")
+    elif added_names:
+        notes.append(f"Added {added_names[0]}")
+    if notes:
+        existing = modified.get("_modifier_note", "")
+        combined = "\n".join(notes)
+        modified["_modifier_note"] = (
+            f"{existing}\n{combined}".strip()
         )
 
-        modified = apply_operation(
-            itinerary=current_itinerary,
-            operation=response,
-            place_pool=available_places,
+    return modified
+
+
+def _get_validation_error(
+    operation: ModifierResponse,
+    available_places: list[dict],
+    modification_request: str,
+    current_itinerary: dict,
+) -> str | None:
+    """Check required fields for the operation and return an error string if invalid.
+
+    Returns None if the operation is valid, or a descriptive error string
+    explaining what's wrong (to be fed back to the LLM on retry).
+    """
+    if operation.op == "ADD" and not operation.add_place_id:
+        return (
+            "ADD operation is missing the required `add_place_id` field. "
+            "You MUST provide the exact ID from the Available Places list."
         )
 
-        if not _validate_modifier_result(
-            modification_request,
-            response,
-            current_itinerary,
-            modified,
-            available_places,
-        ):
-            logger.warning(
-                "[ModifierAgent] Operation %s failed validation for request: %s",
-                response.op,
-                modification_request[:80],
-            )
-            fallback = copy.deepcopy(current_itinerary)
-            note = response.note or "Could not apply modification — no suitable match in the pool."
-            fallback["_modifier_note"] = note
-            return fallback
+    if operation.op == "SWAP" and (not operation.remove_place_id or not operation.add_place_id):
+        return (
+            "SWAP operation is missing required fields. "
+            "You MUST provide both `remove_place_id` and `add_place_id`."
+        )
 
-        # ── Apply remaining pre-selected places sequentially ──────────
-        # If the user asked to add multiple places (e.g. "add X and Y"),
-        # apply each remaining pre-selected place as a separate ADD
-        # operation on the accumulating modified itinerary.
-        # Uses smart distribution: tracks used slots per day across the batch
-        # to avoid clustering same-category places in the same slot.
-        added_names = [pre_selected_places[0].get("name", "")] if pre_selected_places and response.op == "ADD" else []
-        used_slots_per_day: dict[int, set[str]] = {}
-        if response.day_number and response.suggested_time_of_day:
-            used_slots_per_day.setdefault(response.day_number, set()).add(response.suggested_time_of_day)
+    if operation.op == "REMOVE" and not operation.place_id:
+        return (
+            "REMOVE operation is missing the required `place_id` field. "
+            "You MUST provide the exact ID of the place to remove."
+        )
 
-        if pre_selected_places and response.op == "ADD" and len(pre_selected_places) > 1:
-            remaining = pre_selected_places[1:]
-            logger.info(
-                "[ModifierAgent] Applying %d remaining ADD operations: %s",
-                len(remaining),
-                [p.get("name") for p in remaining],
-            )
-            for i, place in enumerate(remaining):
-                best_day, best_slot = _find_best_day_and_slot_for_place(
-                    modified, place, used_slots_per_day,
-                )
-                # Track this assignment for subsequent additions
-                used_slots_per_day.setdefault(best_day, set()).add(best_slot)
-                sub_op = ModifierResponse(
-                    op="ADD",
-                    add_place_id=place.get("id"),
-                    day_number=best_day,
-                    suggested_time_of_day=best_slot,
-                    why_recommended=f"Also matched your request for '{place.get('name')}'",
-                    note="",
-                )
-                modified = apply_operation(
-                    itinerary=modified,
-                    operation=sub_op,
-                    place_pool=available_places,
-                )
-                added_names.append(place.get("name", ""))
-                logger.info(
-                    "[ModifierAgent] Applied sequential ADD %d/%d: %s → Day %d (%s)",
-                    i + 1, len(remaining), place.get("name"), best_day, best_slot,
-                )
+    if operation.op == "REORDER" and (not operation.day_number or not operation.new_order):
+        return (
+            "REORDER operation is missing required fields. "
+            "You MUST provide both `day_number` and `new_order` (list of place IDs)."
+        )
 
-        # ── Apply additional_adds from LLM response ─────────────────
-        # The LLM can specify extra ADD operations in additional_adds
-        # (used when the user wants multiple places of the same type).
-        # We override the LLM's suggested slot/day if it would cause clustering
-        # with already-placed stops in this batch.
-        extra_names: list[str] = []
-        if response.op == "ADD" and response.additional_adds:
-            logger.info(
-                "[ModifierAgent] Applying %d additional ADD operations from LLM",
-                len(response.additional_adds),
-            )
-            for i, add_op in enumerate(response.additional_adds):
-                # Look up the place in the pool for category-aware slot selection
-                source_place = next(
-                    (p for p in (available_places or [])
-                     if p.get("id") == add_op.add_place_id),
-                    None,
-                )
-                if source_place:
-                    # Override LLM's slot if it would cause clustering
-                    best_day, best_slot = _find_best_day_and_slot_for_place(
-                        modified, source_place, used_slots_per_day,
-                    )
-                else:
-                    best_day = add_op.day_number
-                    best_slot = add_op.suggested_time_of_day
+    if operation.op == "CHANGE_HOTEL" and not operation.new_hotel_id:
+        return (
+            "CHANGE_HOTEL operation is missing the required `new_hotel_id` field. "
+            "You MUST provide the exact hotel ID."
+        )
 
-                used_slots_per_day.setdefault(best_day, set()).add(best_slot)
-                sub_op = ModifierResponse(
-                    op="ADD",
-                    add_place_id=add_op.add_place_id,
-                    day_number=best_day,
-                    suggested_time_of_day=best_slot,
-                    why_recommended=add_op.why_recommended or f"Additional place matching your request",
-                    note="",
-                )
-                modified = apply_operation(
-                    itinerary=modified,
-                    operation=sub_op,
-                    place_pool=available_places,
-                )
-                # Extract name from pool for logging
-                pool_name = next(
-                    (p.get("name", "") for p in (available_places or [])
-                     if p.get("id") == add_op.add_place_id),
-                    add_op.add_place_id,
-                )
-                extra_names.append(pool_name)
-                logger.info(
-                    "[ModifierAgent] Applied additional ADD %d/%d: %s → Day %d (%s)",
-                    i + 1, len(response.additional_adds), pool_name, best_day, best_slot,
-                )
-            added_names.extend(extra_names)
+    if operation.op == "RE_THEME" and (not operation.day_number or not operation.new_theme):
+        return (
+            "RE_THEME operation is missing required fields. "
+            "You MUST provide both `day_number` and `new_theme`."
+        )
 
-        # Build a combined note about all added places
-        notes = []
-        if response.note:
-            notes.append(response.note)
-        if len(added_names) > 1:
-            notes.append(f"Added {len(added_names)} places: {', '.join(added_names)}")
-        elif added_names:
-            notes.append(f"Added {added_names[0]}")
-        if notes:
-            existing = modified.get("_modifier_note", "")
-            combined = "\n".join(notes)
-            modified["_modifier_note"] = (
-                f"{existing}\n{combined}".strip()
-            )
-
-        return modified
-
-    except Exception as exc:
-        logger.error("[ModifierAgent] Modification failed: %s", exc)
-        return current_itinerary
+    return None
 
 
 def _validate_modifier_result(

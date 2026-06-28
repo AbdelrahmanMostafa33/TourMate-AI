@@ -112,12 +112,11 @@ def print_debug(result: dict):
     if validation:
         score = validation.get("score", "?")
         is_valid = validation.get("is_valid", False)
-        issues = validation.get("issues", [])
+        issue = validation.get("issue", "")
         status_color = GREEN if is_valid else RED
         print(f"\n{BOLD}  Validation:{RESET} {status_color}score={score}{RESET}")
-        if issues:
-            for issue in issues:
-                print(f"{RED}    ⚠ {issue}{RESET}")
+        if issue:
+            print(f"{RED}    ⚠ {issue}{RESET}")
 
     print(f"{DIM}{'─'*30}{RESET}")
 

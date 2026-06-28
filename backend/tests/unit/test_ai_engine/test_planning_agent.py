@@ -164,7 +164,7 @@ class TestTrimForPrompt:
         candidate = _make_candidate()
         trimmed = _trim_for_prompt(candidate)
 
-        expected_keys = {"id", "name", "category", "sub_category", "interest_tags", "lat", "lon", "score"}
+        expected_keys = {"id", "name", "category", "sub_category", "lat", "lon", "score"}
         assert set(trimmed.keys()) == expected_keys
 
     def test_hotel_excludes_special_fields(self):
@@ -223,9 +223,8 @@ class TestTrimForPrompt:
     def test_missing_optional_fields_default(self):
         candidate = {"id": "x", "name": "X", "category": "test", "lat": 0.0, "lon": 0.0}
         trimmed = _trim_for_prompt(candidate)
-        # sub_category and interest_tags are omitted when empty to save tokens
+        # sub_category is omitted when empty to save tokens
         assert "sub_category" not in trimmed
-        assert "interest_tags" not in trimmed
         assert trimmed["score"] == 0.0
 
 

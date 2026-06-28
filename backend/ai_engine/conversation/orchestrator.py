@@ -251,6 +251,37 @@ async def _process_message_inner(
     if action == "plan_trip":
         if state.phase == ConversationPhase.GREETING:
             state.transition_to(ConversationPhase.SLOT_FILLING)
+
+        # ── Safety check: ask for interests before planning ─────────────
+        # The LLM sometimes chooses "plan_trip" even when interests are
+        # still None (not provided).  Before filling defaults and proceeding
+        # to plan generation, check if interests are genuinely missing.
+        if state.slots.interests is None:
+            logger.info(
+                "[ConversationAgent] Interests missing despite plan_trip action — "
+                "redirecting to ask_clarification"
+            )
+            state.transition_to(ConversationPhase.SLOT_FILLING)
+            state.last_question_field = "interests"
+            city = state.slots.destination_city or "your destination"
+            duration = f"{state.slots.duration_days}-day" if state.slots.duration_days else ""
+            message = (
+                f"Great, a {duration} trip to {city}! What are you interested in? "
+                f"You can tell me things like history, food, museums, shopping, "
+                f"or anything you enjoy. Or say 'surprise me' and I'll plan a well-rounded trip!"
+            )
+            if image_acknowledgment:
+                message = f"{image_acknowledgment} {message}"
+            response = {
+                "response_type": "clarification",
+                "message": message,
+                "itinerary": None,
+                "image_features": image_features,
+            }
+            if response.get("message"):
+                state.add_assistant_message(response["message"])
+            return response
+
         state.slots.fill_defaults()
 
         if state.slots.is_complete():
@@ -541,7 +572,15 @@ async def handle_chat_stream(user_id, user_message, image_bytes=None, token=None
     async for chunk in _stream_text(message):
         yield chunk
 
-    if response:
+    # Only yield a result event when there's meaningful structured data.
+    # Skip it for simple clarification/chat responses that only stream text.
+    if response and (
+        response.get("response_type") == "itinerary"
+        or response.get("itinerary")
+        or response.get("validation")
+        or response.get("flight_search_results")
+        or response.get("flight_booking")
+    ):
         result_data = {
             "message": response.get("message", ""),
             "phase": phase_value,
@@ -549,7 +588,7 @@ async def handle_chat_stream(user_id, user_message, image_bytes=None, token=None
         }
 
         # Itinerary data
-        if response.get("response_type") == "itinerary" and response.get("itinerary"):
+        if response.get("itinerary"):
             result_data["itinerary"] = response["itinerary"]
 
         # Common optional fields
@@ -2186,7 +2225,7 @@ async def _handle_plan_trip(user_id, user_message, extracted, image_features, to
         candidate_places = result_state.get("candidate_places") or result_state.get("filtered_places")
         filtered_places = result_state.get("filtered_places")
 
-        if state and optimized and is_valid:
+        if state and optimized:
             state.set_itinerary(
                 optimized,
                 candidate_places=candidate_places,

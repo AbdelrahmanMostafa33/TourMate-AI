@@ -158,8 +158,8 @@ def build_validation_llm_response(
     response.content = json.dumps({
         "is_valid": is_valid,
         "score": score,
-        "issues": [] if is_valid else ["Pacing could be improved"],
-        "suggestions": ["Consider adding a lunch break"],
+        "issue": "" if is_valid else "Pacing could be improved",
+        "suggestion": "Consider adding a lunch break",
     })
     return response
 

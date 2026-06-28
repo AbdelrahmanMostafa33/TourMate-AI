@@ -158,7 +158,11 @@ class TripSlots:
             self.travel_style = self.SMART_DEFAULTS["travel_style"]
         if not self.pace:
             self.pace = self.SMART_DEFAULTS["pace"]
-        if not self.interests:
+        # Don't default interests when they are None — they are a required field
+        # that the user must explicitly provide or opt out of.
+        # An empty list means "no preference" (explicit opt-out).
+        # None means "not yet asked/answered".
+        if self.interests is not None and not self.interests:
             self.interests = list(self.SMART_DEFAULTS["interests"])
         if not self.food_preferences:
             self.food_preferences = list(self.SMART_DEFAULTS["food_preferences"])

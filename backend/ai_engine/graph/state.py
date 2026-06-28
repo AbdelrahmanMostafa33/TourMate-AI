@@ -80,7 +80,7 @@ class TripState(TypedDict):
     # Result of validation step (True if itinerary meets constraints)
 
     validation: Optional[dict]
-    # Full validation verdict (score, issues, warnings, suggestions)
+    # Full validation verdict (score, issue, suggestion)
 
     planning_attempts: Optional[int]
     # How many times the planner has run (used to cap plan->validate retries)

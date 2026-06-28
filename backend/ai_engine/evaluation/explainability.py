@@ -129,7 +129,7 @@ def explain_validation_decision(
 
     Args:
         validation: The ``validation`` dict from ``TripState``
-            (with ``is_valid``, ``score``, ``issues``, ``suggestions``).
+            (with ``is_valid``, ``score``, ``issue``, ``suggestion``).
         metrics: Optional metrics dict from ``compute_all_metrics()``.
         feasibility_issues: Optional list of issues from
             :func:`~ai_engine.evaluation.feasibility_checker.run_programmatic_checks`.
@@ -149,8 +149,8 @@ def explain_validation_decision(
 
     is_valid = validation.get("is_valid", False)
     score = validation.get("score", 0)
-    issues = validation.get("issues", [])
-    suggestions = validation.get("suggestions", [])
+    issue = validation.get("issue", "")
+    suggestion = validation.get("suggestion", "")
 
     # ── Overall verdict ─────────────────────────────────────────────────
     if is_valid:
@@ -162,33 +162,13 @@ def explain_validation_decision(
             f"Did not pass quality checks (score: **{score}/100**)."
         )
 
-    # ── Key issues (up to 5) ────────────────────────────────────────────
-    if issues:
-        feasibility_keywords = (
-            "exceeds max", "too far", "only.*stop", "travel time",
-            "consecutive", "accommodation", "hotel suggestions",
-        )
-
-        feasibility = [i for i in issues if any(
-            re.search(kw, i, re.IGNORECASE) for kw in feasibility_keywords
-        )]
-        quality = [i for i in issues if i not in feasibility]
-
-        if feasibility:
-            lines.append(f"Feasibility issues ({len(feasibility)}):")
-            for i, issue in enumerate(feasibility[:5], 1):
-                lines.append(f"  {i}. {issue}")
-
-        if quality:
-            lines.append(f"Quality notes ({len(quality)}):")
-            for i, issue in enumerate(quality[:5], 1):
-                lines.append(f"  {i}. {issue}")
+    # ── Key issue ───────────────────────────────────────────────────────
+    if issue:
+        lines.append(f"Issue: {issue}")
 
     # ── Suggestions ─────────────────────────────────────────────────────
-    if suggestions:
-        lines.append(f"Suggestions:")
-        for s in suggestions[:3]:
-            lines.append(f"  - {s}")
+    if suggestion:
+        lines.append(f"Suggestion: {suggestion}")
 
     # ── Overall metric context ──────────────────────────────────────────
     if metrics and metrics.get("overall", 0) > 0:
