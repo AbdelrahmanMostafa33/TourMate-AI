@@ -239,6 +239,7 @@ async def process_message_stream(
     token:        str,
     session_id:   Optional[str] = None,
     image_bytes:  Optional[bytes] = None,
+    image_data:   Optional[str] = None,
 ) -> Optional[str]:
     """Process a message with streaming token-by-token response.
 
@@ -246,8 +247,8 @@ async def process_message_stream(
     """
     svc = ChatService(db)
 
-    # ── Save user message ─────────────────────────────────────────────────
-    await svc.save_user_message(conversation.conversation_id, user_text)
+    # ── Save user message (with image if provided) ────────────────────────
+    await svc.save_user_message(conversation.conversation_id, user_text, image_data=image_data)
     await db.commit()
 
     # ── typing ───────────────────────────────────────────────────────────
@@ -594,6 +595,7 @@ async def websocket_new_chat(
                         token=token,
                         session_id=ai_session_id,
                         image_bytes=image_bytes,
+                        image_data=image_data,
                     )
 
                 history_list.append({"role": "user", "content": effective_message})
@@ -601,7 +603,11 @@ async def websocket_new_chat(
                     history_list = history_list[-20:]
                 continue
 
-            pending_messages.append({"role": "user", "content": effective_message})
+            pending_messages.append({
+                "role": "user",
+                "content": effective_message,
+                "image_data": image_data,
+            })
 
             await manager.send(ws_key, {"type": "typing"})
 
@@ -689,6 +695,7 @@ async def websocket_new_chat(
                                 conversation_id=conversation.conversation_id,
                                 sender="user" if msg["role"] == "user" else "agent",
                                 content=msg["content"],
+                                image_data=msg.get("image_data"),
                             )
                         pending_messages = []
 
@@ -829,10 +836,10 @@ async def websocket_chat(
             
             # Extract image data if present
             image_bytes = None
-            image_data = data.get("image")
-            if image_data:
+            raw_image_data = data.get("image")
+            if raw_image_data:
                 try:
-                    image_bytes = base64.b64decode(image_data)
+                    image_bytes = base64.b64decode(raw_image_data)
                 except Exception as e:
                     logger.warning("[ChatRoutes] Failed to decode image data: %s", e)
             
@@ -854,6 +861,7 @@ async def websocket_chat(
                     token=token,
                     session_id=ai_session_id,
                     image_bytes=image_bytes,
+                    image_data=raw_image_data,
                 )
 
     except WebSocketDisconnect:
@@ -890,6 +898,7 @@ async def get_history(
             "conversation_id": m.conversation_id,
             "sender":          m.sender,
             "content":         m.content,
+            "image_data":      m.image_data,
             "timestamp":       m.timestamp,
         }
         for m in messages

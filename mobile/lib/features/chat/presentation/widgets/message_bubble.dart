@@ -34,9 +34,7 @@ class MessageBubble extends StatelessWidget {
         alignment: Alignment.centerLeft,
         child: ItineraryCard(
           itinerary: msg.itinerary!,
-          onApprove: msg.itinerary!.accommodationSuggestions.isEmpty && !msg.isUser
-              ? onApproveItinerary
-              : null,
+          onApprove: !msg.isUser ? onApproveItinerary : null,
         ),
       );
     }

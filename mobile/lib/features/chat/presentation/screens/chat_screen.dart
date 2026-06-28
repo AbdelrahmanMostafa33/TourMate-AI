@@ -539,6 +539,7 @@ class _ChatViewState extends State<_ChatView> {
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.end,
+        mainAxisSize: MainAxisSize.min,
         children: [
           if (_selectedImageBytes != null)
             Container(
@@ -582,42 +583,48 @@ class _ChatViewState extends State<_ChatView> {
               ),
             ),
           Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10),
+            padding: const EdgeInsets.symmetric(horizontal: 12),
             decoration: BoxDecoration(
               color: Colors.grey.shade100,
               borderRadius: BorderRadius.circular(30),
               border: Border.all(color: Colors.grey.shade300),
             ),
             child: Row(
-              crossAxisAlignment: CrossAxisAlignment.end,
+              crossAxisAlignment: CrossAxisAlignment.center,
               children: [
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 8),
-                  child: GestureDetector(
-                    onTap: _pickImage,
-                    child: const Icon(Icons.camera_alt_outlined),
+                SizedBox(
+                  width: 36,
+                  height: 36,
+                  child: IconButton(
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(),
+                    icon: const Icon(Icons.camera_alt_outlined, size: 22),
+                    onPressed: _pickImage,
                   ),
                 ),
-                const SizedBox(width: 8),
+                const SizedBox(width: 4),
                 Expanded(
                   child: TextField(
                     controller: _inputController,
-                    maxLines: 4,
+                    maxLines: 3,
                     minLines: 1,
                     textInputAction: TextInputAction.newline,
                     decoration: const InputDecoration(
                       hintText: "Ask anything",
                       border: InputBorder.none,
                       isDense: true,
-                      contentPadding: EdgeInsets.symmetric(vertical: 10),
+                      contentPadding: EdgeInsets.symmetric(vertical: 8),
                     ),
                     onSubmitted: (_) => _sendMessage(cubit),
                   ),
                 ),
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 8),
+                SizedBox(
+                  width: 36,
+                  height: 36,
                   child: IconButton(
-                    icon: const Icon(Icons.send),
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(),
+                    icon: const Icon(Icons.send, size: 22),
                     onPressed: () => _sendMessage(cubit),
                   ),
                 ),

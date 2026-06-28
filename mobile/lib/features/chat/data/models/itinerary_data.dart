@@ -99,34 +99,67 @@ class ItineraryData {
     );
     if (itinerary.days.isEmpty) return null;
 
+    // Collect hotel stops across all days to reconstruct
+    // accommodationSuggestions (hotels are stored as stops in the DB
+    // but should render in the dedicated accommodation section, not
+    // as regular day stops).
+    final hotelAccommodations = <AccommodationSuggestion>[];
+
+    final parsedDays = itinerary.days.map((day) {
+      final hotelStops = day.stops.where((stop) {
+        final cat = (stop.category ?? '').toLowerCase();
+        return cat == 'hotel' || cat == 'accommodation';
+      }).toList();
+
+      for (final hs in hotelStops) {
+        hotelAccommodations.add(AccommodationSuggestion(
+          id: hs.placeId ?? hs.stopId,
+          name: hs.name ?? 'Unknown',
+          accommodationType: hs.subCategory ?? '',
+          lat: hs.lat ?? 0,
+          lon: hs.lon ?? 0,
+          whyRecommended: hs.aiNotes ?? '',
+          rating: hs.rating,
+          photoUrl: hs.photoUrl,
+          address: hs.address,
+        ));
+      }
+
+      return ItineraryDay(
+        dayNumber: day.dayNumber,
+        theme: day.theme ?? '',
+        stops: day.stops
+            .where((stop) {
+              final cat = (stop.category ?? '').toLowerCase();
+              return cat != 'hotel' && cat != 'accommodation';
+            })
+            .map((stop) {
+          return ItineraryStop(
+            id: stop.placeId ?? stop.stopId,
+            name: stop.name ?? 'Unknown',
+            category: stop.category ?? '',
+            subCategory: stop.subCategory ?? '',
+            lat: stop.lat ?? 0,
+            lon: stop.lon ?? 0,
+            whyRecommended: stop.aiNotes ?? '',
+            estimatedDurationMinutes: stop.durationMinutes ?? 0,
+            suggestedTimeOfDay: stop.timeOfDay ?? '',
+            rating: stop.rating,
+            address: stop.address,
+            photoUrl: stop.photoUrl,
+            travelTimeToNextMinutes: stop.minutesFromPrevStop,
+            transportMode: stop.travelMode,
+            orderInDay: stop.orderInDay,
+          );
+        }).toList(),
+      );
+    }).toList();
+
     return ItineraryData(
       destination: trip.destination,
       durationDays: trip.durationDays,
-      days: itinerary.days.map((day) {
-        return ItineraryDay(
-          dayNumber: day.dayNumber,
-          theme: day.theme ?? '',
-          stops: day.stops.map((stop) {
-            return ItineraryStop(
-              id: stop.placeId ?? stop.stopId,
-              name: stop.name ?? 'Unknown',
-              category: stop.category ?? '',
-              subCategory: stop.subCategory ?? '',
-              lat: stop.lat ?? 0,
-              lon: stop.lon ?? 0,
-              whyRecommended: stop.aiNotes ?? '',
-              estimatedDurationMinutes: stop.durationMinutes ?? 0,
-              suggestedTimeOfDay: stop.timeOfDay ?? '',
-              rating: stop.rating,
-              address: stop.address,
-              photoUrl: stop.photoUrl,
-              travelTimeToNextMinutes: stop.minutesFromPrevStop,
-              transportMode: stop.travelMode,
-              orderInDay: stop.orderInDay,
-            );
-          }).toList(),
-        );
-      }).toList(),
+      days: parsedDays,
+      accommodationSuggestions: hotelAccommodations,
     );
   }
 }

@@ -40,6 +40,7 @@ class Message(Base):
     conversation_id = Column(String, ForeignKey("conversations.conversation_id", ondelete="CASCADE"), nullable=False, index=True)
     sender          = Column(String, nullable=False)            # "user" | "agent"
     content         = Column(Text, nullable=False)
+    image_data      = Column(Text, nullable=True)               # Base64-encoded image for user-uploaded photos
     timestamp       = Column(DateTime, default=func.now())
 
     # Relationships

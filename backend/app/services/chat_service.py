@@ -49,6 +49,7 @@ class ChatService:
         conversation_id: str,
         sender: str,
         content: str,
+        image_data: Optional[str] = None,
     ) -> Message:
         """Persist a single message to the DB.
 
@@ -56,6 +57,7 @@ class ChatService:
             conversation_id: FK to the Conversation record.
             sender:           'user' | 'agent'
             content:          Message text.
+            image_data:       Optional base64-encoded image data.
 
         Returns:
             The newly created Message ORM object.
@@ -65,6 +67,7 @@ class ChatService:
             conversation_id=conversation_id,
             sender=sender,
             content=content,
+            image_data=image_data,
         )
         self.db.add(msg)
         return msg
@@ -73,9 +76,10 @@ class ChatService:
         self,
         conversation_id: str,
         content: str,
+        image_data: Optional[str] = None,
     ) -> Message:
         """Convenience: save a user message."""
-        return await self.save_message(conversation_id, "user", content)
+        return await self.save_message(conversation_id, "user", content, image_data=image_data)
 
     async def save_agent_message(
         self,
@@ -555,6 +559,7 @@ class ChatService:
                 "conversation_id": m.conversation_id,
                 "sender": m.sender,
                 "content": m.content,
+                "image_data": m.image_data,
                 "timestamp": m.timestamp.isoformat() if m.timestamp else None,
             }
             for m in messages
