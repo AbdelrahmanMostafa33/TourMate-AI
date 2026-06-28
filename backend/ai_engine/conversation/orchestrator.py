@@ -31,6 +31,10 @@ from ai_engine.conversation.conversation_state import (
     TripSlots,
 )
 
+
+# ── Numbered emoji for hotel selection ────────────────────────────────────
+_HOTEL_NUMBER_EMOJI = ["1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣"]
+
 # Redis session manager (load/save conversation state per user/session)
 from ai_engine.conversation.redis_memory import get_session_manager
 
@@ -62,9 +66,10 @@ from ai_engine.services.pool_manager import (
 from ai_engine.tools.slot_normalizer import _ACCOMMODATION_KEYWORDS, map_accommodation_to_type
 from ai_engine.tools.places_tool import get_places_for_city
 
-# Direct agent imports for re-ranking (skip retrieval, go straight to rank→plan→optimize→validate)
+# Direct agent imports for re-ranking (skip retrieval, go straight to rank→plan→optimize→hotel→validate)
 from ai_engine.services.candidate_scorer import score_candidates
 from ai_engine.agents.planning_agent import run_planning_agent
+from ai_engine.agents.hotel_agent import run_hotel_selection
 from ai_engine.services.route_optimizer import optimize_route, optimize_itinerary_days
 from ai_engine.services.itinerary_validator import validate_itinerary
 
@@ -274,15 +279,106 @@ async def _process_message_inner(
             "image_features": image_features,
         }
 
+    # ── ACTION: SELECT HOTEL (during hotel_selection phase) ───────────────
+    elif action == "select_hotel" and state.phase == ConversationPhase.HOTEL_SELECTION:
+        response = await _handle_select_hotel(
+            state, effective_message, router_result, image_features,
+        )
+
     # ── ACTION: APPROVE EXISTING ITINERARY ──────────────────────────────────
     elif action == "approve_itinerary":
-        state.approve_itinerary(itinerary_id=None)
-        response = {
-            "response_type": "chat",
-            "message": router_result.response,
-            "itinerary": None,
-            "image_features": None,
-        }
+        # ── If already in HOTEL_SELECTION, "approve" means accept default ──
+        if state.phase == ConversationPhase.HOTEL_SELECTION:
+            hotels = (state.itinerary or {}).get("accommodation_suggestions", [])
+            if hotels:
+                state.itinerary["selected_hotel"] = hotels[0]
+            state.approve_itinerary(itinerary_id=None)
+            if state.itinerary and state.itinerary.get("accommodation_suggestions"):
+                final_message = _format_itinerary(state.itinerary, approved=True)
+                response = {
+                    "response_type": "itinerary",
+                    "message": final_message,
+                    "itinerary": state.itinerary,
+                    "image_features": None,
+                }
+            else:
+                response = {
+                    "response_type": "chat",
+                    "message": router_result.response,
+                    "itinerary": None,
+                    "image_features": None,
+                }
+
+        # ── First-time approval: show hotel options, let user choose ──
+        else:
+            # Check if the user's message implies an accommodation type change
+            acc_type_change = _is_accommodation_type_change(effective_message)
+            if acc_type_change:
+                logger.info(
+                    "[ConversationAgent] Accommodation type change '%s' intercepted during approval",
+                    acc_type_change,
+                )
+                state.slots.accommodation_preferences = [acc_type_change]
+
+            # Select hotels now that the stops are finalized
+            hotel_agent_msgs: list[str] = []
+            if state.itinerary and state.candidate_places:
+                approval_state = {
+                    "optimized_itinerary": state.itinerary,
+                    "draft_itinerary": None,
+                    "candidate_places": state.candidate_places,
+                    "profile": {
+                        "accommodation_preferences": state.slots.accommodation_preferences or [],
+                        "budget_level": state.slots.budget_level or "",
+                        "travel_style": state.slots.travel_style or "",
+                    },
+                    "agent_messages": [],
+                }
+                approval_result = await run_hotel_selection(approval_state)
+                hotel_itinerary = (
+                    approval_result.get("optimized_itinerary")
+                    or approval_result.get("draft_itinerary")
+                    or state.itinerary
+                )
+                state.itinerary = hotel_itinerary
+                hotel_agent_msgs = approval_result.get("agent_messages", [])
+
+            # ── Accommodation type change during approval ────────────
+            if acc_type_change:
+                if state.itinerary and state.itinerary.get("accommodation_suggestions"):
+                    response = {
+                        "response_type": "itinerary",
+                        "message": _format_itinerary(state.itinerary, approved=False),
+                        "itinerary": state.itinerary,
+                        "image_features": None,
+                        "agent_messages": hotel_agent_msgs,
+                    }
+                else:
+                    response = {
+                        "response_type": "chat",
+                        "message": f"Updated your accommodation to {acc_type_change}. "
+                                  "You can approve or modify further.",
+                        "itinerary": None,
+                        "image_features": None,
+                    }
+            else:
+                # Transition to hotel selection phase — stops are approved,
+                # user now picks their preferred hotel
+                state.transition_to(ConversationPhase.HOTEL_SELECTION)
+                hotel_prompt = _format_hotel_options(state.itinerary)
+                message = (
+                    f"✅ Your stops look great! Here are the hotel options:\n\n"
+                    f"{hotel_prompt}\n"
+                    f"Which hotel would you like to stay at? You can pick by number, "
+                    f"name, or just say 'looks good' to go with the first option."
+                )
+                response = {
+                    "response_type": "chat",
+                    "message": message,
+                    "itinerary": state.itinerary,
+                    "image_features": None,
+                    "agent_messages": hotel_agent_msgs,
+                }
 
     # ── ACTION: MODIFY EXISTING ITINERARY ───────────────────────────────────
     elif action == "modify_itinerary":
@@ -555,11 +651,16 @@ async def _post_edit_optimize(
     modified: dict,
     original: dict,
     classification: dict | None = None,
-) -> dict:
-    """Post-edit optimization: rebalance clustered slots, then run OSRM routing."""
+) -> tuple[dict, str | None]:
+    """Post-edit optimization: rebalance clustered slots, then run OSRM routing.
+
+    Returns:
+        A tuple of (modified_itinerary, route_optimization_message_or_None).
+        The message is suitable for appending to ``agent_messages``.
+    """
     edit_type = (classification or {}).get("edit_type", "").upper()
     if edit_type in ("RE_THEME", "CHANGE_HOTEL"):
-        return modified
+        return modified, None
 
     # Step 1: Rebalance slot clustering before route optimization
     from ai_engine.services.operations import _rebalance_clustered_slots
@@ -584,13 +685,26 @@ async def _post_edit_optimize(
         affected = [d.get("day_number") for d in modified.get("days", []) if d.get("day_number") is not None]
 
     if not affected:
-        return modified
+        return modified, None
 
     try:
-        return await optimize_itinerary_days(modified, day_numbers=affected)
+        result = await optimize_itinerary_days(modified, day_numbers=affected)
+        # Compute route stats for logging
+        n_days = len(result.get("days", []))
+        total_stops = sum(len(d.get("stops", [])) for d in result.get("days", []))
+        total_travel = sum(
+            d.get("total_travel_time_minutes", 0) for d in result.get("days", [])
+        )
+        route_msg = (
+            f"[RouteOptimizer] Post-edit: {n_days} days, "
+            f"{total_stops} stops, {total_travel:.0f} min total travel "
+            f"(re-optimized {len(affected)} affected day(s))"
+        )
+        logger.info("[ConversationAgent] %s", route_msg)
+        return result, route_msg
     except Exception as exc:
         logger.warning("[ConversationAgent] Post-edit route optimization failed: %s", exc)
-        return modified
+        return modified, None
 
 
 def _itinerary_response(
@@ -658,17 +772,21 @@ async def _apply_modifier_edit(
         modification_request=effective_message,
         available_places=_available_pool(state),
         preferences=preferences,
+        destination_city=state.slots.destination_city,
+        destination_country=state.slots.destination_country,
     )
     modifier_note = modified.pop("_modifier_note", "")
     modifier_applied = _has_real_modifications(modified, original_itinerary)
 
     if modifier_applied:
-        modified = await _post_edit_optimize(modified, original_itinerary, classification)
+        modified, route_msg = await _post_edit_optimize(modified, original_itinerary, classification)
         trailing_note = modified.pop("_modifier_note", "")
         if trailing_note:
             modifier_note = f"{modifier_note}\n{trailing_note}".strip()
         if modifier_note:
             agent_messages.append(f"[ModifierAgent] {modifier_note}")
+        if route_msg:
+            agent_messages.append(route_msg)
         return _itinerary_response(state, modified, image_features, agent_messages)
 
     if modifier_note and is_surgical_edit(classification):
@@ -919,7 +1037,48 @@ def _is_accommodation_type_change(modification_request: str) -> str | None:
     return None
 
 
-def _format_itinerary(itinerary: dict) -> str:
+def _format_hotel_options(itinerary: dict) -> str:
+    """Format hotel suggestions as numbered options for user selection."""
+    hotels = itinerary.get("accommodation_suggestions", [])
+    if not hotels:
+        return "No hotel options available."
+
+    lines = []
+    for i, hotel in enumerate(hotels):
+        num_emoji = _HOTEL_NUMBER_EMOJI[i] if i < len(_HOTEL_NUMBER_EMOJI) else f"{i + 1}."
+        name = hotel.get("name", "Unknown")
+        rating = hotel.get("rating", 0)
+        acc_type = hotel.get("accommodation_type", "")
+        sub_cat = hotel.get("sub_category", "")
+        amenities = hotel.get("amenities", [])
+        address = hotel.get("address", "")
+        maps_link = hotel.get("maps_link", "")
+        why = hotel.get("why_recommended", "")
+
+        type_label = sub_cat.title() if sub_cat else (acc_type.capitalize() if acc_type else "Hotel")
+        star_count = min(round(rating or 0), 5)
+        stars_str = "⭐" * star_count
+
+        lines.append(f"{num_emoji} **{name}** ({type_label})")
+        if rating:
+            lines.append(f"   {stars_str} {rating}/5")
+        if amenities:
+            am_str = ", ".join(a.capitalize() for a in amenities[:6])
+            if len(amenities) > 6:
+                am_str += f" +{len(amenities) - 6} more"
+            lines.append(f"   🏷 {am_str}")
+        if address:
+            lines.append(f"   📍 {address[:70]}")
+        if maps_link:
+            lines.append(f"   🗺 {maps_link[:80]}")
+        if why:
+            lines.append(f"   💡 {why[:150]}")
+        lines.append("")
+
+    return "\n".join(lines)
+
+
+def _format_itinerary(itinerary: dict, approved: bool = False) -> str:
     if not itinerary:
         return "I wasn't able to generate a complete itinerary. Please try again."
 
@@ -928,68 +1087,111 @@ def _format_itinerary(itinerary: dict) -> str:
     days = itinerary.get("days", [])
     hotels = itinerary.get("accommodation_suggestions", [])
 
-    lines.append(f"✨ Here's your personalized {len(days)}-day itinerary for {destination}!")
-    lines.append("")
-
-    for day in days:
-        day_num = day.get("day_number", "?")
-        theme = day.get("theme", "")
-        stops = day.get("stops", [])
-
-        header = f"🗓 Day {day_num}"
-        if theme:
-            header += f" — {theme}"
-        lines.append(header)
-
-        for idx, stop in enumerate(stops, 1):
-            name = stop.get("name", "Unknown")
-            time_slot = stop.get("suggested_time_of_day", "")
-            duration = stop.get("estimated_duration_minutes", 0)
-            why = stop.get("why_recommended", "")
-            rating = stop.get("rating")
-            cat = stop.get("category", "")
-
-            time_emoji = {"morning": "🌅", "afternoon": "☀️", "evening": "🌙"}.get(time_slot, "📍")
-            time_label = time_slot.capitalize() if time_slot else ""
-
-            parts = [f"  {time_emoji} {name}"]
-            if time_label:
-                parts.append(f"({time_label})")
-            if duration:
-                parts.append(f"{duration} min")
-            lines.append(" • ".join(parts))
-
-            detail_bits = []
-            if cat:
-                detail_bits.append(cat.capitalize())
-            if rating:
-                detail_bits.append(f"⭐ {rating}")
-            if detail_bits:
-                sep = " · "
-                lines.append(f"      {sep.join(detail_bits)}")
-            if why:
-                lines.append(f"      💡 {why}")
-
+    if approved:
+        # On approval, only show the hotel recommendations and approval
+        # message — the full itinerary was already shown during review.
+        lines.append(f"✅ Your trip to {destination} has been approved!")
         lines.append("")
+    else:
+        lines.append(f"✨ Here's your personalized {len(days)}-day itinerary for {destination}!")
+        lines.append("")
+
+        for day in days:
+            day_num = day.get("day_number", "?")
+            theme = day.get("theme", "")
+            stops = day.get("stops", [])
+
+            header = f"🗓 Day {day_num}"
+            if theme:
+                header += f" — {theme}"
+            lines.append(header)
+
+            for idx, stop in enumerate(stops, 1):
+                name = stop.get("name", "Unknown")
+                time_slot = stop.get("suggested_time_of_day", "")
+                duration = stop.get("estimated_duration_minutes", 0)
+                why = stop.get("why_recommended", "")
+                rating = stop.get("rating")
+                cat = stop.get("category", "")
+                sub_cat = stop.get("sub_category", "")
+                tags = stop.get("interest_tags", [])
+                cuisine = stop.get("cuisine_type", "")
+
+                time_emoji = {"morning": "🌅", "afternoon": "☀️", "evening": "🌙"}.get(time_slot, "📍")
+                time_label = time_slot.capitalize() if time_slot else ""
+
+                parts = [f"  {time_emoji} {name}"]
+                if time_label:
+                    parts.append(f"({time_label})")
+                if duration:
+                    parts.append(f"{duration} min")
+                lines.append(" • ".join(parts))
+
+                detail_bits = []
+                # Show sub_category first (more specific than category)
+                label = sub_cat.title() if sub_cat else (cat.title() if cat else "")
+                if label:
+                    detail_bits.append(label)
+                if rating:
+                    detail_bits.append(f"⭐ {rating}")
+                # Show cuisine type for restaurants
+                if cuisine and cat == "restaurant":
+                    detail_bits.append(f"🍲 {cuisine}")
+                # Show top 2 interest tags for attractions
+                if tags and cat != "restaurant":
+                    shown_tags = [t.title() for t in tags[:2] if t]
+                    if shown_tags:
+                        detail_bits.append(f"🎯 {', '.join(shown_tags)}")
+                if detail_bits:
+                    sep = " · "
+                    lines.append(f"      {sep.join(detail_bits)}")
+                if why:
+                    lines.append(f"      💡 {why}")
+
+            lines.append("")
 
     if hotels:
         lines.append("🏨 Where to Stay")
         for hotel in hotels:
             name = hotel.get("name", "Unknown")
             acc_type = hotel.get("accommodation_type", "")
+            sub_cat = hotel.get("sub_category", "")
             rating = hotel.get("rating", 0)
+            amenities = hotel.get("amenities", [])
+            address = hotel.get("address", "")
             why = hotel.get("why_recommended", "")
+
+            # Build type label: prefer sub_category (e.g. "Luxury Hotel"), fall back to accommodation_type
+            type_label = sub_cat.title() if sub_cat else (acc_type.capitalize() if acc_type else "")
+
+            # Star rating display: show stars proportional to rating
+            star_count = min(round(rating or 0), 5)
+            stars_str = "⭐" * star_count if star_count > 0 else ""
+
             line = f"  • {name}"
-            if acc_type:
-                line += f" ({acc_type})"
+            if type_label:
+                line += f" ({type_label})"
             if rating:
-                line += f" ⭐ {rating}"
+                line += f" {stars_str} {rating}"
             lines.append(line)
+
+            # Amenities on a sub-line
+            if amenities:
+                am_str = ", ".join(a.capitalize() for a in amenities[:6])
+                if len(amenities) > 6:
+                    am_str += f" +{len(amenities) - 6} more"
+                lines.append(f"      🏷 {am_str}")
+
+            # Address on a sub-line (compact)
+            if address:
+                lines.append(f"      📍 {address[:60]}")
+
             if why:
                 lines.append(f"      💡 {why}")
 
     lines.append("")
-    lines.append("💡 You can ask me to modify any part of this itinerary, or say 'approve' to save it!")
+    if not approved:
+        lines.append("💡 You can ask me to modify any part of this itinerary, or say 'approve' to save it!")
     return "\n".join(lines)
 
 
@@ -1183,6 +1385,77 @@ async def _handle_modify_itinerary(
     )
 
 
+async def _handle_select_hotel(
+    state: ConversationState,
+    effective_message: str,
+    router_result,
+    image_features: Optional[VisionFeatures],
+) -> dict:
+    """Handle user's hotel selection during HOTEL_SELECTION phase.
+
+    The message interpreter extracts ``selected_hotel_name`` and/or
+    ``selected_hotel_number`` from the user's message.  We match these
+    against ``accommodation_suggestions`` to pick the chosen hotel,
+    then finalize the itinerary and transition to COMPLETED.
+    """
+    extracted = router_result.extracted
+    selected_name = extracted.get("selected_hotel_name", "")
+    selected_number = extracted.get("selected_hotel_number")
+
+    hotels = (state.itinerary or {}).get("accommodation_suggestions", [])
+    chosen = None
+
+    if selected_number is not None and 1 <= selected_number <= len(hotels):
+        # User picked by number (e.g. "hotel 2")
+        chosen = hotels[selected_number - 1]
+        logger.info("[SelectHotel] User picked by number %d → %s", selected_number, chosen.get("name", "?"))
+    elif selected_name:
+        # User picked by name — try fuzzy match
+        name_lower = selected_name.lower()
+        for hotel in hotels:
+            h_name = (hotel.get("name") or "").lower()
+            if name_lower in h_name or h_name in name_lower:
+                chosen = hotel
+                logger.info("[SelectHotel] User picked by name '%s' → %s", selected_name, hotel.get("name", "?"))
+                break
+
+    if not chosen:
+        # Fallback: try matching keywords from user's message in hotel names
+        msg_lower = effective_message.lower()
+        for hotel in hotels:
+            h_name = (hotel.get("name") or "").lower()
+            # Check if any word from the hotel name appears in the message
+            name_words = set(h_name.split())
+            msg_words = set(msg_lower.split())
+            overlap = name_words & msg_words
+            if len(overlap) >= 2:
+                chosen = hotel
+                logger.info("[SelectHotel] Fallback keyword match → %s", hotel.get("name", "?"))
+                break
+
+    if not chosen:
+        # Last resort: pick the first hotel
+        chosen = hotels[0] if hotels else None
+        if chosen:
+            logger.info("[SelectHotel] No match found — defaulting to first hotel: %s", chosen.get("name", "?"))
+
+    if chosen:
+        state.itinerary["selected_hotel"] = chosen
+
+    # Finalize the trip
+    state.approve_itinerary(itinerary_id=None)
+    final_message = _format_itinerary(state.itinerary, approved=True)
+
+    selection_note = f"\n🏨 Selected: {chosen['name']}" if chosen else ""
+    return {
+        "response_type": "itinerary",
+        "message": final_message + selection_note,
+        "itinerary": state.itinerary,
+        "image_features": image_features,
+        "agent_messages": [f"[HotelSelector] User chose: {chosen['name'] if chosen else 'default (first hotel)'}"],
+    }
+
+
 async def _fallback_full_regeneration(
     user_id: str,
     state: ConversationState,
@@ -1298,6 +1571,9 @@ async def _rerank_and_replan(
                 return None
 
             rerank_state = await optimize_route(rerank_state)
+            # Hotels are NOT selected during re-ranking — they are selected
+            # after the user approves the itinerary to avoid wasting hotel
+            # selections when the user makes multiple modifications.
             rerank_state = await validate_itinerary(rerank_state)
 
             optimized = rerank_state.get("optimized_itinerary")

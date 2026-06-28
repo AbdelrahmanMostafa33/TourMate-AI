@@ -42,7 +42,9 @@ def should_optimize(state: TripState) -> str:
 def should_validate(state: TripState) -> str:
     """
     Called after the Route Optimizer node finishes.
-    Did optimization succeed? If yes, go to Validator.
+    Hotels are NOT selected in the pipeline — they are selected
+    after the user approves the itinerary.
+    If optimization succeeded, go to Validator.
     """
     if state.get("error"):
         return "end"

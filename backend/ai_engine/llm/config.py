@@ -63,6 +63,9 @@ AGENT_LLM_REGISTRY: Dict[str, LLMConfig] = {
     "modifier":            LLMConfig(Provider.GEMINI, "gemini-2.5-flash",  temperature=0.0, max_tokens=8192),
     "planner":             LLMConfig(Provider.GEMINI, "gemini-2.5-flash",  temperature=0.7, max_tokens=8192),
     "vision":              LLMConfig(Provider.GEMINI, "gemini-2.5-flash",  temperature=0.7, max_tokens=8192),
+    
+    # ── Groq — hotel selection (massive RPD headroom) ──
+    "hotel_selector":      LLMConfig(Provider.GROQ, "llama-3.3-70b-versatile", temperature=0.3, max_tokens=8192),
 }
 
 

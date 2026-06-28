@@ -16,6 +16,8 @@ dashboard shows the full agent hierarchy:
     ├── planning_agent
     │   └── invoke_with_fallback (planner LLM)
     ├── optimization_agent
+    ├── hotel_selection
+    │   └── invoke_with_fallback (hotel_selector LLM)
     └── validation_agent
         └── invoke_with_fallback (validator LLM)
 

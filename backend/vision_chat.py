@@ -141,6 +141,144 @@ def _print_image_features(features: VisionFeatures, label: str = "Image Features
     print()
 
 
+def _print_itinerary_details(result: dict):
+    """Print rich structured details from the itinerary result.
+
+    Shows extra fields that the AI's text response doesn't include,
+    such as Google Maps links, addresses, exact ratings, and amenities.
+    """
+    itinerary = result.get("itinerary") if result else None
+    if not itinerary:
+        return
+
+    days = itinerary.get("days", [])
+    hotels = itinerary.get("accommodation_suggestions", [])
+
+    print(f"\n{DIM}{'═'*60}{RESET}")
+    print(f"{BOLD}{CYAN}📍 Detailed Stop Information{RESET}")
+    print(f"{DIM}{'─'*60}{RESET}")
+
+    for day in days:
+        day_num = day.get("day_number", "?")
+        theme = day.get("theme", "")
+        header = f"{BOLD}Day {day_num}"
+        if theme:
+            header += f" — {theme}"
+        print(f"\n{header}{RESET}")
+
+        for stop in day.get("stops", []):
+            name = stop.get("name", "Unknown")
+            time_slot = stop.get("suggested_time_of_day", "")
+            rating = stop.get("rating")
+            address = stop.get("address")
+            maps_link = stop.get("maps_link")
+            review_count = stop.get("review_count")
+            price_level = stop.get("price_level")
+            entry_fee = stop.get("entry_fee")
+            hours = stop.get("hours")
+            duration = stop.get("estimated_duration_minutes", 0)
+
+            # Print stop header
+            time_emoji = {"morning": "🌅", "afternoon": "☀️", "evening": "🌙"}.get(time_slot, "📍")
+            print(f"  {time_emoji} {BOLD}{name}{RESET}")
+
+            # Rating line
+            rating_parts = []
+            if rating:
+                stars = "⭐" * min(round(rating), 5)
+                rating_parts.append(f"{stars} {rating}/5")
+            if review_count:
+                rating_parts.append(f"({review_count:,} reviews)")
+            if rating_parts:
+                print(f"    {' · '.join(rating_parts)}")
+
+            # Key details compact grid
+            details = []
+            if duration:
+                details.append(f"⏱ {duration} min")
+            if price_level:
+                details.append(f"💰 {price_level}")
+            if entry_fee:
+                details.append(f"🎟 {entry_fee}")
+            if details:
+                print(f"    {' | '.join(details)}")
+
+            # Hours (compact)
+            if hours:
+                if isinstance(hours, dict) and hours:
+                    today = next(iter(hours.values()), "")
+                    print(f"    🕐 Hours: {today}")
+                elif isinstance(hours, str):
+                    print(f"    🕐 {hours[:60]}")
+
+            # Address
+            if address:
+                print(f"    📍 {address[:80]}")
+
+            # Google Maps link
+            if maps_link:
+                short_link = maps_link[:90] + "..." if len(maps_link) > 90 else maps_link
+                print(f"    🗺 {CYAN}{short_link}{RESET}")
+
+            # Why recommended (truncated)
+            why = stop.get("why_recommended", "")
+            if why:
+                print(f"    💡 {why[:150]}")
+
+            print()  # blank line between stops
+
+    # ── Hotels section ──────────────────────────────────────────────────
+    if hotels:
+        print(f"\n{BOLD}{YELLOW}🏨 Detailed Hotel Information{RESET}")
+        print(f"{DIM}{'─'*60}{RESET}")
+
+        for hotel in hotels:
+            name = hotel.get("name", "Unknown")
+            rating = hotel.get("rating", 0)
+            acc_type = hotel.get("accommodation_type", "")
+            sub_cat = hotel.get("sub_category", "")
+            amenities = hotel.get("amenities", [])
+            address = hotel.get("address")
+            maps_link = hotel.get("maps_link")
+            why = hotel.get("why_recommended", "")
+
+            # Type label
+            type_label = sub_cat.title() if sub_cat else (acc_type.capitalize() if acc_type else "Hotel")
+
+            # Star rating
+            star_count = min(round(rating or 0), 5)
+            stars_str = "⭐" * star_count if star_count > 0 else ""
+
+            print(f"\n  🏨 {BOLD}{name}{RESET} ({type_label})")
+
+            if rating:
+                print(f"    {stars_str} {rating}/5")
+
+            # Amenities
+            if amenities:
+                am_str = ", ".join(a.capitalize() for a in amenities[:8])
+                if len(amenities) > 8:
+                    am_str += f" +{len(amenities) - 8} more"
+                print(f"    🏷 {am_str}")
+
+            # Address
+            if address:
+                print(f"    📍 {address[:80]}")
+
+            # Google Maps link
+            if maps_link:
+                short_link = maps_link[:90] + "..." if len(maps_link) > 90 else maps_link
+                print(f"    🗺 {CYAN}{short_link}{RESET}")
+
+            # Why recommended
+            if why:
+                print(f"    💡 {why[:200]}")
+
+        print()
+
+    print(f"{DIM}{'═'*60}{RESET}\n")
+
+
 def _print_trace_status():
     """Show LangSmith tracing status in a readable format."""
     enabled = get_tracing_enabled()
@@ -590,9 +728,11 @@ async def chat_loop(initial_image_path: Optional[str] = None):
         text_printed = False
         last_result = None
 
-        # Show image context if loaded (skip when auto-proceeding since
-        # the image analysis and acknowledgment were already printed)
-        if current_image_features and current_image_features.has_signal and not auto_proceed_image:
+        # Show image context only once — right after the image was loaded
+        # and sent to the AI. Skip on subsequent turns (auto_proceed_image
+        # is False but current_image_bytes was already cleared).
+        if current_image_features and current_image_features.has_signal \
+                and not auto_proceed_image and current_image_bytes is not None:
             print(f"{MAGENTA}  📷 Including image analysis: "
                   f"interests={current_image_features.interests}, "
                   f"style={current_image_features.travel_style}, "
@@ -640,6 +780,10 @@ async def chat_loop(initial_image_path: Optional[str] = None):
                     if text_printed:
                         print()  # newline after streaming
 
+            # ── Show rich itinerary details from structured data ─────
+            if last_result and last_result.get("itinerary"):
+                _print_itinerary_details(last_result)
+
             # ── Suggest /image if the AI asked about interests ────────
             if streamed_text and not current_image_bytes and (
                 "your interests" in streamed_text.lower() or
@@ -655,8 +799,12 @@ async def chat_loop(initial_image_path: Optional[str] = None):
             print(f"\n{RED}Error: {e}{RESET}\n")
             continue
 
-        # Reset auto-proceed flag after sending
+        # Reset auto-proceed flag after sending and clear image bytes so the
+        # "Including image analysis" message isn't shown on every subsequent turn.
+        # The image features have already been fused into the conversation state.
+        # Keep current_image_features so /features command still works.
         auto_proceed_image = False
+        current_image_bytes = None
 
         # Debug output
         if debug_mode and last_result:

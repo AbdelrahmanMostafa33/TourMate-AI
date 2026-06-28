@@ -167,19 +167,12 @@ class TestTrimForPrompt:
         expected_keys = {"id", "name", "category", "sub_category", "interest_tags", "lat", "lon", "score"}
         assert set(trimmed.keys()) == expected_keys
 
-    def test_hotel_includes_accommodation_type(self):
+    def test_hotel_excludes_special_fields(self):
+        """Hotels are handled by the Hotel Agent, not the planner.
+        The planner should NOT include accommodation_type for hotels."""
         hotel = _make_hotel_candidate()
         trimmed = _trim_for_prompt(hotel)
-        assert trimmed["accommodation_type"] == "hotel"
-        # amenities and interest_tags are omitted to save tokens —
-        # category="hotel" + accommodation_type are sufficient for the planner.
-        assert "amenities" not in trimmed
-        assert "interest_tags" not in trimmed
-        assert "sub_category" not in trimmed
-
-    def test_non_hotel_excludes_accommodation_type(self):
-        place = _make_candidate()
-        trimmed = _trim_for_prompt(place)
+        # Hotels should be treated the same as other non-restaurant places
         assert "accommodation_type" not in trimmed
         assert "amenities" not in trimmed
 
@@ -365,8 +358,9 @@ class TestPlanningAgentEdgeCases:
         assert stop.get("maps_link") == "http://maps.example.com"
 
     @pytest.mark.asyncio
-    async def test_hydration_enriches_hotels(self):
-        """Hotel suggestions should be enriched with full metadata."""
+    async def test_planner_no_longer_enriches_hotels(self):
+        """Hotels are now handled by the Hotel Agent, not the planner.
+        The planner should NOT hydrate accommodation_suggestions."""
         full_hotel = _make_hotel_candidate(id="hotel_001")
         itinerary = _make_valid_itinerary()
         state = _make_planning_state(candidate_places=[full_hotel])
@@ -376,10 +370,12 @@ class TestPlanningAgentEdgeCases:
         with patch("ai_engine.agents.planning_agent.invoke_with_fallback", return_value=mock_llm):
             result = await run_planning_agent(state)
 
+        # Hotels may still be in the itinerary dict (from the test fixture),
+        # but the planner no longer enriches them. Key fields should be missing
+        # or unchanged from the LLM output.
         hotel = result["draft_itinerary"]["accommodation_suggestions"][0]
-        assert hotel.get("category") == "hotel"
-        assert hotel.get("accommodation_type") == "hotel"
-        assert hotel.get("amenities") == ["wifi", "pool", "spa"]
+        # category, accommodation_type, amenities are set by the Hotel Agent, not the planner
+        assert "photos" not in hotel  # planner no longer enriches hotels
 
     @pytest.mark.asyncio
     async def test_user_message_included_in_prompt(self):
@@ -459,8 +455,8 @@ class TestPlanningAgentEdgeCases:
         assert result["error"] is None
 
     @pytest.mark.asyncio
-    async def test_hydration_hotel_address_and_photos(self):
-        """Hotel suggestions should get address and photos from full place data."""
+    async def test_hydration_hotel_no_longer_enriched(self):
+        """Hotels are handled by Hotel Agent — planner no longer enriches hotels."""
         full_hotel = _make_hotel_candidate(
             id="hotel_001",
             address="123 Nile St",
@@ -475,5 +471,5 @@ class TestPlanningAgentEdgeCases:
             result = await run_planning_agent(state)
 
         hotel = result["draft_itinerary"]["accommodation_suggestions"][0]
-        assert hotel.get("address") == "123 Nile St"
-        assert hotel.get("photos") == ["http://example.com/hotel.jpg"]
+        # These were previously enriched by the planner; now done by Hotel Agent
+        assert hotel.get("address") != "123 Nile St"  # planner no longer enriches

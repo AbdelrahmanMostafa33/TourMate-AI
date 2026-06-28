@@ -43,6 +43,10 @@ class ConversationPhase(str, Enum):
         Itinerary has been generated and presented to the user.  The user can
         approve, request changes, or ask questions about the plan.
 
+    HOTEL_SELECTION:
+        User approved the stops but needs to choose a hotel.  The system has
+        presented 2-3 hotel options and is waiting for the user's selection.
+
     COMPLETED:
         User has approved the itinerary.  The conversation is finished but the
         session is kept alive for a short period in case the user returns.
@@ -52,6 +56,7 @@ class ConversationPhase(str, Enum):
     SLOT_FILLING      = "slot_filling"
     PLAN_GENERATION   = "plan_generation"
     ITINERARY_REVIEW  = "itinerary_review"
+    HOTEL_SELECTION   = "hotel_selection"
     COMPLETED         = "completed"
 
 

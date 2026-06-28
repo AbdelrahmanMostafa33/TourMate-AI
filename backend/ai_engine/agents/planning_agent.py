@@ -25,91 +25,43 @@ logger = logging.getLogger(__name__)
 # The JSON schema is enforced by Pydantic's structured output — the prompt
 # focuses on reasoning rules rather than formatting instructions.
 PLANNER_SYSTEM_PROMPT = """
-You are the Planning Agent for TourMate AI. Create a structured, multi-day travel itinerary.
+You are the Planning Agent for TourMate AI. Create a structured day-by-day travel itinerary from the provided candidate places.
 
-You will receive:
-1. User request with trip context (preferences, interests, duration)
-2. Candidate attractions & restaurants (already ranked by relevance) — these go in day stops
-3. Candidate hotels (listed separately) — these go in accommodation_suggestions
+You receive:
+1. User request with trip context (interests, preferences, duration)
+2. Candidate attractions & restaurants (pre-ranked, 0–100 score)
+   - Hotels are handled elsewhere — ignore them
 
-## Scoring Reference
-- Each place has a `score` (0–100). Higher = more relevant to the user.
-- A score above 80 is excellent; 60–80 is good; below 60 is a weaker match.
-- Prefer higher-scored places when choosing between options for the same time slot.
+## Mandatory Constraints (all must be satisfied)
 
-## Priority Hierarchy (follow in order)
-1. **Interest Coverage**: Every user interest must appear in at least one stop
-2. **Geographic Grouping**: Group nearby stops to minimize travel time
-3. **Score Quality**: Prefer higher-scored places within the above constraints
-4. **Diversity**: Vary categories and cuisines where possible
+1. **Day count** — Create EXACTLY the number of days specified in "Trip Duration". Not one fewer, not one more. If candidates seem limited, spread them across all days rather than omitting a day.
 
-## Planning Rules
+2. **Stops per day** — 2–5 stops per day. Never exceed 5. Last day can be 2 stops.
 
-### Stops per day (MANDATORY - PRIORITY #2)
-- **STRICTLY 2–5 stops per day**. Never exceed 5 stops in a single day.
-- Last day can be lighter with just 2 morning stops.
-- Never create empty days or "departure day" entries with no stops.
-- If you have fewer candidates than needed, use fewer stops per day rather than padding with low-score places.
-- **If mandatory interest coverage would require >5 stops in a day, you MUST spread those interests across multiple days instead of overloading one day.**
+3. **Interest coverage** — Every user interest must appear in at least one stop. If 2+ candidates share a sub_category matching an interest, include at least 2 stops from it. If no candidates match an interest, pick the closest semantic match or note the gap in the itinerary.
 
-### Meal breaks
-- **Insert a lunch break between morning and afternoon stops** (12:00–13:30).
-- If a stop is a restaurant, place it at a natural meal time (lunch ~12:00, dinner ~18:00–19:00).
-- Do NOT schedule 3 consecutive stops without a food break.
-- `estimated_duration_minutes` for restaurants: 60–90 min.
+4. **Candidate honesty** — Use only provided candidates. Copy id/name/lat/lon/interest_tags exactly. Do not invent places.
 
-### Restaurant selection
-- **Never repeat the same restaurant on multiple days.**
-- **Vary cuisine types** across your restaurant picks using the `cuisine_type` field.
-- If you have limited restaurant options, prioritize variety over perfect cuisine matching.
+5. **why_recommended** — Every stop needs 1–2 sentences explaining why it fits this specific user (reference their interests and the place's score).
 
-### Time-of-day assignment
-- **Morning (09:00–12:00)**: Museums, historic sites, walking tours — cooler temperatures, fewer crowds.
-- **Afternoon (13:30–17:00)**: Indoor attractions, markets, shopping — avoid midday heat for outdoor sites.
-- **Evening (17:00–21:00)**: Restaurants, waterfront walks, cultural shows, rooftop views.
-- Avoid scheduling outdoor attractions (parks, pyramids, waterfront) in midday heat (12:00–14:00).
+## Best Practices (apply when constraints allow)
 
-### Category mixing
-- Mix categories: don't stack 3 of the same category in a row.
-- Alternate indoor and outdoor attractions where possible.
-- Use `interest_tags` on each place to verify it matches the user's interests.
+- **Group nearby stops** within ~5 km on the same day
+- **Mix categories**: don't stack 3 of same type consecutively
+- **Restaurants**: insert lunch between morning/afternoon. Never repeat a restaurant. Vary cuisine types.
+- **Time assignment**: morning → museums/historic, afternoon → indoor/markets, evening → restaurants/culture
+- **Score awareness**: prefer higher-scored places (80+ excellent, 60–80 good) when choosing between options
+- **Restaurants**: use `cuisine_type` for matching; they don't have interest_tags
+- **Attractions**: prefer places whose `interest_tags` overlap with user interests; skip if no overlap unless score >85
 
-### Geographic awareness
-- Group nearby stops on the same day to minimize travel time.
-- Consecutive stops should ideally be within 5 km of each other.
-- Use lat/lon coordinates to estimate distance (roughly: 0.01° ≈ 1 km).
-- Place the most important/high-score attraction first in the morning when energy is highest.
+## Before Submitting
 
-### Interest coverage (PRIORITY #1 - NON-NEGOTIABLE)
-- **MANDATORY: Every user interest from the User Profile must appear in at least one stop across the entire itinerary.**
-- **MANDATORY: If 2+ candidates exist for a sub_category matching a user interest, you MUST include at least 2 stops with that sub_category. This rule overrides score differences, geographic grouping, and all other constraints.**
-- Use the `sub_category` field on candidates to match interests:
-  - history → "history", nightlife → "nightlife", shopping → "shopping"
-  - parks → "parks", museums → "museums", culture → "museums"
-  - nature → "nature", religious → "religious", family → "family"
-  - sports → "sports", wellness → "wellness", entertainment → "entertainment"
-  - sightseeing → "sightseeing"
-- **CRITICAL: If NO candidates exist for a user interest (e.g., no nightlife places in the candidate pool), you MUST still try to satisfy that interest by:**
-  - Choosing the closest semantically-related sub_category (e.g., if no "nightlife", use "entertainment" or "events")
-  - OR explicitly mentioning in the itinerary why that interest couldn't be fully met
-- **Before finalizing, verify: does every user interest have at least one matching stop? For interests with 2+ candidates, are there at least 2 stops? If not, fix it immediately.**
-
-### Candidate selection
-- For each stop, copy `id`, `name`, `lat`, `lon`, `interest_tags` **exactly** as given — do not invent places.
-- For attractions, prefer places whose `interest_tags` overlap with the user's interests.
-- Restaurants do not have `interest_tags` — use their `cuisine_type` field to match food preferences instead.
-- If a place (attraction) has no matching `interest_tags`, only include it if the `score` is very high (>85).
-
-### Hotels
-- Hotels are NOT tour stops — they go in `accommodation_suggestions` at the top level.
-- Pick 2–3 hotels from the hotel candidates, prioritizing those whose `accommodation_type` matches the user's accommodation preference.
-- If multiple hotels match, pick the highest-rated ones covering slightly different vibes (e.g. one near pyramids, one downtown).
-- Include `accommodation_type` and `amenities` in accommodation_suggestions.
-
-### Output
-- The output schema is provided automatically — fill all fields.
-- Every stop MUST have a `why_recommended` explaining why it fits this user (1–2 sentences, reference their interests and the place's score).
-- Every accommodation suggestion MUST have a `why_recommended` explaining the choice.
+Quick checklist:
+- [ ] `days` array has EXACTLY the right count (Trip Duration value)
+- [ ] Each day has 2–5 stops (last day can be 2)
+- [ ] No duplicate restaurants
+- [ ] Every user interest covered by at least one stop
+- [ ] Every stop has a why_recommended
 """
 
 
@@ -149,21 +101,6 @@ def _build_retry_note(last_error: str) -> str:
                         fields.append(field_name)
         return fields
 
-    # Detect missing fields in accommodation_suggestions
-    if "accommodation_suggestions" in error_lower and "field required" in error_lower:
-        missing = _extract_missing_fields(last_error)
-        missing_str = ", ".join(missing) if missing else "required fields"
-
-        return (
-            f"\n\nIMPORTANT: Your previous itinerary was invalid \u2014 "
-            f"hotel entries are missing {missing_str}. "
-            f"Error: {last_error}. "
-            f"\nEvery hotel in `accommodation_suggestions` MUST include ALL of the following "
-            f"fields: id, name, sub_category, accommodation_type, lat, lon, "
-            f"why_recommended, rating, amenities. Pay special attention to ensuring "
-            f"lat AND lon are provided for EVERY hotel entry."
-        )
-
     # Detect missing fields in stops
     if "stop" in error_lower and "field required" in error_lower:
         return (
@@ -173,6 +110,19 @@ def _build_retry_note(last_error: str) -> str:
             f"\nEvery stop MUST include ALL required fields: id, name, category, "
             f"sub_category, lat, lon, why_recommended, estimated_duration_minutes, "
             f"suggested_time_of_day. Ensure every stop has lat and lon populated."
+        )
+
+    # Detect day-count mismatch (e.g. 1 day for a 2-day trip)
+    if "day(s) but trip duration is" in error_lower:
+        parts = last_error.split("but Trip Duration is")
+        expected = parts[-1].strip().split()[0] if len(parts) > 1 else "?"
+        return (
+            f"\n\nCRITICAL: Your previous itinerary had the WRONG number of days. "
+            f"Error: {last_error}. "
+            f"\nYou MUST create EXACTLY {expected} entries in the `days` array. "
+            f"Each entry is one full day with stops. Use the candidate places "
+            f"provided and spread them across ALL {expected} days. "
+            f"Double-check your output before submitting."
         )
 
     # Detect empty days
@@ -193,8 +143,40 @@ def _build_retry_note(last_error: str) -> str:
         f"\nYou MUST create a complete itinerary with valid stops "
         f"for each day. Fill the `days` array with real stops "
         f"using the candidate places provided. Ensure all required "
-        f"fields are populated for every stop and hotel."
+        f"fields are populated for every stop."
     )
+
+
+def _build_retry_prompt(
+    synthesized_request: str,
+    duration_days: int,
+    city: str,
+    attractions_restaurants: list,
+    last_error: str,
+) -> str:
+    """
+    Build a retry user prompt with the error feedback baked into the
+    primary instruction, replacing the original prompt entirely.
+
+    This is more effective than appending a HumanMessage because LLMs
+    in structured-output mode treat the primary user instruction as
+    the authoritative schema-filling task, while appended messages are
+    weaker corrections that can be deprioritized.
+    """
+    retry_note = _build_retry_note(last_error)
+    return f"""PREVIOUS ATTEMPT REJECTED
+
+{retry_note}
+
+User Request: {synthesized_request}
+Trip Duration: {duration_days} days
+
+Candidate Attractions & Restaurants in {city} ({len(attractions_restaurants)}):
+{json.dumps(attractions_restaurants, indent=None, ensure_ascii=False)}
+
+Generate the itinerary now. REMEMBER: {duration_days} days exactly!
+"""
+
 
 
 def _trim_for_prompt(place: dict) -> dict:
@@ -232,10 +214,8 @@ def _trim_for_prompt(place: dict) -> dict:
             # Limit to top 3 interest tags to save tokens — the planner
             # has enough info from category + sub_category + truncated tags.
             trimmed["interest_tags"] = tags[:3]
-    # Include accommodation_type for hotels (amenities and redundant
-    # interest_tags are omitted — category="hotel" is sufficient).
-    if place.get("category") == "hotel":
-        trimmed["accommodation_type"] = place.get("accommodation_type", "")
+    # Hotels are handled by the dedicated Hotel Agent, not the planner.
+    # Hotel candidates are excluded from the planner's prompt entirely.
     return trimmed
 
 
@@ -267,7 +247,7 @@ async def run_planning_agent(state: TripState, on_retry=None) -> TripState:
     user_message = state.get("user_message", "")
     profile = state.get("profile")
     city = state.get("destination_city")
-    duration_days = state.get("duration_days", 3)
+    duration_days = state.get("duration_days", 3) or 3
 
     # ---------------------------------------------------------
     # Read pre-ranked candidates from upstream services.
@@ -308,19 +288,16 @@ async def run_planning_agent(state: TripState, on_retry=None) -> TripState:
         if parts:
             synthesized_request = f"{user_message} ({'; '.join(parts)})"
 
-    # Separate hotels from attractions/restaurants so the LLM isn't confused
+    # Hotels are handled by the dedicated Hotel Agent, so they are excluded
+    # from the planner's prompt. Only attractions and restaurants are sent.
     attractions_restaurants = [p for p in trimmed if p.get("category") != "hotel"]
-    hotels = [p for p in trimmed if p.get("category") == "hotel"]
 
-    # Construct the user prompt — avoids duplicating info from synthesized_request
+    # Construct the user prompt
     prompt = f"""User Request: {synthesized_request}
 Trip Duration: {duration_days} days
 
 Candidate Attractions & Restaurants in {city} ({len(attractions_restaurants)}):
 {json.dumps(attractions_restaurants, indent=None, ensure_ascii=False)}
-
-Candidate Hotels ({len(hotels)}):
-{json.dumps(hotels, indent=None, ensure_ascii=False)}
 
 Generate the itinerary now.
 """
@@ -337,9 +314,12 @@ Generate the itinerary now.
     # ``invoke_with_fallback`` handles key rotation and retry on both
     # rate-limit (429) and transient (503) errors internally.
     #
-    # If the LLM returns an itinerary with empty days (e.g. under load),
-    # we retry up to 1 additional time with error feedback so it can
-    # correct itself. Reduced from 3 to 2 for production performance.
+    # IMPORTANT: On retry, we REBUILD the full user prompt with error
+    # feedback baked into it (rather than appending a HumanMessage).
+    # This is critical for ``with_structured_output`` because appended
+    # messages are less effective at correcting the LLM's output schema
+    # than rebuilding the primary instruction.  The full prompt rebuild
+    # gives the LLM a "fresh start" with stronger, contextual guidance.
     # ----------------------------------------------------------------
     max_planner_attempts = 2
     last_planner_error = None
@@ -347,10 +327,24 @@ Generate the itinerary now.
 
     for attempt in range(1, max_planner_attempts + 1):
         try:
-            attempt_messages = list(messages)
             if attempt > 1 and last_planner_error:
-                retry_note = _build_retry_note(last_planner_error)
-                attempt_messages.append(HumanMessage(content=retry_note))
+                # Rebuild the user prompt with error feedback baked in,
+                # replacing the original prompt entirely.  This gives the
+                # LLM a fresh instruction that includes the error context
+                # rather than an appended note that may be ignored.
+                retry_prompt = _build_retry_prompt(
+                    synthesized_request=synthesized_request,
+                    duration_days=duration_days,
+                    city=city,
+                    attractions_restaurants=attractions_restaurants,
+                    last_error=last_planner_error,
+                )
+                attempt_messages = [
+                    SystemMessage(content=PLANNER_SYSTEM_PROMPT),
+                    HumanMessage(content=retry_prompt),
+                ]
+            else:
+                attempt_messages = list(messages)
 
             response: ItineraryPlan = await invoke_with_fallback(
                 "planner", attempt_messages, structured_output=ItineraryPlan,
@@ -360,9 +354,31 @@ Generate the itinerary now.
             # Convert Pydantic model to plain dict for downstream processing.
             parsed = response.model_dump()
 
+            # Validate that the LLM didn't set duration_days to a wrong value.
+            # The schema has duration_days with default=3, which can confuse
+            # the LLM into thinking the trip is 1 or 3 days.
+            llm_duration = parsed.get("duration_days")
+            if llm_duration != duration_days:
+                raise ValueError(
+                    f"Itinerary has wrong 'duration_days' value: {llm_duration} "
+                    f"but Trip Duration is {duration_days} days. "
+                    f"You MUST set duration_days={duration_days} in your output."
+                )
+
             # Validate non-empty days.
             if not parsed.get("days"):
                 raise ValueError("Itinerary has empty 'days' array")
+
+            # Validate day count matches the requested trip duration.
+            # The LLM sometimes sets duration_days correctly but only
+            # generates a subset of the requested days. This catches that.
+            actual_days = len(parsed.get("days", []))
+            if actual_days != duration_days:
+                raise ValueError(
+                    f"Itinerary has {actual_days} day(s) but Trip Duration is "
+                    f"{duration_days} days. You MUST create exactly "
+                    f"{duration_days} entries in the `days` array."
+                )
 
             # ── Fix time-of-day ordering within each day ─────────────
             # The LLM sometimes assigns suggested_time_of_day tags in
@@ -437,24 +453,8 @@ Generate the itinerary now.
             if stop.get("category") == "restaurant" and not stop.get("interest_tags"):
                 stop.pop("interest_tags", None)
 
-    # Enrich accommodation suggestions.
-    for hotel in itinerary.get("accommodation_suggestions", []):
-        full = place_index.get(hotel.get("id"))
-        if full:
-            hotel["category"] = full.get("category", "hotel")
-            hotel["rating"] = full.get("rating", hotel.get("rating", 0))
-            hotel["accommodation_type"] = full.get("accommodation_type", "")
-            hotel["amenities"] = full.get("amenities", [])
-            hotel["photos"] = full.get("photos", [])[:1]
-            hotel["address"] = full.get("address")
-            hotel["maps_link"] = full.get("maps_link")
-            # Fallback lat/lon from DB if the LLM omitted them
-            if not hotel.get("lat") or hotel["lat"] == 0.0:
-                hotel["lat"] = full.get("lat", 0.0)
-            if not hotel.get("lon") or hotel["lon"] == 0.0:
-                hotel["lon"] = full.get("lon", 0.0)
-
     # Store successful itinerary in workflow state.
+    # Hotels are NOT enriched here — that's handled by the Hotel Agent.
     state["draft_itinerary"] = itinerary
 
     # Track how many planning attempts have been made.
@@ -467,12 +467,11 @@ Generate the itinerary now.
         len(day.get("stops", []))
         for day in itinerary.get("days", [])
     )
-    n_hotels = len(itinerary.get("accommodation_suggestions", []))
     state["agent_messages"] = (
         state.get("agent_messages", [])
         + [f"[Planner] {len(candidates)} candidates → "
            f"{len(itinerary.get('days', []))} days, "
-           f"{total_stops} stops, {n_hotels} hotels"]
+           f"{total_stops} stops"]
     )
 
     return state

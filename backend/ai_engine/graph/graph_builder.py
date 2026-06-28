@@ -27,6 +27,10 @@ def build_trip_graph():
     Pipeline:
       load_profile → retrieval → scorer → planner → optimizer → validator
 
+    Hotels are NOT selected during the pipeline — they are selected
+    after the user approves the itinerary, so modifications to stops
+    don't waste hotel selections.
+
     Each node handles one concern:
       - load_profile: Load trip profile from DB
       - retrieval:    Filter places using SQL-style criteria (PlaceRetriever)

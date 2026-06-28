@@ -94,19 +94,35 @@ class ExtractedSlots(BaseModel):
             "Examples: ['boutique hotel'], ['hostel'], ['beach resort'], ['luxury hotel']"
         ),
     )
+    selected_hotel_name: Optional[str] = Field(
+        default=None,
+        description=(
+            "When the user picks a specific hotel during hotel_selection phase, "
+            "extract the hotel name or number they referenced (e.g. 'Marriott', "
+            "'the first one', 'hotel 2'). Only used for select_hotel action."
+        ),
+    )
+    selected_hotel_number: Optional[int] = Field(
+        default=None,
+        description=(
+            "The 1-based index of the hotel the user chose, if they specified "
+            "by number (e.g. 'hotel 2' → 2). Only used for select_hotel action."
+        ),
+    )
 
 
 class InterpreterOutput(BaseModel):
     """Structured output from the message interpreter."""
 
-    action: Literal["plan_trip", "ask_clarification", "answer_question", "approve_itinerary", "modify_itinerary"] = Field(
+    action: Literal["plan_trip", "ask_clarification", "answer_question", "approve_itinerary", "modify_itinerary", "select_hotel"] = Field(
         description=(
             "What to do next. One of: "
             "'plan_trip' (all info collected), "
             "'ask_clarification' (need more info), "
             "'answer_question' (user asked a question), "
             "'approve_itinerary' (user approved), "
-            "'modify_itinerary' (user wants changes)"
+            "'modify_itinerary' (user wants changes), "
+            "'select_hotel' (user is choosing a hotel from options presented)"
         )
     )
     extracted: ExtractedSlots = Field(
@@ -166,9 +182,9 @@ Examples:
 
 1. **(HIGHEST) modify_itinerary** — If phase is "itinerary_review" and the user asks to add, remove, change, swap, update, or modify ANYTHING in their itinerary, ALWAYS use this action. This takes priority over every other rule, including plan_trip.
 
-2. **approve_itinerary** — If the user approves, confirms, or says the itinerary looks good.
+2. **approve_itinerary** — If the user approves, confirms, or says the itinerary looks good. ALSO used during hotel_selection phase when the user says "looks good", "approve", or "they all look good" to accept the default (first) hotel.
 
-3. **answer_question** — If the user asks a general travel question (e.g. "what's the best time to visit?", "how far is the museum from the hotel?").
+3. **select_hotel** — ONLY during hotel_selection phase. If the user picks a specific hotel (by number like "hotel 2" or by name like "the Marriott"), use this action. Extract the hotel name or number into selected_hotel_name / selected_hotel_number.
 
 4. **plan_trip** — Only when ALL required info (city + duration + interests) is collected. If there's already an itinerary shown in the Current State above, do NOT use this — use modify_itinerary instead.
 
@@ -216,8 +232,17 @@ def _build_itinerary_summary(state: ConversationState) -> str:
         stop_names = [s.get("name", "?") for s in stops[:4]]
         lines.append(f"Day {day_num}: {theme} — {', '.join(stop_names)}")
 
+    # In HOTEL_SELECTION phase, show hotels with numbers so the user can pick
     hotels = state.itinerary.get("accommodation_suggestions", [])
-    if hotels:
+    if hotels and state.phase == ConversationPhase.HOTEL_SELECTION:
+        lines.append("\n## Available Hotels (choose one):")
+        for i, h in enumerate(hotels, 1):
+            name = h.get("name", "?")
+            rating = h.get("rating", 0)
+            acc_type = h.get("accommodation_type", "")
+            lines.append(f"  {i}. {name} ({acc_type}, rating={rating})")
+        lines.append("\nThe user must pick a hotel (by number or name). If they say 'looks good' or 'approve', select the first hotel (number 1).")
+    elif hotels:
         hotel_names = [h.get("name", "?") for h in hotels[:3]]
         lines.append(f"Hotels: {', '.join(hotel_names)}")
 
@@ -240,6 +265,10 @@ _ACTION_ALIASES = {
     "approve_itinerary": "approve_itinerary",
     "approve": "approve_itinerary",
     "confirm": "approve_itinerary",
+    "select_hotel": "select_hotel",
+    "hotel_selection": "select_hotel",
+    "pick_hotel": "select_hotel",
+    "choose_hotel": "select_hotel",
     "modify_itinerary": "modify_itinerary",
     "modify": "modify_itinerary",
     "change": "modify_itinerary",
@@ -265,7 +294,12 @@ def _build_extracted_dict(extracted: ExtractedSlots) -> dict:
     raw["duration_days"] = _coerce_int(raw.get("duration_days"))
     raw["group_size"] = _coerce_int(raw.get("group_size"))
     raw = {k: v for k, v in raw.items() if v is not None}
+    # Keep select_hotel fields even if they are the only extracted fields
     normalized = normalize_extracted_slots(raw)
+    if extracted.selected_hotel_name:
+        normalized["selected_hotel_name"] = extracted.selected_hotel_name
+    if extracted.selected_hotel_number is not None:
+        normalized["selected_hotel_number"] = extracted.selected_hotel_number
     return normalized
 
 

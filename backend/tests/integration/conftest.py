@@ -72,10 +72,12 @@ MOCK_PLACES = [
     _make_hotel(
         id="hotel_001", name="Marriott Mena House", lat=29.9758, lon=31.1334,
         rating=4.6, popularity_score=80, sub_category="luxury hotel",
+        accommodation_type="luxury",
     ),
     _make_hotel(
         id="hotel_002", name="Steigenberger Tahrir", lat=30.0429, lon=31.2347,
         rating=4.3, popularity_score=65, sub_category="boutique hotel",
+        accommodation_type="luxury",
     ),
     _make_restaurant(
         id="rest_001", name="Abu Shukri", lat=30.0464, lon=31.2325,
@@ -143,28 +145,6 @@ def build_planning_llm_response(
     return ItineraryPlan(
         destination="Cairo",
         duration_days=num_days,
-        accommodation_suggestions=[
-            AccommodationSuggestion(
-                id="hotel_001",
-                name="Marriott Mena House",
-                sub_category="luxury hotel",
-                accommodation_type="hotel",
-                lat=29.9758,
-                lon=31.1334,
-                why_recommended="Luxury hotel near pyramids",
-                rating=4.6,
-            ),
-            AccommodationSuggestion(
-                id="hotel_002",
-                name="Steigenberger Tahrir",
-                sub_category="boutique hotel",
-                accommodation_type="hotel",
-                lat=30.0429,
-                lon=31.2347,
-                why_recommended="Boutique hotel in downtown",
-                rating=4.3,
-            ),
-        ],
         days=days,
     )
 

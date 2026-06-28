@@ -134,8 +134,47 @@ def _cap_candidates(
     ]
 
     restaurants.sort(key=lambda p: p.get("popularity_score", 0) or 0, reverse=True)
-    hotels.sort(key=lambda p: p.get("popularity_score", 0) or 0, reverse=True)
 
+    # ── Hotels: sample by accommodation_type (like DB query) ─────────────
+    # Group by accommodation_type so hostels, resorts, luxury, and hotels
+    # all get representation instead of just taking the top N by popularity.
+    by_accommodation: dict[str, list[dict]] = {}
+    for p in hotels:
+        acc_type = (p.get("accommodation_type") or "hotel").lower().strip()
+        if not acc_type:
+            acc_type = "hotel"
+        by_accommodation.setdefault(acc_type, []).append(p)
+
+    for acc_type in by_accommodation:
+        by_accommodation[acc_type].sort(
+            key=lambda p: p.get("popularity_score", 0) or 0, reverse=True
+        )    # Round-robin selection across accommodation types to guarantee
+    # diverse representation (hostels, resorts, luxury, hotels all get
+    # a fair share instead of the top N by popularity).
+    selected_hotels: list[dict] = []
+    seen_ids: set[str] = set()
+    type_names = sorted(by_accommodation.keys())
+    ptrs = {t: 0 for t in type_names}
+
+    while len(selected_hotels) < max_hotels:
+        added = False
+        for acc_type in type_names:
+            if len(selected_hotels) >= max_hotels:
+                break
+            group = by_accommodation[acc_type]
+            while ptrs[acc_type] < len(group):
+                p = group[ptrs[acc_type]]
+                ptrs[acc_type] += 1
+                pid = p.get("id", "")
+                if pid not in seen_ids:
+                    selected_hotels.append(p)
+                    seen_ids.add(pid)
+                    added = True
+                    break
+        if not added:
+            break
+
+    # ── Attractions: per-subcategory sampling (existing logic) ───────────
     by_subcategory: dict[str, list[dict]] = {}
     for p in attractions:
         sub = (p.get("sub_category") or "").lower() or "other"
@@ -158,7 +197,7 @@ def _cap_candidates(
 
     result = result[:max_attractions]
     result.extend(restaurants[:max_restaurants])
-    result.extend(hotels[:max_hotels])
+    result.extend(selected_hotels)
     return result
 
 

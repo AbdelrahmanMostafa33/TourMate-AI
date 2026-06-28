@@ -88,9 +88,9 @@ class TestAgentRegistry:
             )
 
     def test_known_role_count(self):
-        """The registry should have exactly 9 agent roles."""
-        assert len(AGENT_LLM_REGISTRY) == 9, (
-            f"Expected 9 agent roles, got {len(AGENT_LLM_REGISTRY)}. "
+        """The registry should have exactly 10 agent roles."""
+        assert len(AGENT_LLM_REGISTRY) == 10, (
+            f"Expected 10 agent roles, got {len(AGENT_LLM_REGISTRY)}. "
             "If you added a new agent, update this test."
         )
 

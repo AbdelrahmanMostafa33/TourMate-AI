@@ -118,7 +118,10 @@ class TestFullPipelineHappyPath:
         assert draft["destination"] == "Cairo"
         assert draft["duration_days"] == 2
         assert len(draft["days"]) == 2
-        assert len(draft["accommodation_suggestions"]) >= 1
+        # Hotels are now handled by the Hotel Agent — planner may or may not
+        # include accommodation_suggestions depending on the test LLM response.
+        # The main assertion is that days were created correctly.
+        assert sum(len(d.get("stops", [])) for d in draft["days"]) > 0
 
     @pytest.mark.asyncio
     @patch("ai_engine.agents.planning_agent.invoke_with_fallback")
@@ -179,6 +182,9 @@ class TestFullPipelineHappyPath:
         # Step 4: Optimization node
         state = await optimization_node(state)
         assert state["optimized_itinerary"] is not None
+
+        # Hotels are NOT selected during the pipeline — they are deferred
+        # to after the user approves the itinerary.
 
         # Step 5: Validation node
         state = await validation_node(state)
@@ -357,7 +363,7 @@ class TestAgentMetricsIntegration:
     async def test_all_six_roles_recorded(
         self, mock_val_llm, mock_matrix, mock_plan_llm
     ):
-        """After running all 6 pipeline nodes, agent_metrics has 6 roles with non-zero calls."""
+        """After running all 6 pipeline nodes, agent_metrics has all roles with non-zero calls."""
         mock_plan_llm.return_value = build_planning_llm_response(num_days=2, num_stops_per_day=3)
         mock_matrix.return_value = make_mock_matrix(3, travel_time=8.0)
         mock_val_llm.return_value = build_validation_llm_response(is_valid=True, score=85)
@@ -368,6 +374,7 @@ class TestAgentMetricsIntegration:
         state = build_pipeline_state()
 
         # Run all 6 nodes in sequence — load_profile_node first so all roles execute
+        # Note: hotel_selection is NOT part of the pipeline — it runs after user approval.
         state = await load_profile_node(state)
         with patch("ai_engine.services.place_retriever.get_places_for_city", new_callable=AsyncMock, return_value=MOCK_PLACES):
             state = await retrieval_node(state)
@@ -380,6 +387,7 @@ class TestAgentMetricsIntegration:
         summary = agent_metrics.get_summary()
 
         # Verify all 6 roles are present with non-zero call counts
+        # (hotel_selector runs on approval, not in the pipeline)
         expected_roles = {
             "profile_loader",
             "place_retriever",
@@ -399,7 +407,7 @@ class TestAgentMetricsIntegration:
 
         # Verify total aggregation
         total = summary["total"]
-        assert total["calls"] == 6, f"Expected 6 total calls, got {total['calls']}"
+        assert total["calls"] == 6, f"Expected 6 total calls (hotel_selector runs on approval), got {total['calls']}"
         assert total["errors"] == 0
         assert total["duration_ms"] > 0
 

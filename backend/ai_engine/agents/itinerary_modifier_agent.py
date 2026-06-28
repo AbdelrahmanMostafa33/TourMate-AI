@@ -96,6 +96,8 @@ async def run_itinerary_modifier(
     modification_request: str,
     available_places: list[dict],
     preferences: dict | None = None,
+    destination_city: str | None = None,
+    destination_country: str | None = None,
 ) -> dict:
     """
     Run the Itinerary Modifier Agent using delta operations.
@@ -105,6 +107,8 @@ async def run_itinerary_modifier(
         modification_request: The user's edit request (e.g. "remove Saladin Citadel").
         available_places: Pool of candidate places from the last retrieval.
         preferences: Optional dict with budget/pace/interests for context.
+        destination_city: City name for place search (falls back to itinerary)
+        destination_country: Country name for place search (falls back to itinerary)
 
     Returns:
         Modified itinerary dict.  If modification fails for any reason,
@@ -117,8 +121,9 @@ async def run_itinerary_modifier(
     # This gives us exact matches for specific place names without LLM ambiguity
     pre_selected_places = []
     if "add" in modification_request.lower():
-        city = current_itinerary.get("destination_city")
-        country = current_itinerary.get("destination_country")
+        # Use explicit destination if provided; fall back to itinerary's "destination" key
+        city = destination_city or current_itinerary.get("destination")
+        country = destination_country
         print(f"[DEBUG] Running hybrid search for: '{modification_request}' (city={city}, country={country})")
         logger.info(
             "[ModifierAgent] Running hybrid search for: '%s' (city=%s, country=%s)",

@@ -55,7 +55,11 @@ class Day(BaseModel):
 
 class ItineraryPlan(BaseModel):
     """
-    Complete structured itinerary plan.
+    Complete structured itinerary plan (stops only).
+
+    Hotels are handled by the dedicated Hotel Agent (``hotel_agent.py``)
+    after route optimization, so ``accommodation_suggestions`` has been
+    removed from this schema.
 
     This is the top-level schema that the Planning Agent LLM fills via
     ``.with_structured_output()``, guaranteeing the ``days`` key is always
@@ -64,10 +68,6 @@ class ItineraryPlan(BaseModel):
 
     destination: str = Field(description="Destination city name")
     duration_days: int = Field(default=3, description="Number of trip days")
-    accommodation_suggestions: List[AccommodationSuggestion] = Field(
-        default_factory=list,
-        description="2-3 hotel recommendations",
-    )
     days: List[Day] = Field(
         default_factory=list,
         description="Day-by-day itinerary with stops",
