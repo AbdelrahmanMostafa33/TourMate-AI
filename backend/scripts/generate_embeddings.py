@@ -1,4 +1,4 @@
-"""Embed all places via gemini-embedding-2 with bulletproof rate-limit handling.
+"""Embed all places for a given city via gemini-embedding-2 with bulletproof rate-limit handling.
 
 Handles:
   - 100 RPM per-key limit (exponential backoff)
@@ -7,7 +7,8 @@ Handles:
   - Ctrl+C resume (only processes NULL-embedding places)
 
 Usage (from backend/):
-    python scripts/generate_embeddings.py
+    python scripts/generate_embeddings.py cairo
+    python scripts/generate_embeddings.py alexandria
 """
 
 import os
@@ -37,11 +38,6 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.orm import Session
 from google import genai
 from google.genai import types
-
-# ── Paths ────────────────────────────────────────────────────────────────────
-
-DATA_DIR = BACKEND_DIR.parent / "data" / "cairo"
-EMBEDDING_JSON = DATA_DIR / "cairo_embeddings.json"
 
 # ── Config ───────────────────────────────────────────────────────────────────
 
@@ -197,8 +193,8 @@ def build_place_text(place: dict) -> str:
     return f"title: {title} | text: {text_content}"
 
 
-def load_all_places(engine) -> list[dict]:
-    """Load ALL places from the database with their detail data."""
+def load_places_for_city(engine, city: str) -> list[dict]:
+    """Load places for a specific city from the database with their detail data."""
     query = """
         SELECT
             p.place_id,
@@ -220,10 +216,11 @@ def load_all_places(engine) -> list[dict]:
         LEFT JOIN attraction_details ad ON p.place_id = ad.place_id
         LEFT JOIN restaurant_details rd ON p.place_id = rd.place_id
         LEFT JOIN hotel_details hd ON p.place_id = hd.place_id
+        WHERE LOWER(p.city) = LOWER(:city)
         ORDER BY p.popularity_score DESC NULLS LAST
     """
     with Session(engine) as session:
-        result = session.execute(text(query))
+        result = session.execute(text(query), {"city": city})
         rows = result.mappings().all()
 
     places: list[dict] = []
@@ -347,9 +344,15 @@ def store_embeddings(engine, place_vectors: list[tuple[str, list[float]]]) -> in
 # ── Main ─────────────────────────────────────────────────────────────────────
 
 
-def main():
+def main(city: str) -> None:
+    # ── Resolve paths ────────────────────────────────────────────────────────
+    DATA_DIR = BACKEND_DIR.parent / "data" / city
+    EMBEDDING_JSON = DATA_DIR / f"{city}_embeddings.json"
+
     print("=" * 65)
-    print("  Embedding Generation — gemini-embedding-2 (JSON storage)")
+    print(f"  Embedding Generation — gemini-embedding-2 (JSON storage)")
+    print(f"  City: {city.title()}")
+    print(f"  Output: {EMBEDDING_JSON}")
     print("  Persistent rate-limit handling — will keep trying until done")
     print("=" * 65)
 
@@ -373,9 +376,9 @@ def main():
         print(f"   [FAIL] {e}")
         sys.exit(1)
 
-    # ── 2. Load places ──────────────────────────────────────────────────────
-    print("\n[DB] Loading places...")
-    places = load_all_places(engine)
+    # ── 2. Load places for city ─────────────────────────────────────────────
+    print(f"\n[DB] Loading places for '{city.title()}'...")
+    places = load_places_for_city(engine, city)
     print(f"   [OK] {len(places)} places loaded")
 
     if not places:
@@ -466,8 +469,8 @@ def main():
     with engine.connect() as conn:
         null_count = conn.execute(text("SELECT COUNT(*) FROM places WHERE embedding IS NULL")).scalar() or 0
 
-    # ── 8. Export to JSON file (keeps data/cairo/cairo_embeddings.json in sync) ─
-    print(f"\n[FILE] Exporting all embeddings to {EMBEDDING_JSON.relative_to(BACKEND_DIR.parent)}...")
+    # ── 8. Export to JSON file ──────────────────────────────────────────────
+    print(f"\n[FILE] Exporting all embeddings to {EMBEDDING_JSON}...")
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     try:
         # Load ALL non-null embeddings from DB (not just the ones we just generated)
@@ -494,14 +497,15 @@ def main():
     print("\n" + "=" * 65)
     print("  SUMMARY")
     print("=" * 65)
-    print(f"  Total places:           {total}")
-    print(f"  Successfully embedded:  {final_count}")
-    print(f"  Still NULL:             {null_count}")
-    print(f"  API calls:              {num_batches}")
-    print(f"  Total time:             {total_elapsed:.1f}s ({total_elapsed/60:.1f} min)")
-    print(f"  Store time:             {store_time:.1f}s")
+    print(f"  City:                 {city.title()}")
+    print(f"  Total places:         {total}")
+    print(f"  Successfully embedded: {final_count}")
+    print(f"  Still NULL:           {null_count}")
+    print(f"  API calls:            {num_batches}")
+    print(f"  Total time:           {total_elapsed:.1f}s ({total_elapsed/60:.1f} min)")
+    print(f"  Store time:           {store_time:.1f}s")
     if EMBEDDING_JSON.exists():
-        print(f"  JSON export:            {EMBEDDING_JSON.name}")
+        print(f"  JSON export:          {EMBEDDING_JSON.name}")
     print("=" * 65)
     if null_count == 0:
         print("\n[DONE] All places embedded!")
@@ -511,4 +515,11 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    if len(sys.argv) < 2:
+        print("Usage: python scripts/generate_embeddings.py <city>")
+        print("Example: python scripts/generate_embeddings.py cairo")
+        print("         python scripts/generate_embeddings.py alexandria")
+        sys.exit(1)
+
+    city = sys.argv[1].lower().strip()
+    main(city)

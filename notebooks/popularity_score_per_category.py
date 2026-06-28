@@ -4,6 +4,10 @@ Per-Category Popularity Score — Bayesian Formula
 Computes a tourist popularity score for each place, normalized per category
 (ATTRACTION, HOTEL, RESTAURANT) so that v_max is category-specific.
 
+Usage:
+    python notebooks/popularity_score_per_category.py cairo
+    python notebooks/popularity_score_per_category.py alexandria
+
 Formula
 -------
   WR   = (v / (v + m)) * R  +  (m / (v + m)) * C
@@ -19,7 +23,7 @@ Constants
 
 Outputs
 -------
-  - Updated JSON (popularityScore overwritten in place)
+  - Updated JSON (popularity_score overwritten in place)
   - Console summary with old vs new scores
   - Interactive HTML charts saved to outputs/figures/
 """
@@ -46,6 +50,17 @@ import seaborn as sns
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
+# ── Config ──────────────────────────────────────────────────────────
+
+if len(sys.argv) < 2:
+    print("Usage: python notebooks/popularity_score_per_category.py <city>")
+    print("Example: python notebooks/popularity_score_per_category.py cairo")
+    print("         python notebooks/popularity_score_per_category.py alexandria")
+    sys.exit(1)
+
+CITY = sys.argv[1].lower().strip()
+CITY_LABEL = CITY.title()
+
 # ── Style ──────────────────────────────────────────────────────────
 sns.set_theme(style="whitegrid", font_scale=1.1)
 ACCENT = "#6366f1"   # indigo
@@ -54,8 +69,8 @@ ACCENT3 = "#10b981"  # emerald
 
 # ── Paths ──────────────────────────────────────────────────────────
 BASE_DIR = os.path.dirname(__file__)
-DATA_DIR = os.path.join(BASE_DIR, "..", "data", "cairo")
-INPUT_FILE = os.path.join(DATA_DIR, "cairo_places_class_diagram.json")
+DATA_DIR = os.path.join(BASE_DIR, "..", "data", CITY)
+INPUT_FILE = os.path.join(DATA_DIR, f"{CITY}_places.json")
 OUTPUT_DIR = os.path.join(BASE_DIR, "..", "outputs", "figures")
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
@@ -93,13 +108,13 @@ def compute_popularity_score(rating: float, review_count: int, v_max: int) -> fl
 # 1. LOAD DATA
 # ====================================================================
 print("=" * 70)
-print("  Per-Category Popularity Score — Bayesian Formula")
+print(f"  Per-Category Popularity Score — Bayesian Formula ({CITY_LABEL})")
 print("=" * 70)
 
 with open(INPUT_FILE, "r", encoding="utf-8") as f:
     places = json.load(f)
 
-print(f"\nLoaded {len(places)} places from Cairo data.\n")
+print(f"\nLoaded {len(places)} places from {CITY_LABEL} data.\n")
 
 # ====================================================================
 # 2. COMPUTE v_max PER CATEGORY
@@ -107,7 +122,7 @@ print(f"\nLoaded {len(places)} places from Cairo data.\n")
 category_reviews: dict[str, list[int]] = defaultdict(list)
 for place in places:
     cat = place.get("category", "UNKNOWN")
-    v = place.get("reviewCount", 0)
+    v = place.get("review_count", 0)
     category_reviews[cat].append(v)
 
 v_max_per_category: dict[str, int] = {}
@@ -128,14 +143,14 @@ updated_count = 0
 for place in places:
     cat = place.get("category", "UNKNOWN")
     rating = place.get("rating", 0.0)
-    review_count = place.get("reviewCount", 0)
-    old_score = place.get("popularityScore", 0.0)
+    review_count = place.get("review_count", 0)
+    old_score = place.get("popularity_score", 0.0)
     v_max = v_max_per_category[cat]
 
     new_score = compute_popularity_score(rating, review_count, v_max)
     delta = round(new_score - old_score, 1)
 
-    place["popularityScore"] = new_score
+    place["popularity_score"] = new_score
     updated_count += 1
 
     name = place.get("name", "?")[:41]
@@ -157,8 +172,8 @@ cat_scores: dict[str, list[float]] = defaultdict(list)
 cat_reviews: dict[str, list[int]] = defaultdict(list)
 for place in places:
     cat = place.get("category", "UNKNOWN")
-    cat_scores[cat].append(place["popularityScore"])
-    cat_reviews[cat].append(place.get("reviewCount", 0))
+    cat_scores[cat].append(place["popularity_score"])
+    cat_reviews[cat].append(place.get("review_count", 0))
 
 for cat in sorted(cat_scores.keys()):
     scores = cat_scores[cat]
@@ -180,8 +195,8 @@ for p in places:
         "name": p.get("name", ""),
         "category": p.get("category", "UNKNOWN"),
         "rating": p.get("rating", 0.0),
-        "review_count": p.get("reviewCount", 0),
-        "popularity_score": p.get("popularityScore", 0.0),
+        "review_count": p.get("review_count", 0),
+        "popularity_score": p.get("popularity_score", 0.0),
     })
 df = pd.DataFrame(rows)
 
@@ -205,7 +220,7 @@ for cat in cat_order:
     axes[0].hist(scores, bins=40, alpha=0.6, label=f"{cat} (n={len(scores)})",
                  color=COLORS.get(cat, "#888"), edgecolor="white", linewidth=0.5)
 
-axes[0].set_title("Popularity Score Distribution by Category", fontsize=14, fontweight="bold")
+axes[0].set_title(f"{CITY_LABEL} — Popularity Score Distribution by Category", fontsize=14, fontweight="bold")
 axes[0].set_xlabel("Popularity Score")
 axes[0].set_ylabel("Count")
 axes[0].legend(title="Category")
@@ -222,13 +237,13 @@ for patch, cat in zip(bp["boxes"], cat_order):
     patch.set_facecolor(COLORS.get(cat, "#888"))
     patch.set_alpha(0.7)
 
-axes[1].set_title("Score Box Plot by Category", fontsize=14, fontweight="bold")
+axes[1].set_title(f"{CITY_LABEL} — Score Box Plot by Category", fontsize=14, fontweight="bold")
 axes[1].set_ylabel("Popularity Score")
 
 plt.tight_layout()
-plt.savefig(os.path.join(OUTPUT_DIR, "cairo_popularity_per_category_dist.png"), dpi=150, bbox_inches="tight")
+plt.savefig(os.path.join(OUTPUT_DIR, f"{CITY}_popularity_per_category_dist.png"), dpi=150, bbox_inches="tight")
 plt.close()
-print("  -> Saved cairo_popularity_per_category_dist.png")
+print(f"  -> Saved {CITY}_popularity_per_category_dist.png")
 
 # ====================================================================
 # 8. CHART: HISTOGRAM + KDE PER CATEGORY
@@ -258,11 +273,11 @@ for i, cat in enumerate(cat_order):
                     label=f"Median: {scores.median():.1f}")
     axes[i].legend(fontsize=9)
 
-fig.suptitle("Cairo — Per-Category Popularity Score Distributions", fontsize=16, fontweight="bold")
+fig.suptitle(f"{CITY_LABEL} — Per-Category Popularity Score Distributions", fontsize=16, fontweight="bold")
 plt.tight_layout()
-plt.savefig(os.path.join(OUTPUT_DIR, "cairo_popularity_per_category_kde.png"), dpi=150, bbox_inches="tight")
+plt.savefig(os.path.join(OUTPUT_DIR, f"{CITY}_popularity_per_category_kde.png"), dpi=150, bbox_inches="tight")
 plt.close()
-print("  -> Saved cairo_popularity_per_category_kde.png")
+print(f"  -> Saved {CITY}_popularity_per_category_kde.png")
 
 # ====================================================================
 # 9. CHART: SCATTER — Rating vs Review Count (colored by score)
@@ -283,12 +298,12 @@ for i, cat in enumerate(cat_order):
     axes[i].set_xscale("log")
     plt.colorbar(scatter, ax=axes[i], label="Popularity Score")
 
-fig.suptitle("Cairo — Rating vs Review Count (colored by Popularity Score)",
+fig.suptitle(f"{CITY_LABEL} — Rating vs Review Count (colored by Popularity Score)",
              fontsize=16, fontweight="bold")
 plt.tight_layout()
-plt.savefig(os.path.join(OUTPUT_DIR, "cairo_popularity_per_category_scatter.png"), dpi=150, bbox_inches="tight")
+plt.savefig(os.path.join(OUTPUT_DIR, f"{CITY}_popularity_per_category_scatter.png"), dpi=150, bbox_inches="tight")
 plt.close()
-print("  -> Saved cairo_popularity_per_category_scatter.png")
+print(f"  -> Saved {CITY}_popularity_per_category_scatter.png")
 
 # ====================================================================
 # 10. INTERACTIVE PLOTLY: OVERLAID HISTOGRAM
@@ -305,7 +320,7 @@ for cat in cat_order:
     ))
 
 fig1.update_layout(
-    title=dict(text="Cairo — Popularity Score Distribution by Category", font=dict(size=20)),
+    title=dict(text=f"{CITY_LABEL} — Popularity Score Distribution by Category", font=dict(size=20)),
     xaxis_title="Popularity Score",
     yaxis_title="Count",
     barmode="overlay",
@@ -314,8 +329,8 @@ fig1.update_layout(
     width=1000, height=550,
 )
 
-fig1.write_html(os.path.join(OUTPUT_DIR, "cairo_popularity_per_category_interactive.html"), include_plotlyjs="cdn")
-print("  -> Saved cairo_popularity_per_category_interactive.html")
+fig1.write_html(os.path.join(OUTPUT_DIR, f"{CITY}_popularity_per_category_interactive.html"), include_plotlyjs="cdn")
+print(f"  -> Saved {CITY}_popularity_per_category_interactive.html")
 
 # ====================================================================
 # 11. INTERACTIVE PLOTLY: DASHBOARD (histogram + stats table)
@@ -324,7 +339,7 @@ fig3 = make_subplots(
     rows=2, cols=2,
     row_heights=[0.65, 0.35],
     specs=[[{"colspan": 2}, None], [{"type": "table"}, {"type": "table"}]],
-    subplot_titles=["Score Distribution (Per-Category Normalized v_max)", "", ""],
+    subplot_titles=[f"{CITY_LABEL} — Score Distribution (Per-Category Normalized v_max)", "", ""],
 )
 
 for cat in cat_order:
@@ -363,14 +378,14 @@ fig3.update_layout(
 fig3.update_xaxes(title_text="Popularity Score", row=1, col=1)
 fig3.update_yaxes(title_text="Count", row=1, col=1)
 
-fig3.write_html(os.path.join(OUTPUT_DIR, "cairo_popularity_per_category_dashboard.html"), include_plotlyjs="cdn")
-print("  -> Saved cairo_popularity_per_category_dashboard.html")
+fig3.write_html(os.path.join(OUTPUT_DIR, f"{CITY}_popularity_per_category_dashboard.html"), include_plotlyjs="cdn")
+print(f"  -> Saved {CITY}_popularity_per_category_dashboard.html")
 
 # ====================================================================
 # DONE
 # ====================================================================
 print("\n" + "=" * 70)
-print("  Per-Category Popularity Score computation + visualization complete!")
+print(f"  Per-Category Popularity Score computation + visualization complete!")
 print(f"  Updated {updated_count} places in {INPUT_FILE}")
 print(f"  Charts saved to {OUTPUT_DIR}")
 print("=" * 70)

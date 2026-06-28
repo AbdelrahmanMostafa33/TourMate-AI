@@ -196,8 +196,9 @@ LANGCHAIN_PROJECT=tourmate-ai
 # 5. Set up PostgreSQL database
 createdb tourmate
 
-# 6. Seed Cairo places data (optional)
-python seed_cairo_places.py
+# 6. Seed place data (optional)
+python seed_places.py cairo
+python seed_places.py alexandria
 
 # 7. Run the server
 uvicorn app.main:app --reload --host 0.0.0.0 --port 8000

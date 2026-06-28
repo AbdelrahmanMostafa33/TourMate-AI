@@ -146,15 +146,19 @@ psql -U tourmate_user -d tourmate -h localhost -W
 # Type \q to exit
 ```
 
-### Step 4 — Seed Cairo places data (optional)
+### Step 4 — Seed place data (optional)
 
-The project includes a seed script to populate the database with Cairo places data:
+The project includes a generalized seed script to populate the database with place data for any city:
 
 ```bash
-python seed_cairo_places.py
+# Seed Cairo places
+python seed_places.py cairo
+
+# Seed Alexandria places
+python seed_places.py alexandria
 ```
 
-This populates the `places` table with real POIs (restaurants, attractions, hotels) including Bayesian popularity scores.
+This populates the `places` table with real POIs (restaurants, attractions, hotels) including Bayesian popularity scores and pre-generated embeddings.
 
 ---
 
@@ -449,7 +453,7 @@ backend/
 │   └── e2e/                    # End-to-end tests
 │
 ├── alembic/                    # Database migrations (10+ versions)
-├── seed_cairo_places.py        # Cairo POI seed script
+├── seed_places.py              # City-agnostic POI seed script (usage: python seed_places.py <city>)
 ├── .env                        # Your local environment variables (not in Git)
 ├── firebase-credentials.json   # Firebase service account (not in Git)
 ├── pyproject.toml              # Python dependencies (single source of truth)

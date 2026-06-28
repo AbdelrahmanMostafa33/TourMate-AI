@@ -1,9 +1,10 @@
 """Export embeddings from the database to a local JSON file.
 
-Output: data/cairo/cairo_embeddings.json  (place_id → embedding_vector)
+Output: data/{city}/{city}_embeddings.json  (place_id → embedding_vector)
 
 Usage (from backend/):
-    python scripts/export_embeddings.py
+    python scripts/export_embeddings.py cairo
+    python scripts/export_embeddings.py alexandria
 
 The JSON file is a flat mapping:
     {
@@ -39,8 +40,6 @@ if sys.platform == "win32":
 
 from sqlalchemy import create_engine, text          # noqa: E402
 
-DATA_DIR = BACKEND_DIR.parent / "data" / "cairo"
-OUTPUT_FILE = DATA_DIR / "cairo_embeddings.json"
 
 # ── Config ───────────────────────────────────────────────────────────────────
 
@@ -54,9 +53,12 @@ DB_URL = _raw_db_url.replace("+asyncpg", "").replace("+psycopg2", "")
 # ── Main ─────────────────────────────────────────────────────────────────────
 
 
-def main() -> None:
+def main(city: str) -> None:
+    DATA_DIR = BACKEND_DIR.parent / "data" / city
+    OUTPUT_FILE = DATA_DIR / f"{city}_embeddings.json"
+
     print("=" * 60)
-    print("  Export Embeddings — DB → JSON")
+    print(f"  Export Embeddings — DB → JSON ({city.title()})")
     print("=" * 60)
 
     # ── 1. Connect ────────────────────────────────────────────────────────────
@@ -70,21 +72,22 @@ def main() -> None:
         print(f"   [FAIL] {e}")
         sys.exit(1)
 
-    # ── 2. Fetch all non-null embeddings ──────────────────────────────────────
+    # ── 2. Fetch all non-null embeddings for the city ────────────────────────
     print("\n[DB] Fetching embeddings...")
     query = """
-        SELECT place_id, embedding
-        FROM places
-        WHERE embedding IS NOT NULL
-        ORDER BY place_id
+        SELECT p.place_id, p.embedding
+        FROM places p
+        WHERE p.embedding IS NOT NULL
+          AND LOWER(p.city) = LOWER(:city)
+        ORDER BY p.place_id
     """
     with engine.connect() as conn:
-        rows = conn.execute(text(query)).fetchall()
+        rows = conn.execute(text(query), {"city": city}).fetchall()
 
-    print(f"   [OK] {len(rows)} embeddings found")
+    print(f"   [OK] {len(rows)} embeddings found for {city.title()}")
 
     if not rows:
-        print("\n[INFO] No embeddings to export. Run scripts/generate_embeddings.py first.")
+        print("\n[INFO] No embeddings to export for this city. Run scripts/generate_embeddings.py first.")
         sys.exit(0)
 
     # ── 3. Build mapping ──────────────────────────────────────────────────────
@@ -116,8 +119,15 @@ def main() -> None:
     print(f"   Sample key:  {first_key}")
     print(f"   Dimensions:  {len(first_vec) if first_vec else 'N/A'}")
     print(f"   First 3 vals: {first_vec[:3] if first_vec else 'N/A'}...")
-    print(f"\n[DONE] Exported to {OUTPUT_FILE.relative_to(BACKEND_DIR.parent)}")
+    print(f"\n[DONE] Exported to {OUTPUT_FILE}")
 
 
 if __name__ == "__main__":
-    main()
+    if len(sys.argv) < 2:
+        print("Usage: python scripts/export_embeddings.py <city>")
+        print("Example: python scripts/export_embeddings.py cairo")
+        print("         python scripts/export_embeddings.py alexandria")
+        sys.exit(1)
+
+    city = sys.argv[1].lower().strip()
+    main(city)
