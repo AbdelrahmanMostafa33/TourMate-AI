@@ -6,6 +6,7 @@ class ChatHistoryMessage extends Equatable {
   final String conversationId;
   final String sender;
   final String content;
+  final String? imageData;
   final String? timestamp;
 
   const ChatHistoryMessage({
@@ -13,6 +14,7 @@ class ChatHistoryMessage extends Equatable {
     required this.conversationId,
     required this.sender,
     required this.content,
+    this.imageData,
     this.timestamp,
   });
 
@@ -25,6 +27,7 @@ class ChatHistoryMessage extends Equatable {
       conversationId: json['conversation_id'] as String? ?? '',
       sender: json['sender'] as String? ?? 'agent',
       content: json['content'] as String? ?? '',
+      imageData: json['image_data'] as String?,
       timestamp: json['timestamp'] as String?,
     );
   }
@@ -34,6 +37,7 @@ class ChatHistoryMessage extends Equatable {
     String? conversationId,
     String? sender,
     String? content,
+    String? imageData,
     String? timestamp,
   }) {
     return ChatHistoryMessage(
@@ -41,10 +45,11 @@ class ChatHistoryMessage extends Equatable {
       conversationId: conversationId ?? this.conversationId,
       sender: sender ?? this.sender,
       content: content ?? this.content,
+      imageData: imageData ?? this.imageData,
       timestamp: timestamp ?? this.timestamp,
     );
   }
 
   @override
-  List<Object?> get props => [messageId, conversationId, sender, content, timestamp];
+  List<Object?> get props => [messageId, conversationId, sender, content, imageData, timestamp];
 }

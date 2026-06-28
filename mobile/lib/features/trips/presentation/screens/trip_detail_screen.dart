@@ -1117,6 +1117,13 @@ class _DayTimeline extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Filter out hotel/accommodation stops — they are rendered
+    // separately and should not appear as regular day stops.
+    final filteredStops = day.stops.where((s) {
+      final cat = (s.category ?? '').toLowerCase();
+      return cat != 'hotel' && cat != 'accommodation';
+    }).toList();
+
     return Padding(
       padding: const EdgeInsets.only(bottom: 20),
       child: Column(
@@ -1184,7 +1191,7 @@ class _DayTimeline extends StatelessWidget {
           const SizedBox(height: 12),
 
           // Stop cards
-          if (day.stops.isEmpty)
+          if (filteredStops.isEmpty)
             Padding(
               padding: const EdgeInsets.only(left: 52),
               child: Container(
@@ -1200,9 +1207,9 @@ class _DayTimeline extends StatelessWidget {
               ),
             )
           else
-            ...List.generate(day.stops.length, (i) {
-              final stop = day.stops[i];
-              final isLast = i == day.stops.length - 1;
+            ...List.generate(filteredStops.length, (i) {
+              final stop = filteredStops[i];
+              final isLast = i == filteredStops.length - 1;
               return _StopTimelineCard(
                 stop: stop,
                 index: i + 1,

@@ -130,15 +130,23 @@ class ChatCubit extends Cubit<ChatState> {
     try {
       // 1. Load existing chat history from REST API
       final historyResult = await _repo.loadChatHistory(tripId);
-      _messages.clear();
-      historyResult.when(
+      _messages.clear();        historyResult.when(
         success: (history) {
           debugPrint('[ChatCubit] loaded ${history.length} history messages');
           for (final msg in history) {
+            Uint8List? decodedImage;
+            if (msg.imageData != null && msg.imageData!.isNotEmpty) {
+              try {
+                decodedImage = base64Decode(msg.imageData!);
+              } catch (e) {
+                debugPrint('[ChatCubit] Failed to decode image_data: $e');
+              }
+            }
             _messages.add(ChatMessage(
               text: msg.content,
               isUser: msg.isUser,
               isStreaming: false,
+              imageBytes: decodedImage,
             ));
           }
         },
