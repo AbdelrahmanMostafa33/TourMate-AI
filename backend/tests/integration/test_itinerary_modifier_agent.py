@@ -484,6 +484,81 @@ class TestExchangeOperation:
 
 
 # ═══════════════════════════════════════════════════════════════════════════
+# 4c. ADD_CATEGORY Operation (NEW)
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+class TestAddCategoryOperation:
+
+    @pytest.mark.asyncio
+    async def test_add_restaurant_category(self):
+        """
+        "Add more restaurants to the itinerary"
+        → System picks and inserts the best restaurant from the pool.
+        """
+        with _mock_modifier_flat(
+            op="ADD_CATEGORY",
+            category="restaurant",
+            count=1,
+            note="Added a restaurant from the pool",
+        ):
+            result = await run_itinerary_modifier(
+                current_itinerary=BASE_ITINERARY,
+                modification_request="Add more restaurants to the itinerary",
+                available_places=MOCK_PLACES,
+                preferences=PREFERENCES,
+            )
+
+        # Should have added a stop
+        total_stops = sum(len(d.get("stops", [])) for d in result["days"])
+        original_stops = sum(len(d.get("stops", [])) for d in BASE_ITINERARY["days"])
+        assert total_stops == original_stops + 1
+
+    @pytest.mark.asyncio
+    async def test_add_multiple_restaurants(self):
+        """
+        "Add 2 more restaurants to the trip"
+        → System picks 2 restaurants and distributes them.
+        """
+        with _mock_modifier_flat(
+            op="ADD_CATEGORY",
+            category="restaurant",
+            count=2,
+            note="Added 2 restaurants",
+        ):
+            result = await run_itinerary_modifier(
+                current_itinerary=BASE_ITINERARY,
+                modification_request="Add 2 more restaurants to the trip",
+                available_places=MOCK_PLACES,
+                preferences=PREFERENCES,
+            )
+
+        total_stops = sum(len(d.get("stops", [])) for d in result["days"])
+        original_stops = sum(len(d.get("stops", [])) for d in BASE_ITINERARY["days"])
+        assert total_stops >= original_stops + 1  # at least 1 added
+        assert total_stops <= original_stops + 3  # but not too many
+
+    @pytest.mark.asyncio
+    async def test_add_category_no_pool_match_sets_note(self):
+        """When no places of the requested category exist in the pool, note should be set."""
+        with _mock_modifier_flat(
+            op="ADD_CATEGORY",
+            category="skydiving",
+            count=1,
+            note="No skydiving places available",
+        ):
+            result = await run_itinerary_modifier(
+                current_itinerary=BASE_ITINERARY,
+                modification_request="Add skydiving to the trip",
+                available_places=MOCK_PLACES,
+                preferences=PREFERENCES,
+            )
+
+        # Should have a modifier note about failure
+        assert "_modifier_note" in result
+
+
+# ═══════════════════════════════════════════════════════════════════════════
 # 5. REORDER Operation
 # ═══════════════════════════════════════════════════════════════════════════
 

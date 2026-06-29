@@ -52,6 +52,12 @@ MODIFIER_SYSTEM_INSTRUCTION = (
     "Fields: op=\"ADD\", day_number, suggested_time_of_day (morning/afternoon/evening), "
     "add_place_id, why_recommended. "
     "For multiple additions, also fill `additional_adds` list (see below).\n"
+    "  • ADD_CATEGORY — Add places of a specific category. The SYSTEM picks the best "
+    "matching places; you only specify the category keyword. "
+    "Fields: op=\"ADD_CATEGORY\", category (e.g. museum, restaurant, church, park), "
+    "count (how many to add, default 1), "
+    "day_number (optional, specific day), "
+    "suggested_time_of_day (optional, auto-assign if omitted).\n"
     "  • CHANGE_HOTEL — Replace/add a hotel. "
     "Fields: op=\"CHANGE_HOTEL\", old_hotel_id (optional), new_hotel_id, why_recommended\n"
     "  • REORDER — Change visit sequence within a day WITHOUT changing time slots. "
@@ -59,8 +65,8 @@ MODIFIER_SYSTEM_INSTRUCTION = (
     "  • RE_THEME — Update a day's theme. Fields: op=\"RE_THEME\", day_number, new_theme\n"
     "\n"
     "CRITICAL RULES:\n"
-    "1. The `op` value MUST be exactly one of: REMOVE, SWAP, EXCHANGE, ADD, CHANGE_HOTEL, "
-    "REORDER, RE_THEME. Do NOT use any other value.\n"
+    "1. The `op` value MUST be exactly one of: REMOVE, SWAP, EXCHANGE, ADD, ADD_CATEGORY, "
+    "CHANGE_HOTEL, REORDER, RE_THEME. Do NOT use any other value.\n"
     "2. For ADD and SWAP operations, you MUST provide the `add_place_id` field with the EXACT "
     "ID from the Available Places list (shown in parentheses after each place name). "
     "Copy the ID exactly as shown — do NOT invent IDs or use the place name.\n"
@@ -78,10 +84,17 @@ MODIFIER_SYSTEM_INSTRUCTION = (
     "10. NEVER leave required fields (place_id, add_place_id, remove_place_id, new_hotel_id) "
     "as null or empty. Always provide the exact ID from the lists.\n"
     "\n"
-    "MULTI-ADD (for adding several places of the same type):\n"
+    "WHEN TO USE ADD_CATEGORY instead of ADD:\n"
+    "  • Use ADD when the user names a specific place (e.g. 'add the Grand Egyptian Museum').\n"
+    "  • Use ADD_CATEGORY when the user asks for a TYPE of place "
+    "(e.g. 'add museums', 'add more churches', 'add restaurants').\n"
+    "  • For ADD_CATEGORY, set category to the type keyword and count to how many. "
+    "The system will pick the best matching places from the pool.\n"
+    "\n"
+    "MULTI-ADD (for adding several places of the same type via ADD):\n"
     "When the user asks to add multiple places (e.g. \"add churches\", \"add more restaurants\"), "
-    "set the primary ADD fields (add_place_id, day_number, etc.) for the first place, "
-    "then list additional places in the `additional_adds` array.\n"
+    "consider using ADD_CATEGORY instead — it's simpler.  Only use ADD + additional_adds "
+    "when you need to pick VERY SPECIFIC places by name.\n"
     "Each entry in `additional_adds` must have:\n"
     "  - add_place_id (EXACT ID from Available Places list)\n"
     "  - day_number (1-based)\n"
@@ -492,6 +505,12 @@ def _get_validation_error(
             "You MUST provide the exact hotel ID."
         )
 
+    if operation.op == "ADD_CATEGORY" and not operation.category:
+        return (
+            "ADD_CATEGORY operation is missing the required `category` field. "
+            "Set category to the type of place to add (e.g. museum, restaurant, church)."
+        )
+
     if operation.op == "RE_THEME" and (not operation.day_number or not operation.new_theme):
         return (
             "RE_THEME operation is missing required fields. "
@@ -508,9 +527,15 @@ def _validate_modifier_result(
     modified: dict,
     place_pool: list[dict],
 ) -> bool:
-    """Reject ADD/SWAP when the chosen place violates semantic category constraints."""
+    """Reject ADD/SWAP/ADD_CATEGORY when the chosen place violates semantic category constraints."""
     hints = _detect_category_hints(modification_request, pool=place_pool)
     semantics = hints.get("semantic", [])
+
+    if operation.op == "ADD_CATEGORY":
+        # ADD_CATEGORY executor handles semantic filtering internally.
+        # Just verify the note field doesn't indicate failure.
+        return "_modifier_note" not in modified or "Cannot apply" not in modified.get("_modifier_note", "")
+
     if not semantics or operation.op not in ("ADD", "SWAP"):
         return True
 

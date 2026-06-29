@@ -22,6 +22,7 @@ EditType = Literal[
     "REORDER",
     "MOVE_DAY",
     "ADD_PLACE",
+    "ADD_CATEGORY",
     "REPLACE_PLACE",
     "CHANGE_HOTEL",
     "CHANGE_PREFERENCES",
@@ -40,7 +41,7 @@ class EditClassification(BaseModel):
     edit_type: EditType = Field(
         description=(
             "Primary edit type. Use REMOVE, REORDER, MOVE_DAY, ADD_PLACE, "
-            "REPLACE_PLACE, CHANGE_HOTEL, RE_THEME for surgical edits; "
+            "ADD_CATEGORY, REPLACE_PLACE, CHANGE_HOTEL, RE_THEME for surgical edits; "
             "CHANGE_PREFERENCES / CHANGE_BUDGET / CHANGE_PACE / CHANGE_INTERESTS "
             "for vibe or preference shifts; REGENERATE for major overhauls."
         )
@@ -77,7 +78,9 @@ Edit types:
 - REMOVE — delete a stop or place
 - REORDER — change stop order within a day
 - MOVE_DAY — move a stop to another day
-- ADD_PLACE — insert a new stop from available options
+- ADD_PLACE — insert a new stop from available options (use when the user names a SPECIFIC place)
+- ADD_CATEGORY — add places of a specific TYPE (e.g. \"add museums\", \"add more churches\", \"add restaurants\")
+  Use ADD_CATEGORY when the user asks for a category/type of place rather than a specific named place.
 - REPLACE_PLACE — swap one stop for another (use EXCHANGE when both are already in the itinerary)
 - CHANGE_HOTEL — change accommodation suggestions
 - RE_THEME — update a day's theme only
@@ -89,7 +92,10 @@ Edit types:
 - UNKNOWN — unclear request
 
 Rules:
-- Prefer surgical types (REMOVE, ADD_PLACE, REPLACE_PLACE) when the user names a place or day
+- Use ADD_PLACE when the user names a SPECIFIC place (e.g. \"add the Grand Egyptian Museum\")
+- Use ADD_CATEGORY when the user asks for a TYPE of place (e.g. \"add museums\", \"add more restaurants\")
+  — even if they say \"add a museum\" (not naming a specific one), use ADD_CATEGORY
+- Prefer surgical types (REMOVE, ADD_PLACE, ADD_CATEGORY, REPLACE_PLACE) when possible
 - Use REGENERATE only when the trip intent fundamentally changes
 - Extract target_day when a day number is mentioned
 - Extract target_category when a place type is mentioned (museum, restaurant, hotel, etc.)
@@ -153,6 +159,7 @@ def is_surgical_edit(classification: dict) -> bool:
         "REORDER",
         "MOVE_DAY",
         "ADD_PLACE",
+        "ADD_CATEGORY",
         "REPLACE_PLACE",
         "CHANGE_HOTEL",
         "RE_THEME",

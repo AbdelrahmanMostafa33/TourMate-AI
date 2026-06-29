@@ -70,6 +70,11 @@ from ai_engine.llm import token_tracker
 from ai_engine.vision.image_analyzer import analyze_travel_image
 from ai_engine.schemas.vision_schema import VisionFeatures
 
+# ── Booking / Payment imports (used for post-approval flight payments) ────
+from app.services.booking_service import BookingService
+from app.schemas.booking import BookingCreate, PaymentCreate
+from app.models.enums import BookingType, BookingProvider, PaymentMethod
+
 
 # ── Terminal colours ──────────────────────────────────────────────────────
 
@@ -296,6 +301,120 @@ async def _handle_export(session_id: str | None, last_result: dict | None,
         print(f"{DIM}   Contains: session, slots, itinerary, pipeline trace, image features{RESET}")
     except Exception as e:
         print(f"{RED}Error writing export file: {e}{RESET}")
+
+
+# ── Flight Payment (post-approval) ───────────────────────────────────────
+
+
+async def _check_flight_payment(session_id: str) -> None:
+    """After trip approval, check if a flight was selected and offer payment."""
+    try:
+        manager = await get_session_manager()
+        state = await manager.load(session_id)
+        if not state:
+            return
+
+        flight = state.slots.selected_flight_offer
+        if not flight:
+            return
+
+        airline = flight.get("airline_name", flight.get("airline_code", "?"))
+        flight_num = flight.get("flight_number", "?")
+        price = flight.get("total_price", 0)
+        currency = flight.get("currency", "EUR")
+
+        print(f"\n  {BOLD}{'─'*50}{RESET}")
+        print(f"  {BOLD}✈️ Flight Selected:{RESET} {airline} {flight_num}")
+        print(f"  {BOLD}   Price:{RESET}        {price} {currency}")
+        print(f"  {BOLD}{'─'*50}{RESET}")
+        print(f"\n  {YELLOW}Would you like to pay for this flight now?{RESET}\n")
+        print(f"  {BOLD}[1]{RESET} 💳 Pay now ({price} {currency})")
+        print(f"  {BOLD}[2]{RESET} ⏸  Skip — I'll pay later")
+        print(f"  {BOLD}[3]{RESET} 🔄 Start a new trip")
+
+        while True:
+            choice = await asyncio.get_running_loop().run_in_executor(
+                None, lambda: input(f"\n  {CYAN}Choose an option (1-3): {RESET}")
+            )
+            choice = choice.strip()
+
+            if choice == "1":
+                await _process_flight_payment(flight)
+                break
+            elif choice == "2":
+                print(f"\n  {GREEN}⏸  No problem! You can pay later through your trip details.{RESET}\n")
+                break
+            elif choice == "3":
+                print(f"\n  {YELLOW}🔄 Starting a new trip...{RESET}")
+                break
+            else:
+                print(f"  {RED}Please enter 1, 2, or 3.{RESET}")
+
+        # Clear flight offer from Redis so prompt doesn't show again
+        state.slots.selected_flight_offer = None
+        await manager.save(state)
+
+    except Exception as e:
+        print(f"  {RED}⚠ Could not check flight payment: {e}{RESET}")
+
+
+async def _process_flight_payment(flight_offer: dict) -> None:
+    """Process flight payment via BookingService (simulated / Stripe sandbox)."""
+    airline = flight_offer.get("airline_name", flight_offer.get("airline_code", "?"))
+    flight_num = flight_offer.get("flight_number", "?")
+    origin = flight_offer.get("origin_iata", "?")
+    destination = flight_offer.get("destination_iata", "?")
+    price = flight_offer.get("total_price", 0)
+    currency = flight_offer.get("currency", "EUR")
+
+    print(f"\n  {YELLOW}⏳ Processing payment...{RESET}")
+
+    try:
+        from app.core.database import async_session
+
+        async with async_session() as db:
+            svc = BookingService(db)
+
+            # Step 1 — Create a pending booking record
+            booking_data = BookingCreate(
+                booking_type=BookingType.flight,
+                provider=BookingProvider.amadeus,
+                total_cost=price,
+                currency=currency,
+            )
+            booking = await svc.create_booking(
+                trip_id="cli_demo_trip",
+                user_id="interactive_user",
+                data=booking_data,
+            )
+
+            # Step 2 — Process payment (Stripe sandbox if configured, else simulated)
+            payment_data = PaymentCreate(
+                amount=price,
+                currency=currency,
+                payment_method=PaymentMethod.credit_card,
+            )
+            pay_result = await svc.process_payment(booking.booking_id, payment_data)
+
+            # Step 3 — Confirm the booking
+            await svc.confirm_booking(booking.booking_id)
+            await db.commit()
+
+            receipt = pay_result.get("receipt")
+            print(f"\n  {GREEN}✅ Flight Payment Successful!{RESET}")
+            print(f"  {DIM}{'─'*45}{RESET}")
+            print(f"  {BOLD}Booking:{RESET}     {booking.booking_id}")
+            print(f"  {BOLD}Flight:{RESET}      {airline} {flight_num}")
+            print(f"  {BOLD}Route:{RESET}       {origin} → {destination}")
+            print(f"  {BOLD}Amount:{RESET}      {price:.2f} {currency}")
+            if receipt:
+                print(f"  {BOLD}Receipt:{RESET}     {receipt.receipt_number}")
+            print(f"  {BOLD}Status:{RESET}      ✅ Confirmed")
+            print(f"  {DIM}{'─'*45}{RESET}\n")
+
+    except Exception as e:
+        print(f"\n  {RED}❌ Payment failed: {e}{RESET}")
+        print(f"  {YELLOW}  You can try again later.{RESET}\n")
 
 
 # ── Main chat loop ────────────────────────────────────────────────────────
@@ -605,6 +724,7 @@ async def chat_loop(initial_image_path: Optional[str] = None):
 
         text_printed = False
         last_result = None
+        current_phase = None  # tracks phase transitions for post-streaming prompts
 
         # Show image context only once — right after the image was loaded
         # and sent to the AI. Skip on subsequent turns (auto_proceed_image
@@ -635,6 +755,7 @@ async def chat_loop(initial_image_path: Optional[str] = None):
 
                 elif event_type == "phase":
                     new_phase = chunk["data"].get("phase")
+                    current_phase = new_phase  # capture for post-streaming logic
                     if debug_mode:
                         print(f"  {DIM}→ Phase: {new_phase}{RESET}")
 
@@ -679,6 +800,10 @@ async def chat_loop(initial_image_path: Optional[str] = None):
         # Keep current_image_features so /features command still works.
         auto_proceed_image = False
         current_image_bytes = None
+
+        # ── Flight payment prompt after trip approval ────────────────────
+        if current_phase == "completed" and session_id:
+            await _check_flight_payment(session_id)
 
         # Debug output
         if debug_mode and last_result:

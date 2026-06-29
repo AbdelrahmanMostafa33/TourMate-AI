@@ -23,6 +23,7 @@ from ai_engine.services.operations import (
     _exec_remove,
     _exec_swap,
     _exec_add,
+    _exec_add_category,
     _exec_change_hotel,
     _exec_reorder,
     _exec_exchange,
@@ -726,6 +727,259 @@ class TestExecExchange:
         result = apply_operation(itinerary, op, PLACE_POOL)
         assert result["days"][0]["stops"][0]["id"] == "b"
         assert result["days"][0]["stops"][1]["id"] == "a"
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Operation: ADD_CATEGORY
+# ═══════════════════════════════════════════════════════════════════════════
+
+class TestExecAddCategory:
+
+    def test_add_single_museum(self):
+        """ADD_CATEGORY with category='museum' should add a museum place from the pool."""
+        pool = [
+            {
+                "id": "mus_001",
+                "name": "Islamic Art Museum",
+                "category": "attraction",
+                "sub_category": "museums",
+                "lat": 30.04, "lon": 31.24,
+                "interest_tags": ["history", "art"],
+                "why_recommended": "Rich Islamic art collection",
+                "estimated_duration_minutes": 90,
+                "rating": 4.5,
+            },
+        ]
+        op = ModifierResponse(op="ADD_CATEGORY", category="museum", count=1)
+        result = _exec_add_category(BASE_ITINERARY, op, pool)
+
+        # Should add 1 stop to the itinerary
+        total_stops = sum(len(d.get("stops", [])) for d in result["days"])
+        original_stops = sum(len(d.get("stops", [])) for d in BASE_ITINERARY["days"])
+        assert total_stops == original_stops + 1
+
+        # Find the added stop
+        added = None
+        for day in result["days"]:
+            for stop in day["stops"]:
+                if stop["id"] == "mus_001":
+                    added = stop
+                    break
+        assert added is not None
+        assert added["name"] == "Islamic Art Museum"
+        assert "history" in added.get("interest_tags", [])
+
+    def test_add_multiple_restaurants(self):
+        """ADD_CATEGORY with count=2 should add 2 restaurant places."""
+        pool = [
+            {
+                "id": "rest_002",
+                "name": "Nubia Restaurant",
+                "category": "restaurant",
+                "sub_category": "local cuisine",
+                "lat": 30.0458, "lon": 31.2360,
+                "interest_tags": ["food", "local"],
+                "rating": 4.2,
+                "estimated_duration_minutes": 60,
+            },
+            {
+                "id": "rest_003",
+                "name": "Felfela",
+                "category": "restaurant",
+                "sub_category": "local cuisine",
+                "lat": 30.0480, "lon": 31.2370,
+                "interest_tags": ["food"],
+                "rating": 4.0,
+                "estimated_duration_minutes": 45,
+            },
+        ]
+        op = ModifierResponse(op="ADD_CATEGORY", category="restaurant", count=2)
+        result = _exec_add_category(BASE_ITINERARY, op, pool)
+
+        total_stops = sum(len(d.get("stops", [])) for d in result["days"])
+        original_stops = sum(len(d.get("stops", [])) for d in BASE_ITINERARY["days"])
+        assert total_stops == original_stops + 2
+
+        # Both restaurants should appear
+        result_ids = [s["id"] for d in result["days"] for s in d["stops"]]
+        assert "rest_002" in result_ids
+        assert "rest_003" in result_ids
+
+    def test_add_category_with_semantic_filtering(self):
+        """ADD_CATEGORY with 'church' should only add churches, not mosques."""
+        pool = [
+            {
+                "id": "church_1",
+                "name": "Hanging Church",
+                "category": "attraction",
+                "sub_category": "religious",
+                "lat": 30.04, "lon": 31.24,
+                "interest_tags": ["religious"],
+                "rating": 4.5,
+                "estimated_duration_minutes": 60,
+            },
+            {
+                "id": "mosque_1",
+                "name": "Amr ibn al-As Mosque",
+                "category": "attraction",
+                "sub_category": "religious",
+                "lat": 30.01, "lon": 31.23,
+                "interest_tags": ["religious"],
+                "rating": 4.3,
+                "estimated_duration_minutes": 60,
+            },
+        ]
+        op = ModifierResponse(op="ADD_CATEGORY", category="church", count=2)
+        result = _exec_add_category(BASE_ITINERARY, op, pool)
+
+        result_ids = [s["id"] for d in result["days"] for s in d["stops"]]
+        assert "church_1" in result_ids  # church should be added
+        assert "mosque_1" not in result_ids  # mosque should NOT be added
+
+    def test_add_category_counts_used_as_excluded(self):
+        """Places already in the itinerary should be excluded from ADD_CATEGORY."""
+        pool = [
+            {
+                "id": "place_001",  # This is already in BASE_ITINERARY
+                "name": "Egyptian Museum",
+                "category": "attraction",
+                "sub_category": "museum",
+                "lat": 30.0478, "lon": 31.2336,
+                "rating": 4.5,
+                "estimated_duration_minutes": 120,
+            },
+            # Another place not in the itinerary
+            {
+                "id": "new_mus_001",
+                "name": "New Museum",
+                "category": "attraction",
+                "sub_category": "museum",
+                "lat": 30.05, "lon": 31.25,
+                "rating": 4.0,
+                "estimated_duration_minutes": 90,
+            },
+        ]
+        op = ModifierResponse(op="ADD_CATEGORY", category="museum", count=2)
+        result = _exec_add_category(BASE_ITINERARY, op, pool)
+
+        result_ids = [s["id"] for d in result["days"] for s in d["stops"]]
+        assert "place_001" in result_ids  # already there, not added again
+        assert "new_mus_001" in result_ids  # new place added
+        # Should only have added 1 new place (the other was already in itinerary)
+        total_stops = sum(len(d.get("stops", [])) for d in result["days"])
+        original_stops = sum(len(d.get("stops", [])) for d in BASE_ITINERARY["days"])
+        assert total_stops == original_stops + 1
+
+    def test_add_category_no_matches_adds_note(self):
+        """When no pool places match the category, a _modifier_note should be set."""
+        op = ModifierResponse(op="ADD_CATEGORY", category="beach", count=1)
+        result = _exec_add_category(BASE_ITINERARY, op, [])  # empty pool
+        assert "_modifier_note" in result
+        assert "Cannot apply" in result["_modifier_note"]
+
+    def test_add_category_unknown_category_adds_note(self):
+        """An unrecognized category keyword should add a note."""
+        op = ModifierResponse(op="ADD_CATEGORY", category="skydiving", count=1)
+        result = _exec_add_category(BASE_ITINERARY, op, [])
+        assert "_modifier_note" in result
+        assert "Cannot apply" in result["_modifier_note"]
+
+    def test_add_category_missing_category_adds_note(self):
+        """Missing 'category' field should add a note."""
+        op = ModifierResponse(op="ADD_CATEGORY", category="", count=1)
+        result = _exec_add_category(BASE_ITINERARY, op, [])
+        assert "_modifier_note" in result
+        assert "missing" in result["_modifier_note"]
+
+    def test_add_category_preserves_original(self):
+        """ADD_CATEGORY should not mutate the original itinerary."""
+        pool = [
+            {
+                "id": "mus_001",
+                "name": "Islamic Art Museum",
+                "category": "attraction",
+                "sub_category": "museums",
+                "lat": 30.04, "lon": 31.24,
+                "rating": 4.5,
+                "estimated_duration_minutes": 90,
+            },
+        ]
+        op = ModifierResponse(op="ADD_CATEGORY", category="museum", count=1)
+        _exec_add_category(BASE_ITINERARY, op, pool)
+        # Original should be unchanged
+        assert len(BASE_ITINERARY["days"][0]["stops"]) == 2
+        assert len(BASE_ITINERARY["days"][1]["stops"]) == 2
+
+    def test_add_category_rating_sorting(self):
+        """Higher-rated places should be selected first."""
+        pool = [
+            {
+                "id": "place_low",
+                "name": "Low Rated Museum",
+                "category": "attraction",
+                "sub_category": "museums",
+                "lat": 30.04, "lon": 31.24,
+                "rating": 3.0,
+                "estimated_duration_minutes": 60,
+            },
+            {
+                "id": "place_high",
+                "name": "High Rated Museum",
+                "category": "attraction",
+                "sub_category": "museums",
+                "lat": 30.05, "lon": 31.25,
+                "rating": 4.8,
+                "estimated_duration_minutes": 90,
+            },
+        ]
+        op = ModifierResponse(op="ADD_CATEGORY", category="museum", count=1)
+        result = _exec_add_category(BASE_ITINERARY, op, pool)
+
+        result_ids = [s["id"] for d in result["days"] for s in d["stops"]]
+        assert "place_high" in result_ids
+        assert "place_low" not in result_ids
+
+    def test_add_category_caps_at_five(self):
+        """ADD_CATEGORY should cap count at 5."""
+        pool = [
+            {
+                "id": f"mus_{i:03d}",
+                "name": f"Museum {i}",
+                "category": "attraction",
+                "sub_category": "museums",
+                "lat": 30.04 + i * 0.01, "lon": 31.24,
+                "rating": 4.0,
+                "estimated_duration_minutes": 60,
+            }
+            for i in range(10)
+        ]
+        op = ModifierResponse(op="ADD_CATEGORY", category="museum", count=100)
+        result = _exec_add_category(BASE_ITINERARY, op, pool)
+
+        total_stops = sum(len(d.get("stops", [])) for d in result["days"])
+        original_stops = sum(len(d.get("stops", [])) for d in BASE_ITINERARY["days"])
+        added = total_stops - original_stops
+        assert added <= 5  # capped
+
+    def test_dispatch_add_category(self):
+        """apply_operation should dispatch to _exec_add_category."""
+        pool = [
+            {
+                "id": "mus_001",
+                "name": "Islamic Art Museum",
+                "category": "attraction",
+                "sub_category": "museums",
+                "lat": 30.04, "lon": 31.24,
+                "rating": 4.5,
+                "estimated_duration_minutes": 90,
+            },
+        ]
+        op = ModifierResponse(op="ADD_CATEGORY", category="museum", count=1)
+        result = apply_operation(BASE_ITINERARY, op, pool)
+
+        total_stops = sum(len(d.get("stops", [])) for d in result["days"])
+        original_stops = sum(len(d.get("stops", [])) for d in BASE_ITINERARY["days"])
+        assert total_stops == original_stops + 1
 
 
 # ═══════════════════════════════════════════════════════════════════════════

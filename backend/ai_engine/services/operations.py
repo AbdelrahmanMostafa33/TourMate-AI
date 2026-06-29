@@ -115,6 +115,33 @@ class ReThemeOperation(BaseModel):
     new_theme: str = Field(description="New theme/title for the day")
 
 
+class AddCategoryOperation(BaseModel):
+    """Add places of a specific category from the available pool.
+
+    Unlike ADD (which requires the LLM to pick a specific place_id),
+    ADD_CATEGORY lets the system find and insert the best matching
+    places deterministically.  The LLM only specifies the category
+    and count; the executor handles selection and distribution.
+    """
+
+    op: Literal["ADD_CATEGORY"] = "ADD_CATEGORY"
+    category: str = Field(
+        description="Category to add (e.g. museum, restaurant, church, park, nightlife)"
+    )
+    count: int = Field(
+        default=1,
+        description="How many places of this category to add (system picks the best)",
+    )
+    day_number: Optional[int] = Field(
+        default=None,
+        description="Specific day to add to (1-based). None = auto-distribute across days.",
+    )
+    suggested_time_of_day: Optional[Literal["morning", "afternoon", "evening"]] = Field(
+        default=None,
+        description="Preferred time slot. None = auto-assign.",
+    )
+
+
 class AdditionalAdd(BaseModel):
     """An additional ADD operation within a multi-ADD response.
 
@@ -205,6 +232,15 @@ class ModifierResponse(BaseModel):
     new_hotel_id: Optional[str] = Field(
         default=None,
         description="ID of the new hotel from the available pool (CHANGE_HOTEL)",
+    )
+    # ── ADD_CATEGORY fields ──────────────────────────────────────────
+    category: Optional[str] = Field(
+        default=None,
+        description="Category to add (ADD_CATEGORY)",
+    )
+    count: Optional[int] = Field(
+        default=None,
+        description="How many places of this category to add (ADD_CATEGORY)",
     )
     new_theme: Optional[str] = Field(
         default=None,
@@ -800,6 +836,153 @@ def _exec_retheme(itinerary: dict, op: ModifierResponse) -> dict:
     return modified
 
 
+# ── ADD_CATEGORY Executor ──────────────────────────────────────────────────
+
+
+def _exec_add_category(itinerary: dict, op: ModifierResponse, place_pool: list[dict]) -> dict:
+    """Execute an ADD_CATEGORY operation — find and insert places by category.
+
+    The LLM specifies a category keyword (e.g. "museum", "church", "park") and
+    an optional count.  This executor:
+
+    1. Uses ``_detect_category_hints`` to map the keyword → DB category/subcategory
+    2. Scans the pool for unused places matching that category
+    3. Scores and selects the best ``count`` places
+    4. Distributes them across days using ``_find_best_day_and_slot_for_place``
+
+    Returns the modified itinerary, or the original with a ``_modifier_note``
+    if no matching places were found.
+    """
+    modified = copy.deepcopy(itinerary)
+
+    if not op.category:
+        modified["_modifier_note"] = "Cannot apply ADD_CATEGORY: missing required field 'category'"
+        logger.warning("[OperationExecutor] ADD_CATEGORY: missing category")
+        return modified
+
+    count = op.count or 1
+    if count < 1:
+        count = 1
+    elif count > 5:
+        count = 5  # cap at 5 to avoid overloading
+
+    # Map category keyword → DB category/subcategory
+    hints = _detect_category_hints(f"add {op.category}", pool=place_pool)
+    if not hints:
+        modified["_modifier_note"] = (
+            f"Cannot apply ADD_CATEGORY: unknown category '{op.category}'"
+        )
+        logger.warning(
+            "[OperationExecutor] ADD_CATEGORY: no hints for '%s'", op.category
+        )
+        return modified
+
+    cats = hints.get("category", [])
+    subcats = hints.get("sub_category", [])
+    semantics = hints.get("semantic", [])
+
+    # Collect unused place IDs
+    used_ids: set[str] = set()
+    for day in modified.get("days", []):
+        for stop in day.get("stops", []):
+            pid = stop.get("id", "")
+            if pid:
+                used_ids.add(pid)
+
+    # Find matching places in the pool
+    matching: list[dict] = []
+    for p in (place_pool or []):
+        pid = p.get("id", "")
+        if not pid or pid in used_ids:
+            continue
+        p_cat = (p.get("category") or "").lower()
+        p_sub = (p.get("sub_category") or p.get("subcategory") or "").lower()
+
+        cat_match = not cats or p_cat in cats
+        sub_match = not subcats or p_sub in subcats
+        if cat_match and sub_match:
+            if semantics and not place_matches_semantic_hints(p, semantics):
+                continue
+            matching.append(p)
+
+    if not matching:
+        modified["_modifier_note"] = (
+            f"Cannot apply ADD_CATEGORY: no unused '{op.category}' places in pool"
+        )
+        logger.warning(
+            "[OperationExecutor] ADD_CATEGORY: no matches for '%s' in pool",
+            op.category,
+        )
+        return modified
+
+    # Sort by rating descending, take top N
+    matching.sort(key=lambda p: p.get("rating", 0) or 0, reverse=True)
+    to_add = matching[:count]
+
+    # Track used slots per day for batch distribution
+    used_slots_per_day: dict[int, set[str]] = {}
+    added_names: list[str] = []
+
+    target_day_num = op.day_number
+    target_slot = op.suggested_time_of_day
+
+    for i, place in enumerate(to_add):
+        if target_day_num and i == 0:
+            best_day = target_day_num
+            best_slot = target_slot or "afternoon"
+        else:
+            best_day, best_slot = _find_best_day_and_slot_for_place(
+                modified, place, used_slots_per_day,
+            )
+
+        used_slots_per_day.setdefault(best_day, set()).add(best_slot)
+
+        new_stop = {
+            "id": place.get("id", ""),
+            "name": place.get("name", ""),
+            "category": place.get("category", ""),
+            "sub_category": place.get("sub_category", place.get("subcategory", "")),
+            "lat": place.get("lat", 0),
+            "lon": place.get("lon", 0),
+            "cuisine_type": place.get("cuisine_type"),
+            "why_recommended": place.get(
+                "why_recommended", f"Great {op.category} choice"
+            ),
+            "estimated_duration_minutes": place.get("estimated_duration_minutes")
+                or place.get("duration_minutes", 60),
+            "suggested_time_of_day": best_slot,
+        }
+        tags = place.get("interest_tags", [])
+        if tags:
+            new_stop["interest_tags"] = tags
+
+        day = _find_day(modified, best_day)
+        if day is None:
+            logger.warning(
+                "[OperationExecutor] ADD_CATEGORY: day %d not found — skipping",
+                best_day,
+            )
+            continue
+
+        stops = _insert_stop_by_time_slot(day.get("stops", []), new_stop)
+        _fix_travel_times(stops)
+        day["stops"] = stops
+        added_names.append(place.get("name", "") or place.get("id", ""))
+
+    if added_names:
+        label = ", ".join(added_names)
+        logger.info(
+            "[OperationExecutor] ADD_CATEGORY '%s' → added %d place(s): %s",
+            op.category, len(added_names), label,
+        )
+    else:
+        modified["_modifier_note"] = (
+            f"ADD_CATEGORY '{op.category}': no valid days to add to"
+        )
+
+    return modified
+
+
 # ═══════════════════════════════════════════════════════════════════════════════
 # Public API
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -841,6 +1024,8 @@ def apply_operation(
         modified = _exec_swap(itinerary, operation, place_pool or [])
     elif op_type == "ADD":
         modified = _exec_add(itinerary, operation, place_pool or [])
+    elif op_type == "ADD_CATEGORY":
+        modified = _exec_add_category(itinerary, operation, place_pool or [])
     elif op_type == "CHANGE_HOTEL":
         modified = _exec_change_hotel(itinerary, operation, place_pool or [])
     elif op_type == "REORDER":

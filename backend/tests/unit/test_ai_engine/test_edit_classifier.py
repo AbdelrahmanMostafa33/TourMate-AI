@@ -9,8 +9,11 @@ from ai_engine.agents.edit_classifier_agent import (
 
 class TestEditClassifierRouting:
     def test_surgical_types(self):
-        for edit_type in ("REMOVE", "ADD_PLACE", "REPLACE_PLACE", "REORDER"):
+        for edit_type in ("REMOVE", "ADD_PLACE", "ADD_CATEGORY", "REPLACE_PLACE", "REORDER"):
             assert is_surgical_edit({"edit_type": edit_type}) is True
+
+    def test_surgical_includes_add_category(self):
+        assert is_surgical_edit({"edit_type": "ADD_CATEGORY"}) is True
 
     def test_preference_types(self):
         assert is_preference_edit({"edit_type": "CHANGE_BUDGET"}) is True
@@ -19,3 +22,4 @@ class TestEditClassifierRouting:
     def test_regenerate(self):
         assert is_regenerate_edit({"edit_type": "REGENERATE"}) is True
         assert is_regenerate_edit({"edit_type": "ADD_PLACE"}) is False
+        assert is_regenerate_edit({"edit_type": "ADD_CATEGORY"}) is False
