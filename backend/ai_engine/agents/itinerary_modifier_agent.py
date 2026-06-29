@@ -151,7 +151,7 @@ async def run_itinerary_modifier(
             )
 
     # ── Build a compact textual context ─────────────────────────────────
-    context = build_compact_context(
+    context = await build_compact_context(
         itinerary=current_itinerary,
         modification_request=modification_request,
         available_places=available_places,

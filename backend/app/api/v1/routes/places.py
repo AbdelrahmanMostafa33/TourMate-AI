@@ -283,7 +283,7 @@ async def semantic_search_places(
     - query: The original query
     """
     from ai_engine.services.embedding_service import (
-        embed_query, cosine_similarity, build_query_text
+        embed_query_async, cosine_similarity, build_query_text
     )
     from app.models.place import Place
     from sqlalchemy.orm import selectinload
@@ -300,7 +300,7 @@ async def semantic_search_places(
 
     # Format query for embedding
     formatted_query = f"task: search result | query: {query_text}"
-    query_vector = embed_query(formatted_query)
+    query_vector = await embed_query_async(formatted_query)
 
     if query_vector is None:
         raise HTTPException(

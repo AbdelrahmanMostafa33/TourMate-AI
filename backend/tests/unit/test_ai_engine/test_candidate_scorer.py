@@ -346,7 +346,7 @@ class TestRunScoring:
 
     @pytest.mark.asyncio
     @patch("ai_engine.services.candidate_scorer.load_place_embeddings", new_callable=AsyncMock)
-    @patch("ai_engine.services.candidate_scorer.embed_query")
+    @patch("ai_engine.services.candidate_scorer.embed_query_async")
     async def test_empty_filtered_places_sets_error(self, mock_embed, mock_load):
         state = _make_scorer_state(filtered_places=[])
         result = await score_candidates(state)
@@ -358,7 +358,7 @@ class TestRunScoring:
 
     @pytest.mark.asyncio
     @patch("ai_engine.services.candidate_scorer.load_place_embeddings", new_callable=AsyncMock)
-    @patch("ai_engine.services.candidate_scorer.embed_query")
+    @patch("ai_engine.services.candidate_scorer.embed_query_async")
     async def test_none_filtered_places_sets_error(self, mock_embed, mock_load):
         state = _make_scorer_state(filtered_places=None)
         result = await score_candidates(state)
@@ -368,7 +368,7 @@ class TestRunScoring:
 
     @pytest.mark.asyncio
     @patch("ai_engine.services.candidate_scorer.load_place_embeddings", new_callable=AsyncMock)
-    @patch("ai_engine.services.candidate_scorer.embed_query")
+    @patch("ai_engine.services.candidate_scorer.embed_query_async")
     async def test_single_place_returns_it(self, mock_embed, mock_load):
         place = _make_place()
         mock_load.return_value = {"place_001": [0.5] * 768}
@@ -384,7 +384,7 @@ class TestRunScoring:
 
     @pytest.mark.asyncio
     @patch("ai_engine.services.candidate_scorer.load_place_embeddings", new_callable=AsyncMock)
-    @patch("ai_engine.services.candidate_scorer.embed_query")
+    @patch("ai_engine.services.candidate_scorer.embed_query_async")
     async def test_multiple_places_ranked(self, mock_embed, mock_load):
         places = [
             _make_place(id="p_high", popularity_score=95, rating=4.8),
@@ -408,7 +408,7 @@ class TestRunScoring:
 
     @pytest.mark.asyncio
     @patch("ai_engine.services.candidate_scorer.load_place_embeddings", new_callable=AsyncMock)
-    @patch("ai_engine.services.candidate_scorer.embed_query")
+    @patch("ai_engine.services.candidate_scorer.embed_query_async")
     async def test_candidate_places_capped(self, mock_embed, mock_load):
         places = [
             _make_place(id=f"place_{i}", popularity_score=80, category="attractions")
@@ -424,7 +424,7 @@ class TestRunScoring:
 
     @pytest.mark.asyncio
     @patch("ai_engine.services.candidate_scorer.load_place_embeddings", new_callable=AsyncMock)
-    @patch("ai_engine.services.candidate_scorer.embed_query")
+    @patch("ai_engine.services.candidate_scorer.embed_query_async")
     async def test_agent_message_appended(self, mock_embed, mock_load):
         place = _make_place()
         mock_load.return_value = {"place_001": [0.5] * 768}
@@ -438,7 +438,7 @@ class TestRunScoring:
 
     @pytest.mark.asyncio
     @patch("ai_engine.services.candidate_scorer.load_place_embeddings", new_callable=AsyncMock)
-    @patch("ai_engine.services.candidate_scorer.embed_query")
+    @patch("ai_engine.services.candidate_scorer.embed_query_async")
     async def test_city_center_computed_from_non_hotel_places(self, mock_embed, mock_load):
         hotel = _make_place(id="h1", category="hotel", lat=35.0, lon=36.0)
         attraction = _make_place(id="a1", category="attractions", lat=30.0, lon=31.0)
@@ -454,7 +454,7 @@ class TestRunScoring:
 
     @pytest.mark.asyncio
     @patch("ai_engine.services.candidate_scorer.load_place_embeddings", new_callable=AsyncMock)
-    @patch("ai_engine.services.candidate_scorer.embed_query")
+    @patch("ai_engine.services.candidate_scorer.embed_query_async")
     async def test_embedding_failure_fallback(self, mock_embed, mock_load):
         """When embed_query returns None, ranking should still work with fallback."""
         place = _make_place()
@@ -469,7 +469,7 @@ class TestRunScoring:
 
     @pytest.mark.asyncio
     @patch("ai_engine.services.candidate_scorer.load_place_embeddings", new_callable=AsyncMock)
-    @patch("ai_engine.services.candidate_scorer.embed_query")
+    @patch("ai_engine.services.candidate_scorer.embed_query_async")
     async def test_missing_place_embeddings_fallback(self, mock_embed, mock_load):
         """When DB has no embeddings (empty dict), ranking uses fallback."""
         place = _make_place()

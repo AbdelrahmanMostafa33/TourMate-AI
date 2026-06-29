@@ -1069,7 +1069,7 @@ def _build_subcategory_texts(pool: list[dict]) -> dict[tuple[str, str], str]:
     return result
 
 
-def _embedding_category_hints(
+async def _embedding_category_hints(
     modification_request: str,
     pool: list[dict] | None = None,
 ) -> dict[str, list[str]]:
@@ -1104,13 +1104,13 @@ def _embedding_category_hints(
 
     # Lazy import to avoid circular dependency at module level
     try:
-        from ai_engine.services.embedding_service import cosine_similarity, embed_query
+        from ai_engine.services.embedding_service import cosine_similarity, embed_query_async
     except ImportError:
         logger.warning("[EmbeddingFallback] Could not import embedding service")
         return {}
 
     # Embed the request
-    request_embedding = embed_query(f"task: search result | query: find places matching: {modification_request}")
+    request_embedding = await embed_query_async(f"task: search result | query: find places matching: {modification_request}")
     if request_embedding is None:
         logger.info("[EmbeddingFallback] Request embedding failed — skipping")
         return {}
@@ -1121,7 +1121,7 @@ def _embedding_category_hints(
     result: dict[str, list[str]] = {}
 
     for (cat, sub), text in subcat_texts.items():
-        subcat_embedding = embed_query(f"task: search result | query: {text}")
+        subcat_embedding = await embed_query_async(f"task: search result | query: {text}")
         if subcat_embedding is None:
             continue
 
@@ -1580,7 +1580,7 @@ def _rebalance_clustered_slots(itinerary: dict) -> dict:
 # Compact Context Builder
 # ═══════════════════════════════════════════════════════════════════════════════
 
-def build_compact_context(
+async def build_compact_context(
     itinerary: dict,
     modification_request: str,
     available_places: list[dict] | None = None,
@@ -1653,7 +1653,7 @@ def build_compact_context(
     # If keyword matching returned empty, try embedding-based fallback
     # to catch semantically similar subcategories not in any keyword map.
     if not category_hints and available_places:
-        embedding_hints = _embedding_category_hints(modification_request, pool=available_places)
+        embedding_hints = await _embedding_category_hints(modification_request, pool=available_places)
         if embedding_hints:
             logger.info(
                 "[BuildContext] Embedding fallback detected: %s",

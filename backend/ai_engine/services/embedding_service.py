@@ -20,6 +20,7 @@ from typing import Optional
 import numpy as np
 from google import genai
 from google.genai import types
+from google.genai.client import AsyncClient as _AsyncClient
 from sqlalchemy import select
 
 from app.core.config import settings
@@ -124,9 +125,10 @@ def embed_query(
     query_text: str,
 ) -> list[float] | None:
     """
-    Embed a single query string using gemini-embedding-2.
+    Embed a single query string using gemini-embedding-2 (synchronous).
 
     Rotates through configured API keys on failure.
+    Prefer ``await embed_query_async()`` in async contexts.
 
     Args:
         query_text: Pre-formatted text with the ``task: search result | query: ...`` prefix.
@@ -139,7 +141,7 @@ def embed_query(
 
 
 def _embed_multi(texts: list[str]) -> list[list[float] | None]:
-    """Internal: embed 1+ texts with key rotation."""
+    """Internal: embed 1+ texts with key rotation (synchronous)."""
     if not _embed_keys or not texts:
         return [None] * len(texts)
 
@@ -151,6 +153,54 @@ def _embed_multi(texts: list[str]) -> list[list[float] | None]:
         try:
             client = genai.Client(api_key=key)
             result = client.models.embed_content(
+                model=EMBEDDING_MODEL,
+                contents=texts,
+                config=types.EmbedContentConfig(
+                    output_dimensionality=EMBEDDING_DIMS,
+                ),
+            )
+            return [e.values for e in result.embeddings]
+        except Exception as exc:
+            last_error = exc
+            logger.warning("[EmbedService] Key ...%s failed: %s", key[-4:], exc)
+            continue
+
+    logger.warning("[EmbedService] All keys failed: %s", last_error)
+    return [None] * len(texts)
+
+
+async def embed_query_async(
+    query_text: str,
+) -> list[float] | None:
+    """
+    Embed a single query string using gemini-embedding-2 (async).
+
+    Uses ``genai.AsyncClient`` so it does NOT block the event loop.
+    Rotates through configured API keys on failure.
+
+    Args:
+        query_text: Pre-formatted text with the ``task: search result | query: ...`` prefix.
+
+    Returns:
+        768-dimensional vector as a Python list, or **None** on failure.
+    """
+    vectors = await _embed_multi_async([query_text])
+    return vectors[0] if vectors else None
+
+
+async def _embed_multi_async(texts: list[str]) -> list[list[float] | None]:
+    """Internal: embed 1+ texts with key rotation using ``genai.AsyncClient``."""
+    if not _embed_keys or not texts:
+        return [None] * len(texts)
+
+    last_error = None
+    for _ in range(len(_embed_keys)):
+        key = _get_next_embed_key()
+        if not key:
+            break
+        try:
+            client = _AsyncClient(api_key=key)
+            result = await client.models.embed_content(
                 model=EMBEDDING_MODEL,
                 contents=texts,
                 config=types.EmbedContentConfig(

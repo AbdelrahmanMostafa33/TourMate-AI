@@ -28,7 +28,7 @@ from ai_engine.services.place_extractor import (
 )
 from ai_engine.services.embedding_service import (
     build_query_text,
-    embed_query,
+    embed_query_async,
     cosine_similarity,
     load_place_embeddings,
 )
@@ -390,7 +390,7 @@ async def find_place_for_add(
         query_parts.append(pref_text)
 
     query_text = "task: search result | query: " + ". ".join(query_parts)
-    query_vector = embed_query(query_text)
+    query_vector = await embed_query_async(query_text)
 
     if query_vector is not None and city:
         try:
@@ -467,7 +467,7 @@ async def find_place_for_add(
 
     if query_vector is None:
         # Re-embed if Step 2c didn't already (e.g. if city was None)
-        query_vector = embed_query(query_text)
+        query_vector = await embed_query_async(query_text)
         if query_vector is None:
             logger.warning("[HybridSearch] Query embedding failed — cannot perform vector search")
             return None

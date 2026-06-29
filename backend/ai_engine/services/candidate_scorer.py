@@ -23,7 +23,7 @@ from ai_engine.graph.state import TripState
 from ai_engine.tools.haversine import haversine
 from ai_engine.services.embedding_service import (
     build_query_text,
-    embed_query,
+    embed_query_async,
     cosine_similarity,
     load_place_embeddings,
 )
@@ -341,7 +341,7 @@ async def score_candidates(state: TripState) -> TripState:
 
     # 2. Embed user preferences as a query vector
     query_text = build_query_text(preferences)
-    query_vector = embed_query(query_text)
+    query_vector = await embed_query_async(query_text)
     if query_vector is None:
         logger.warning(
             "[CandidateScorer] Query embedding failed — all places will use "

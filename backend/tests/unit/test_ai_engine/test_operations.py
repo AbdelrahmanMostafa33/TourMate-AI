@@ -1093,16 +1093,18 @@ class TestReorderPoolByCategory:
 
 class TestBuildCompactContext:
 
-    def test_includes_modification_request(self):
-        context = build_compact_context(
+    @pytest.mark.asyncio
+    async def test_includes_modification_request(self):
+        context = await build_compact_context(
             BASE_ITINERARY, "Remove the museum",
             available_places=PLACE_POOL,
             preferences=None,
         )
         assert "Remove the museum" in context
 
-    def test_includes_day_summary(self):
-        context = build_compact_context(
+    @pytest.mark.asyncio
+    async def test_includes_day_summary(self):
+        context = await build_compact_context(
             BASE_ITINERARY, "test", available_places=None, preferences=None,
         )
         assert "Day 1" in context
@@ -1110,45 +1112,50 @@ class TestBuildCompactContext:
         assert "Day 2" in context
         assert "Al-Azhar Park" in context
 
-    def test_includes_hotels(self):
-        context = build_compact_context(
+    @pytest.mark.asyncio
+    async def test_includes_hotels(self):
+        context = await build_compact_context(
             BASE_ITINERARY, "test", available_places=None, preferences=None,
         )
         assert "Marriott Mena House" in context
         assert "hotel_001" in context
 
-    def test_includes_duration_and_destination(self):
-        context = build_compact_context(
+    @pytest.mark.asyncio
+    async def test_includes_duration_and_destination(self):
+        context = await build_compact_context(
             BASE_ITINERARY, "test", available_places=None, preferences=None,
         )
         assert "Cairo" in context
         assert "2 days" in context
 
-    def test_includes_available_places(self):
-        context = build_compact_context(
+    @pytest.mark.asyncio
+    async def test_includes_available_places(self):
+        context = await build_compact_context(
             BASE_ITINERARY, "test", available_places=PLACE_POOL, preferences=None,
         )
         assert "Available places" in context
         assert "Khan El Khalili" in context
         assert "Nubia Restaurant" in context
 
-    def test_available_places_exclude_used(self):
+    @pytest.mark.asyncio
+    async def test_available_places_exclude_used(self):
         """Places already in the itinerary should be excluded from available list."""
-        context = build_compact_context(
+        context = await build_compact_context(
             BASE_ITINERARY, "test", available_places=PLACE_POOL, preferences=None,
         )
         # None of the places already in the itinerary should appear as "available"
         # place_001 (Egyptian Museum) is in the itinerary but NOT in PLACE_POOL, so it's fine
         # rest_001 (Abu Shukri) is in the itinerary but NOT in PLACE_POOL, so it's fine
 
-    def test_includes_preferences(self):
+    @pytest.mark.asyncio
+    async def test_includes_preferences(self):
         prefs = {
             "budget_level": "moderate",
             "travel_style": "cultural",
             "pace": "moderate",
             "interests": ["history", "food"],
         }
-        context = build_compact_context(
+        context = await build_compact_context(
             BASE_ITINERARY, "test", available_places=None, preferences=prefs,
         )
         assert "moderate" in context
@@ -1157,8 +1164,9 @@ class TestBuildCompactContext:
         assert "history" in context
         assert "food" in context
 
-    def test_empty_itinerary_handled_gracefully(self):
-        context = build_compact_context(
+    @pytest.mark.asyncio
+    async def test_empty_itinerary_handled_gracefully(self):
+        context = await build_compact_context(
             {"destination": "", "days": [], "accommodation_suggestions": []},
             "test",
             available_places=None,
@@ -1166,8 +1174,9 @@ class TestBuildCompactContext:
         )
         assert "test" in context  # just the modification request
 
-    def test_itinerary_without_destination_still_works(self):
-        context = build_compact_context(
+    @pytest.mark.asyncio
+    async def test_itinerary_without_destination_still_works(self):
+        context = await build_compact_context(
             {"days": BASE_ITINERARY["days"], "accommodation_suggestions": []},
             "test",
             available_places=None,
@@ -1175,7 +1184,8 @@ class TestBuildCompactContext:
         )
         assert "Day 1" in context
 
-    def test_places_used_in_itinerary_excluded_from_pool(self):
+    @pytest.mark.asyncio
+    async def test_places_used_in_itinerary_excluded_from_pool(self):
         """Ensure places used as stops are filtered from the available pool."""
         # Add a place to the pool that IS in the itinerary
         pool_with_used = list(PLACE_POOL) + [
@@ -1190,7 +1200,7 @@ class TestBuildCompactContext:
                 "category": "hotel",
             },
         ]
-        context = build_compact_context(
+        context = await build_compact_context(
             BASE_ITINERARY, "test", available_places=pool_with_used, preferences=None,
         )
         # Used places should not appear in "Available places" section
