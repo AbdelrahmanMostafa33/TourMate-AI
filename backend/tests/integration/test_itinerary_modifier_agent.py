@@ -15,7 +15,8 @@ modified itinerary.
 """
 
 import copy
-from unittest.mock import patch
+from contextlib import contextmanager
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
@@ -30,6 +31,50 @@ from ai_engine.services.operations import (
     SwapOperation,
 )
 from tests.integration.conftest import MOCK_PLACES
+
+
+# ── Helper context managers: mock both the LLM and hybrid search ────────────
+
+@contextmanager
+def _mock_modifier(operation, note=""):
+    """Context manager that mocks both invoke_with_fallback and find_place_for_add."""
+    from ai_engine.services.operations import ModifierResponse
+
+    async def _mock_invoke(*args, **kwargs):
+        return ModifierResponse(operation=operation, note=note)
+
+    with (
+        patch(
+            "ai_engine.agents.itinerary_modifier_agent.invoke_with_fallback",
+            side_effect=_mock_invoke,
+        ),
+        patch(
+            "ai_engine.agents.itinerary_modifier_agent.find_place_for_add",
+            new=AsyncMock(return_value=[]),
+        ),
+    ):
+        yield
+
+
+@contextmanager
+def _mock_modifier_flat(op, **fields):
+    """Context manager mocking both invoke_with_fallback and find_place_for_add."""
+    from ai_engine.services.operations import ModifierResponse
+
+    async def _mock_invoke(*args, **kwargs):
+        return ModifierResponse(op=op, **fields)
+
+    with (
+        patch(
+            "ai_engine.agents.itinerary_modifier_agent.invoke_with_fallback",
+            side_effect=_mock_invoke,
+        ),
+        patch(
+            "ai_engine.agents.itinerary_modifier_agent.find_place_for_add",
+            new=AsyncMock(return_value=[]),
+        ),
+    ):
+        yield
 
 
 # ── Test Data ──────────────────────────────────────────────────────────────
@@ -145,14 +190,7 @@ class TestSwapOperation:
             new_why_recommended="Outdoor park with cultural shows",
         )
 
-        async def _mock_invoke(*args, **kwargs):
-            from ai_engine.services.operations import ModifierResponse
-            return ModifierResponse(operation=operation, note="Swapped museum for park")
-
-        with patch(
-            "ai_engine.agents.itinerary_modifier_agent.invoke_with_fallback",
-            side_effect=_mock_invoke,
-        ):
+        with _mock_modifier(operation, "Swapped museum for park"):
             result = await run_itinerary_modifier(
                 current_itinerary=BASE_ITINERARY,
                 modification_request="Swap the Egyptian Museum for something more entertaining",
@@ -185,14 +223,7 @@ class TestSwapOperation:
             new_why_recommended="Great variety of local dishes",
         )
 
-        async def _mock_invoke(*args, **kwargs):
-            from ai_engine.services.operations import ModifierResponse
-            return ModifierResponse(operation=operation, note="Swapped restaurant")
-
-        with patch(
-            "ai_engine.agents.itinerary_modifier_agent.invoke_with_fallback",
-            side_effect=_mock_invoke,
-        ):
+        with _mock_modifier(operation, "Swapped restaurant"):
             result = await run_itinerary_modifier(
                 current_itinerary=BASE_ITINERARY,
                 modification_request="Swap Abu Shukri for a different restaurant",
@@ -221,14 +252,7 @@ class TestRemoveOperation:
         """
         operation = RemoveOperation(place_id="place_004")
 
-        async def _mock_invoke(*args, **kwargs):
-            from ai_engine.services.operations import ModifierResponse
-            return ModifierResponse(operation=operation, note="Removed Al-Azhar Park")
-
-        with patch(
-            "ai_engine.agents.itinerary_modifier_agent.invoke_with_fallback",
-            side_effect=_mock_invoke,
-        ):
+        with _mock_modifier(operation, "Removed Al-Azhar Park"):
             result = await run_itinerary_modifier(
                 current_itinerary=BASE_ITINERARY,
                 modification_request="Remove Al-Azhar Park from Day 2",
@@ -251,14 +275,7 @@ class TestRemoveOperation:
         """
         operation = RemoveOperation(place_id="place_001")
 
-        async def _mock_invoke(*args, **kwargs):
-            from ai_engine.services.operations import ModifierResponse
-            return ModifierResponse(operation=operation, note="Removed museum")
-
-        with patch(
-            "ai_engine.agents.itinerary_modifier_agent.invoke_with_fallback",
-            side_effect=_mock_invoke,
-        ):
+        with _mock_modifier(operation, "Removed museum"):
             result = await run_itinerary_modifier(
                 current_itinerary=BASE_ITINERARY,
                 modification_request="Remove the Egyptian Museum from Day 1",
@@ -292,14 +309,7 @@ class TestAddOperation:
             why_recommended="Evening market visit with lively atmosphere",
         )
 
-        async def _mock_invoke(*args, **kwargs):
-            from ai_engine.services.operations import ModifierResponse
-            return ModifierResponse(operation=operation, note="Added evening activity")
-
-        with patch(
-            "ai_engine.agents.itinerary_modifier_agent.invoke_with_fallback",
-            side_effect=_mock_invoke,
-        ):
+        with _mock_modifier(operation, "Added evening activity"):
             result = await run_itinerary_modifier(
                 current_itinerary=BASE_ITINERARY,
                 modification_request="Add evening entertainment on Day 1",
@@ -326,14 +336,7 @@ class TestAddOperation:
             why_recommended="Start the day with market exploration",
         )
 
-        async def _mock_invoke(*args, **kwargs):
-            from ai_engine.services.operations import ModifierResponse
-            return ModifierResponse(operation=operation, note="Added morning market visit")
-
-        with patch(
-            "ai_engine.agents.itinerary_modifier_agent.invoke_with_fallback",
-            side_effect=_mock_invoke,
-        ):
+        with _mock_modifier(operation, "Added morning market visit"):
             result = await run_itinerary_modifier(
                 current_itinerary=BASE_ITINERARY,
                 modification_request="Add a morning market visit on Day 2 before going to the park",
@@ -370,14 +373,7 @@ class TestChangeHotelOperation:
             why_recommended="More affordable downtown location",
         )
 
-        async def _mock_invoke(*args, **kwargs):
-            from ai_engine.services.operations import ModifierResponse
-            return ModifierResponse(operation=operation, note="Changed to a cheaper hotel")
-
-        with patch(
-            "ai_engine.agents.itinerary_modifier_agent.invoke_with_fallback",
-            side_effect=_mock_invoke,
-        ):
+        with _mock_modifier(operation, "Changed to a cheaper hotel"):
             result = await run_itinerary_modifier(
                 current_itinerary=BASE_ITINERARY,
                 modification_request="Change the hotel to something cheaper",
@@ -403,14 +399,7 @@ class TestChangeHotelOperation:
             why_recommended="Convenient downtown location",
         )
 
-        async def _mock_invoke(*args, **kwargs):
-            from ai_engine.services.operations import ModifierResponse
-            return ModifierResponse(operation=operation, note="Added downtown hotel option")
-
-        with patch(
-            "ai_engine.agents.itinerary_modifier_agent.invoke_with_fallback",
-            side_effect=_mock_invoke,
-        ):
+        with _mock_modifier(operation, "Added downtown hotel option"):
             result = await run_itinerary_modifier(
                 current_itinerary=BASE_ITINERARY,
                 modification_request="Add another hotel option near downtown",
@@ -452,14 +441,7 @@ class TestExchangeOperation:
 
         operation = ExchangeOperation(place_id_a="rest_001", place_id_b="rest_002")
 
-        async def _mock_invoke(*args, **kwargs):
-            from ai_engine.services.operations import ModifierResponse
-            return ModifierResponse(operation=operation, note="Swapped lunch and dinner")
-
-        with patch(
-            "ai_engine.agents.itinerary_modifier_agent.invoke_with_fallback",
-            side_effect=_mock_invoke,
-        ):
+        with _mock_modifier(operation, "Swapped lunch and dinner"):
             result = await run_itinerary_modifier(
                 current_itinerary=itinerary,
                 modification_request="swap Abu Shukri with Nubia Restaurant",
@@ -482,20 +464,13 @@ class TestExchangeOperation:
             },
         ]
 
-        async def _mock_invoke(*args, **kwargs):
-            from ai_engine.services.operations import ModifierResponse
-            return ModifierResponse(
-                op="ADD",
-                day_number=2,
-                suggested_time_of_day="afternoon",
-                add_place_id="mosque_1",
-                why_recommended="Religious site",
-                note="Added mosque",
-            )
-
-        with patch(
-            "ai_engine.agents.itinerary_modifier_agent.invoke_with_fallback",
-            side_effect=_mock_invoke,
+        with _mock_modifier_flat(
+            op="ADD",
+            day_number=2,
+            suggested_time_of_day="afternoon",
+            add_place_id="mosque_1",
+            why_recommended="Religious site",
+            note="Added mosque",
         ):
             result = await run_itinerary_modifier(
                 current_itinerary=BASE_ITINERARY,
@@ -526,14 +501,7 @@ class TestReorderOperation:
             new_order=["place_003", "place_001"],
         )
 
-        async def _mock_invoke(*args, **kwargs):
-            from ai_engine.services.operations import ModifierResponse
-            return ModifierResponse(operation=operation, note="Reversed Day 1")
-
-        with patch(
-            "ai_engine.agents.itinerary_modifier_agent.invoke_with_fallback",
-            side_effect=_mock_invoke,
-        ):
+        with _mock_modifier(operation, "Reversed Day 1"):
             result = await run_itinerary_modifier(
                 current_itinerary=BASE_ITINERARY,
                 modification_request="Reverse the order of stops on Day 1",
@@ -567,14 +535,7 @@ class TestReThemeOperation:
             new_theme="Pyramids and Pharaohs",
         )
 
-        async def _mock_invoke(*args, **kwargs):
-            from ai_engine.services.operations import ModifierResponse
-            return ModifierResponse(operation=operation, note="Updated Day 1 theme")
-
-        with patch(
-            "ai_engine.agents.itinerary_modifier_agent.invoke_with_fallback",
-            side_effect=_mock_invoke,
-        ):
+        with _mock_modifier(operation, "Updated Day 1 theme"):
             result = await run_itinerary_modifier(
                 current_itinerary=BASE_ITINERARY,
                 modification_request="Change Day 1 theme to 'Pyramids and Pharaohs'",
@@ -603,6 +564,9 @@ class TestErrorHandling:
         with patch(
             "ai_engine.agents.itinerary_modifier_agent.invoke_with_fallback",
             side_effect=Exception("API timeout"),
+        ), patch(
+            "ai_engine.agents.itinerary_modifier_agent.find_place_for_add",
+            new=AsyncMock(return_value=[]),
         ):
             result = await run_itinerary_modifier(
                 current_itinerary=BASE_ITINERARY,
@@ -658,14 +622,7 @@ class TestErrorHandling:
             new_why_recommended="",
         )
 
-        async def _mock_invoke(*args, **kwargs):
-            from ai_engine.services.operations import ModifierResponse
-            return ModifierResponse(operation=operation, note="Attempted swap")
-
-        with patch(
-            "ai_engine.agents.itinerary_modifier_agent.invoke_with_fallback",
-            side_effect=_mock_invoke,
-        ):
+        with _mock_modifier(operation, "Attempted swap"):
             result = await run_itinerary_modifier(
                 current_itinerary=BASE_ITINERARY,
                 modification_request="swap with nonexistent place",

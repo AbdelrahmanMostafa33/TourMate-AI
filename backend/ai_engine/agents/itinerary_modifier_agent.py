@@ -145,6 +145,28 @@ async def run_itinerary_modifier(
                 len(pre_selected_places),
                 [p.get("name") for p in pre_selected_places],
             )
+            # ── Merge pre-selected places into available_places pool ─────
+            # The hybrid search queries the DB directly and may return places
+            # that were filtered out by the Place Retriever (e.g. capped by
+            # subcategory sampling, filtered by rating/distance). These places
+            # exist in the city's DB but not in the in-memory pool.
+            #
+            # Without this merge, apply_operation → _exec_add can't find
+            # these places in place_pool and fails with "not found in pool".
+            existing_ids = {p.get("id") for p in (available_places or []) if p.get("id")}
+            pre_selected_new = [
+                p for p in pre_selected_places
+                if p.get("id") and p["id"] not in existing_ids
+            ]
+            for p in pre_selected_new:
+                available_places.append(p)
+                existing_ids.add(p["id"])
+            logger.info(
+                "[ModifierAgent] Merged %d pre-selected place(s) into pool "
+                "(pool now has %d places)",
+                len(pre_selected_new),
+                len(available_places or []),
+            )
         else:
             logger.info(
                 "[ModifierAgent] Hybrid search returned empty list — will rely on LLM selection"
