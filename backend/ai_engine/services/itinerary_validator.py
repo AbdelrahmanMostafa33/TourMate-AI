@@ -197,7 +197,7 @@ async def validate_itinerary(state: TripState, on_retry=None) -> TripState:
     prompt = f"""
 User Request: {user_message}{profile_context}
 Optimized Itinerary:
-{json.dumps(stripped, indent=2, ensure_ascii=False)}{prog_context}
+{json.dumps(stripped, indent=None, ensure_ascii=False)}{prog_context}
 
 Validate the itinerary now.
     """

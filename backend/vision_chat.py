@@ -25,6 +25,20 @@ In-chat commands:
     /usage                 — Show token usage summary
 """
 
+import io
+import sys as _sys
+
+# ── Force UTF-8 for stdout/stderr ────────────────────────────────────────────
+# Fixes UnicodeEncodeError on Windows terminals (cp1252) where emoji,
+# box-drawing characters (╔═╗), and other non-ASCII chars can't be printed.
+# This works for both interactive terminals and piped/redirected output.
+if hasattr(_sys.stdout, "buffer"):
+    _sys.stdout = io.TextIOWrapper(_sys.stdout.buffer, encoding="utf-8", errors="replace", line_buffering=True)
+if hasattr(_sys.stderr, "buffer"):
+    _sys.stderr = io.TextIOWrapper(_sys.stderr.buffer, encoding="utf-8", errors="replace", line_buffering=True)
+if hasattr(_sys.stdin, "buffer"):
+    _sys.stdin = io.TextIOWrapper(_sys.stdin.buffer, encoding="utf-8", errors="replace", line_buffering=True)
+
 import argparse
 import asyncio
 import json
@@ -141,142 +155,7 @@ def _print_image_features(features: VisionFeatures, label: str = "Image Features
     print()
 
 
-def _print_itinerary_details(result: dict):
-    """Print rich structured details from the itinerary result.
 
-    Shows extra fields that the AI's text response doesn't include,
-    such as Google Maps links, addresses, exact ratings, and amenities.
-    """
-    itinerary = result.get("itinerary") if result else None
-    if not itinerary:
-        return
-
-    days = itinerary.get("days", [])
-    hotels = itinerary.get("accommodation_suggestions", [])
-
-    print(f"\n{DIM}{'═'*60}{RESET}")
-    print(f"{BOLD}{CYAN}📍 Detailed Stop Information{RESET}")
-    print(f"{DIM}{'─'*60}{RESET}")
-
-    for day in days:
-        day_num = day.get("day_number", "?")
-        theme = day.get("theme", "")
-        header = f"{BOLD}Day {day_num}"
-        if theme:
-            header += f" — {theme}"
-        print(f"\n{header}{RESET}")
-
-        for stop in day.get("stops", []):
-            name = stop.get("name", "Unknown")
-            time_slot = stop.get("suggested_time_of_day", "")
-            rating = stop.get("rating")
-            address = stop.get("address")
-            maps_link = stop.get("maps_link")
-            review_count = stop.get("review_count")
-            price_level = stop.get("price_level")
-            entry_fee = stop.get("entry_fee")
-            hours = stop.get("hours")
-            duration = stop.get("estimated_duration_minutes", 0)
-
-            # Print stop header
-            time_emoji = {"morning": "🌅", "afternoon": "☀️", "evening": "🌙"}.get(time_slot, "📍")
-            print(f"  {time_emoji} {BOLD}{name}{RESET}")
-
-            # Rating line
-            rating_parts = []
-            if rating:
-                stars = "⭐" * min(round(rating), 5)
-                rating_parts.append(f"{stars} {rating}/5")
-            if review_count:
-                rating_parts.append(f"({review_count:,} reviews)")
-            if rating_parts:
-                print(f"    {' · '.join(rating_parts)}")
-
-            # Key details compact grid
-            details = []
-            if duration:
-                details.append(f"⏱ {duration} min")
-            if price_level:
-                details.append(f"💰 {price_level}")
-            if entry_fee:
-                details.append(f"🎟 {entry_fee}")
-            if details:
-                print(f"    {' | '.join(details)}")
-
-            # Hours (compact)
-            if hours:
-                if isinstance(hours, dict) and hours:
-                    today = next(iter(hours.values()), "")
-                    print(f"    🕐 Hours: {today}")
-                elif isinstance(hours, str):
-                    print(f"    🕐 {hours[:60]}")
-
-            # Address
-            if address:
-                print(f"    📍 {address[:80]}")
-
-            # Google Maps link
-            if maps_link:
-                short_link = maps_link[:90] + "..." if len(maps_link) > 90 else maps_link
-                print(f"    🗺 {CYAN}{short_link}{RESET}")
-
-            # Why recommended (truncated)
-            why = stop.get("why_recommended", "")
-            if why:
-                print(f"    💡 {why[:150]}")
-
-            print()  # blank line between stops
-
-    # ── Hotels section ──────────────────────────────────────────────────
-    if hotels:
-        print(f"\n{BOLD}{YELLOW}🏨 Detailed Hotel Information{RESET}")
-        print(f"{DIM}{'─'*60}{RESET}")
-
-        for hotel in hotels:
-            name = hotel.get("name", "Unknown")
-            rating = hotel.get("rating", 0)
-            acc_type = hotel.get("accommodation_type", "")
-            sub_cat = hotel.get("sub_category", "")
-            amenities = hotel.get("amenities", [])
-            address = hotel.get("address")
-            maps_link = hotel.get("maps_link")
-            why = hotel.get("why_recommended", "")
-
-            # Type label
-            type_label = sub_cat.title() if sub_cat else (acc_type.capitalize() if acc_type else "Hotel")
-
-            # Star rating
-            star_count = min(round(rating or 0), 5)
-            stars_str = "⭐" * star_count if star_count > 0 else ""
-
-            print(f"\n  🏨 {BOLD}{name}{RESET} ({type_label})")
-
-            if rating:
-                print(f"    {stars_str} {rating}/5")
-
-            # Amenities
-            if amenities:
-                am_str = ", ".join(a.capitalize() for a in amenities[:8])
-                if len(amenities) > 8:
-                    am_str += f" +{len(amenities) - 8} more"
-                print(f"    🏷 {am_str}")
-
-            # Address
-            if address:
-                print(f"    📍 {address[:80]}")
-
-            # Google Maps link
-            if maps_link:
-                short_link = maps_link[:90] + "..." if len(maps_link) > 90 else maps_link
-                print(f"    🗺 {CYAN}{short_link}{RESET}")
-
-            # Why recommended
-            if why:
-                print(f"    💡 {why[:200]}")
-
-        print()
-
-    print(f"{DIM}{'═'*60}{RESET}\n")
 
 
 def _print_trace_status():
@@ -778,10 +657,6 @@ async def chat_loop(initial_image_path: Optional[str] = None):
                 elif event_type == "done":
                     if text_printed:
                         print()  # newline after streaming
-
-            # ── Show rich itinerary details from structured data ─────
-            if last_result and last_result.get("itinerary"):
-                _print_itinerary_details(last_result)
 
             # ── Suggest /image if the AI asked about interests ────────
             if streamed_text and not current_image_bytes and (

@@ -20,7 +20,6 @@ from typing import Optional
 import numpy as np
 from google import genai
 from google.genai import types
-from google.genai.client import AsyncClient as _AsyncClient
 from sqlalchemy import select
 
 from app.core.config import settings
@@ -121,6 +120,86 @@ def build_query_text(preferences: dict) -> str:
 # ── Embedding ────────────────────────────────────────────────────────────────
 
 
+# ── Error classification helpers ──────────────────────────────────────────
+
+
+#: Embedding error categories — used to provide actionable log messages.
+_EMBED_ERROR_AUTH = "AUTH"            # 401 — bad / missing API key
+_EMBED_ERROR_PERMISSION = "PERMISSION"  # 403 — quota exceeded / API not enabled
+_EMBED_ERROR_RATE_LIMIT = "RATE_LIMIT"  # 429 — too many requests
+_EMBED_ERROR_SERVER = "SERVER"          # 5xx — temporary API outage
+_EMBED_ERROR_NETWORK = "NETWORK"        # ConnectionError, timeout
+_EMBED_ERROR_UNKNOWN = "UNKNOWN"        # everything else
+
+_EMBED_ADVICE: dict[str, str] = {
+    _EMBED_ERROR_AUTH: (
+        "Check that GOOGLE_API_KEY in .env is a valid Gemini API key "
+        "(generated at https://aistudio.google.com/app/apikey)"
+    ),
+    _EMBED_ERROR_PERMISSION: (
+        "The API key may have hit its quota or the Generative Language API "
+        "may not be enabled in your Google Cloud project"
+    ),
+    _EMBED_ERROR_RATE_LIMIT: (
+        "Rate-limited — consider adding more API keys to GOOGLE_API_KEY "
+        "(comma-separated) for automatic rotation"
+    ),
+    _EMBED_ERROR_SERVER: (
+        "Gemini API server temporarily unavailable — retry later"
+    ),
+    _EMBED_ERROR_NETWORK: (
+        "Network error — check your internet connection or firewall settings"
+    ),
+    _EMBED_ERROR_UNKNOWN: (
+        "Unexpected error — check the full traceback above"
+    ),
+}
+
+
+OUTCOME_NO_KEY = "No API keys configured — set GOOGLE_API_KEY in .env"
+
+
+def _classify_embed_error(exc: Exception) -> tuple[str, str]:
+    """Classify an embedding error and return ``(category, readable_message)``.
+
+    The category is one of ``_EMBED_ERROR_*`` constants.
+    The message is a short human-readable label (e.g. ``"401 UNAUTHENTICATED"``).
+    """
+    msg = str(exc).lower()
+
+    # Try to extract HTTP status code from google.genai.errors.ClientError
+    status_code = getattr(exc, "code", None)
+    if status_code is None:
+        # Fallback: scan the error message for common codes
+        for code in (401, 403, 429, 500, 502, 503):
+            if str(code) in msg:
+                status_code = code
+                break
+
+    if status_code == 401:
+        return _EMBED_ERROR_AUTH, "401 UNAUTHENTICATED"
+    if status_code == 403:
+        return _EMBED_ERROR_PERMISSION, "403 PERMISSION_DENIED"
+    if status_code == 429 or "rate" in msg or "quota" in msg:
+        return _EMBED_ERROR_RATE_LIMIT, "429 RATE_LIMITED"
+    if status_code and 500 <= status_code < 600:
+        return _EMBED_ERROR_SERVER, f"{status_code} SERVER_ERROR"
+
+    # Network-level errors (connection refused, timeout, DNS failure)
+    if any(
+        t in type(exc).__name__.lower()
+        for t in ("connectionerror", "timeout", "connecterror")
+    ):
+        return _EMBED_ERROR_NETWORK, type(exc).__name__
+    if any(kw in msg for kw in ("timed out", "connection refused", "dns", "resolve")):
+        return _EMBED_ERROR_NETWORK, type(exc).__name__
+
+    return _EMBED_ERROR_UNKNOWN, type(exc).__name__
+
+
+# ── Embedding ──────────────────────────────────────────────────────────────
+
+
 def embed_query(
     query_text: str,
 ) -> list[float] | None:
@@ -143,13 +222,16 @@ def embed_query(
 def _embed_multi(texts: list[str]) -> list[list[float] | None]:
     """Internal: embed 1+ texts with key rotation (synchronous)."""
     if not _embed_keys or not texts:
+        logger.warning("[EmbedService] %s", OUTCOME_NO_KEY)
         return [None] * len(texts)
 
     last_error = None
+    last_category = _EMBED_ERROR_UNKNOWN
     for _ in range(len(_embed_keys)):
         key = _get_next_embed_key()
         if not key:
             break
+        client = None
         try:
             client = genai.Client(api_key=key)
             result = client.models.embed_content(
@@ -162,10 +244,26 @@ def _embed_multi(texts: list[str]) -> list[list[float] | None]:
             return [e.values for e in result.embeddings]
         except Exception as exc:
             last_error = exc
-            logger.warning("[EmbedService] Key ...%s failed: %s", key[-4:], exc)
+            category, label = _classify_embed_error(exc)
+            last_category = category
+            logger.warning(
+                "[EmbedService] Key ...%s %s — %s",
+                key[-4:], label, str(exc).splitlines()[0][:120],
+            )
             continue
+        finally:
+            if client is not None:
+                try:
+                    client.close()
+                except Exception:
+                    pass  # Suppress cleanup errors
 
-    logger.warning("[EmbedService] All keys failed: %s", last_error)
+    # Final summary with actionable advice
+    advice = _EMBED_ADVICE.get(last_category, _EMBED_ADVICE[_EMBED_ERROR_UNKNOWN])
+    logger.warning(
+        "[EmbedService] Exhausted all %d API key(s) — last error: %s. %s",
+        len(_embed_keys), last_error or "unknown", advice,
+    )
     return [None] * len(texts)
 
 
@@ -189,18 +287,26 @@ async def embed_query_async(
 
 
 async def _embed_multi_async(texts: list[str]) -> list[list[float] | None]:
-    """Internal: embed 1+ texts with key rotation using ``genai.AsyncClient``."""
+    """Internal: embed 1+ texts with key rotation using ``genai.AsyncClient``.
+
+    Each API call creates a fresh client and tears it down via ``aclose()``
+    to prevent "Task exception was never retrieved" warnings from lingering
+    async client connections.
+    """
     if not _embed_keys or not texts:
+        logger.warning("[EmbedService] %s", OUTCOME_NO_KEY)
         return [None] * len(texts)
 
     last_error = None
+    last_category = _EMBED_ERROR_UNKNOWN
     for _ in range(len(_embed_keys)):
         key = _get_next_embed_key()
         if not key:
             break
+        client = None
         try:
-            client = _AsyncClient(api_key=key)
-            result = await client.models.embed_content(
+            client = genai.Client(api_key=key)
+            result = await client.aio.models.embed_content(
                 model=EMBEDDING_MODEL,
                 contents=texts,
                 config=types.EmbedContentConfig(
@@ -210,10 +316,26 @@ async def _embed_multi_async(texts: list[str]) -> list[list[float] | None]:
             return [e.values for e in result.embeddings]
         except Exception as exc:
             last_error = exc
-            logger.warning("[EmbedService] Key ...%s failed: %s", key[-4:], exc)
+            category, label = _classify_embed_error(exc)
+            last_category = category
+            logger.warning(
+                "[EmbedService] Key ...%s %s — %s",
+                key[-4:], label, str(exc).splitlines()[0][:120],
+            )
             continue
+        finally:
+            if client is not None:
+                try:
+                    await client.aio.aclose()
+                except Exception:
+                    pass  # Suppress cleanup errors (e.g. connection already gone)
 
-    logger.warning("[EmbedService] All keys failed: %s", last_error)
+    # Final summary with actionable advice
+    advice = _EMBED_ADVICE.get(last_category, _EMBED_ADVICE[_EMBED_ERROR_UNKNOWN])
+    logger.warning(
+        "[EmbedService] Exhausted all %d API key(s) — last error: %s. %s",
+        len(_embed_keys), last_error or "unknown", advice,
+    )
     return [None] * len(texts)
 
 

@@ -225,14 +225,14 @@ async def run_itinerary_modifier(
         try:
             if attempt > 1 and last_error:
                 # Rebuild prompt with error feedback
+                # Note: the SystemMessage already contains the full operation
+                # instructions, so we only send the error feedback + context.
                 retry_prompt = (
                     f"{context}\n\n"
                     f"## Feedback from previous attempt\n"
                     f"Your previous attempt was rejected: {last_error}\n"
                     f"Please try a different approach — pay close attention "
-                    f"to the required fields for each operation type.\n\n"
-                    "Output the operation(s) that best fulfill the user's request.\n"
-                    "- For single additions: use the primary ADD fields."
+                    f"to the required fields for each operation type."
                 )
                 attempt_messages = [
                     SystemMessage(content=MODIFIER_SYSTEM_INSTRUCTION),

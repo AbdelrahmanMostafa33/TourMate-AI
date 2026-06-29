@@ -1412,8 +1412,13 @@ async def _enrich_candidate_pool_by_category(modification_request: str, destinat
 
 
 def _build_conversation_context(state) -> str:
+    """Build a compact conversation history for the LLM.
+
+    Limited to the last 10 messages to cap token consumption.
+    Each message is truncated to 150 characters.
+    """
     lines = []
-    for msg in (state.history or []):
+    for msg in (state.history or [])[-10:]:
         role = msg.role.capitalize()
         content = (msg.content or "")[:150]
         lines.append(f"{role}: {content}")
@@ -1492,6 +1497,17 @@ def _is_cabin_class_request(modification_request: str) -> str | None:
             return cabin_type
 
     return None
+
+
+def _might_need_preference_update(classification: dict) -> bool:
+    """Check if the edit classification could potentially need preference adjustment.
+
+    REGENERATE edits go straight to the full pipeline, so preference
+    adjustment is never needed.  All other edit types (preference_edit,
+    surgical, unknown) may benefit from having adjustments pre-computed.
+    """
+    edit_type = (classification.get("edit_type") or "").upper()
+    return edit_type != "REGENERATE"
 
 
 def _is_accommodation_type_change(modification_request: str) -> str | None:
@@ -1622,6 +1638,12 @@ def _format_itinerary(itinerary: dict, approved: bool = False) -> str:
             sub_cat = stop.get("sub_category", "")
             tags = stop.get("interest_tags", [])
             cuisine = stop.get("cuisine_type", "")
+            address = stop.get("address", "")
+            maps_link = stop.get("maps_link", "")
+            review_count = stop.get("review_count")
+            price_level = stop.get("price_level")
+            entry_fee = stop.get("entry_fee")
+            hours = stop.get("hours") or stop.get("opening_hours", {})
 
             time_emoji = {"morning": "🌅", "afternoon": "☀️", "evening": "🌙"}.get(time_slot, "📍")
             time_label = time_slot.capitalize() if time_slot else ""
@@ -1639,7 +1661,12 @@ def _format_itinerary(itinerary: dict, approved: bool = False) -> str:
             if label:
                 detail_bits.append(label)
             if rating:
-                detail_bits.append(f"⭐ {rating}")
+                rating_str = f"⭐ {rating}"
+                if review_count:
+                    rating_str += f" ({review_count:,} reviews)"
+                detail_bits.append(rating_str)
+            elif review_count:
+                detail_bits.append(f"({review_count:,} reviews)")
             # Show cuisine type for restaurants
             if cuisine and cat == "restaurant":
                 detail_bits.append(f"🍲 {cuisine}")
@@ -1648,15 +1675,30 @@ def _format_itinerary(itinerary: dict, approved: bool = False) -> str:
                 shown_tags = [t.title() for t in tags[:2] if t]
                 if shown_tags:
                     detail_bits.append(f"🎯 {', '.join(shown_tags)}")
+            if price_level:
+                detail_bits.append(f"💰 {price_level}")
+            if entry_fee:
+                detail_bits.append(f"🎟 {entry_fee}")
             if detail_bits:
                 sep = " · "
                 lines.append(f"      {sep.join(detail_bits)}")
+
+            # Extra details on their own lines
+            if hours and isinstance(hours, dict):
+                first_hour = next(iter(hours.values()), "")
+                if first_hour:
+                    lines.append(f"      🕐 {first_hour[:60]}")
+            elif hours and isinstance(hours, str):
+                lines.append(f"      🕐 {hours[:60]}")
+            if address:
+                lines.append(f"      📍 {address[:80]}")
+            if maps_link:
+                short_link = maps_link[:80] + "..." if len(maps_link) > 80 else maps_link
+                lines.append(f"      🗺 {short_link}")
             if why:
                 lines.append(f"      💡 {why}")
 
-        lines.append("")
-
-    # Hotels section
+        lines.append("")        # Hotels section
     if hotels:
         lines.append("🏨 Where to Stay")
         for hotel in hotels:
@@ -1666,7 +1708,9 @@ def _format_itinerary(itinerary: dict, approved: bool = False) -> str:
             rating = hotel.get("rating", 0)
             amenities = hotel.get("amenities", [])
             address = hotel.get("address", "")
+            maps_link = hotel.get("maps_link", "")
             why = hotel.get("why_recommended", "")
+            review_count = hotel.get("review_count")
             is_selected = selected_hotel and hotel.get("id") == selected_hotel.get("id")
 
             type_label = sub_cat.title() if sub_cat else (acc_type.capitalize() if acc_type else "")
@@ -1680,6 +1724,8 @@ def _format_itinerary(itinerary: dict, approved: bool = False) -> str:
                 line += f" ({type_label})"
             if rating:
                 line += f" {stars_str} {rating}"
+            if review_count:
+                line += f" ({review_count:,} reviews)"
             lines.append(line)
 
             if amenities:
@@ -1689,6 +1735,9 @@ def _format_itinerary(itinerary: dict, approved: bool = False) -> str:
                 lines.append(f"      🏷 {am_str}")
             if address:
                 lines.append(f"      📍 {address[:60]}")
+            if maps_link:
+                short_link = maps_link[:70] + "..." if len(maps_link) > 70 else maps_link
+                lines.append(f"      🗺 {short_link}")
             if why:
                 lines.append(f"      💡 {why}")
 
@@ -1765,8 +1814,16 @@ async def _handle_modify_itinerary(
     # matching places are available for reranking and delta edits.
     await _maybe_enrich_pools(state, effective_message, classification)
 
+    # ── Shared preference adjustment (hoisted — single call, not 3) ──
+    # All three branches below may need adjustments. Compute once and reuse.
+    if _might_need_preference_update(classification):
+        adjustments = await interpret_preference_adjustment(
+            effective_message, current_preferences=preferences
+        )
+    else:
+        adjustments = {}
+
     if need_db and db_reason == "preference_shift":
-        adjustments = await interpret_preference_adjustment(effective_message, current_preferences=preferences)
         if adjustments:
             reranked = await _rerank_and_replan(
                 user_id=user_id,
@@ -1801,7 +1858,6 @@ async def _handle_modify_itinerary(
         )
 
     if is_preference_edit(classification) and not is_surgical_edit(classification):
-        adjustments = await interpret_preference_adjustment(effective_message, current_preferences=preferences)
         if adjustments:
             acc_add = adjustments.get("accommodation_preferences_add") or []
             acc_remove = adjustments.get("accommodation_preferences_remove") or []
@@ -1844,40 +1900,39 @@ async def _handle_modify_itinerary(
         if blocked is not None:
             return blocked
 
-    if _available_pool(state) and len(_available_pool(state)) > 5:
-        adjustments = await interpret_preference_adjustment(effective_message, current_preferences=preferences)
-        if adjustments:
-            acc_add = adjustments.get("accommodation_preferences_add") or []
-            if acc_add or adjustments.get("accommodation_preferences_remove"):
-                _apply_adjustments_to_slots(state, adjustments)
-                surgically_swapped = await _swap_accommodation_surgically(
-                    itinerary=state.itinerary,
-                    destination_city=state.slots.destination_city or "",
-                    acc_add=acc_add,
+    # Branch 3: fallback preference adjustment (only when adjustments exist)
+    if adjustments:
+        acc_add = adjustments.get("accommodation_preferences_add") or []
+        if acc_add or adjustments.get("accommodation_preferences_remove"):
+            _apply_adjustments_to_slots(state, adjustments)
+            surgically_swapped = await _swap_accommodation_surgically(
+                itinerary=state.itinerary,
+                destination_city=state.slots.destination_city or "",
+                acc_add=acc_add,
+            )
+            if surgically_swapped:
+                return _itinerary_response(
+                    state,
+                    surgically_swapped,
+                    image_features,
+                    agent_messages + ["[AccommodationSwap] Updated accommodation — stops preserved"],
                 )
-                if surgically_swapped:
-                    return _itinerary_response(
-                        state,
-                        surgically_swapped,
-                        image_features,
-                        agent_messages + ["[AccommodationSwap] Updated accommodation — stops preserved"],
-                    )
-            else:
-                reranked = await _rerank_and_replan(
-                    user_id=user_id,
-                    state=state,
-                    adjustments=adjustments,
-                    effective_message=effective_message,
-                    image_features=image_features,
+        else:
+            reranked = await _rerank_and_replan(
+                user_id=user_id,
+                state=state,
+                adjustments=adjustments,
+                effective_message=effective_message,
+                image_features=image_features,
+            )
+            if reranked:
+                return _itinerary_response(
+                    state,
+                    reranked["itinerary"],
+                    image_features,
+                    agent_messages + reranked.get("agent_messages", []),
+                    reranked.get("validation"),
                 )
-                if reranked:
-                    return _itinerary_response(
-                        state,
-                        reranked["itinerary"],
-                        image_features,
-                        agent_messages + reranked.get("agent_messages", []),
-                        reranked.get("validation"),
-                    )
 
     logger.info("[ConversationAgent] Falling back to full pipeline regeneration")
     return await _fallback_full_regeneration(
@@ -2142,43 +2197,13 @@ async def _handle_plan_trip(user_id, user_message, extracted, image_features, to
 
         s = state.slots if state else None
 
-        # Only append Trip context when the user_message doesn't already have
-        # structured profile info (e.g. from image analysis or a previous context
-        # append). Avoids duplicating budget/style/pace/interests in the prompt.
-        rich_user_message = user_message
-        _already_has_context = (
-            user_message.startswith("[Image uploaded")
-            or " | Trip context:" in user_message
-        )
-        if not _already_has_context and s and (
-            s.interests or s.food_preferences or s.accommodation_preferences
-            or s.travel_style or s.budget_level
-        ):
-            context_parts = []
-            if s.budget_level:
-                context_parts.append(f"budget: {s.budget_level}")
-            if s.travel_style:
-                context_parts.append(f"style: {s.travel_style}")
-            if s.pace:
-                context_parts.append(f"pace: {s.pace}")
-            if s.interests:
-                context_parts.append(f"interests: {', '.join(s.interests)}")
-            if s.food_preferences:
-                context_parts.append(f"food: {', '.join(s.food_preferences)}")
-            if s.accommodation_preferences:
-                context_parts.append(f"accommodation: {', '.join(s.accommodation_preferences)}")
-            if s.travel_dates:
-                context_parts.append(f"dates: {s.travel_dates}")
-            if s.group_size:
-                context_parts.append(f"travelers: {s.group_size}")
-            if s.traveler_group_type:
-                context_parts.append(f"group: {s.traveler_group_type}")
-            context_str = " | ".join(context_parts)
-            rich_user_message = f"{user_message} | Trip context: {context_str}"
-
+        # Trip context is NOT appended to the user_message here because the
+        # graph pipeline already receives `profile` (all preference data) and
+        # `conversation_context` (conversation history).  Duplicating it in
+        # user_message would send the same data 3×, wasting ~300 tokens.
         initial_state = {
             "user_id": user_id,
-            "user_message": rich_user_message,
+            "user_message": user_message,
             "profile": profile,
             "token": token,
             "trip_id": trip_id,

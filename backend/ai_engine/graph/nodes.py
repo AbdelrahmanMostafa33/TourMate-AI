@@ -4,7 +4,6 @@ from ai_engine.tools.profile_tool import load_trip_profile, load_mock_profile
 from ai_engine.services.place_retriever import retrieve_places
 from ai_engine.services.candidate_scorer import score_candidates
 from ai_engine.agents.planning_agent import run_planning_agent
-from ai_engine.agents.hotel_agent import run_hotel_selection
 from ai_engine.services.route_optimizer import optimize_route
 from ai_engine.services.itinerary_validator import validate_itinerary
 from ai_engine.observability import traced
@@ -168,40 +167,6 @@ async def optimization_node(state: TripState) -> TripState:
             )
             await report_progress(pk, "RouteOptimizer", "done",
                                   f"Route optimized — {travel_time:.0f} min total travel time")
-        return result
-
-
-@traced(name="hotel_selection", tags=["agent", "hotel"], metadata={"role": "hotel_selector"})
-async def hotel_selection_node(state: TripState) -> TripState:
-    """
-    HOTEL SELECTION NODE — Picks 2-3 hotels post-route-optimization.
-
-    Uses the dedicated Hotel Agent (hybrid: rule-based proximity scoring
-    + LLM for final selection and explanations).
-    """
-    async with agent_metrics.track_async("hotel_selector"):
-        pk = _progress_key(state)
-        if pk:
-            await report_progress(pk, "HotelSelector", "running",
-                                  "Selecting the best accommodation for your trip...")
-
-        print("[HotelSelector] Selecting accommodation...")
-        result = await run_hotel_selection(state)
-
-        itinerary = (
-            result.get("optimized_itinerary")
-            or result.get("draft_itinerary")
-            or {}
-        )
-        n_hotels = len(itinerary.get("accommodation_suggestions", []))
-        print(f"[HotelSelector] Selected {n_hotels} hotels")
-        if pk:
-            if result.get("error"):
-                await report_progress(pk, "HotelSelector", "error",
-                                      "Could not select accommodation")
-            else:
-                await report_progress(pk, "HotelSelector", "done",
-                                      f"Selected {n_hotels} hotels for your stay")
         return result
 
 

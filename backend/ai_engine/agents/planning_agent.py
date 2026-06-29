@@ -191,9 +191,9 @@ def _trim_for_prompt(place: dict) -> dict:
         "id": place["id"],
         "name": place["name"],
         "category": place["category"],
-        "lat": place["lat"],
-        "lon": place["lon"],
-        "score": round(place.get("composite_score", place.get("popularity_score", 0)), 1),
+        "lat": round(place["lat"], 3),  # 3dp ≈ 111m accuracy — sufficient for proximity grouping
+        "lon": round(place["lon"], 3),
+        "score": round(place.get("composite_score", place.get("popularity_score", 0))),
     }
     # Keep sub_category for attractions so the LLM can match against
     # user interests. Restaurants use cuisine_type instead of sub_category

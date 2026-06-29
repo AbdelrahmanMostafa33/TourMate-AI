@@ -113,16 +113,13 @@ async def classify_edit(
     itinerary: dict | None = None,
 ) -> dict:
     """Classify a modification request and return a plain dict for routing."""
-    prompt = (
-        f"{EDIT_CLASSIFIER_PROMPT}\n\n"
-        f"Current itinerary:\n{_build_itinerary_summary(itinerary)}\n\n"
-        f"User request: {modification_request}\n\n"
-        "Classify this edit."
-    )
-
     messages = [
         SystemMessage(content=EDIT_CLASSIFIER_PROMPT),
-        HumanMessage(content=prompt),
+        HumanMessage(content=(
+            f"Current itinerary:\n{_build_itinerary_summary(itinerary)}\n\n"
+            f"User request: {modification_request}\n\n"
+            "Classify this edit."
+        )),
     ]
 
     try:

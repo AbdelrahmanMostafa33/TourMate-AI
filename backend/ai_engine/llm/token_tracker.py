@@ -60,17 +60,23 @@ class TokenTracker:
         if not usage_dict:
             return
 
-        # Groq format: prompt_tokens, completion_tokens, total_tokens
-        # Gemini format: prompt_token_count, candidates_token_count, total_token_count
+        # Three naming conventions are supported:
+        #   Groq:             prompt_tokens, completion_tokens, total_tokens
+        #   Gemini (legacy):  prompt_token_count, candidates_token_count, total_token_count
+        #   Gemini (usage_metadata):  input_tokens, output_tokens, total_tokens
         prompt = (
             usage_dict.get("prompt_tokens")
             if "prompt_tokens" in usage_dict
-            else usage_dict.get("prompt_token_count", 0)
+            else usage_dict.get("prompt_token_count")
+            if "prompt_token_count" in usage_dict
+            else usage_dict.get("input_tokens", 0)
         )
         completion = (
             usage_dict.get("completion_tokens")
             if "completion_tokens" in usage_dict
-            else usage_dict.get("candidates_token_count", 0)
+            else usage_dict.get("candidates_token_count")
+            if "candidates_token_count" in usage_dict
+            else usage_dict.get("output_tokens", 0)
         )
         total = (
             usage_dict.get("total_tokens")
@@ -199,7 +205,22 @@ class _TokenTrackingCallback(BaseCallbackHandler):
             logger.debug("[TokenTracker] usage_metadata: %s", usage_metadata)
             if usage_metadata:
                 llm_output = {"token_usage": usage_metadata}
-        
+
+        # Try message.usage_metadata — ChatGoogleGenerativeAI puts token
+        # usage on the AIMessage inside generations, not on LLMResult.
+        # Found at: generations[0][0].message.usage_metadata
+        # Field names: input_tokens, output_tokens, total_tokens
+        if not llm_output or not llm_output.get("token_usage"):
+            generations = getattr(response, "generations", None)
+            if generations and generations[0]:
+                first_gen = generations[0][0]
+                message = getattr(first_gen, "message", None)
+                if message:
+                    msg_usage = getattr(message, "usage_metadata", None)
+                    logger.debug("[TokenTracker] message.usage_metadata: %s", msg_usage)
+                    if msg_usage:
+                        llm_output = {"token_usage": msg_usage}
+
         # Try response_metadata['token_usage'] directly
         if not llm_output or not llm_output.get("token_usage"):
             resp_meta = getattr(response, "response_metadata", None)

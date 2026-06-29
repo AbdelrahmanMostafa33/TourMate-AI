@@ -77,10 +77,14 @@ def mock_async_client() -> None:
         return _MockEmbedResult(contents)
 
     client_instance = MagicMock()
-    client_instance.models.embed_content = AsyncMock(side_effect=_mock_embed_content)
+    # Mock the full chain: Client(api_key=key) -> .aio -> .models -> .embed_content
+    # + .aio.aclose() cleanup
+    client_instance = MagicMock()
+    client_instance.aio.models.embed_content = AsyncMock(side_effect=_mock_embed_content)
+    client_instance.aio.aclose = AsyncMock()
 
     with patch(
-        "ai_engine.services.embedding_service._AsyncClient",
+        "ai_engine.services.embedding_service.genai.Client",
         return_value=client_instance,
     ):
         yield
@@ -98,6 +102,7 @@ def mock_sync_client() -> None:
         time.sleep(SIMULATED_LATENCY)
         return _MockEmbedResult(contents)
 
+    # Mock the sync Client directly (no .aio chain for sync calls)
     client_instance = MagicMock()
     client_instance.models.embed_content = MagicMock(side_effect=_mock_embed_content)
 
