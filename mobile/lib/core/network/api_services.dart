@@ -14,6 +14,12 @@ import '../../features/trips/data/models/trip_detail_model.dart';
 import '../../features/trips/data/models/trip_profile_data.dart';
 import '../../features/trips/data/models/trip_summary_model.dart';
 
+// ─── Payment / Booking Models ────────────────────────────────────────────────
+import '../../features/bookings/data/models/booking_models.dart';
+import '../../features/flights/data/models/city_search_result.dart';
+import '../../features/flights/data/models/flight_offer.dart';
+import '../../features/flights/data/models/flight_booking_response.dart';
+
 part 'api_services.g.dart';
 
 @RestApi()
@@ -153,5 +159,88 @@ abstract class ApiServices {
   @GET("/api/v1/chat/{trip_id}/history")
   Future<List<ChatHistoryMessage>> getChatHistory(
     @Path('trip_id') String tripId,
+  );
+
+  // ═════════════════════════════════════════════════════════════════════════
+  // BOOKING & PAYMENT ENDPOINTS (existing backend)
+  // ═════════════════════════════════════════════════════════════════════════
+
+  /// Book all stops in a trip's itinerary as a package
+  @POST("/api/v1/bookings/trip/{trip_id}/package")
+  Future<TripPackageBookingResponse> bookTripPackage(
+    @Path('trip_id') String tripId,
+  );
+
+  /// Pay all pending bookings in a trip at once
+  @POST("/api/v1/bookings/trip/{trip_id}/pay-all")
+  Future<TripPackagePaymentResponse> payTripPackage(
+    @Path('trip_id') String tripId,
+    @Body() Map<String, dynamic> body,
+  );
+
+  /// Get a single booking
+  @GET("/api/v1/bookings/{booking_id}")
+  Future<BookingResponse> getBooking(
+    @Path('booking_id') String bookingId,
+  );
+
+  /// List bookings for a trip
+  @GET("/api/v1/bookings/trip/{trip_id}")
+  Future<List<BookingResponse>> listTripBookings(
+    @Path('trip_id') String tripId,
+    @Query('status') String? status,
+  );
+
+  // ═════════════════════════════════════════════════════════════════════════
+  // FLIGHT BOOKING ENDPOINTS (existing backend)
+  // ═════════════════════════════════════════════════════════════════════════
+
+  /// Search cities/airports for autocomplete
+  @GET("/api/v1/flights/cities")
+  Future<List<CitySearchResult>> searchFlightCities(
+    @Query('q') String query,
+    @Query('max') int? max,
+  );
+
+  /// Smart search — resolves city names + searches flights
+  @POST("/api/v1/flights/smart-search")
+  Future<SmartFlightSearchResponse> smartSearchFlights(
+    @Body() Map<String, dynamic> body,
+  );
+
+  /// Initiate flight booking — price offer + Stripe PaymentIntent
+  @POST("/api/v1/flights/book/initiate")
+  Future<FlightBookInitiateResponse> initiateFlightBooking(
+    @Body() Map<String, dynamic> body,
+  );
+
+  /// Confirm flight booking after Stripe payment succeeded
+  @POST("/api/v1/flights/book/confirm")
+  Future<FlightBookingConfirmResponse> confirmFlightBooking(
+    @Body() Map<String, dynamic> body,
+  );
+
+  /// Get trip flight context for pre-filling search
+  @GET("/api/v1/flights/trip/{trip_id}/context")
+  Future<TripFlightContext> getTripFlightContext(
+    @Path('trip_id') String tripId,
+  );
+
+  /// Get a single flight booking
+  @GET("/api/v1/flights/{booking_id}")
+  Future<FlightBookingConfirmResponse> getFlightBooking(
+    @Path('booking_id') String bookingId,
+  );
+
+  /// List flight bookings for a trip
+  @GET("/api/v1/flights/trip/{trip_id}")
+  Future<List<FlightBookingConfirmResponse>> listTripFlightBookings(
+    @Path('trip_id') String tripId,
+  );
+
+  /// Cancel a flight booking
+  @POST("/api/v1/flights/{booking_id}/cancel")
+  Future<FlightBookingConfirmResponse> cancelFlightBooking(
+    @Path('booking_id') String bookingId,
   );
 }
