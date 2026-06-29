@@ -374,6 +374,7 @@ def _build_extracted_dict(extracted: ExtractedSlots) -> dict:
     raw = extracted.model_dump()
     raw["duration_days"] = _coerce_int(raw.get("duration_days"))
     raw["group_size"] = _coerce_int(raw.get("group_size"))
+    raw["selected_flight_number"] = _coerce_int(raw.get("selected_flight_number"))
     raw = {k: v for k, v in raw.items() if v is not None}
     # Keep select_hotel fields even if they are the only extracted fields
     normalized = normalize_extracted_slots(raw)

@@ -39,11 +39,16 @@ class FlightSearchRequest(BaseModel):
     ``origin`` and ``destination`` accept **either**:
     - A 3-letter IATA code (``\"CAI\"``)
     - A city name (``\"cairo\"``)  – the server will auto-resolve it to an IATA code
+
+    **Round-trip is the default**: If ``return_date`` is not provided, the service
+    will automatically search for round-trip flights using the trip's end_date.
+    Set ``return_date`` to ``null`` explicitly if you want one-way flights.
     """
 
     origin: str
     destination: str
     departure_date: date
+    return_date: Optional[date] = None  # If None, defaults to round-trip using trip end_date
     adults: int = 1
     max_results: int = 5
 
@@ -61,11 +66,16 @@ class SmartFlightSearchRequest(BaseModel):
     preserves the city-name-as-IATA for server-side resolution), this schema
     makes the resolution explicit: frontends send city names and get back
     the resolved result alongside the flight offers.
+
+    **Round-trip is the default**: If ``return_date`` is not provided, the service
+    will automatically search for round-trip flights using the trip's end_date.
+    Set ``return_date`` to ``null`` explicitly if you want one-way flights.
     """
 
     origin_city: str
     destination_city: str
     departure_date: date
+    return_date: Optional[date] = None  # If None, defaults to round-trip using trip end_date
     adults: int = 1
     max_results: int = 5
 

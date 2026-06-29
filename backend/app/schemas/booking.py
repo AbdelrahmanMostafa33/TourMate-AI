@@ -72,7 +72,7 @@ class PaymentResponse(BaseModel):
 
 class BookingCreate(BaseModel):
     """Create schema for Booking – aligns with model fields."""
-    trip_id:             str
+    trip_id:             Optional[str]     = None  # Optional since it's passed to create_booking() as a param
     booking_type:        BookingType
     place_id:            Optional[str]     = None
     provider:            Optional[BookingProvider] = None

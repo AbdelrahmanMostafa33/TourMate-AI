@@ -96,6 +96,7 @@ async def search_cities(
 async def smart_search_flights(
     data: SmartFlightSearchRequest,
     db:   AsyncSession = Depends(get_db),
+    trip_id: str | None = Query(None, description="Optional trip ID for round-trip default"),
 ):
     """Resolve city names to IATA codes + search for flights (no auth required).
 
@@ -103,12 +104,16 @@ async def smart_search_flights(
     codes.  The server resolves both cities to their airport IATA codes via
     the Amadeus locations API, then searches for flights.
 
+    **Round-trip default**: If ``trip_id`` is provided and ``return_date`` is not,
+    the service automatically uses the trip's end_date for round-trip searches.
+    Set ``return_date`` to ``null`` explicitly for one-way flights.
+
     Returns the resolved city/airport info alongside the flight offers,
     so the frontend can display which airports were matched.
     """
     svc = FlightService(db)
     try:
-        result = await svc.smart_search(data)
+        result = await svc.smart_search(data, trip_id=trip_id)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     return result
@@ -122,6 +127,7 @@ async def smart_search_flights(
 async def search_flights(
     data: FlightSearchRequest,
     db:   AsyncSession = Depends(get_db),
+    trip_id: str | None = Query(None, description="Optional trip ID for round-trip default"),
 ):
     """Search for flight offers (no authentication required).
 
@@ -130,11 +136,15 @@ async def search_flights(
     - A city name (``\"cairo\"``, ``\"london\"``) — the server will
       auto-resolve it to the best-matching IATA code.
 
+    **Round-trip default**: If ``trip_id`` is provided and ``return_date`` is not,
+    the service automatically uses the trip's end_date for round-trip searches.
+    Set ``return_date`` to ``null`` explicitly for one-way flights.
+
     Returns a list of parsed flight offers with pricing and availability.
     """
     svc = FlightService(db)
     try:
-        results = await svc.search_flights(data)
+        results = await svc.search_flights(data, trip_id=trip_id)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     return results

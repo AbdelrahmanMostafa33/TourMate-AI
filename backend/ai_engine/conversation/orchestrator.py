@@ -673,7 +673,23 @@ def _parse_date_to_iso(date_str: str | None) -> str | None:
         except ValueError:
             continue
 
-    # Try numeric only (e.g. "07282026" → no, that's ambiguous)
+    # Try ordinal formats (e.g. "second of july", "1st of July", "3rd of July")
+    # Remove ordinals and "of" to normalize
+    import re
+    normalized = re.sub(r'(\d+)(st|nd|rd|th)', r'\1', date_str, flags=re.IGNORECASE)
+    normalized = re.sub(r'\bof\b', '', normalized, flags=re.IGNORECASE)
+    normalized = normalized.strip()
+
+    for fmt in (
+        "%B %d %Y", "%b %d %Y",              # July 28 2026 / Jul 28 2026
+        "%d %B %Y", "%d %b %Y",              # 28 July 2026 / 28 Jul 2026
+    ):
+        try:
+            parsed = datetime.strptime(normalized, fmt)
+            return parsed.strftime("%Y-%m-%d")
+        except ValueError:
+            continue
+
     # Try month-day without year (e.g. "July 28") — use current year
     try:
         parsed = datetime.strptime(f"{date_str} {datetime.now().year}", "%B %d %Y")
@@ -682,6 +698,18 @@ def _parse_date_to_iso(date_str: str | None) -> str | None:
         pass
     try:
         parsed = datetime.strptime(f"{date_str} {datetime.now().year}", "%b %d %Y")
+        return parsed.strftime("%Y-%m-%d")
+    except ValueError:
+        pass
+
+    # Try ordinal without year (e.g. "second of july") — use current year
+    try:
+        parsed = datetime.strptime(f"{normalized} {datetime.now().year}", "%B %d %Y")
+        return parsed.strftime("%Y-%m-%d")
+    except ValueError:
+        pass
+    try:
+        parsed = datetime.strptime(f"{normalized} {datetime.now().year}", "%b %d %Y")
         return parsed.strftime("%Y-%m-%d")
     except ValueError:
         pass
@@ -754,7 +782,9 @@ async def _handle_search_flights(
         message = (
             f"Great, flying from {origin} to {dest}! "
             f"What date will you be departing? "
-            f"(e.g. July 28, 2026)"
+            f"(e.g. July 28, 2026). "
+            f"If you'd like round-trip flights, please also mention your return date "
+            f"(e.g. 'July 28, returning August 3')."
         )
         return {
             "response_type": "chat",

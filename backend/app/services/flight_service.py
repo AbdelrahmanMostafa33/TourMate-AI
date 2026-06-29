@@ -164,7 +164,7 @@ class FlightService:
 
     # ── search_flights ────────────────────────────────────────────────────────
 
-    async def search_flights(self, data: FlightSearchRequest) -> list[FlightOfferItem]:
+    async def search_flights(self, data: FlightSearchRequest, trip_id: str | None = None) -> list[FlightOfferItem]:
         """Search for flight offers and return parsed results.
 
         ``origin`` and ``destination`` in the request are auto-resolved:
@@ -172,8 +172,13 @@ class FlightService:
         be converted to IATA codes via the Amadeus locations API before
         the flight search.
 
+        **Round-trip default**: If ``return_date`` is not provided and ``trip_id``
+        is given, the service automatically uses the trip's end_date as the
+        return date for round-trip searches.
+
         Args:
             data: Search parameters including origin, destination, date.
+            trip_id: Optional trip ID to derive default return_date.
 
         Returns:
             A list of parsed ``FlightOfferItem`` objects.
@@ -202,12 +207,34 @@ class FlightService:
                 data.destination, dest_iata,
             )
 
+        # ── Determine return_date (default to round-trip using trip end_date) ──
+        return_date = data.return_date
+        if return_date is None and trip_id:
+            # Try to get trip's end_date for round-trip default
+            try:
+                trip_result = await self.db.execute(
+                    select(Trip).where(Trip.trip_id == trip_id)
+                )
+                trip = trip_result.scalar_one_or_none()
+                if trip and trip.end_date:
+                    return_date = trip.end_date
+                    logger.info(
+                        "[FlightService] Using trip end_date as return_date for round-trip: %s",
+                        return_date.isoformat(),
+                    )
+            except Exception as exc:
+                logger.warning(
+                    "[FlightService] Could not fetch trip for default return_date: %s",
+                    exc,
+                )
+
         raw_offers = amadeus_client.search_flights(
             origin=origin_iata,
             destination=dest_iata,
             departure_date=data.departure_date.isoformat(),
             adults=data.adults,
             max_results=data.max_results,
+            return_date=return_date.isoformat() if return_date else None,
         )
 
         if not raw_offers:
@@ -244,15 +271,20 @@ class FlightService:
 
     # ── smart_search ──────────────────────────────────────────────────────────
 
-    async def smart_search(self, data: SmartFlightSearchRequest) -> SmartFlightSearchResponse:
+    async def smart_search(self, data: SmartFlightSearchRequest, trip_id: str | None = None) -> SmartFlightSearchResponse:
         """Resolve city names + search flights in one call.
 
         This is the recommended endpoint for frontends.  It returns the
         resolved origin/destination info alongside flight offers so the
         UI can show which airports were matched.
 
+        **Round-trip default**: If ``return_date`` is not provided and ``trip_id``
+        is given, the service automatically uses the trip's end_date as the
+        return date for round-trip searches.
+
         Args:
             data: Search by city name (not IATA code).
+            trip_id: Optional trip ID to derive default return_date.
 
         Returns:
             Resolved origin + destination + flight offers.
@@ -265,10 +297,11 @@ class FlightService:
             origin=origin.iata_code,
             destination=destination.iata_code,
             departure_date=data.departure_date,
+            return_date=data.return_date,
             adults=data.adults,
             max_results=data.max_results,
         )
-        offers = await self.search_flights(search_req)
+        offers = await self.search_flights(search_req, trip_id=trip_id)
 
         return SmartFlightSearchResponse(
             origin=origin,
@@ -346,7 +379,7 @@ class FlightService:
             destination_city=trip.destination,
             destination_iata=dest_iata,
             suggested_departure_date=trip.start_date.isoformat() if trip.start_date else None,
-            suggested_return_date=trip.end_date.isoformat() if trip.end_date else None,
+            suggested_return_date=trip.end_date.isoformat() if trip.end_date else None,  # Default to round-trip
             suggested_adults=trip.number_of_travelers or 1,
         )
 

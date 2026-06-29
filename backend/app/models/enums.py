@@ -6,9 +6,24 @@ from enum import Enum as PyEnum
 # ─── Trip ──────────────────────────────────────────────────────────────────
 
 class TripStatus(str, PyEnum):
-    planning  = "planning"
-    active    = "active"
-    completed = "completed"
+    # Planning Phase
+    planning              = "planning"           # Initial state, AI conversation active
+    itinerary_draft       = "itinerary_draft"    # Itinerary created but not finalized
+
+    # Booking & Payment Phase
+    awaiting_booking      = "awaiting_booking"   # Itinerary approved, ready for bookings
+    booking_pending       = "booking_pending"    # Bookings created, awaiting payment
+    payment_processing    = "payment_processing" # Payments being processed
+    payment_failed        = "payment_failed"     # Payment failed, retry needed
+
+    # Confirmation Phase
+    booking_confirmed     = "booking_confirmed"  # All bookings paid and confirmed
+
+    # Active Phase
+    active                = "active"              # Trip is ongoing
+
+    # Completion Phase
+    completed             = "completed"           # Trip finished
 
 
 class ItineraryStatus(str, PyEnum):

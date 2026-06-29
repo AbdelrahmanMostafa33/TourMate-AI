@@ -122,3 +122,9 @@ class TestBuildExtractedDict:
         result = _build_extracted_dict(slots)
         assert result["duration_days"] == 7
         assert isinstance(result["duration_days"], int)
+
+    def test_coerces_string_selected_flight_number(self):
+        slots = ExtractedSlots(selected_flight_number="1")
+        result = _build_extracted_dict(slots)
+        assert result["selected_flight_number"] == 1
+        assert isinstance(result["selected_flight_number"], int)
