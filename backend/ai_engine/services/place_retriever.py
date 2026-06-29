@@ -29,8 +29,10 @@ logger = logging.getLogger(__name__)
 
 MIN_RATING = 3.5
 
-# Minimum rating threshold for places in subcategories that MATCH user interests
-# (more lenient than the default MIN_RATING, since we want to surface relevant options)
+# Minimum rating threshold for places in interest-matching subcategories.
+# More lenient than MIN_RATING (3.5) because non-matching attractions are now
+# *excluded entirely* when interests exist — so we want to be generous with
+# the ones that do match to give the planner enough options.
 MIN_RATING_INTEREST_MATCH = 3.0
 
 
@@ -301,12 +303,18 @@ def _apply_filters(
 
     ``interest_subcats`` is a pre-computed set of subcategory names that
     semantically match the user's interests (from the lightweight LLM
-    call in ``_compute_semantic_interest_subcats``). Places in these
-    subcategories get a more lenient rating threshold (3.0 vs 3.5) so
-    relevant options aren't filtered out before scoring.
+    call in ``_compute_semantic_interest_subcats``).
 
-    If ``interest_subcats`` is None or empty, falls back to the default
-    rating threshold for all places.
+    **When ``interest_subcats`` is non-empty:**
+    - Hotels:         filtered by accommodation_type (always pass through)
+    - Restaurants:    pass through with standard rating threshold
+    - Attractions:    ONLY those whose ``sub_category`` is in
+                      ``interest_subcats`` are kept. Non-matching
+                      attractions are **excluded entirely**.
+
+    **When ``interest_subcats`` is empty** (no user interests or LLM
+    couldn't match): falls back to the default rating threshold (3.5)
+    for all non-hotel places.
     """
     if interest_subcats is None:
         interest_subcats = set()
@@ -328,13 +336,23 @@ def _apply_filters(
                     continue
             filtered.append(place)
             continue
-
-        # RATING FILTER - more lenient for interest-matching subcategories
-        rating = place.get("rating", 0) or 0
+        # INTEREST-BASED EXCLUSION
+        # When the user has interests that mapped to subcategories,
+        # exclude attractions whose subcategory doesn't match entirely.
+        # Only interest-relevant places should reach the scorer/planner.
+        # Hotels and restaurants are NOT subject to this filter — they
+        # have dedicated handling (hotels → Hotel Agent, restaurants
+        # always included for food variety).
         sub_category = (place.get("sub_category") or "").lower()
+        if (
+            interest_subcats
+            and place.get("category") not in ("hotel", "restaurant")
+            and sub_category not in interest_subcats
+        ):
+            continue
 
-        # Use lower threshold for interest-matching categories so relevant
-        # options aren't filtered out before the scoring phase
+        # RATING FILTER - lenient threshold for interest-matching subcats
+        rating = place.get("rating", 0) or 0
         min_rating = MIN_RATING_INTEREST_MATCH if sub_category in interest_subcats else MIN_RATING
         if rating < min_rating:
             continue
@@ -464,9 +482,10 @@ async def retrieve_places(state: TripState) -> TripState:
         return state
 
     # ── Semantic interest-to-subcategory matching ──────────────────────
-    # Run BEFORE filtering so the retriever knows which subcategories to
-    # be lenient with (lower rating threshold). The result is stored in
-    # state so the Candidate Scorer can reuse it without a duplicate LLM call.
+    # Run BEFORE filtering so the retriever can **exclude** non-matching
+    # attractions entirely (not just apply a higher rating threshold).
+    # The result is stored in state so the Candidate Scorer can reuse it
+    # without a duplicate LLM call.
     profile_interests = preferences.get("interests") if preferences else None
     interest_subcats: set[str] = set()
     if profile_interests:
