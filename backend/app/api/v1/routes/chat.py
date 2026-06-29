@@ -625,6 +625,7 @@ async def websocket_new_chat(
                     user_message=effective_message,
                     image_bytes=image_bytes,
                     token=token,
+                    session_id=ai_session_id,
                 ):
                     event_type = chunk.get("type")
 

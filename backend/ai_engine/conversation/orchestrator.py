@@ -562,7 +562,33 @@ async def handle_chat_stream(user_id, user_message, image_bytes=None, token=None
             remove_progress_queue(state.session_id)
 
         response = await pipeline_task
-        await manager.save(state)
+
+        # Persist state to Redis with explicit failure checking.
+        # If save fails silently, the next message will NOT find this
+        # session and will create a fresh one — losing all collected
+        # slots (destination, duration, interests, etc.).
+        save_ok = await manager.save(state)
+        if not save_ok:
+            logger.error(
+                "[ConversationAgent] FAILED to save session %s for user %s — "
+                "state will be lost on next message! "
+                "Phase=%s, destination=%s, duration=%s, history_len=%d",
+                state.session_id, user_id,
+                state.phase.value,
+                state.slots.destination_city,
+                state.slots.duration_days,
+                len(state.history),
+            )
+        elif state.slots.destination_city:
+            logger.info(
+                "[ConversationAgent] Saved session %s for user %s — "
+                "destination=%s, duration=%s, turn=%d",
+                state.session_id, user_id,
+                state.slots.destination_city,
+                state.slots.duration_days,
+                state.turn_count,
+            )
+
         await manager.extend_ttl(state.session_id)
         phase_value = state.phase.value
 

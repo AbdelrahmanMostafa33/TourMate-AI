@@ -38,7 +38,15 @@ def verify_token(token: str) -> dict:
                     audience=_FIREBASE_PROJECT_ID,
                     clock_skew_in_seconds=int(CLOCK_TOLERANCE.total_seconds()),
                 )
-                return dict(claims)
+                if claims is not None:
+                    return dict(claims)
+                # If claims is None, verification failed silently —
+                # don't crash with dict(None), just log and fall through.
+                print(
+                    "Firebase clock-skew fallback: google_jwt.decode returned None "
+                    "(token verification failed)"
+                )
+                return None
             except Exception as inner_e:
                 print("Firebase clock-skew fallback failed:", inner_e)
                 return None

@@ -201,20 +201,48 @@ class SessionManager:
         user_id: str,
         session_id: Optional[str] = None,
     ) -> ConversationState:
+        # ── Explicit session resume ──────────────────────────────────────
+        # When the caller provides a session_id (e.g. reconnecting to an
+        # existing chat after a WebSocket drop), try to resume that exact
+        # session.  If the session expired from Redis, fall back to the
+        # user's active session as a best-effort recovery.
         if session_id:
             state = await self.load(session_id)
             if state and state.user_id == user_id:
                 logger.info("Resumed session %s for user %s", session_id, user_id)
                 return state
 
-        state = await self.get_active_session(user_id)
-        if state:
-            logger.info("Resumed active session %s for user %s", state.session_id, user_id)
-            return state
+            # session_id provided but not found — try active session as
+            # fallback, then create fresh.
+            state = await self.get_active_session(user_id)
+            if state:
+                logger.info(
+                    "Session %s not found, resumed active session %s for user %s",
+                    session_id, state.session_id, user_id,
+                )
+                return state
 
+            logger.info(
+                "Session %s not found and no active session — creating fresh for user %s",
+                session_id, user_id,
+            )
+            new_state = ConversationState(user_id=user_id)
+            await self.save(new_state)
+            return new_state
+
+        # ── No session_id — always create fresh state ────────────────────
+        # When the caller does NOT provide a session_id (e.g. connecting to
+        # /ws/chat/new for the very first time), we MUST create a brand-new
+        # ConversationState.  Previously we fell back to get_active_session(),
+        # which leaked stale session data (destination, interests, etc.) from
+        # an OLD trip-planning conversation into a brand-new chat — causing
+        # "hello" to immediately trigger the full planning pipeline.
+        logger.info(
+            "No session_id provided — creating fresh session for user %s",
+            user_id,
+        )
         new_state = ConversationState(user_id=user_id)
         await self.save(new_state)
-        logger.info("Created new session %s for user %s", new_state.session_id, user_id)
         return new_state
 
     async def save_and_update_active(self, state: ConversationState) -> bool:
