@@ -8,6 +8,7 @@ import '../data/repository/chat_repository.dart';
 import '../data/models/chat_message.dart';
 import '../data/models/itinerary_data.dart';
 import '../data/models/hotel_option.dart';
+import '../data/models/booking_data.dart';
 import 'chat_state.dart';
 
 /// A single step in the AI pipeline progress (visible to the UI).
@@ -41,6 +42,11 @@ class ChatCubit extends Cubit<ChatState> {
 
   /// Called when a trip is created via chat so the parent can refresh trips.
   Function()? onTripCreated;
+
+  /// The trip_id from the most recent booking_data event, used for navigation.
+  /// The ChatScreen reads this to navigate to TripDetailScreen when
+  /// the user taps "Pay Now" on the BookingCard.
+  String? _bookingTripId;
 
   ChatCubit(this._repo) : super(const ChatState.initial()) {
     // Listen to WebSocket connection state changes for reconnection feedback.
@@ -396,6 +402,39 @@ class ChatCubit extends Cubit<ChatState> {
     _pendingItinerary = null;
   }
 
+  /// Parse booking_data and attach it to the last assistant message.
+  /// If the last message already has text, we add bookingData to it.
+  /// If not (e.g. a booking-only message), create a new one.
+  void _handleBookingData(Map<String, dynamic> raw) {
+    try {
+      final booking = BookingData.fromJson(raw);
+      if (booking.tripId != null) {
+        _bookingTripId = booking.tripId;
+      }
+
+      // Attach to the last assistant message if it exists and doesn't already have bookingData
+      if (_messages.isNotEmpty && !_messages.last.isUser && _messages.last.bookingData == null) {
+        _messages[_messages.length - 1] = _messages.last.copyWith(
+          bookingData: booking,
+          isStreaming: false,
+        );
+      } else {
+        // Create a new message with the booking card
+        _messages.add(ChatMessage(
+          text: '',
+          isUser: false,
+          isStreaming: false,
+          bookingData: booking,
+        ));
+      }
+    } catch (e) {
+      debugPrint('[ChatCubit] Failed to parse booking_data: $e');
+    }
+  }
+
+  /// The trip_id from the most recent booking_data event, for UI navigation.
+  String? get bookingTripId => _bookingTripId;
+
   Future<void> _handleEvent(dynamic event) async {
     final Map<String, dynamic> data;
     try {
@@ -492,24 +531,47 @@ class ChatCubit extends Cubit<ChatState> {
           // Flush any leftover streaming buffer.
           _buffer = "";
 
+          // Store trip_id for later navigation
+          _bookingTripId = tripId;
+
           // Notify parent (e.g. MainShell) to refresh the trips list.
           onTripCreated?.call();
         }
         break;
 
+      case "trip_approved":
+        // The trip was approved (status → awaiting_booking/booking_pending).
+        // The UI can read bookingTripId to navigate to the trip detail page.
+        debugPrint('[ChatCubit] trip_approved event received, tripId=$_bookingTripId');
+        if (_messages.isNotEmpty && !_messages.last.isUser) {
+          final last = _messages.last;
+          _messages[_messages.length - 1] = last.copyWith(
+            isStreaming: false,
+          );
+        }
+        _emitConnected(isTyping: false, bumpRefresh: true);
+        break;
 
       case "result":
         final resultPayload = data["data"];
         if (resultPayload is Map) {
+          // Parse itinerary if present
           final itinerary = _tryParseItinerary(resultPayload["itinerary"]);
           if (itinerary != null) {
             _attachItinerary(itinerary);
-            final currentIsTyping = state.maybeWhen(
-              connected: (_, isTyping, _, _) => isTyping,
-              orElse: () => false,
-            );
-            _emitConnected(isTyping: currentIsTyping, bumpRefresh: true);
           }
+
+          // Parse booking_data if present (from booking / booking_confirmed events)
+          final rawBooking = resultPayload["booking_data"];
+          if (rawBooking is Map<String, dynamic>) {
+            _handleBookingData(rawBooking);
+          }
+
+          final currentIsTyping = state.maybeWhen(
+            connected: (_, isTyping, _, _) => isTyping,
+            orElse: () => false,
+          );
+          _emitConnected(isTyping: currentIsTyping, bumpRefresh: true);
         }
         break;
 

@@ -1,5 +1,20 @@
 import 'package:equatable/equatable.dart';
 
+/// Wrapper around a raw JSON map response for Retrofit compatibility.
+/// Retrofit's generator cannot handle `Map<String, dynamic>` return types
+/// directly — it tries to call `dynamic.fromJson()`.  This class provides
+/// a proper `fromJson` factory that just returns the raw map as-is.
+class JsonMap extends Equatable {
+  final Map<String, dynamic> data;
+
+  const JsonMap(this.data);
+
+  factory JsonMap.fromJson(Map<String, dynamic> json) => JsonMap(json);
+
+  @override
+  List<Object?> get props => [data];
+}
+
 /// Matches the backend PaymentResponse schema.
 class PaymentResponse extends Equatable {
   final String paymentId;
@@ -302,4 +317,83 @@ class SkippedBookingItem extends Equatable {
 
   @override
   List<Object?> get props => [bookingId, reason];
+}
+
+/// Matches the backend response from initiate-pay-all endpoint.
+class InitiatePackagePaymentResponse extends Equatable {
+  final String tripId;
+  final String currency;
+  final int initiatedCount;
+  final int skippedCount;
+  final List<InitiatedBookingItem> initiatedBookings;
+  final List<SkippedBookingItem> skippedBookings;
+
+  const InitiatePackagePaymentResponse({
+    required this.tripId,
+    required this.currency,
+    required this.initiatedCount,
+    required this.skippedCount,
+    required this.initiatedBookings,
+    required this.skippedBookings,
+  });
+
+  factory InitiatePackagePaymentResponse.fromJson(Map<String, dynamic> json) {
+    return InitiatePackagePaymentResponse(
+      tripId: json['trip_id'] as String? ?? '',
+      currency: json['currency'] as String? ?? 'USD',
+      initiatedCount: (json['initiated_count'] as num?)?.toInt() ?? 0,
+      skippedCount: (json['skipped_count'] as num?)?.toInt() ?? 0,
+      initiatedBookings: (json['initiated_bookings'] as List<dynamic>?)
+              ?.map((e) =>
+                  InitiatedBookingItem.fromJson(e as Map<String, dynamic>))
+              .toList() ??
+          [],
+      skippedBookings: (json['skipped_bookings'] as List<dynamic>?)
+              ?.map((e) =>
+                  SkippedBookingItem.fromJson(e as Map<String, dynamic>))
+              .toList() ??
+          [],
+    );
+  }
+
+  @override
+  List<Object?> get props => [
+        tripId, currency, initiatedCount, skippedCount,
+        initiatedBookings, skippedBookings,
+      ];
+}
+
+class InitiatedBookingItem extends Equatable {
+  final String bookingId;
+  final String paymentId;
+  final String? clientSecret;
+  final String? stripePaymentIntentId;
+  final bool simulated;
+  final String message;
+
+  const InitiatedBookingItem({
+    required this.bookingId,
+    required this.paymentId,
+    this.clientSecret,
+    this.stripePaymentIntentId,
+    required this.simulated,
+    required this.message,
+  });
+
+  factory InitiatedBookingItem.fromJson(Map<String, dynamic> json) {
+    return InitiatedBookingItem(
+      bookingId: json['booking_id'] as String? ?? '',
+      paymentId: json['payment_id'] as String? ?? '',
+      clientSecret: json['client_secret'] as String?,
+      stripePaymentIntentId: json['stripe_payment_intent_id'] as String?,
+      simulated: json['simulated'] as bool? ?? false,
+      message: json['message'] as String? ?? '',
+    );
+  }
+
+  @override
+  List<Object?> get props => [
+        bookingId, paymentId, clientSecret,
+        stripePaymentIntentId, simulated, message,
+      ];
 }

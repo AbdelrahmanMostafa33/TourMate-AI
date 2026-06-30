@@ -4,15 +4,16 @@
 Booking Service — Hybrid Booking System.
 
 Architecture (Hybrid):
-  - **Booking/Confirmation**: Fully simulated (no real hotel/restaurant API).
-    Generates mock confirmation numbers, provider references, and manages
-    the booking lifecycle (pending → confirmed → completed / cancelled).
+  - **Booking/Confirmation**: Simulated by default, but uses the **Expedia Rapid API**
+    for real-time hotel booking when the hotel has a stored Expedia property ID
+    and the API credentials are configured.  Falls back to simulation gracefully.
   - **Payment**: Stripe sandbox (test mode).  Creates real PaymentIntent
     objects in Stripe's test environment using test card tokens.
     On success, a Payment + Receipt record is persisted.
 
 Flow:
-  1. ``create_booking()`` → Booking (status = pending), mock confirmation
+  1. ``book_hotel_via_expedia()`` → real-time pricing from Expedia → Booking (confirmed)
+     or ``create_booking()`` → Booking (status = pending), mock confirmation
   2. ``process_payment()`` → Stripe PaymentIntent (sandbox) → Payment + Receipt
   3. ``confirm_booking()`` → Booking (status = confirmed)
   4. ``cancel_booking()`` / ``complete_booking()`` → status transitions
@@ -34,11 +35,14 @@ from sqlalchemy.orm import selectinload
 from app.models.booking import Booking, Payment, Receipt
 from app.models.enums import (
     BookingStatus, BookingProvider, BookingType,
-    PaymentMethod, PaymentStatus, PaymentProvider,
+    PaymentMethod, PaymentStatus, PaymentProvider, TripStatus,
 )
 from app.models.itinerary import Itinerary, Day, ItineraryStop
+from app.models.place import Place, HotelDetails
 from app.models.trip import Trip
 from app.schemas.booking import BookingCreate, PaymentCreate, PackageBookingItem, BulkPaymentRequest
+
+from app.external.expedia_client import expedia_client
 
 logger = logging.getLogger(__name__)
 
@@ -52,8 +56,40 @@ def _generate_booking_id() -> str:
     return "BK-" + "".join(random.choices(string.ascii_uppercase + string.digits, k=6))
 
 
-def _generate_confirmation_number() -> str:
-    """Mock confirmation number like ``CNF-8X2M-9K1P``."""
+# ── OTA-specific confirmation formats ────────────────────────────────────────
+
+
+def _generate_confirmation_number(provider: BookingProvider = BookingProvider.direct) -> str:
+    """Generate a confirmation number that looks like the provider's real format.
+
+    Format per provider:
+      - Booking.com  → ``1234567890``           (10-digit numeric)
+      - Expedia      → ``EXP-A3F9C2K7L``        (EXP- + 9 alphanumeric)
+      - Airbnb       → ``HXABCDEFGH``           (HX + 8 uppercase letters)
+      - Amadeus      → ``WXYZAB``               (6 uppercase letters, PNR-style)
+      - Direct/hotel → ``H-8X2KM9P1``           (H- + 8 alphanumeric)
+    """
+    if provider == BookingProvider.booking_com:
+        # Booking.com format: 10-digit numeric
+        return "".join(random.choices(string.digits, k=10))
+
+    if provider == BookingProvider.expedia:
+        # Expedia format: EXP- + 9 uppercase alphanumeric
+        return "EXP-" + "".join(random.choices(string.ascii_uppercase + string.digits, k=9))
+
+    if provider == BookingProvider.airbnb:
+        # Airbnb format: HX + 8 uppercase letters
+        return "HX" + "".join(random.choices(string.ascii_uppercase, k=8))
+
+    if provider == BookingProvider.amadeus:
+        # Amadeus PNR format: 6 uppercase letters (like airline record locator)
+        return "".join(random.choices(string.ascii_uppercase, k=6))
+
+    if provider == BookingProvider.other or provider == BookingProvider.direct:
+        # Generic hotel chain format: H- + 8 alphanumeric
+        return "H-" + "".join(random.choices(string.ascii_uppercase + string.digits, k=8))
+
+    # Fallback: classic format
     def _seg() -> str:
         return "".join(random.choices(string.ascii_uppercase + string.digits, k=4))
     return f"CNF-{_seg()}-{_seg()}"
@@ -74,12 +110,85 @@ def _generate_transaction_reference() -> str:
 def _determine_booking_provider(booking_type: BookingType) -> BookingProvider:
     """Map booking type to a realistic mock provider."""
     mapping = {
-        BookingType.hotel:      BookingProvider.booking_com,
-        BookingType.restaurant: BookingProvider.direct,
-        BookingType.activity:   BookingProvider.expedia,
-        BookingType.transport:  BookingProvider.other,
+        BookingType.hotel:     BookingProvider.booking_com,
+        BookingType.transport: BookingProvider.other,
     }
     return mapping.get(booking_type, BookingProvider.direct)
+
+
+def _extract_expedia_property_id(booking_platforms: list[str] | None) -> str | None:
+    """Extract the Expedia property ID from a hotel's ``booking_platforms`` list.
+
+    Expected format: ``"expedia:<property_id>"`` (e.g. ``"expedia:123456"``).
+    Returns ``None`` if no Expedia ID is found.
+    """
+    if not booking_platforms:
+        return None
+    for entry in booking_platforms:
+        if entry.startswith("expedia:"):
+            return entry.split(":", 1)[1]
+    return None
+
+
+# ── Provider display info ─────────────────────────────────────────────────────
+
+# ── Payment method display names ─────────────────────────────────────────────
+
+_PAYMENT_METHOD_NAMES: dict[PaymentMethod, str] = {
+    PaymentMethod.credit_card: "Credit Card (Visa/Mastercard)",
+    PaymentMethod.debit_card:  "Debit Card",
+    PaymentMethod.paypal:      "PayPal",
+    PaymentMethod.cash:        "Cash",
+}
+
+
+_PROVIDER_DISPLAY: dict[BookingProvider, dict[str, str]] = {
+    BookingProvider.booking_com: {
+        "display_name":   "Booking.com",
+        "website":        "https://www.booking.com",
+        "support_url":    "https://www.booking.com/help",
+        "logo_url":       "https://logos.example.com/bookingcom.png",
+    },
+    BookingProvider.expedia: {
+        "display_name":   "Expedia",
+        "website":        "https://www.expedia.com",
+        "support_url":    "https://www.expedia.com/help",
+        "logo_url":       "https://logos.example.com/expedia.png",
+    },
+    BookingProvider.airbnb: {
+        "display_name":   "Airbnb",
+        "website":        "https://www.airbnb.com",
+        "support_url":    "https://www.airbnb.com/help",
+        "logo_url":       "https://logos.example.com/airbnb.png",
+    },
+    BookingProvider.amadeus: {
+        "display_name":   "Amadeus",
+        "website":        "https://www.amadeus.com",
+        "support_url":    "https://www.amadeus.com/help",
+        "logo_url":       "https://logos.example.com/amadeus.png",
+    },
+    BookingProvider.direct: {
+        "display_name":   "Hotel Direct",
+        "website":        "https://www.hoteldirect.com",
+        "support_url":    "https://www.hoteldirect.com/help",
+        "logo_url":       "https://logos.example.com/hoteldirect.png",
+    },
+    BookingProvider.other: {
+        "display_name":   "Booking Partner",
+        "website":        "https://www.bookingpartner.com",
+        "support_url":    "https://www.bookingpartner.com/help",
+        "logo_url":       "https://logos.example.com/bookingpartner.png",
+    },
+}
+
+
+def _get_provider_info(provider: BookingProvider) -> dict[str, str]:
+    """Get rich display info for a booking provider.
+
+    Returns a dict with: ``display_name``, ``website``, ``support_url``, ``logo_url``.
+    Falls back to a generic entry for unknown providers.
+    """
+    return _PROVIDER_DISPLAY.get(provider, _PROVIDER_DISPLAY[BookingProvider.direct])
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -138,6 +247,7 @@ class BookingService:
             The newly created ``Booking`` ORM object (not yet committed).
         """
         provider = data.provider or _determine_booking_provider(data.booking_type)
+        provider_info = _get_provider_info(provider)
 
         booking = Booking(
             booking_id          = _generate_booking_id(),
@@ -147,7 +257,7 @@ class BookingService:
             booking_type        = data.booking_type,
             provider            = provider,
             provider_reference  = data.provider_reference or _generate_transaction_reference(),
-            confirmation_number = data.confirmation_number or _generate_confirmation_number(),
+            confirmation_number = data.confirmation_number or _generate_confirmation_number(provider),
             start_datetime      = data.start_datetime,
             end_datetime        = data.end_datetime,
             total_cost          = data.total_cost,
@@ -156,7 +266,13 @@ class BookingService:
             raw_response        = {
                 "simulated": True,
                 "provider": provider.value,
-                "note": "Booking confirmation is simulated (no external API call).",
+                "provider_display_name": provider_info["display_name"],
+                "provider_website":      provider_info["website"],
+                "provider_logo_url":     provider_info["logo_url"],
+                "cancellation_policy":   "Free cancellation within 24 hours",
+                "check_in_time":         "14:00",
+                "check_out_time":        "11:00",
+                "note":                  "Booking confirmation is simulated (no external API call).",
             },
         )
 
@@ -168,6 +284,153 @@ class BookingService:
             trip_id,
         )
         return booking
+
+    # ── initiate_payment ──────────────────────────────────────────────────
+
+    async def initiate_payment(
+        self,
+        booking_id: str,
+        data: PaymentCreate,
+    ) -> dict:
+        """Initiate an async Stripe Payment Sheet flow.
+
+        Creates a Stripe PaymentIntent in ``requires_payment_method`` status
+        and a Payment record in ``pending`` status.  Does NOT confirm the
+        booking — the Stripe webhook handler
+        (``handle_webhook_payment_succeeded``) will do that when the user
+        completes the Payment Sheet on the client.
+
+        Args:
+            booking_id: The booking to initiate payment for.
+            data:       Payment details (amount, currency, method).
+
+        Returns:
+            A dict with keys:
+              - success: bool
+              - client_secret: str | None (for Stripe Payment Sheet)
+              - stripe_payment_intent_id: str | None
+              - payment_id: str
+              - simulated: bool
+              - message: str
+
+        Raises:
+            ValueError: If booking not found, already paid, or cancelled.
+        """
+        result = await self.db.execute(
+            select(Booking)
+            .options(selectinload(Booking.payment))
+            .where(Booking.booking_id == booking_id)
+        )
+        booking = result.scalar_one_or_none()
+        if not booking:
+            raise ValueError(f"Booking {booking_id} not found")
+
+        if booking.status == BookingStatus.cancelled:
+            raise ValueError(f"Booking {booking_id} is cancelled")
+        if booking.status == BookingStatus.completed:
+            raise ValueError(f"Booking {booking_id} is already completed")
+        if booking.status == BookingStatus.confirmed:
+            raise ValueError(f"Booking {booking_id} is already confirmed")
+        if booking.payment:
+            raise ValueError(f"Booking {booking_id} already has a payment")
+
+        amount = data.amount if data.amount is not None else (booking.total_cost or 0)
+        currency = (data.currency or booking.currency or "USD").lower()
+        payment_id = str(uuid.uuid4())
+        stripe_pi_id = None
+        client_secret = None
+        simulated = False
+        raw_response = {}
+
+        # ── Create Stripe PaymentIntent (unconfirmed) ──────────────────
+        if self._stripe is not None:
+            try:
+                intent = self._stripe.PaymentIntent.create(
+                    amount=int(round(amount * 100)),
+                    currency=currency,
+                    automatic_payment_methods={"enabled": True},
+                    metadata={
+                        "booking_id": booking_id,
+                        "trip_id": booking.trip_id,
+                        "mode": "sandbox",
+                        "initiated": "true",
+                    },
+                )
+                stripe_pi_id = intent["id"]
+                client_secret = intent.get("client_secret")
+                raw_response = {
+                    "stripe_payment_intent_id": stripe_pi_id,
+                    "status": intent["status"],
+                    "amount": intent["amount"],
+                    "currency": intent["currency"],
+                    "sandbox": True,
+                    "client_secret": client_secret,
+                    "initiated": True,
+                }
+                logger.info(
+                    "[BookingService] Initiated PaymentIntent %s (status=%s) for booking %s",
+                    stripe_pi_id, intent["status"], booking_id,
+                )
+            except Exception as exc:
+                logger.error(
+                    "[BookingService] Stripe initiate failed for booking %s: %s",
+                    booking_id, exc,
+                )
+                raw_response = {
+                    "stripe_error": str(exc),
+                    "note": "Fell back to simulated payment after Stripe error.",
+                }
+
+        # ── Fallback: simulated payment initiation ─────────────────────
+        if stripe_pi_id is None:
+            stripe_pi_id = f"pi_simulated_{uuid.uuid4().hex[:12]}"
+            client_secret = f"pi_simulated_{uuid.uuid4().hex[:16]}_secret_{uuid.uuid4().hex[:8]}"
+            simulated = True
+            raw_response = {
+                "simulated": True,
+                "stripe_payment_intent_id": stripe_pi_id,
+                "client_secret": client_secret,
+                "amount": amount,
+                "currency": currency,
+                "note": "Simulated payment initiation (no Stripe API call).",
+            }
+            logger.info(
+                "[BookingService] Simulated payment initiation for booking %s (amount=%.2f %s)",
+                booking_id, amount, currency,
+            )
+
+        # ── Create Payment record (pending — not completed) ────────────
+        payment = Payment(
+            payment_id               = payment_id,
+            booking_id               = booking_id,
+            amount                   = amount,
+            currency                 = currency.upper(),
+            payment_method           = data.payment_method,
+            provider                 = PaymentProvider.stripe,
+            stripe_payment_intent_id = stripe_pi_id,
+            transaction_reference    = data.transaction_reference or _generate_transaction_reference(),
+            status                   = PaymentStatus.pending,  # NOT completed yet
+            raw_response             = raw_response,
+            paid_at                  = None,  # paid when webhook confirms
+        )
+        self.db.add(payment)
+        booking.payment = payment
+
+        logger.info(
+            "[BookingService] Initiated payment %s for booking %s (simulated=%s)",
+            payment_id, booking_id, simulated,
+        )
+
+        return {
+            "success": True,
+            "payment_id": payment_id,
+            "client_secret": client_secret,
+            "stripe_payment_intent_id": stripe_pi_id,
+            "simulated": simulated,
+            "message": "Payment initiated. Complete via Stripe Payment Sheet."
+                       if not simulated
+                       else "Payment initiated (simulated).",
+        }
 
     # ── process_payment ────────────────────────────────────────────────────
 
@@ -299,18 +562,64 @@ class BookingService:
         booking.payment = payment
 
         # ── Create Receipt record ─────────────────────────────────────────
+        tax_amount = round(amount * 0.10, 2)   # simulated 10% tax
+        total_amount = round(amount * 1.10, 2)
+        currency_upper = currency.upper()
+
+        payment_method_display = _PAYMENT_METHOD_NAMES.get(
+            data.payment_method, data.payment_method.value
+        )
+
         receipt = Receipt(
             receipt_id     = str(uuid.uuid4()),
             payment_id     = payment_id,
             receipt_number = _generate_receipt_number(),
             subtotal       = amount,
-            tax            = round(amount * 0.10, 2),  # simulated 10% tax
-            total          = round(amount * 1.10, 2),
-            currency       = currency.upper(),
+            tax            = tax_amount,
+            total          = total_amount,
+            currency       = currency_upper,
         )
         self.db.add(receipt)
         # Link the Python-side relationship so payment.receipt is populated.
         payment.receipt = receipt
+
+        # ── Enrich receipt detail in payment's raw_response ───────────────
+        payment.raw_response = {
+            **(payment.raw_response or {}),
+            "receipt_detail": {
+                "payment_method":     payment_method_display,
+                "payment_method_type": data.payment_method.value,
+                "subtotal":           amount,
+                "tax_rate":           "10%",
+                "tax_amount":         tax_amount,
+                "total":              total_amount,
+                "line_items": [
+                    {
+                        "description": "Accommodation (per night)",
+                        "quantity":    1,
+                        "unit_price":  amount,
+                        "total":       amount,
+                    },
+                    {
+                        "description": "Service fee",
+                        "quantity":    1,
+                        "unit_price":  tax_amount,
+                        "total":       tax_amount,
+                    },
+                ],
+                "billing_address": {
+                    "line1":       "123 Demo Street",
+                    "city":        "Cairo",
+                    "country":     "Egypt",
+                    "postal_code": "12345",
+                },
+                "issuer": {
+                    "name":         "TourMate AI Booking Services",
+                    "email":        "receipts@tourmate.ai",
+                    "support_url":  "https://tourmate.ai/support",
+                },
+            },
+        }
 
         logger.info(
             "[BookingService] Payment %s / Receipt %s created for booking %s",
@@ -434,7 +743,9 @@ class BookingService:
     ) -> Optional[Payment]:
         """Find a Payment record by its Stripe PaymentIntent ID."""
         result = await self.db.execute(
-            select(Payment).where(
+            select(Payment)
+            .options(selectinload(Payment.receipt))
+            .where(
                 Payment.stripe_payment_intent_id == stripe_payment_intent_id
             )
         )
@@ -474,8 +785,72 @@ class BookingService:
                 "status": "already_completed",
             }
 
+        # ── Create Receipt if this payment was initiated (pending → completed) ─
+        # In the async flow (initiate_payment), no Receipt was created yet.
+        # The sync flow (process_payment) already created one.
+        if not payment.receipt:
+            tax_amount = round((payment.amount or 0) * 0.10, 2)
+            total_amount = round((payment.amount or 0) * 1.10, 2)
+            receipt = Receipt(
+                receipt_id     = str(uuid.uuid4()),
+                payment_id     = payment.payment_id,
+                receipt_number = _generate_receipt_number(),
+                subtotal       = payment.amount or 0,
+                tax            = tax_amount,
+                total          = total_amount,
+                currency       = payment.currency or "USD",
+            )
+            self.db.add(receipt)
+            payment.receipt = receipt
+
+            # Enrich payment.raw_response with receipt_detail (same as process_payment)
+            payment_method_display = _PAYMENT_METHOD_NAMES.get(
+                payment.payment_method, (payment.payment_method or "card") if isinstance(payment.payment_method, str) else "card"
+            )
+            payment.raw_response = {
+                **(payment.raw_response or {}),
+                "receipt_detail": {
+                    "payment_method":      payment_method_display,
+                    "payment_method_type": payment.payment_method.value if hasattr(payment.payment_method, 'value') else str(payment.payment_method),
+                    "subtotal":            payment.amount or 0,
+                    "tax_rate":            "10%",
+                    "tax_amount":          tax_amount,
+                    "total":               total_amount,
+                    "line_items": [
+                        {
+                            "description": "Accommodation (per night)",
+                            "quantity":    1,
+                            "unit_price":  payment.amount or 0,
+                            "total":       payment.amount or 0,
+                        },
+                        {
+                            "description": "Service fee",
+                            "quantity":    1,
+                            "unit_price":  tax_amount,
+                            "total":       tax_amount,
+                        },
+                    ],
+                    "billing_address": {
+                        "line1":       "123 Demo Street",
+                        "city":        "Cairo",
+                        "country":     "Egypt",
+                        "postal_code": "12345",
+                    },
+                    "issuer": {
+                        "name":         "TourMate AI Booking Services",
+                        "email":        "receipts@tourmate.ai",
+                        "support_url":  "https://tourmate.ai/support",
+                    },
+                },
+            }
+            logger.info(
+                "[BookingService] Webhook: Created receipt %s for async payment %s",
+                receipt.receipt_number, payment.payment_id,
+            )
+
         # ── Update payment status ─────────────────────────────────────────
         payment.status = PaymentStatus.completed
+        payment.paid_at = datetime.utcnow()
         payment.raw_response = {
             **(payment.raw_response or {}),
             "webhook_confirmed_at": datetime.utcnow().isoformat(),
@@ -487,13 +862,26 @@ class BookingService:
         if not booking:
             raise ValueError(f"Booking {payment.booking_id} not found")
 
-        if booking.status not in (BookingStatus.confirmed, BookingStatus.completed):
+        if booking.status == BookingStatus.cancelled:
+            # Payment.succeeded after cancellation (e.g. out-of-order webhooks).
+            # The booking stays cancelled; don't error since Stripe webhooks
+            # can be delivered out of order.
+            logger.info(
+                "[BookingService] Webhook: payment_intent.succeeded for PI=%s "
+                "— booking %s is cancelled, keeping as-is",
+                stripe_payment_intent_id, booking.booking_id,
+            )
+        elif booking.status not in (BookingStatus.confirmed, BookingStatus.completed):
             booking = await self.confirm_booking(payment.booking_id)
         else:
             logger.info(
                 "[BookingService] Webhook: booking %s already %s — skipping",
                 booking.booking_id, booking.status.value,
             )
+
+        # ── If this was part of a trip, check if all bookings are now confirmed ──
+        if booking.trip_id:
+            await self._check_and_transition_trip_confirmed(booking.trip_id)
 
         logger.info(
             "[BookingService] Webhook: payment_intent.succeeded for PI=%s → "
@@ -543,6 +931,21 @@ class BookingService:
             "failure_recorded_at": datetime.utcnow().isoformat(),
             "webhook_event": "payment_intent.payment_failed",
         }
+
+        # ── Revert trip to payment_failed immediately ──────────────────────
+        booking = await self.get_booking(payment.booking_id)
+        if booking and booking.trip_id:
+            trip_result = await self.db.execute(
+                select(Trip).where(Trip.trip_id == booking.trip_id)
+            )
+            trip = trip_result.scalar_one_or_none()
+            if trip and trip.status == TripStatus.payment_processing:
+                trip.status = TripStatus.payment_failed
+                logger.info(
+                    "[BookingService] Webhook: payment_intent.payment_failed for PI=%s "
+                    "→ trip %s → payment_failed",
+                    stripe_payment_intent_id, trip.trip_id,
+                )
 
         logger.info(
             "[BookingService] Webhook: payment_intent.payment_failed for PI=%s",
@@ -606,6 +1009,20 @@ class BookingService:
                 booking.booking_id,
             )
 
+        # ── If the trip was confirmed, revert to booking_pending ────────────
+        if booking.trip_id:
+            trip_result = await self.db.execute(
+                select(Trip).where(Trip.trip_id == booking.trip_id)
+            )
+            trip = trip_result.scalar_one_or_none()
+            if trip and trip.status == TripStatus.booking_confirmed:
+                trip.status = TripStatus.booking_pending
+                logger.info(
+                    "[BookingService] Webhook: charge.refunded for PI=%s "
+                    "→ trip %s → booking_pending (refunded booking %s)",
+                    stripe_payment_intent_id, trip.trip_id, booking.booking_id,
+                )
+
         logger.info(
             "[BookingService] Webhook: charge.refunded for PI=%s → "
             "booking %s cancelled",
@@ -617,6 +1034,126 @@ class BookingService:
             "payment_id": payment.payment_id,
             "status": booking.status.value,
         }
+
+    # ── Expedia hotel booking (real-time) ───────────────────────────────
+
+    @staticmethod
+    def _check_expedia_available() -> bool:
+        """Check if Expedia Rapid API credentials are configured."""
+        return bool(expedia_client._configured)
+
+    async def book_hotel_via_expedia(
+        self,
+        trip_id: str,
+        user_id: str,
+        place_id: str,
+        checkin: str,
+        checkout: str,
+        guests: int = 2,
+        currency: str = "USD",
+    ) -> Booking:
+        """Book a hotel via the Expedia Rapid API with real-time pricing.
+
+        Looks up the Expedia property ID from the hotel's ``booking_platforms``
+        field, fetches real-time pricing, creates a pending Booking record,
+        and returns it.  The booking is already marked as ``confirmed``
+        because Expedia confirms immediately on payment.
+
+        Falls back to simulated booking when:
+        - No Expedia property ID is stored for this hotel
+        - The Expedia API is not configured
+        - The Expedia API call fails
+
+        Args:
+            trip_id:  Trip to associate the booking with.
+            user_id:  User making the booking.
+            place_id: The place_id of the hotel (looked up in DB for Expedia ID).
+            checkin:  ISO-8601 check-in date.
+            checkout: ISO-8601 check-out date.
+            guests:   Number of guests (default 2).
+            currency: Currency code (default USD).
+
+        Returns:
+            The created ``Booking`` ORM object (not yet committed).
+        """
+        if not self._check_expedia_available():
+            logger.info(
+                "[BookingService] Expedia not configured — falling back to simulated booking for %s",
+                place_id,
+            )
+            raise ValueError("Expedia not configured")
+
+        # ── Load hotel to get Expedia property ID ─────────────────────────
+        result = await self.db.execute(
+            select(Place)
+            .options(selectinload(Place.hotel_details))
+            .where(Place.place_id == place_id)
+        )
+        place = result.scalar_one_or_none()
+        if not place or not place.hotel_details:
+            raise ValueError(f"Hotel {place_id} not found or has no hotel_details")
+
+        hd = place.hotel_details
+        expedia_id = _extract_expedia_property_id(hd.booking_platforms)
+        if not expedia_id:
+            raise ValueError(f"Hotel {place.name} has no Expedia property ID stored")
+
+        # ── Get real-time pricing ─────────────────────────────────────────
+        try:
+            offer = await expedia_client.get_offer(
+                property_id=expedia_id,
+                checkin=checkin,
+                checkout=checkout,
+                guests=guests,
+            )
+        except ValueError as exc:
+            logger.warning(
+                "[BookingService] Expedia pricing failed for %s: %s — falling back",
+                place_id, exc,
+            )
+            raise  # Let the caller handle the fallback
+
+        total_cost = offer["total"]
+        currency_used = offer["currency"] or currency
+
+        # ── Create Booking record (confirmed directly via Expedia) ────────
+        start_dt = datetime.fromisoformat(checkin)
+        end_dt = datetime.fromisoformat(checkout)
+
+        booking = Booking(
+            booking_id          = _generate_booking_id(),
+            trip_id             = trip_id,
+            user_id             = user_id,
+            place_id            = place_id,
+            booking_type        = BookingType.hotel,
+            provider            = BookingProvider.expedia,
+            provider_reference  = f"expedia:{expedia_id}",
+            confirmation_number = offer.get("offer_id", ""),
+            start_datetime      = start_dt,
+            end_datetime        = end_dt,
+            total_cost          = total_cost,
+            currency            = currency_used,
+            status              = BookingStatus.confirmed,  # Expedia confirms immediately
+            raw_response        = {
+                "expedia": True,
+                "expedia_property_id": expedia_id,
+                "offer_id": offer.get("offer_id"),
+                "name": offer.get("name", place.name),
+                "rate": offer.get("rate"),
+                "tax_info": offer.get("tax_info"),
+                "refundable": offer.get("refundable"),
+                "note": "Booked via Expedia Rapid API",
+            },
+        )
+
+        self.db.add(booking)
+
+        logger.info(
+            "[BookingService] Booked hotel via Expedia: %s (cost=%.2f %s) for trip %s",
+            place.name, total_cost, currency_used, trip_id,
+        )
+
+        return booking
 
     # ── book_trip_package ────────────────────────────────────────────────
 
@@ -634,9 +1171,7 @@ class BookingService:
 
         Stop categories are mapped to ``BookingType``:
           - hotel      → ``BookingType.hotel``
-          - restaurant → ``BookingType.restaurant``
-          - attraction → ``BookingType.activity``
-          - other      → ``BookingType.activity``
+          - all other categories are skipped (not bookable)
 
         Args:
             trip_id:  The trip whose itinerary stops should be booked.
@@ -680,18 +1215,15 @@ class BookingService:
         if not itinerary.days:
             raise ValueError(f"Itinerary {itinerary.itinerary_id} has no days")
 
-        # ── Map stop categories → BookingType ──────────────────────────────
+        # ── Map stop categories → BookingType (only hotels are bookable) ───
         _CATEGORY_MAP = {
-            "hotel":      BookingType.hotel,
-            "restaurant": BookingType.restaurant,
-            "attraction": BookingType.activity,
-            "activity":   BookingType.activity,
+            "hotel": BookingType.hotel,
         }
 
-        def _map_category(cat: str | None) -> BookingType:
+        def _map_category(cat: str | None) -> BookingType | None:
             if not cat:
-                return BookingType.activity
-            return _CATEGORY_MAP.get(cat.strip().lower(), BookingType.activity)
+                return None
+            return _CATEGORY_MAP.get(cat.strip().lower())
 
         # ── Count total stops ───────────────────────────────────────────────
         total_stops = sum(len(day.stops) for day in itinerary.days)
@@ -710,15 +1242,23 @@ class BookingService:
                 place_snapshot = stop.place_snapshot or {}
                 place_name = place_snapshot.get("name") or "Unknown Place"
                 category = place_snapshot.get("category", "")
+
+                # Skip non-hotel stops — only hotels are bookable
+                booking_type = _map_category(category)
+                if booking_type is None:
+                    continue
+
                 stop_cost = stop.estimated_cost or 0.0
                 total_cost += stop_cost
-
-                booking_type = _map_category(category)
 
                 # Derive start datetime from the day's date if available
                 start_dt = None
                 if day.date:
                     start_dt = datetime.combine(day.date, datetime.min.time())
+
+                provider = _determine_booking_provider(booking_type)
+                provider_info = _get_provider_info(provider)
+                conf_number = _generate_confirmation_number(provider)
 
                 booking = Booking(
                     booking_id          = _generate_booking_id(),
@@ -726,9 +1266,9 @@ class BookingService:
                     user_id             = user_id,
                     place_id            = stop.place_id,
                     booking_type        = booking_type,
-                    provider            = _determine_booking_provider(booking_type),
+                    provider            = provider,
                     provider_reference  = _generate_transaction_reference(),
-                    confirmation_number = _generate_confirmation_number(),
+                    confirmation_number = conf_number,
                     start_datetime      = start_dt,
                     total_cost          = stop_cost if stop_cost > 0 else None,
                     currency            = currency,
@@ -740,6 +1280,12 @@ class BookingService:
                         "day_number": day.day_number,
                         "place_name": place_name,
                         "category": category,
+                        "provider_display_name": provider_info["display_name"],
+                        "provider_website":      provider_info["website"],
+                        "provider_logo_url":     provider_info["logo_url"],
+                        "cancellation_policy":   "Free cancellation within 24 hours",
+                        "check_in_time":         "14:00",
+                        "check_out_time":        "11:00",
                     },
                 )
                 self.db.add(booking)
@@ -752,7 +1298,15 @@ class BookingService:
                     "total_cost":          booking.total_cost,
                     "currency":            currency,
                     "status":              BookingStatus.pending,
-                    "confirmation_number": booking.confirmation_number,
+                    "confirmation_number": conf_number,
+                    "confirmation_format": (
+                        "bookingcom-numeric" if provider == BookingProvider.booking_com
+                        else "expedia-alpha" if provider == BookingProvider.expedia
+                        else "airbnb-alpha" if provider == BookingProvider.airbnb
+                        else "pnr-alpha" if provider == BookingProvider.amadeus
+                        else "generic-alpha"
+                    ),
+                    "provider_info": provider_info,
                 })
 
         logger.info(
@@ -769,6 +1323,105 @@ class BookingService:
             "bookings":      created_bookings,
             "stop_count":    total_stops,
             "booking_count": len(created_bookings),
+        }
+
+    # ── initiate_trip_package ──────────────────────────────────────────
+
+    async def initiate_trip_package(
+        self,
+        trip_id: str,
+        user_id: str,
+        data: BulkPaymentRequest,
+    ) -> dict:
+        """Initiate async Stripe Payment Sheet payments for all pending bookings.
+
+        Iterates over all ``pending`` bookings belonging to the given trip/user,
+        calls ``initiate_payment()`` for each (using the shared payment config),
+        and returns a dict with ``initiated`` and ``skipped`` lists.
+
+        Unlike ``pay_trip_package()``, this does NOT confirm any booking —
+        the Stripe webhook handler will do that when the Payment Sheet is
+        completed on the client.
+
+        - Bookings that are not ``pending`` are silently skipped.
+        - If initiation fails for an individual booking, it is added to
+          ``skipped`` and processing continues.
+
+        Returns:
+            A dict with keys:
+              - initiated_bookings: list of dicts with booking_id, client_secret,
+                stripe_payment_intent_id, simulated, payment_id
+              - skipped_bookings: list of dicts with booking_id and reason
+              - initiated_count, skipped_count
+        """
+        all_bookings = await self.list_trip_bookings(trip_id)
+        pending_bookings = [
+            b for b in all_bookings
+            if b.user_id == user_id and b.status == BookingStatus.pending
+        ]
+        skipped_bookings = [
+            b for b in all_bookings
+            if b.user_id == user_id and b.status != BookingStatus.pending
+        ]
+
+        if not pending_bookings:
+            raise ValueError(
+                f"No pending bookings found for trip {trip_id} — "
+                "all bookings are already paid, cancelled, or completed."
+            )
+
+        currency = (data.currency or "USD").upper()
+        initiated: list[dict] = []
+        skipped: list[dict] = []
+
+        for booking in pending_bookings:
+            try:
+                booking_amount = booking.total_cost or 0.0
+                payment_data = PaymentCreate(
+                    amount       = booking_amount,
+                    currency     = currency,
+                    payment_method = data.payment_method,
+                )
+
+                result = await self.initiate_payment(
+                    booking.booking_id,
+                    payment_data,
+                )
+
+                initiated.append({
+                    "booking_id":               booking.booking_id,
+                    "payment_id":                result["payment_id"],
+                    "client_secret":             result["client_secret"],
+                    "stripe_payment_intent_id":  result["stripe_payment_intent_id"],
+                    "simulated":                 result["simulated"],
+                    "message":                   result["message"],
+                })
+
+            except ValueError as exc:
+                skipped.append({
+                    "booking_id": booking.booking_id,
+                    "reason":     str(exc),
+                })
+
+        # Also report skipped non-pending bookings
+        for b in skipped_bookings:
+            skipped.append({
+                "booking_id": b.booking_id,
+                "reason":     f"Booking is already '{b.status.value}' (not pending)",
+            })
+
+        logger.info(
+            "[BookingService] Bulk initiate for trip %s: %d initiated, %d skipped",
+            trip_id, len(initiated), len(skipped),
+        )
+
+        return {
+            "trip_id":           trip_id,
+            "currency":          currency,
+            "initiated_count":   len(initiated),
+            "skipped_count":     len(skipped),
+            "initiated_bookings": initiated,
+            "skipped_bookings":  skipped,
         }
 
     # ── pay_trip_package ───────────────────────────────────────────────────
@@ -879,6 +1532,48 @@ class BookingService:
             "paid_bookings":   paid_bookings,
             "skipped_bookings": skipped,
         }
+
+    # ── Trip status helpers ──────────────────────────────────────────────
+
+    async def _check_and_transition_trip_confirmed(
+        self,
+        trip_id: str,
+    ) -> bool:
+        """Check if all bookings for a trip are confirmed, and if so,
+        transition the trip from ``payment_processing`` → ``booking_confirmed``.
+
+        Called after each ``payment_intent.succeeded`` webhook to see if the
+        async batch payment flow has completed.
+
+        Returns:
+            ``True`` if the trip was transitioned, ``False`` otherwise.
+        """
+        # Load trip
+        result = await self.db.execute(
+            select(Trip).where(Trip.trip_id == trip_id)
+        )
+        trip = result.scalar_one_or_none()
+        if not trip or trip.status != TripStatus.payment_processing:
+            return False
+
+        # Check if any pending bookings remain
+        remaining = await self.list_trip_bookings(
+            trip_id, status=BookingStatus.pending
+        )
+        if remaining:
+            logger.info(
+                "[BookingService] Trip %s still has %d pending booking(s) — staying in payment_processing",
+                trip_id, len(remaining),
+            )
+            return False
+
+        # All bookings are confirmed or cancelled — transition trip
+        trip.status = TripStatus.booking_confirmed
+        logger.info(
+            "[BookingService] All bookings confirmed for trip %s → booking_confirmed",
+            trip_id,
+        )
+        return True
 
     # ── query helpers ──────────────────────────────────────────────────────
 

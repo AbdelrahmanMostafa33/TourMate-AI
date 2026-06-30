@@ -112,7 +112,7 @@ def _utc_ts(dt: datetime) -> float:
 
 def _simulate_approval(trip: Trip, now: datetime) -> None:
     """Simulate the exact DB updates done by process_message_stream on approval."""
-    trip.status = TripStatus.active
+    trip.status = TripStatus.awaiting_booking
     trip.approved_at = now
     trip.updated_at = now
     if trip.itineraries:
@@ -143,8 +143,8 @@ class TestApprovalStatusUpdates:
     """Verify that approval correctly sets trip/itin status and approved_at."""
 
     @pytest.mark.asyncio
-    async def test_approve_sets_trip_status_active(self, db_session):
-        """Trip.status changes from planning → active on approval."""
+    async def test_approve_sets_trip_status_awaiting_booking(self, db_session):
+        """Trip.status changes from planning → awaiting_booking on approval."""
         data = await _create_trip_with_itinerary_and_profile(db_session)
         trip = data["trip"]
 
@@ -157,7 +157,7 @@ class TestApprovalStatusUpdates:
         reloaded = (await db_session.execute(
             select(Trip).where(Trip.trip_id == trip.trip_id)
         )).scalar_one()
-        assert reloaded.status == TripStatus.active
+        assert reloaded.status == TripStatus.awaiting_booking
 
     @pytest.mark.asyncio
     async def test_approve_sets_itinerary_status_active(self, db_session):
@@ -421,7 +421,7 @@ class TestFullApprovalLifecycle:
         itin_r = trip_r.itineraries[0]
         prof_r = trip_r.trip_profiles[0]
 
-        assert trip_r.status == TripStatus.active
+        assert trip_r.status == TripStatus.awaiting_booking
         assert trip_r.approved_at is not None
         assert _utc_ts(trip_r.updated_at) > created_ts_trip
         assert abs(_utc_ts(trip_r.approved_at) - _utc_ts(now2)) < 2.0
@@ -511,7 +511,7 @@ class TestProcessMessageStreamApproval:
                 )
                 trip_r = result.scalar_one()
 
-                assert trip_r.status == TripStatus.active
+                assert trip_r.status == TripStatus.awaiting_booking
                 assert trip_r.approved_at is not None
                 assert _utc_ts(trip_r.updated_at) > _utc_ts(trip_r.created_at)
 

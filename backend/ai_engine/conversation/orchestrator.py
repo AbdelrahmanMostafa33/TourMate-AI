@@ -335,8 +335,37 @@ async def _process_message_inner(
             )
             _apply_accommodation_change(state.slots, acc_type_change)
 
+        # ── If in BOOKING phase, user approves → proceed to COMPLETED ──
+        if state.phase == ConversationPhase.BOOKING:
+            state.transition_to(ConversationPhase.COMPLETED)
+            booking_data = _build_booking_data(state)
+            flight_booking = None
+            if state.slots.selected_flight_offer:
+                selected = state.slots.selected_flight_offer
+                flight_booking = {
+                    "selected_offer": selected,
+                    "origin_city": state.slots.origin_city,
+                    "destination_city": state.slots.destination_city,
+                    "airline": selected.get("airline_name", selected.get("airline_code", "")),
+                    "flight_number": selected.get("flight_number", ""),
+                    "total_price": selected.get("total_price", 0),
+                    "currency": selected.get("currency", ""),
+                    "raw_offer": selected.get("raw_offer"),
+                    "trip_id": state.trip_id,
+                    "is_round_trip": bool(state.slots.is_round_trip),
+                }
+            final_message = _format_itinerary(state.itinerary, approved=True)
+            response = {
+                "response_type": "booking_confirmed",
+                "message": final_message + "\n\n💳 You can now proceed to payment through the app.",
+                "itinerary": state.itinerary,
+                "booking_data": booking_data,
+                "flight_booking": flight_booking,
+                "image_features": image_features,
+            }
+
         # ── If already in HOTEL_SELECTION ──────────────────────────────
-        if state.phase == ConversationPhase.HOTEL_SELECTION:
+        elif state.phase == ConversationPhase.HOTEL_SELECTION:
             # If the user asked for an accommodation type change (e.g. "provide resorts"),
             # re-run hotel selection with the new preference instead of finalizing.
             if acc_type_change:
@@ -602,6 +631,8 @@ async def handle_chat_stream(user_id, user_message, image_bytes=None, token=None
     # Skip it for simple clarification/chat responses that only stream text.
     if response and (
         response.get("response_type") == "itinerary"
+        or response.get("response_type") == "booking"
+        or response.get("response_type") == "booking_confirmed"
         or response.get("itinerary")
         or response.get("validation")
         or response.get("flight_search_results")
@@ -621,6 +652,10 @@ async def handle_chat_stream(user_id, user_message, image_bytes=None, token=None
         for field in ("profile", "explanation", "agent_messages", "agent_metrics", "validation", "pool_state", "image_features"):
             if response.get(field):
                 result_data[field] = response[field]
+
+        # Booking data (flight + hotel selection for Flutter)
+        if response.get("booking_data"):
+            result_data["booking_data"] = response["booking_data"]
 
         # Flight booking data (for Flutter to process payment)
         if response.get("flight_booking"):
@@ -1072,6 +1107,69 @@ async def _stream_text(text: str):
             yield {"type": "text", "content": content}
         if i < len(lines) - 1:
             yield {"type": "text", "content": "\n"}
+
+
+def _build_booking_data(state: ConversationState) -> dict:
+    itinerary = state.itinerary or {}
+    selected_hotel = itinerary.get("selected_hotel", {})
+    flight = state.slots.selected_flight_offer
+
+    flight_cost = 0.0
+    flight_currency = "USD"
+    if flight:
+        try:
+            flight_cost = float(flight.get("total_price", 0))
+        except (ValueError, TypeError):
+            flight_cost = 0.0
+        flight_currency = flight.get("currency", "USD") or "USD"
+
+    hotel_cost = 0.0
+    if selected_hotel:
+        try:
+            hotel_cost = float(selected_hotel.get("nightly_rate", 0))
+        except (ValueError, TypeError):
+            hotel_cost = 0.0
+        if state.slots.duration_days and hotel_cost > 0:
+            hotel_cost = hotel_cost * state.slots.duration_days
+
+    currency = flight_currency if flight else "USD"
+
+    return {
+        "flight": {
+            "selected": flight is not None,
+            "airline": flight.get("airline_name", flight.get("airline_code", "")) if flight else None,
+            "flight_number": flight.get("flight_number", "") if flight else None,
+            "origin_iata": flight.get("origin_iata", "") if flight else None,
+            "destination_iata": flight.get("destination_iata", "") if flight else None,
+            "departure_at": flight.get("departure_at_formatted", "") if flight else None,
+            "arrival_at": flight.get("arrival_at_formatted", "") if flight else None,
+            "price": flight_cost,
+            "currency": flight_currency,
+        } if flight else None,
+        "hotel": {
+            "selected": bool(selected_hotel),
+            "name": selected_hotel.get("name", ""),
+            "rating": selected_hotel.get("rating", 0),
+            "nightly_rate": selected_hotel.get("nightly_rate", 0),
+            "total_cost": hotel_cost,
+            "currency": currency,
+        } if selected_hotel else None,
+        "trip_summary": {
+            "destination": state.slots.destination_city or "",
+            "duration_days": state.slots.duration_days or 0,
+            "travelers": state.slots.group_size or 1,
+            "origin_city": state.slots.origin_city or "",
+        },
+        "pricing": {
+            "flight_cost": flight_cost,
+            "hotel_cost": hotel_cost,
+            "total_estimated": round(flight_cost + hotel_cost, 2),
+            "currency": currency,
+        },
+        "trip_id": state.trip_id,
+        "has_flight": flight is not None,
+        "has_hotel": bool(selected_hotel),
+    }
 
 
 def _build_profile_from_slots(slots: TripSlots, trip_id: str) -> dict:
@@ -2072,17 +2170,40 @@ async def _handle_select_hotel(
     if chosen:
         state.itinerary["selected_hotel"] = chosen
 
-    # Finalize the trip
-    state.approve_itinerary(itinerary_id=None)
-    final_message = _format_itinerary(state.itinerary, approved=True)
+    # ── Transition to BOOKING phase — present booking choices ──────────
+    state.transition_to(ConversationPhase.BOOKING)
 
-    selection_note = f"\n🏨 Selected: {chosen['name']}" if chosen else ""
+    # Build a summary of everything that was selected
+    hotel_name = chosen["name"] if chosen else "Selected hotel"
+    flight_info = state.slots.selected_flight_offer
+    flight_line = ""
+    if flight_info:
+        airline = flight_info.get("airline_name", flight_info.get("airline_code", "?"))
+        fnum = flight_info.get("flight_number", "?")
+        price = flight_info.get("total_price", 0)
+        currency = flight_info.get("currency", "")
+        flight_line = f"✈️ **Flight:** {airline} {fnum} — {price} {currency}\n"
+
+    message = (
+        f"✅ **Your trip is all set!**\n\n"
+        f"🏨 **Hotel:** {hotel_name}\n"
+        f"{flight_line}\n"
+        f"📅 **Duration:** {state.slots.duration_days or '?'} days in {state.slots.destination_city or 'your destination'}\n\n"
+        f"Would you like to proceed to payment now?\n\n"
+        f"**1️⃣** 💳 Pay Now — Book everything and pay\n"
+        f"**2️⃣** ⏸ Do it later — I'll book through the app"
+    )
+
+    # Build structured booking data for Flutter
+    booking_data = _build_booking_data(state)
+
     return {
-        "response_type": "itinerary",
-        "message": final_message + selection_note,
+        "response_type": "booking",
+        "message": message,
         "itinerary": state.itinerary,
         "image_features": image_features,
-        "agent_messages": [f"[HotelSelector] User chose: {chosen['name'] if chosen else 'default (first hotel)'}"],
+        "booking_data": booking_data,
+        "agent_messages": [f"[HotelSelector] User chose: {hotel_name}"],
     }
 
 

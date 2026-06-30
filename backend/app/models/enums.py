@@ -72,8 +72,6 @@ class AccommodationType(str, PyEnum):
 
 class BookingType(str, PyEnum):
     hotel      = "hotel"
-    restaurant = "restaurant"
-    activity   = "activity"
     transport  = "transport"
     flight     = "flight"
 

@@ -14,6 +14,7 @@ class TripDetailModel extends Equatable {
   final String? updatedAt;
   final String? approvedAt;
   final String? autoMessage;
+  final int pendingBookingsCount;
   final List<ItineraryDetail> itineraries;
 
   const TripDetailModel({
@@ -28,6 +29,7 @@ class TripDetailModel extends Equatable {
     this.updatedAt,
     this.approvedAt,
     this.autoMessage,
+    this.pendingBookingsCount = 0,
     this.itineraries = const [],
   });
 
@@ -83,6 +85,7 @@ class TripDetailModel extends Equatable {
       updatedAt: json['updated_at'] as String?,
       approvedAt: json['approved_at'] as String?,
       autoMessage: json['auto_message'] as String?,
+      pendingBookingsCount: (json['pending_bookings_count'] as num?)?.toInt() ?? 0,
       itineraries: (json['itineraries'] as List<dynamic>?)
               ?.map((e) =>
                   ItineraryDetail.fromJson(e as Map<String, dynamic>))
@@ -103,6 +106,7 @@ class TripDetailModel extends Equatable {
     String? updatedAt,
     String? approvedAt,
     String? autoMessage,
+    int? pendingBookingsCount,
     List<ItineraryDetail>? itineraries,
   }) {
     return TripDetailModel(
@@ -117,6 +121,7 @@ class TripDetailModel extends Equatable {
       updatedAt: updatedAt ?? this.updatedAt,
       approvedAt: approvedAt ?? this.approvedAt,
       autoMessage: autoMessage ?? this.autoMessage,
+      pendingBookingsCount: pendingBookingsCount ?? this.pendingBookingsCount,
       itineraries: itineraries ?? this.itineraries,
     );
   }
@@ -125,7 +130,7 @@ class TripDetailModel extends Equatable {
   List<Object?> get props => [
         tripId, tripName, destination, startDate, endDate,
         numberOfTravelers, status, createdAt, updatedAt,
-        approvedAt, autoMessage, itineraries,
+        approvedAt, autoMessage, pendingBookingsCount, itineraries,
       ];
 }
 

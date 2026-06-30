@@ -297,7 +297,7 @@ class TestFullUserFlow:
                     f"Expected 'trip_approved' event, got: {sent_types}"
                 )
 
-                # ── Verify DB: trip status → active ───────────────────────────
+                # ── Verify DB: trip status → awaiting_booking ─────────────────
                 result = await db_session.execute(
                     select(Trip)
                     .options(
@@ -308,7 +308,7 @@ class TestFullUserFlow:
                 )
                 trip_r = result.scalar_one()
 
-                assert trip_r.status == TripStatus.active
+                assert trip_r.status == TripStatus.awaiting_booking
 
                 # ── Verify DB: approved_at set ────────────────────────────────
                 assert trip_r.approved_at is not None
@@ -501,7 +501,7 @@ class TestFullUserFlow:
         prof_final = trip_final.trip_profiles[0] if trip_final.trip_profiles else None
 
         # Trip
-        assert trip_final.status == TripStatus.active
+        assert trip_final.status == TripStatus.awaiting_booking
         assert trip_final.approved_at is not None
         # (SQLite func.now() has second-level precision — timestamps may match)
         assert _utc_ts(trip_final.updated_at) >= created_ts_trip
@@ -671,7 +671,7 @@ class TestFullUserFlowEdgeCases:
                 select(Trip).where(Trip.trip_id == trip.trip_id)
             )
         ).scalar_one()
-        assert trip_r.status == TripStatus.active
+        assert trip_r.status == TripStatus.awaiting_booking
         assert trip_r.approved_at is not None
 
         # Verify version NOT incremented
@@ -682,4 +682,4 @@ class TestFullUserFlowEdgeCases:
         ).scalar_one()
         assert itin_r.version_number == 1, "Approval must not increment version"
 
-        print("  ✅ Edge case: Direct approval (no modify) — version unchanged, status active")
+        print("  ✅ Edge case: Direct approval (no modify) — version unchanged, status awaiting_booking")

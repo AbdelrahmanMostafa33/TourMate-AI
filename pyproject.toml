@@ -19,6 +19,7 @@ dependencies = [
     "python-multipart",
     "httpx",
     "websockets",
+    "stripe",  # SDK for PaymentIntent creation + webhook verification
 
     # === AI Engine ===
     "langgraph",

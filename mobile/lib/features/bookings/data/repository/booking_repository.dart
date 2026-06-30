@@ -21,7 +21,7 @@ class BookingRepository {
   }) async {
     return await _api.payTripPackage(tripId, {
       'payment_method': paymentMethod,
-      'currency': ?currency,
+      if (currency != null) 'currency': currency,
     });
   }
 
@@ -31,6 +31,49 @@ class BookingRepository {
     String? status,
   }) async {
     return await _api.listTripBookings(tripId, status);
+  }
+
+  /// Pay for a single booking via Stripe Payment Sheet.
+  /// Returns a map with payment_id, client_secret, stripe_payment_intent_id, etc.
+  Future<Map<String, dynamic>> payBooking({
+    required String bookingId,
+    required String paymentMethod,
+    String? currency,
+  }) async {
+    final result = await _api.payBooking(bookingId, {
+      'payment_method': paymentMethod,
+      if (currency != null) 'currency': currency,
+    });
+    return result.data;
+  }
+
+  /// Initiate an async Stripe Payment Sheet payment.
+  /// Creates a PaymentIntent without confirming it.
+  /// Returns client_secret for the Payment Sheet.
+  Future<Map<String, dynamic>> initiateBookingPayment({
+    required String bookingId,
+    required String paymentMethod,
+    String? currency,
+  }) async {
+    final result = await _api.initiateBookingPayment(bookingId, {
+      'payment_method': paymentMethod,
+      if (currency != null) 'currency': currency,
+    });
+    return result.data;
+  }
+
+  /// Initiate async Stripe Payment Sheet payments for all pending bookings.
+  /// Creates PaymentIntents without confirming them.
+  /// Returns initiated (with client_secret) + skipped lists.
+  Future<InitiatePackagePaymentResponse> initiateTripPackagePayment({
+    required String tripId,
+    required String paymentMethod,
+    String? currency,
+  }) async {
+    return await _api.initiateTripPackagePayment(tripId, {
+      'payment_method': paymentMethod,
+      if (currency != null) 'currency': currency,
+    });
   }
 
   /// Get a single booking.

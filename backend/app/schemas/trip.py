@@ -116,7 +116,8 @@ class TripResponse(BaseModel):
     approved_at:          Optional[datetime] = None
     itineraries:          List[ItineraryResponse] = []
     # Injected by routes
-    auto_message:         Optional[str] = None
+    auto_message:              Optional[str] = None
+    pending_bookings_count:    int          = 0
 
     class Config:
         from_attributes = True

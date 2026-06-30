@@ -17,8 +17,9 @@ import pytest
 from app.models.booking import Booking, Payment, Receipt
 from app.models.enums import (
     BookingStatus, BookingType, BookingProvider, BookingStatus,
-    PaymentMethod, PaymentStatus, PaymentProvider,
+    PaymentMethod, PaymentStatus, PaymentProvider, TripStatus,
 )
+from app.models.trip import Trip
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -69,6 +70,17 @@ def make_mock_booking(
     booking.raw_response = {}
     booking.payment = payment
     return booking
+
+
+def make_mock_trip(
+    trip_id: str = "trip_001",
+    status: TripStatus = TripStatus.payment_processing,
+) -> MagicMock:
+    """Create a mock Trip record."""
+    trip = MagicMock(spec=Trip)
+    trip.trip_id = trip_id
+    trip.status = status
+    return trip
 
 
 def make_mock_db(execute_return_value=None) -> AsyncMock:
@@ -142,19 +154,17 @@ class TestHandlePaymentSucceeded:
             status=BookingStatus.pending,
         )
 
-        # Mock two DB calls: find_payment, then get_booking
         db = AsyncMock()
-        # First execute → returns payment
-        r1 = MagicMock()
+        r1 = MagicMock()  # find_payment → payment
         r1.scalar_one_or_none.return_value = payment
-        # Second execute → returns booking
-        r2 = MagicMock()
+        r2 = MagicMock()  # get_booking → booking
         r2.scalar_one_or_none.return_value = booking
-        # Third execute → called by confirm_booking internally
-        r3 = MagicMock()
+        r3 = MagicMock()  # confirm_booking internal re-fetch → booking
         r3.scalar_one_or_none.return_value = booking
+        r4 = MagicMock()  # _check_and_transition_trip_confirmed → trip (planning, not payment_processing)
+        r4.scalar_one_or_none.return_value = make_mock_trip(status=TripStatus.planning)
 
-        db.execute.side_effect = [r1, r2, r3]
+        db.execute.side_effect = [r1, r2, r3, r4]
 
         svc = make_service(db)
 
@@ -200,12 +210,89 @@ class TestHandlePaymentSucceeded:
         r1.scalar_one_or_none.return_value = payment
         r2 = MagicMock()
         r2.scalar_one_or_none.return_value = booking
-        db.execute.side_effect = [r1, r2]
+        r3 = MagicMock()  # _check_and_transition_trip_confirmed → trip (planning)
+        r3.scalar_one_or_none.return_value = make_mock_trip(status=TripStatus.planning)
+        db.execute.side_effect = [r1, r2, r3]
         svc = make_service(db)
 
         result = await svc.handle_webhook_payment_succeeded("pi_test_dup2")
 
         assert result["status"] == BookingStatus.confirmed.value
+
+    @pytest.mark.asyncio
+    async def test_transitions_trip_to_confirmed_when_all_pending_paid(self):
+        """Should transition trip from payment_processing → booking_confirmed when
+        all pending bookings are confirmed via webhook."""
+        payment = make_mock_payment(
+            stripe_pi_id="pi_transition",
+            status=PaymentStatus.pending,
+        )
+        booking = make_mock_booking(
+            booking_id=payment.booking_id,
+            status=BookingStatus.pending,
+        )
+        trip = make_mock_trip(status=TripStatus.payment_processing)
+
+        db = AsyncMock()
+        r1 = MagicMock()
+        r1.scalar_one_or_none.return_value = payment
+        r2 = MagicMock()
+        r2.scalar_one_or_none.return_value = booking
+        r3 = MagicMock()
+        r3.scalar_one_or_none.return_value = booking  # confirm_booking re-fetch
+        r4 = MagicMock()  # _check_and_transition_trip_confirmed → trip
+        r4.scalar_one_or_none.return_value = trip
+        r5 = MagicMock()  # list_trip_bookings → no pending remaining
+        r5.scalars.return_value.all.return_value = []
+
+        db.execute.side_effect = [r1, r2, r3, r4, r5]
+        svc = make_service(db)
+
+        result = await svc.handle_webhook_payment_succeeded("pi_transition")
+
+        assert result["status"] == BookingStatus.confirmed.value
+        # Trip should be transitioned to booking_confirmed
+        assert trip.status == TripStatus.booking_confirmed
+
+    @pytest.mark.asyncio
+    async def test_does_not_transition_trip_when_pending_remain(self):
+        """Should NOT transition trip when there are still pending bookings."""
+        payment = make_mock_payment(
+            stripe_pi_id="pi_partial",
+            status=PaymentStatus.pending,
+        )
+        booking = make_mock_booking(
+            booking_id=payment.booking_id,
+            status=BookingStatus.pending,
+        )
+        trip = make_mock_trip(status=TripStatus.payment_processing)
+
+        # Simulate one remaining pending booking
+        other_pending = make_mock_booking(
+            booking_id="BK-OTHER",
+            status=BookingStatus.pending,
+        )
+
+        db = AsyncMock()
+        r1 = MagicMock()
+        r1.scalar_one_or_none.return_value = payment
+        r2 = MagicMock()
+        r2.scalar_one_or_none.return_value = booking
+        r3 = MagicMock()
+        r3.scalar_one_or_none.return_value = booking
+        r4 = MagicMock()
+        r4.scalar_one_or_none.return_value = trip
+        r5 = MagicMock()  # list_trip_bookings → one pending remains
+        r5.scalars.return_value.all.return_value = [other_pending]
+
+        db.execute.side_effect = [r1, r2, r3, r4, r5]
+        svc = make_service(db)
+
+        result = await svc.handle_webhook_payment_succeeded("pi_partial")
+
+        assert result["status"] == BookingStatus.confirmed.value
+        # Trip should stay in payment_processing since other bookings are still pending
+        assert trip.status == TripStatus.payment_processing
 
     @pytest.mark.asyncio
     async def test_raises_error_when_payment_not_found(self):
@@ -239,13 +326,26 @@ class TestHandlePaymentSucceeded:
 class TestHandlePaymentFailed:
 
     @pytest.mark.asyncio
-    async def test_marks_payment_failed(self):
-        """Should mark payment as failed without touching booking status."""
+    async def test_marks_payment_failed_and_reverts_trip(self):
+        """Should mark payment as failed and revert trip to payment_failed."""
         payment = make_mock_payment(
             stripe_pi_id="pi_test_fail",
             status=PaymentStatus.pending,
         )
-        db = make_mock_db(execute_return_value=payment)
+        booking = make_mock_booking(
+            booking_id=payment.booking_id,
+            status=BookingStatus.pending,
+        )
+        trip = make_mock_trip(status=TripStatus.payment_processing)
+
+        db = AsyncMock()
+        r1 = MagicMock()  # find_payment → payment
+        r1.scalar_one_or_none.return_value = payment
+        r2 = MagicMock()  # get_booking → booking
+        r2.scalar_one_or_none.return_value = booking
+        r3 = MagicMock()  # select Trip → trip
+        r3.scalar_one_or_none.return_value = trip
+        db.execute.side_effect = [r1, r2, r3]
         svc = make_service(db)
 
         result = await svc.handle_webhook_payment_failed("pi_test_fail")
@@ -253,6 +353,7 @@ class TestHandlePaymentFailed:
         assert result["payment_id"] == payment.payment_id
         assert result["status"] == "failed"
         assert payment.status == PaymentStatus.failed
+        assert trip.status == TripStatus.payment_failed
 
     @pytest.mark.asyncio
     async def test_idempotent_when_already_failed(self):
@@ -286,7 +387,7 @@ class TestHandleChargeRefunded:
 
     @pytest.mark.asyncio
     async def test_refunds_payment_and_cancels_booking(self):
-        """Should mark payment refunded and cancel the confirmed booking."""
+        """Should mark payment refunded, cancel the booking, and revert trip to booking_pending."""
         payment = make_mock_payment(
             stripe_pi_id="pi_test_refund",
             status=PaymentStatus.completed,
@@ -296,6 +397,7 @@ class TestHandleChargeRefunded:
             status=BookingStatus.confirmed,
             payment=payment,
         )
+        trip = make_mock_trip(status=TripStatus.booking_confirmed)
 
         db = AsyncMock()
         r1 = MagicMock()
@@ -304,7 +406,9 @@ class TestHandleChargeRefunded:
         r2.scalar_one_or_none.return_value = booking
         r3 = MagicMock()
         r3.scalar_one_or_none.return_value = booking  # cancel_booking re-fetches
-        db.execute.side_effect = [r1, r2, r3]
+        r4 = MagicMock()
+        r4.scalar_one_or_none.return_value = trip  # trip revert query
+        db.execute.side_effect = [r1, r2, r3, r4]
         svc = make_service(db)
 
         result = await svc.handle_webhook_charge_refunded("pi_test_refund")
@@ -313,6 +417,7 @@ class TestHandleChargeRefunded:
         assert result["status"] == BookingStatus.cancelled.value
         assert payment.status == PaymentStatus.refunded
         assert booking.status == BookingStatus.cancelled
+        assert trip.status == TripStatus.booking_pending
 
     @pytest.mark.asyncio
     async def test_idempotent_when_already_refunded(self):
@@ -345,7 +450,9 @@ class TestHandleChargeRefunded:
         r1.scalar_one_or_none.return_value = payment
         r2 = MagicMock()
         r2.scalar_one_or_none.return_value = booking
-        db.execute.side_effect = [r1, r2]
+        r3 = MagicMock()  # trip query (booking.trip_id exists)
+        r3.scalar_one_or_none.return_value = make_mock_trip(status=TripStatus.booking_confirmed)
+        db.execute.side_effect = [r1, r2, r3]
         svc = make_service(db)
 
         result = await svc.handle_webhook_charge_refunded("pi_test_refund_dup2")

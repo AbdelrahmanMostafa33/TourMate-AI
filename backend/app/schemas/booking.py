@@ -126,6 +126,8 @@ class PackageBookingItem(BaseModel):
     currency:            Optional[str] = None
     status:              BookingStatus
     confirmation_number: str
+    confirmation_format: Optional[str] = None
+    provider_info:       Optional[dict] = None
 
 
 class TripPackageBookingResponse(BaseModel):

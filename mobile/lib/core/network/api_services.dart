@@ -17,7 +17,6 @@ import '../../features/trips/data/models/trip_summary_model.dart';
 // ─── Payment / Booking Models ────────────────────────────────────────────────
 import '../../features/bookings/data/models/booking_models.dart';
 import '../../features/flights/data/models/city_search_result.dart';
-import '../../features/flights/data/models/flight_offer.dart';
 import '../../features/flights/data/models/flight_booking_response.dart';
 
 part 'api_services.g.dart';
@@ -190,8 +189,30 @@ abstract class ApiServices {
     @Path('trip_id') String tripId,
     @Query('status') String? status,
   );
+  /// Initiate an async Stripe Payment Sheet payment for a booking.
+  /// Creates PaymentIntent in requires_payment_method status, returns client_secret.
+  /// The booking is NOT confirmed here — webhook does that.
+  @POST("/api/v1/bookings/{booking_id}/initiate-payment")
+  Future<JsonMap> initiateBookingPayment(
+    @Path('booking_id') String bookingId,
+    @Body() Map<String, dynamic> body,
+  );
 
-  // ═════════════════════════════════════════════════════════════════════════
+  /// Pay for a single booking via Stripe Payment Sheet.
+  /// Returns payment_id, stripe_payment_intent_id, client_secret for Payment Sheet.
+  @POST("/api/v1/bookings/{booking_id}/pay")
+  Future<JsonMap> payBooking(
+    @Path('booking_id') String bookingId,
+    @Body() Map<String, dynamic> body,
+  );// ═════════════════════════════════════════════════════════════════════════
+  /// Initiate async Stripe Payment Sheet payments for all pending bookings in a trip.
+  /// Returns initiated_bookings with client_secret values and skipped_bookings.
+  @POST("/api/v1/bookings/trip/{trip_id}/initiate-pay-all")
+  Future<InitiatePackagePaymentResponse> initiateTripPackagePayment(
+    @Path('trip_id') String tripId,
+    @Body() Map<String, dynamic> body,
+  );
+
   // FLIGHT BOOKING ENDPOINTS (existing backend)
   // ═════════════════════════════════════════════════════════════════════════
 

@@ -10,6 +10,7 @@ import '../../logic/chat_cubit.dart';
 import '../../logic/chat_state.dart';
 import '../widgets/message_bubble.dart';
 import '../widgets/pipeline_progress_widget.dart';
+import '../../../trips/presentation/screens/trip_detail_screen.dart';
 
 class ChatScreen extends StatefulWidget {
   final VoidCallback? onTripCreated;
@@ -180,6 +181,39 @@ class _ChatViewState extends State<_ChatView> {
     cubit.sendMessage('book');
   }
 
+  /// Called when the user taps "Pay Now" on the booking card.
+  /// Approves the booking via WS and navigates to the trip detail page.
+  void _onBookingPayNow(ChatCubit cubit) {
+    // Send explicit approve text to trigger COMPLETED phase
+    // ("1️⃣" may not be properly interpreted by the AI engine)
+    cubit.sendMessage('approve');
+
+    // The trip already exists with status awaiting_booking from the initial
+    // itinerary approval. Navigate to the trip detail page where the payment
+    // section will handle booking creation and payment.
+    final tripId = cubit.bookingTripId;
+    if (tripId != null && tripId.isNotEmpty) {
+      // Small delay to let the WS message send before navigating
+      Future.delayed(const Duration(milliseconds: 800), () {
+        if (!mounted) return;
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => TripDetailScreen(tripId: tripId),
+          ),
+        );
+      });
+    }
+  }
+
+  /// Called when the user taps "Do It Later" on the booking card.
+  /// Approves/saves the booking without navigating to payment.
+  /// Uses "approve" (same as Pay Now) since both need to exit the
+  /// BOOKING phase — the only difference is whether we navigate.
+  void _onBookingLater(ChatCubit cubit) {
+    cubit.sendMessage('approve');
+  }
+
   @override
   Widget build(BuildContext context) {
     final cubit = context.read<ChatCubit>();
@@ -248,6 +282,8 @@ class _ChatViewState extends State<_ChatView> {
                                 msg: messages[i],
                                 onApproveItinerary: () => _sendApprove(cubit),
                                 onSelectHotel: (hotel) => _selectHotel(cubit, hotel),
+                                onBookingPayNow: () => _onBookingPayNow(cubit),
+                                onBookingLater: () => _onBookingLater(cubit),
                               );
                               },
                             ),

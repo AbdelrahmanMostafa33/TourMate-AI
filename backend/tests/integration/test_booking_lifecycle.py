@@ -197,7 +197,9 @@ class TestBookingLifecycle:
         assert booking.total_cost == 250.00
         assert booking.currency == "USD"
         assert booking.provider == BookingProvider.booking_com
-        assert booking.confirmation_number.startswith("CNF-")
+        # Booking.com format: 10-digit numeric
+        assert booking.confirmation_number.isdigit()
+        assert len(booking.confirmation_number) == 10
         assert booking.raw_response["simulated"] is True
 
         # ═══════════════════════════════════════════════════════════════════
@@ -334,7 +336,7 @@ class TestBookingEdgeCases:
             user_id="booking_test_user",
             data=BookingCreate(
                 trip_id="booking_test_trip",
-                booking_type=BookingType.restaurant,
+                booking_type=BookingType.hotel,
                 total_cost=75.00,
                 currency="USD",
             ),
@@ -506,8 +508,9 @@ class TestBookingEdgeCases:
         assert r3["status"] == BookingStatus.cancelled.value
 
         # Second succeeded webhook after refund (edge case - should not crash)
+        # The booking is cancelled, so it stays cancelled
         r4 = await svc.handle_webhook_payment_succeeded(pi_id)
-        assert r4["status"] == "already_completed"
+        assert r4["status"] == "cancelled"
 
 
 def _make_bulk_payment_request() -> BulkPaymentRequest:
@@ -539,7 +542,7 @@ class TestBulkPayAll:
             user_id="booking_test_user",
             data=BookingCreate(
                 trip_id="booking_test_trip",
-                booking_type=BookingType.restaurant,
+                booking_type=BookingType.hotel,
                 total_cost=75.00,
                 currency="USD",
             ),
@@ -593,7 +596,7 @@ class TestBulkPayAll:
             user_id="booking_test_user",
             data=BookingCreate(
                 trip_id="booking_test_trip",
-                booking_type=BookingType.restaurant,
+                booking_type=BookingType.hotel,
                 total_cost=75.00,
                 currency="USD",
             ),
@@ -603,7 +606,7 @@ class TestBulkPayAll:
             user_id="booking_test_user",
             data=BookingCreate(
                 trip_id="booking_test_trip",
-                booking_type=BookingType.activity,
+                booking_type=BookingType.hotel,
                 total_cost=50.00,
                 currency="USD",
             ),
@@ -685,7 +688,7 @@ class TestBulkPayAll:
             user_id="other_user",
             data=BookingCreate(
                 trip_id="booking_test_trip",
-                booking_type=BookingType.restaurant,
+                booking_type=BookingType.hotel,
                 total_cost=100.00,
                 currency="USD",
             ),

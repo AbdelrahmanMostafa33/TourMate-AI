@@ -20,3 +20,4 @@ pytest-asyncio
 redis
 aiosqlite
 amadeus
+stripe

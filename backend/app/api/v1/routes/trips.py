@@ -9,7 +9,8 @@ import uuid
 from app.core.database import get_db
 from app.core.security import get_current_user
 from app.models.trip import Trip
-from app.models.enums import TripStatus
+from app.models.booking import Booking
+from app.models.enums import BookingStatus, TripStatus
 from app.models.itinerary import Itinerary, Day, ItineraryStop
 from app.models.chat import Conversation, Message
 from app.models.profile import TripProfile
@@ -193,7 +194,18 @@ async def get_trip(
     trip = result.scalar_one_or_none()
     if not trip:
         raise HTTPException(status_code=404, detail="Trip not found")
-    return trip
+
+    # Count pending bookings for this trip
+    pending_count = await db.scalar(
+        select(sqlfunc.count(Booking.booking_id))
+        .where(
+            Booking.trip_id == trip_id,
+            Booking.status == BookingStatus.pending,
+        )
+    )
+    response = TripResponse.model_validate(trip).model_dump()
+    response["pending_bookings_count"] = pending_count or 0
+    return response
 
 
 # ═════════════════════════════════════════════════════════════════════════════

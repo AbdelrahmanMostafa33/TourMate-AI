@@ -1,6 +1,7 @@
 import 'dart:typed_data';
 import 'itinerary_data.dart';
 import 'hotel_option.dart';
+import 'booking_data.dart';
 
 class ChatMessage {
   final String text;
@@ -9,6 +10,7 @@ class ChatMessage {
   final ItineraryData? itinerary;
   final Uint8List? imageBytes;
   final HotelOptionsPayload? hotelOptions;
+  final BookingData? bookingData;
 
   ChatMessage({
     required this.text,
@@ -17,6 +19,7 @@ class ChatMessage {
     this.itinerary,
     this.imageBytes,
     this.hotelOptions,
+    this.bookingData,
   });
 
   ChatMessage copyWith({
@@ -26,6 +29,7 @@ class ChatMessage {
     ItineraryData? itinerary,
     Uint8List? imageBytes,
     HotelOptionsPayload? hotelOptions,
+    BookingData? bookingData,
   }) {
     return ChatMessage(
       text: text ?? this.text,
@@ -34,6 +38,7 @@ class ChatMessage {
       itinerary: itinerary ?? this.itinerary,
       imageBytes: imageBytes ?? this.imageBytes,
       hotelOptions: hotelOptions ?? this.hotelOptions,
+      bookingData: bookingData ?? this.bookingData,
     );
   }
 }

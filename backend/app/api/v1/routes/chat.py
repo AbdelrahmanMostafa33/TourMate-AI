@@ -355,8 +355,9 @@ async def process_message_stream(
 
         from sqlalchemy.sql import func as sqlfunc
 
-        # Update trip: status → active, approved_at → now (Cairo via DB)
-        trip.status      = TripStatus.active
+        # Update trip: status → awaiting_booking (itinerary approved, ready for bookings),
+        # approved_at → now (Cairo via DB)
+        trip.status      = TripStatus.awaiting_booking
         trip.approved_at = sqlfunc.now()
 
         # Update itinerary: status → active (updated_at handled by onupdate)
@@ -370,7 +371,7 @@ async def process_message_stream(
                 prof.updated_at = sqlfunc.now()
 
         logger.info(
-            "[ChatRoutes] Trip %s approved — status=active",
+            "[ChatRoutes] Trip %s approved — status=awaiting_booking",
             trip.trip_id,
         )
 

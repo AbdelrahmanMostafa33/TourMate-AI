@@ -63,6 +63,7 @@ class ConversationPhase(str, Enum):
     ITINERARY_REVIEW  = "itinerary_review"
     FLIGHT_SELECTION  = "flight_selection"
     HOTEL_SELECTION   = "hotel_selection"
+    BOOKING           = "booking"
     COMPLETED         = "completed"
 
 

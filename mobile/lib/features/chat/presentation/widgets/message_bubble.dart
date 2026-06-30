@@ -2,21 +2,38 @@ import 'package:flutter/material.dart';
 import '../../data/models/chat_message.dart';
 import 'itinerary_card.dart';
 import 'hotel_options_list.dart';
+import 'booking_card.dart';
 
 class MessageBubble extends StatelessWidget {
   final ChatMessage msg;
   final VoidCallback? onApproveItinerary;
   final void Function(dynamic)? onSelectHotel;
+  final VoidCallback? onBookingPayNow;
+  final VoidCallback? onBookingLater;
 
   const MessageBubble({
     super.key,
     required this.msg,
     this.onApproveItinerary,
     this.onSelectHotel,
+    this.onBookingPayNow,
+    this.onBookingLater,
   });
 
   @override
   Widget build(BuildContext context) {
+    // ── Booking Card (Pay Now / Do It Later) ─────────────────────
+    if (msg.bookingData != null) {
+      return Align(
+        alignment: Alignment.centerLeft,
+        child: BookingCard(
+          booking: msg.bookingData!,
+          onPayNow: onBookingPayNow,
+          onLater: onBookingLater,
+        ),
+      );
+    }
+
     // ── Hotel Options Card ───────────────────────────────────────
     if (msg.hotelOptions != null) {
       return Align(
