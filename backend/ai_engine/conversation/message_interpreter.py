@@ -11,9 +11,9 @@ from the LLM, eliminating manual JSON parsing and markdown fence stripping.
 from __future__ import annotations
 
 import logging
-from typing import Dict, Any, List, Optional, Literal
+from typing import Dict, Any, List, Optional, Literal, Union, Annotated
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, BeforeValidator
 from langchain_core.messages import BaseMessage, SystemMessage, HumanMessage, AIMessage
 
 from ai_engine.llm import invoke_with_fallback
@@ -25,6 +25,19 @@ from ai_engine.tools.slot_normalizer import normalize_extracted_slots
 from ai_engine.observability import traced
 
 logger = logging.getLogger(__name__)
+
+
+# ── Helpers ───────────────────────────────────────────────────────────────────
+
+
+def _coerce_int(value) -> int | None:
+    """Coerce a value to int if possible; return None for null/missing."""
+    if value is None:
+        return None
+    try:
+        return int(value)
+    except (ValueError, TypeError):
+        return None
 
 
 # ── Structured Output Schema (Pydantic) ──────────────────────────────────────
@@ -102,7 +115,7 @@ class ExtractedSlots(BaseModel):
             "'the first one', 'hotel 2'). Only used for select_hotel action."
         ),
     )
-    selected_hotel_number: Optional[int] = Field(
+    selected_hotel_number: Optional[Annotated[Union[int, str], BeforeValidator(_coerce_int)]] = Field(
         default=None,
         description=(
             "The 1-based index of the hotel the user chose, if they specified "
@@ -118,7 +131,7 @@ class ExtractedSlots(BaseModel):
             "Only used during FLIGHT_SELECTION phase (e.g. 'Cairo', 'London')."
         ),
     )
-    selected_flight_number: Optional[int] = Field(
+    selected_flight_number: Optional[Annotated[Union[int, str], BeforeValidator(_coerce_int)]] = Field(
         default=None,
         description=(
             "The 1-based index of the flight the user chose from the search results. "
@@ -359,15 +372,6 @@ _ACTION_ALIASES = {
 
 def _normalize_action(action: str) -> str:
     return _ACTION_ALIASES.get(action.lower().strip(), "answer_question")
-
-
-def _coerce_int(value) -> int | None:
-    if value is None:
-        return None
-    try:
-        return int(value)
-    except (ValueError, TypeError):
-        return None
 
 
 def _build_extracted_dict(extracted: ExtractedSlots) -> dict:

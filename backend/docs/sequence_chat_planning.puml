@@ -1,0 +1,78 @@
+@startuml Chat_Planning_Flow
+title AI Chat & Trip Planning (UC3 → UC2)
+
+actor Traveler
+participant "WebSocket\nManager" as WS
+participant "Orchestrator" as Orch
+participant "Message\nInterpreter" as MI
+participant "Graph\nPipeline" as Graph
+participant "Planning\nAgent" as Plan
+participant "Hotel\nAgent" as Hotel
+participant "Flight Sel.\nAgent" as Flight
+participant "OSRM\nService" as OSRM
+participant "LLM\nService" as LLM
+
+== WebSocket Connection ==
+
+Traveler -> WS: ws://host/ws/chat/{trip_id}
+activate WS
+
+WS -> Orch: new_message(trip_id, "Plan a 3-day trip to Paris")
+activate Orch
+
+Orch -> MI: classify_intent(message)
+activate MI
+MI --> Orch: {intent: "plan_trip", params: {days: 3, city: "Paris"}}
+deactivate MI
+
+Orch -> Graph: run_pipeline(state)
+activate Graph
+
+== Phase 1: Planning ==
+
+Graph -> Plan: generate_plan(state)
+activate Plan
+
+Plan -> LLM: generate_day_plan("Paris, 3 days")
+activate LLM
+LLM --> Plan: {days: [{day: 1, theme: "Art"}, ...]}
+deactivate LLM
+
+Plan -> OSRM: optimize_routing(places)
+activate OSRM
+OSRM --> Plan: {ordered_stops, travel_times}
+deactivate OSRM
+
+Plan --> Graph: {plan: itinerary_draft}
+deactivate Plan
+
+== Phase 2: Accommodation ==
+
+Graph -> Hotel: find_hotels(state)
+activate Hotel
+
+Hotel -> LLM: extract_hotel_prefs(message)
+activate LLM
+LLM --> Hotel: {budget: "mid", location: "city_center"}
+deactivate LLM
+
+Hotel --> Graph: {hotel_options: [...]}
+deactivate Hotel
+
+== Phase 3: Flights ==
+
+Graph -> Flight: find_flights(state)
+activate Flight
+Flight --> Graph: {flight_options: [...]}
+deactivate Flight
+
+Graph --> Orch: {itinerary, hotels, flights}
+deactivate Graph
+
+Orch -> WS: stream_response(chunks...)
+activate Orch
+WS --> Traveler: Streaming itinerary text
+deactivate Orch
+deactivate WS
+
+@enduml

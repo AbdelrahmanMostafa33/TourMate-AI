@@ -1,0 +1,72 @@
+@startuml Flight_Booking_Flow
+title Flight Booking with Amadeus (UC5)
+
+actor Traveler
+participant "FastAPI App" as API
+participant "Flight\nService" as FltSvc
+participant "Amadeus\nClient" as Amadeus
+participant "Stripe API" as Stripe
+
+== City Autocomplete ==
+
+Traveler -> API: GET /api/v1/flights/autocomplete\n{q: "Paris"}
+activate API
+
+API -> FltSvc: autocomplete_cities("Paris")
+activate FltSvc
+
+FltSvc -> Amadeus: GET /v1/reference-data/locations\n{subtype: CITY, keyword: "Paris"}
+activate Amadeus
+Amadeus --> FltSvc: {data: [{iataCode: "PAR", name: "Paris"}, ...]}
+deactivate Amadeus
+
+FltSvc --> API: {cities: [...]}
+deactivate FltSvc
+
+API --> Traveler: 200 {cities}
+deactivate API
+
+== Search Flights ==
+
+Traveler -> API: GET /api/v1/flights/search\n{origin, dest, dates}
+activate API
+
+API -> FltSvc: search_flights(origin, dest, dates)
+activate FltSvc
+
+FltSvc -> Amadeus: GET /v2/shopping/flight-offers\n{origin, dest, dates}
+activate Amadeus
+Amadeus --> FltSvc: {data: flight_offers[]}
+deactivate Amadeus
+
+FltSvc --> API: {flights: [...]}
+deactivate FltSvc
+
+API --> Traveler: 200 {flights}
+deactivate API
+
+== Book & Pay ==
+
+Traveler -> API: POST /api/v1/flights/book\n{flight_offer_id, passengers}
+activate API
+
+API -> FltSvc: book_flight(user_id, flight_offer, passengers)
+activate FltSvc
+
+FltSvc -> Amadeus: POST /v1/booking/flight-bookings\n{flight_offer, passengers}
+activate Amadeus
+Amadeus --> FltSvc: {booking_reference, status}
+deactivate Amadeus
+
+FltSvc -> Stripe: create_payment_intent(amount, currency)
+activate Stripe
+Stripe --> FltSvc: {client_secret}
+deactivate Stripe
+
+FltSvc --> API: {booking, client_secret}
+deactivate FltSvc
+
+API --> Traveler: 201 {booking, client_secret}
+deactivate API
+
+@enduml

@@ -1,0 +1,56 @@
+@startuml Hotel_Booking_Flow
+title Hotel Booking & Stripe Payment (UC6)
+
+actor Traveler
+participant "FastAPI App" as API
+participant "Booking\nService" as BkSvc
+participant "Expedia\nClient" as Exp
+participant "Stripe API" as Stripe
+participant "Stripe\nWebhook" as WH
+
+== Create Booking (Hotel) ==
+
+Traveler -> API: POST /api/v1/bookings\n{hotel_id, check_in, check_out}
+activate API
+
+API -> BkSvc: create_booking(user_id, payload)
+activate BkSvc
+
+BkSvc -> Exp: book_hotel(hotel_id, dates)
+activate Exp
+Exp --> BkSvc: {confirmation, total_amount}
+deactivate Exp
+
+BkSvc -> Stripe: create_payment_intent(amount, currency)
+activate Stripe
+Stripe --> BkSvc: {client_secret, payment_intent_id}
+deactivate Stripe
+
+BkSvc --> API: {booking, client_secret}
+deactivate BkSvc
+
+API --> Traveler: 201 {booking, client_secret}
+deactivate API
+
+== Confirm Payment (Client-side) ==
+
+Traveler -> Stripe: stripe.confirmCardPayment(client_secret)
+activate Stripe
+Stripe --> Traveler: {paymentIntent: succeeded}
+deactivate Stripe
+
+== Webhook (Async Confirmation) ==
+
+Stripe -> WH: POST /api/v1/webhooks/stripe\n{payment_intent.succeeded}
+activate WH
+
+WH -> BkSvc: handle_payment_success(payment_intent_id)
+activate BkSvc
+BkSvc -> BkSvc: update_booking_status("confirmed")
+BkSvc --> WH: {booking_updated}
+deactivate BkSvc
+
+WH --> API: acknowledge 200 OK
+deactivate WH
+
+@enduml

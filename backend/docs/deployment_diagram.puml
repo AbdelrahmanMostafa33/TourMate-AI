@@ -1,0 +1,167 @@
+@startuml TourMate_AI_Deployment
+!include <C4/C4_Container>
+!include <C4/C4_Context>
+!include <C4/C4_Component>
+
+LAYOUT_WITH_LEGEND()
+
+title TourMate AI — Deployment & Architecture Diagram
+
+' ═══════════════════════════════ LAYER: EXTERNAL / CLOUD ═══════════════════════════════
+
+System_Ext(flutter, "Flutter Mobile App", "Frontend mobile client\n(Android / iOS)")
+
+System_Ext(postgres, "PostgreSQL", "Primary database\n(SQLAlchemy async + asyncpg)")
+System_Ext(redis, "Redis", "Session persistence\n& caching")
+
+System_Ext(firebase, "Firebase Auth", "Identity provider\nJWT token verification")
+System_Ext(stripe, "Stripe (Sandbox)", "Payment Intents\n& Webhooks")
+System_Ext(amadeus, "Amadeus API", "Flight offers\nsearch & booking")
+System_Ext(expedia, "Expedia Rapid API", "Hotel availability\n& booking")
+System_Ext(osrm, "OSRM Server", "Travel time matrix\nroute optimization")
+System_Ext(gemini, "Gemini 2.5 Flash", "LLM: itinerary planning\nvision, embeddings")
+System_Ext(groq, "Groq Llama 3.x", "LLM: fast inference\npreference extraction")
+System_Ext(langsmith, "LangSmith", "Observability &\ntracing")
+
+' ═══════════════════════════════ LAYER: BACKEND HOST ═══════════════════════════════
+
+System_Boundary(backend, "TourMate AI Backend") {
+
+  ' ───── FastAPI Web Server ─────
+  Container(fastapi, "FastAPI App", "Python (FastAPI)", "HTTP REST API\nWebSocket Chat\nMiddlewares")
+
+  ' ───── REST API Layer ─────
+  Container_Boundary(api_routes, "REST API Routes") {
+    Component(auth_r, "Auth Routes", "/api/v1/auth", "Signup, Login, Token refresh")
+    Component(user_r, "User Routes", "/api/v1/users", "Profile CRUD")
+    Component(trip_r, "Trip Routes", "/api/v1/trips", "Trip CRUD & status")
+    Component(chat_r, "Chat Routes", "/api/v1/chat", "WebSocket streaming")
+    Component(places_r, "Places Routes", "/api/v1/places", "Browse, search, explore")
+    Component(booking_r, "Booking Routes", "/api/v1/bookings", "Create, cancel, confirm")
+    Component(flight_r, "Flight Routes", "/api/v1/flights", "Search, autocomplete, book")
+    Component(itinerary_r, "Itinerary Routes", "/api/v1/itinerary", "View / approve itinerary")
+    Component(review_r, "Review Routes", "/api/v1/reviews", "CRUD reviews & likes")
+    Component(webhook_r, "Webhook Routes", "/api/v1/webhooks", "Stripe event handlers")
+    Component(image_r, "Image Routes", "/api/v1/images", "Upload & analyze")
+    Component(health_r, "Health Route", "/health", "System health check")
+  }
+
+  ' ───── Business Services ─────
+  Container_Boundary(services, "Business Logic Services") {
+    Component(auth_svc, "Auth Service", "Firebase token verification\nJWT handling")
+    Component(chat_svc, "Chat Service", "Message dispatch\nOrchestrator routing")
+    Component(booking_svc, "Booking Service", "Hotel booking lifecycle\nPayment management")
+    Component(flight_svc, "Flight Service", "Amadeus client wrapper\nFlight offer management")
+    Component(places_svc, "Places Service", "Place CRUD & search\nCategory filtering")
+    Component(itinerary_svc, "Itinerary Service", "Itinerary data access\nApproval logic")
+    Component(profile_svc, "Profile Service", "Traveler persona\nPreference CRUD")
+    Component(image_svc, "Image Service", "File upload handling\nVision pipeline trigger")
+  }
+
+  ' ───── AI Engine ─────
+  Container_Boundary(ai_engine, "AI Engine") {
+    Component(orchestrator, "Orchestrator", "Message interpreter →\nLangGraph pipeline\nRedis session mgmt")
+    Component(langgraph, "LangGraph Pipeline", "Stateful agent graph\nwith conditional edges")
+    Component(msg_interp, "Message Interpreter", "LLM intent classification\nSlot extraction")
+    Component(planning, "Planning Agent", "Day-by-day itinerary\ngeneration (LLM)")
+    Component(hotel, "Hotel Agent", "Hotel selection &\naccommodation matching")
+    Component(flight_agent, "Flight Selection Agent", "Conversational flight\nsearch & selection")
+    Component(modifier, "Itinerary Modifier", "Surgical ADD/REMOVE/SWAP\nPreference re-rank\nFull regen")
+    Component(scorer, "Candidate Scorer", "Diversity ranking\nInterest matching")
+    Component(route_opt, "Route Optimizer", "OSRM travel time\nDay rebalancing")
+    Component(validator, "Itinerary Validator", "Quality scoring\nFeasibility checks")
+    Component(vision, "Vision Analyzer", "Image → travel\npreference extraction")
+    Component(embedding, "Embedding Service", "Async embedding gen\nVector similarity")
+    Component(pool, "Pool Manager", "Candidate pool\ncoverage & enrichment")
+    Component(profiling, "Profiling Engine", "Preference tracker\nPersona updater")
+  }
+
+  ' ───── Infrastructure ─────
+  Container_Boundary(infra, "Infrastructure") {
+    Component(redis_mgr, "Redis Session Manager", "Session CRUD\nTTL management")
+    Component(ws_mgr, "WebSocket Manager", "Async streaming\nConnection lifecycle")
+    Component(tracing, "LangSmith Tracer", "@traceable decorators\nAgent observability")
+    Component(token_tracker, "Token Tracker", "LLM token usage\nper pipeline run")
+    Component(metrics, "Agent Metrics", "Latency / error\nper agent step")
+  }
+}
+
+' ═══════════════════════════════ CONNECTIONS ═══════════════════════════════
+
+' Flutter → FastAPI
+Rel(flutter, fastapi, "HTTPS / WSS", "REST API + WebSocket chat")
+
+' FastAPI → Internal
+Rel(fastapi, auth_r, "routes to")
+Rel(fastapi, user_r, "routes to")
+Rel(fastapi, trip_r, "routes to")
+Rel(fastapi, chat_r, "routes to")
+Rel(fastapi, places_r, "routes to")
+Rel(fastapi, booking_r, "routes to")
+Rel(fastapi, flight_r, "routes to")
+Rel(fastapi, itinerary_r, "routes to")
+Rel(fastapi, review_r, "routes to")
+Rel(fastapi, webhook_r, "routes to")
+Rel(fastapi, image_r, "routes to")
+
+' Routes → Services
+Rel(auth_r, auth_svc, "delegates to")
+Rel(chat_r, chat_svc, "delegates to")
+Rel(booking_r, booking_svc, "delegates to")
+Rel(flight_r, flight_svc, "delegates to")
+Rel(places_r, places_svc, "delegates to")
+Rel(itinerary_r, itinerary_svc, "delegates to")
+
+' Chat Service → AI Engine
+Rel(chat_svc, orchestrator, "dispatches messages")
+Rel(orchestrator, msg_interp, "classifies intent")
+Rel(orchestrator, langgraph, "runs pipeline")
+Rel(orchestrator, redis_mgr, "save/load state")
+
+' LangGraph → Agents
+Rel(langgraph, planning, "calls agent")
+Rel(langgraph, hotel, "calls agent")
+Rel(langgraph, flight_agent, "calls agent")
+Rel(langgraph, modifier, "calls agent")
+Rel(langgraph, scorer, "calls agent")
+Rel(langgraph, route_opt, "calls agent")
+Rel(langgraph, validator, "calls agent")
+Rel(langgraph, vision, "calls agent")
+Rel(langgraph, pool, "calls service")
+Rel(langgraph, profiling, "calls service")
+
+' AI Engine → Redis
+Rel(redis_mgr, redis, "persists session", "JSON")
+
+' Services → External
+Rel(auth_svc, firebase, "verify ID token", "HTTPS")
+Rel(booking_svc, stripe, "create PaymentIntent", "HTTPS")
+Rel(webhook_r, stripe, "receives events", "Webhook POST")
+Rel(flight_svc, amadeus, "search / book flights", "HTTPS REST")
+Rel(hotel, expedia, "search hotel availability", "HTTPS REST")
+Rel(route_opt, osrm, "travel time matrix", "HTTP")
+Rel(planning, gemini, "generate itinerary", "HTTPS")
+Rel(vision, gemini, "analyze image", "HTTPS")
+Rel(modifier, groq, "fast edit classification", "HTTPS")
+Rel(scorer, groq, "preference extraction", "HTTPS")
+Rel(tracing, langsmith, "trace runs", "HTTPS")
+
+' Database connections
+Rel(places_svc, postgres, "SQL queries", "asyncpg")
+Rel(trip_r, postgres, "CRUD trips", "asyncpg / SQLAlchemy")
+Rel(booking_r, postgres, "CRUD bookings", "asyncpg / SQLAlchemy")
+Rel(user_r, postgres, "CRUD users", "asyncpg / SQLAlchemy")
+Rel(embedding, postgres, "store / query vectors", "asyncpg")
+
+' WebSocket
+Rel(chat_r, ws_mgr, "manages connections")
+Rel(ws_mgr, flutter, "streams text chunks", "WebSocket")
+
+' Internal infra
+Rel(orchestrator, token_tracker, "reports usage")
+Rel(orchestrator, metrics, "reports latency")
+Rel(planning, tracing, "traced")
+Rel(hotel, tracing, "traced")
+Rel(modifier, tracing, "traced")
+
+@enduml
