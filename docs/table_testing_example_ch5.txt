@@ -1,0 +1,11 @@
+Test Case ID    TC#01
+Test Case Name    User Registration via Email
+Endpoint     POST /api/auth/register
+Preconditions    The user is not already registered. The backend server and database are running.
+Input Data    Email, Password, Full Name
+Objective    Verify that a new user can register using an email address and password.
+Expected Result    HTTP 201 Created is returned and a new user profile is initialized.
+Actual Result    The registration request returned HTTP 201 Created, and the user profile was successfully created in the database.
+Status    Passed
+Defect Found    No
+Defect
