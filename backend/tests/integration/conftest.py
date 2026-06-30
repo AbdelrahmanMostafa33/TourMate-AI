@@ -126,12 +126,6 @@ def build_planning_llm_response(
             idx = (day_num - 1) * num_stops_per_day + i
             stops.append(Stop(
                 id=place_ids[idx % len(place_ids)],
-                name=place_names[idx % len(place_names)],
-                category=categories[idx % len(categories)],
-                sub_category=sub_categories[idx % len(sub_categories)],
-                interest_tags=["history", "art", "museum"],
-                lat=30.0478,
-                lon=31.2336,
                 why_recommended=f"Great {categories[idx % len(categories)]} spot",
                 estimated_duration_minutes=90,
                 suggested_time_of_day=["morning", "afternoon", "evening"][i % 3],  # type: ignore[arg-type]

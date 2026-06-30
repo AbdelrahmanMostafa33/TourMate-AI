@@ -31,7 +31,6 @@ from typing import Optional
 
 from ai_engine.tools.haversine import haversine
 
-
 # ── Composite Weights ─────────────────────────────────────────────────────────
 
 _WEIGHT_DIVERSITY  = 0.15   # Category diversity (evenness + mixing)
@@ -70,7 +69,6 @@ _INTEREST_TO_SUBCATEGORY: dict[str, list[str]] = {
     "sightseeing":   ["sightseeing", "landmark", "monument", "viewpoint"],
 }
 
-
 # ── Travel-Style to Subcategory Mapping ────────────────────────────────────
 
 _TRAVEL_STYLE_TO_SUBCATEGORIES: dict[str, list[str]] = {
@@ -93,7 +91,6 @@ _TRAVEL_STYLE_TO_SUBCATEGORIES: dict[str, list[str]] = {
     "business":     ["business", "conference", "networking", "coworking"],
 }
 
-
 # ── Pace Stop/Duration Ranges ────────────────────────────────────────────
 
 _PACE_STOP_RANGES: dict[str, tuple[int, int]] = {
@@ -108,14 +105,11 @@ _PACE_DURATION_RANGES: dict[str, tuple[int, int]] = {
     "packed":    (420, 720),   # 7–12 hours
 }
 
-
 # ── Helpers ──────────────────────────────────────────────────────────────────
-
 
 def _normalize(value: str) -> str:
     """Normalize a string for matching."""
     return value.lower().strip()
-
 
 def _get_all_stops(itinerary: dict) -> list[dict]:
     """Extract all stops across all days into a flat list."""
@@ -124,22 +118,13 @@ def _get_all_stops(itinerary: dict) -> list[dict]:
         stops.extend(day.get("stops", []))
     return stops
 
-
 def _get_subcategory(stop: dict) -> str:
     """Get the sub_category from a stop, handling different key names."""
     return _normalize(stop.get("sub_category") or stop.get("subcategory", ""))
 
-
-def _get_interest_tags(stop: dict) -> list[str]:
-    """Get interest_tags from a stop, returning normalized lowercase list."""
-    tags = stop.get("interest_tags") or []
-    return [_normalize(t) for t in tags if t]
-
-
 # ═══════════════════════════════════════════════════════════════════════════════
 # Metric: Category Diversity
 # ═══════════════════════════════════════════════════════════════════════════════
-
 
 def score_category_diversity(itinerary: dict) -> float:
     """
@@ -199,11 +184,9 @@ def score_category_diversity(itinerary: dict) -> float:
     score = 0.60 * evenness + 0.40 * mixing_ratio
     return round(min(max(score, 0.0), 1.0), 4)
 
-
 # ═══════════════════════════════════════════════════════════════════════════════
 # Metric: Interest Alignment
 # ═══════════════════════════════════════════════════════════════════════════════
-
 
 def score_interest_alignment(
     itinerary: dict,
@@ -219,7 +202,6 @@ def score_interest_alignment(
            without being over-saturated? (40% weight)
 
     User interests can match stops via:
-        - Stop's ``interest_tags`` field (direct match)
         - Stop's ``sub_category`` field (mapped via :data:`_INTEREST_TO_SUBCATEGORY`)
         - Food preferences match ``cuisine_type`` on restaurant stops
 
@@ -248,7 +230,6 @@ def score_interest_alignment(
         matched_interests[f"food:{_normalize(food_pref)}"] = []
 
     for stop in stops:
-        stop_tags = _get_interest_tags(stop)
         stop_subcat = _get_subcategory(stop)
         stop_cat = _normalize(stop.get("category", ""))
 
@@ -257,11 +238,6 @@ def score_interest_alignment(
             norm = _normalize(interest)
             if norm not in matched_interests:
                 matched_interests[norm] = []
-
-            # Direct tag match
-            if norm in stop_tags:
-                matched_interests[norm].append(stop)
-                continue
 
             # Subcategory mapping match
             relevant_subcats = _INTEREST_TO_SUBCATEGORY.get(norm, [])
@@ -278,7 +254,7 @@ def score_interest_alignment(
                 if key not in matched_interests:
                     matched_interests[key] = []
 
-                if fnorm in stop_tags or (stop_cuisine and fnorm in stop_cuisine):
+                if stop_cuisine and fnorm in stop_cuisine:
                     matched_interests[key].append(stop)
 
     # ── Coverage: what % of interests are represented? ─────────────────
@@ -305,11 +281,9 @@ def score_interest_alignment(
     score = 0.60 * coverage + 0.40 * avg_depth
     return round(min(max(score, 0.0), 1.0), 4)
 
-
 # ═══════════════════════════════════════════════════════════════════════════════
 # Metric: Pacing
 # ═══════════════════════════════════════════════════════════════════════════════
-
 
 def score_pacing(itinerary: dict) -> float:
     """
@@ -380,11 +354,9 @@ def score_pacing(itinerary: dict) -> float:
     score = 0.40 * consistency + 0.40 * avg_load + 0.20 * avg_time_spread
     return round(min(max(score, 0.0), 1.0), 4)
 
-
 # ═══════════════════════════════════════════════════════════════════════════════
 # Metric: Geographic Coverage
 # ═══════════════════════════════════════════════════════════════════════════════
-
 
 def score_geographic_coverage(itinerary: dict) -> float:
     """
@@ -455,11 +427,9 @@ def score_geographic_coverage(itinerary: dict) -> float:
     score = 0.50 * max_dist_score + 0.50 * centroid_score
     return round(min(max(score, 0.0), 1.0), 4)
 
-
 # ═══════════════════════════════════════════════════════════════════════════════
 # Metric: Travel-Style Alignment
 # ═══════════════════════════════════════════════════════════════════════════════
-
 
 def score_travel_style_alignment(
     itinerary: dict,
@@ -503,11 +473,9 @@ def score_travel_style_alignment(
 
     return round(matching / len(stops), 4)
 
-
 # ═══════════════════════════════════════════════════════════════════════════════
 # Metric: Pace Alignment
 # ═══════════════════════════════════════════════════════════════════════════════
-
 
 def score_pace_alignment(
     itinerary: dict,
@@ -576,11 +544,9 @@ def score_pace_alignment(
     avg = sum(day_scores) / len(day_scores) if day_scores else 0.0
     return round(avg, 4)
 
-
 # ═══════════════════════════════════════════════════════════════════════════════
 # Composite API
 # ═══════════════════════════════════════════════════════════════════════════════
-
 
 def compute_all_metrics(
     itinerary: dict,
@@ -633,4 +599,4 @@ def compute_all_metrics(
         "pace_alignment": pace_align,
         "overall": round(overall, 4),
     }
-
+

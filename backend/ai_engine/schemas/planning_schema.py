@@ -7,7 +7,7 @@ keys (including ``days``), eliminating manual JSON extraction and repair.
 
 from __future__ import annotations
 
-from typing import List, Optional, Literal
+from typing import Literal
 
 from pydantic import BaseModel, Field
 
@@ -27,17 +27,16 @@ class AccommodationSuggestion(BaseModel):
 
 
 class Stop(BaseModel):
-    """A single stop / activity within a day's itinerary."""
+    """A single stop / activity within a day's itinerary.
 
-    id: str = Field(description="Unique place identifier")
-    name: str = Field(description="Place name")
-    category: str = Field(default="", description="Category: 'attraction', 'restaurant', etc.")
-    sub_category: str = Field(default="", description="Sub-category from attraction_details")
-    cuisine_type: Optional[str] = Field(default=None, description="Cuisine type (only for restaurants)")
-    interest_tags: List[str] = Field(default_factory=list, description="Interest tags for this place")
-    lat: float = Field(default=0.0, description="Latitude")
-    lon: float = Field(default=0.0, description="Longitude")
-    why_recommended: str = Field(default="", description="Why this stop fits the user")
+    The LLM only outputs context-dependent fields (id, why_recommended, duration,
+    time-of-day).  All other fields (name, category, sub_category, cuisine_type,
+    lat, lon) are reattached deterministically from the candidate
+    place pool during the hydration step in planning_agent.py.
+    """
+
+    id: str = Field(description="Unique place identifier (matches a candidate place)")
+    why_recommended: str = Field(default="", description="Why this stop fits the user (personalized)")
     estimated_duration_minutes: int = Field(default=60, description="Suggested visit duration")
     suggested_time_of_day: Literal["morning", "afternoon", "evening"] = Field(
         default="morning",

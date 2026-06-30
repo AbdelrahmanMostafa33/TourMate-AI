@@ -780,7 +780,8 @@ async def chat_loop(initial_image_path: Optional[str] = None):
                         print()  # newline after streaming
 
             # ── Suggest /image if the AI asked about interests ────────
-            if streamed_text and not current_image_bytes and (
+            # Only show this tip if the user hasn't already uploaded an image
+            if streamed_text and not current_image_bytes and not current_image_features and (
                 "your interests" in streamed_text.lower() or
                 any(kw in streamed_text.lower() for kw in (
                     "upload a photo", "upload an image",

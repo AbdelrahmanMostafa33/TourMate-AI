@@ -166,9 +166,7 @@ def build_place_text(place: dict) -> str:
     if desc:
         parts.append(f"description: {desc}")
 
-    tags = place.get("interest_tags", [])
-    if tags:
-        parts.append(f"tags: {', '.join(tags)}")
+    # interest_tags removed
 
     cuisine = place.get("cuisine_type", "")
     if cuisine:
@@ -251,7 +249,7 @@ def load_places_for_city(engine, city: str) -> list[dict]:
             "description": row["description"] or "",
             "category": (row["category"] or "").lower(),
             "sub_category": sub,
-            "interest_tags": tags,
+            # "interest_tags": tags,
             "cuisine_type": cuisine,
             "amenities": amenities,
             "accommodation_type": acc,

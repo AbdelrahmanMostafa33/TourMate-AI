@@ -318,7 +318,7 @@ class PlaceRepository(BaseRepository):
         Matches the format from places_tool.py's _normalize_place.
         """
         sub_category = ""
-        interest_tags: list[str] = []
+        # interest_tags removed
         cuisine_type = ""
 
         entry_fee = None
@@ -335,8 +335,7 @@ class PlaceRepository(BaseRepository):
             sub_category = (place.hotel_details.accommodation_type or "hotel").lower()
 
         # Derive tags from sub_category if empty
-        if not interest_tags and sub_category:
-            interest_tags = [sub_category.lower()]
+        # interest_tags removed
 
         # Build tags list from all detail sources for richer search
         all_tags: list[str] = []
@@ -348,15 +347,13 @@ class PlaceRepository(BaseRepository):
                 all_tags.append(lower)
                 seen_tags.add(lower)
 
-        for t in interest_tags:
-            _add_tag(t)
         if cuisine_type:
             _add_tag(cuisine_type)
         if sub_category:
             _add_tag(sub_category)
 
         # Hotel amenities & accommodation type
-        # NOTE: amenities are NOT added as individual interest_tags — the amenities
+        # NOTE: amenities are NOT added as individual tags — the amenities
         # field is already returned separately and `_add_tag(amenity)` just bloated
         # the prompt with 10+ redundant per-hotel tags like "pool", "gym", "free wifi".
         # The sub_category (accommodation_type) is sufficient as a hotel tag.
@@ -391,7 +388,7 @@ class PlaceRepository(BaseRepository):
             "rating": place.rating or 0,
             "review_count": place.review_count or 0,
             "popularity_score": place.popularity_score or 0,
-            "interest_tags": all_tags,
+            # "interest_tags": all_tags,  # removed
             "cuisine_type": cuisine_type,
             "amenities": amenities,
             "accommodation_type": accommodation_type,

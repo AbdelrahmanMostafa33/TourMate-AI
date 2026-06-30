@@ -93,7 +93,6 @@ class PlaceSearchService:
                 p for p in places
                 if p["category"] == "hotel"
                 or p["category"] in interests_set
-                or any(t in interests_set for t in p.get("interest_tags", []))
             ]
             # Safety fallback
             if not places:

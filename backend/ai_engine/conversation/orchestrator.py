@@ -31,7 +31,6 @@ from ai_engine.conversation.conversation_state import (
     TripSlots,
 )
 
-
 # ── Numbered emoji for hotel selection ────────────────────────────────────
 _HOTEL_NUMBER_EMOJI = ["1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣"]
 
@@ -104,9 +103,7 @@ from ai_engine.agents.flight_selection_agent import (
     extract_flight_selection,
 )
 
-
 # ── Shared Wrapper ────────────────────────────────────────────────────────────
-
 
 @contextlib.contextmanager
 def _track_pipeline_metrics() -> Iterator[None]:
@@ -122,9 +119,7 @@ def _track_pipeline_metrics() -> Iterator[None]:
     finally:
         agent_metrics.print_summary()
 
-
 # ── Shared Core ────────────────────────────────────────────────────────────────
-
 
 @traced(name="process_message", tags=["conversation", "routing"], metadata={"component": "orchestrator"})
 async def _process_message(
@@ -145,7 +140,6 @@ async def _process_message(
             "itinerary": None,
             "image_features": None,
         }
-
 
 async def _process_message_inner(
     user_id: str,
@@ -190,6 +184,29 @@ async def _process_message_inner(
     state.slots.merge(router_result.extracted)
     state.add_user_message(effective_message, metadata={"action": router_result.action})
 
+    # ── Guard: clear hallucinated interests ────────────────────────────────
+    # The LLM sometimes manufactures default interests (e.g. ["history",
+    # "sightseeing"]) when the user only provides a destination + duration.
+    # If the user's message doesn't mention any of the extracted interests,
+    # the interests are likely hallucinated — clear them back to None so
+    # the downstream safety check (which guards against None) catches it.
+    # Only check current-turn extraction (router_result.extracted), NOT
+    # state.slots.interests which includes interests from prior turns.
+    extracted_interests = router_result.extracted.get("interests")
+    if extracted_interests and effective_message:
+        msg_lower = effective_message.lower()
+        user_mentioned = any(
+            interest.lower() in msg_lower
+            for interest in extracted_interests
+        )
+        if not user_mentioned:
+            logger.info(
+                "[ConversationAgent] Cleared hallucinated interests=%s "
+                "from message: %.60s",
+                extracted_interests, effective_message,
+            )
+            state.slots.interests = None
+
     # ── STEP 2: Fuse image features into slots if available ───────────────
     image_acknowledgment = None
     if image_features and image_features.confidence != "low":
@@ -210,33 +227,50 @@ async def _process_message_inner(
 
     action = router_result.action
 
-    # ── HANDLE COMPLETED STATE FIRST ──────────────────────────────────────
-    if state.phase == ConversationPhase.COMPLETED and action in ("plan_trip", "ask_clarification"):
-        state.reset_for_new_trip()
-        state.slots.merge(router_result.extracted)
-        state.slots.fill_defaults()
-
-        if state.slots.is_complete():
-            state.transition_to(ConversationPhase.PLAN_GENERATION)
-            state.plan_started_at = datetime.now(timezone.utc).isoformat()
-            response = await _handle_plan_trip(
-                user_id, effective_message, router_result.extracted, image_features, token, state
-            )
-        else:
-            state.transition_to(ConversationPhase.SLOT_FILLING)
+    # ── HANDLE COMPLETED STATE — terminal (one conversation = one trip) ──
+    if state.phase == ConversationPhase.COMPLETED:
+        if action == "answer_question":
+            # Allow answering general questions about the finalized trip
             message = router_result.response
             if image_acknowledgment:
                 message = f"{image_acknowledgment} {message}"
             response = {
-                "response_type": "clarification",
+                "response_type": "chat",
                 "message": message,
-                "itinerary": None,
+                "itinerary": state.itinerary,
                 "image_features": image_features,
             }
+            if response.get("message"):
+                state.add_assistant_message(response["message"])
+            return response
+
+        # Block all other actions — one conversation, one trip only
+        logger.info("[ConversationAgent] Blocked action '%s' in COMPLETED phase (terminal)", action)
+        response = {
+            "response_type": "chat",
+            "message": "Your trip has been finalized! I can answer questions about your trip, but I cannot make changes or start a new trip in this conversation.",
+            "itinerary": state.itinerary,
+            "image_features": image_features,
+        }
+        if response.get("message"):
+            state.add_assistant_message(response["message"])
+        return response
 
     # ── SAFETY OVERRIDE ────────────────────────────────────────────────────
     elif action == "ask_clarification" and state.slots.is_complete():
         action = "plan_trip"
+
+    # ── BOOKING phase: route "1" / "2" / pay / do it later → approve ────
+    if state.phase == ConversationPhase.BOOKING and action != "approve_itinerary":
+        msg_lower = effective_message.lower()
+        booking_keywords = ["1", "2", "pay", "do it later", "skip", "later",
+                          "not now", "book later", "pay later"]
+        if any(kw in msg_lower for kw in booking_keywords):
+            logger.info(
+                "[ConversationAgent] Booking phase override: '%s' → approve_itinerary",
+                effective_message[:60],
+            )
+            action = "approve_itinerary"
 
     if action in ("ask_clarification", "plan_trip") and not state.slots.is_complete():
         missing = state.slots.missing_required()
@@ -474,7 +508,6 @@ async def _process_message_inner(
 
     return response
 
-
 def _prepare_message(user_message: Optional[str], image_features: Optional[VisionFeatures] = None) -> str:
     effective_message = (user_message or "").strip()
     if effective_message:
@@ -498,15 +531,12 @@ def _prepare_message(user_message: Optional[str], image_features: Optional[Visio
         )
     return "I uploaded an image for my trip."
 
-
 async def _parse_image(image_bytes: Optional[bytes]) -> Optional[VisionFeatures]:
     if image_bytes:
         return await analyze_travel_image(image_bytes)
     return None
 
-
 # ── Public API ─────────────────────────────────────────────────────────────────
-
 
 def _get_user_lock(user_id: str) -> asyncio.Lock:
     if user_id in _user_locks:
@@ -516,7 +546,6 @@ def _get_user_lock(user_id: str) -> asyncio.Lock:
             _user_locks.popitem(last=False)
         _user_locks[user_id] = asyncio.Lock()
     return _user_locks[user_id]
-
 
 @traced(name="handle_chat", tags=["conversation", "entry_point"], metadata={"component": "orchestrator"})
 async def handle_chat(
@@ -541,7 +570,6 @@ async def handle_chat(
             response["phase"] = state.phase.value
 
         return response
-
 
 async def handle_chat_stream(user_id, user_message, image_bytes=None, token=None, session_id=None, initial_pool_state=None):
     lock = _get_user_lock(user_id)
@@ -669,12 +697,9 @@ async def handle_chat_stream(user_id, user_message, image_bytes=None, token=None
 
     yield {"type": "done", "data": None}
 
-
 # ── Helpers ────────────────────────────────────────────────────────────────────
 
-
 # ── Flight Selection Helpers ───────────────────────────────────────────────
-
 
 def _parse_date_to_iso(date_str: str | None) -> str | None:
     """Parse a user-provided date string to ISO format (YYYY-MM-DD).
@@ -751,7 +776,6 @@ def _parse_date_to_iso(date_str: str | None) -> str | None:
 
     logger.info("[DateParser] Could not parse date: %r — falling back to 30-days-from-now default", date_str)
     return None
-
 
 async def _handle_search_flights(
     state: ConversationState,
@@ -893,7 +917,6 @@ async def _handle_search_flights(
         "flight_search_results": offers[:3] if offers else [],
     }
 
-
 async def _handle_select_flight(
     state: ConversationState,
     effective_message: str,
@@ -1003,7 +1026,6 @@ async def _handle_select_flight(
         "agent_messages": hotel_response.get("agent_messages", []),
     }
 
-
 async def _run_hotel_selection_and_present(
     state: ConversationState,
     effective_message: str,
@@ -1094,7 +1116,6 @@ async def _run_hotel_selection_and_present(
         "agent_messages": hotel_agent_msgs,
     }
 
-
 async def _stream_text(text: str):
     lines = text.split("\n")
     for i, line in enumerate(lines):
@@ -1107,7 +1128,6 @@ async def _stream_text(text: str):
             yield {"type": "text", "content": content}
         if i < len(lines) - 1:
             yield {"type": "text", "content": "\n"}
-
 
 def _build_booking_data(state: ConversationState) -> dict:
     itinerary = state.itinerary or {}
@@ -1171,7 +1191,6 @@ def _build_booking_data(state: ConversationState) -> dict:
         "has_hotel": bool(selected_hotel),
     }
 
-
 def _build_profile_from_slots(slots: TripSlots, trip_id: str) -> dict:
     from ai_engine.graph.state import TripProfile
     return TripProfile(
@@ -1187,13 +1206,11 @@ def _build_profile_from_slots(slots: TripSlots, trip_id: str) -> dict:
         updated_at=None,
     )
 
-
 def _available_pool(state: ConversationState) -> list[dict]:
     """Return the richest place pool available for edits."""
     if state.filtered_places:
         return state.filtered_places
     return state.candidate_places or []
-
 
 def _apply_adjustments_to_slots(state: ConversationState, adjustments: dict) -> dict:
     """Apply preference adjustments to trip slots and return updated preferences."""
@@ -1214,7 +1231,6 @@ def _apply_adjustments_to_slots(state: ConversationState, adjustments: dict) -> 
 
     return updated
 
-
 def _detect_affected_days(original: dict, modified: dict) -> list[int]:
     """Return day numbers whose stop lists changed."""
     affected: list[int] = []
@@ -1228,7 +1244,6 @@ def _detect_affected_days(original: dict, modified: dict) -> list[int]:
             affected.append(day_num)
 
     return affected
-
 
 async def _post_edit_optimize(
     modified: dict,
@@ -1289,7 +1304,6 @@ async def _post_edit_optimize(
         logger.warning("[ConversationAgent] Post-edit route optimization failed: %s", exc)
         return modified, None
 
-
 def _itinerary_response(
     state: ConversationState,
     modified: dict,
@@ -1316,7 +1330,6 @@ def _itinerary_response(
         response["validation"] = validation
     return response
 
-
 def _modifier_blocked_response(
     state: ConversationState,
     modifier_note: str,
@@ -1338,7 +1351,6 @@ def _modifier_blocked_response(
         "pool_state": state.get_pool_state(),
         "agent_messages": msgs,
     }
-
 
 async def _apply_modifier_edit(
     state: ConversationState,
@@ -1376,7 +1388,6 @@ async def _apply_modifier_edit(
         return _modifier_blocked_response(state, modifier_note, image_features, agent_messages)
 
     return None
-
 
 async def _maybe_enrich_pools(
     state: ConversationState,
@@ -1427,7 +1438,6 @@ async def _maybe_enrich_pools(
     )
     return True
 
-
 def _has_real_modifications(mod: dict, orig: dict) -> bool:
     if mod is orig:
         return False
@@ -1469,7 +1479,6 @@ def _has_real_modifications(mod: dict, orig: dict) -> bool:
 
     return False
 
-
 async def _swap_accommodation_surgically(itinerary: dict, destination_city: str, acc_add: list[str]) -> dict | None:
     if not acc_add:
         logger.warning("[AccommodationSwap] Empty acc_add — nothing to swap")
@@ -1508,7 +1517,6 @@ async def _swap_accommodation_surgically(itinerary: dict, destination_city: str,
     modified["accommodation_suggestions"] = top_hotels
     logger.info("[AccommodationSwap] Swapped %d hotels with type '%s' — itinerary stops preserved", len(top_hotels), canonical_type)
     return modified
-
 
 async def _enrich_candidate_pool_by_category(modification_request: str, destination_city: str, existing_pool: list[dict]) -> list[dict] | None:
     from ai_engine.services.operations import (
@@ -1564,7 +1572,6 @@ async def _enrich_candidate_pool_by_category(modification_request: str, destinat
     logger.info("[EnrichPool] Added %d new '%s' places to pool (total: %d)", len(new_places), label, len(enriched))
     return enriched
 
-
 def _build_conversation_context(state) -> str:
     """Build a compact conversation history for the LLM.
 
@@ -1578,7 +1585,6 @@ def _build_conversation_context(state) -> str:
         lines.append(f"{role}: {content}")
     return "\n".join(lines)
 
-
 def _apply_accommodation_change(slots, new_type: str) -> None:
     """Apply accommodation type change with add/remove semantics.
 
@@ -1589,7 +1595,6 @@ def _apply_accommodation_change(slots, new_type: str) -> None:
     if new_type not in current:
         current.append(new_type)
     slots.accommodation_preferences = current
-
 
 def _is_cabin_class_request(modification_request: str) -> str | None:
     """Detect if the user is asking for a specific cabin class during flight selection.
@@ -1652,7 +1657,6 @@ def _is_cabin_class_request(modification_request: str) -> str | None:
 
     return None
 
-
 def _might_need_preference_update(classification: dict) -> bool:
     """Check if the edit classification could potentially need preference adjustment.
 
@@ -1662,7 +1666,6 @@ def _might_need_preference_update(classification: dict) -> bool:
     """
     edit_type = (classification.get("edit_type") or "").upper()
     return edit_type != "REGENERATE"
-
 
 def _is_accommodation_type_change(modification_request: str) -> str | None:
     """Detect if the user is asking to change accommodation type (e.g. 'resorts instead of hotels').
@@ -1709,7 +1712,6 @@ def _is_accommodation_type_change(modification_request: str) -> str | None:
 
     return None
 
-
 def _format_hotel_options(itinerary: dict) -> str:
     """Format hotel suggestions as numbered options for user selection."""
     hotels = itinerary.get("accommodation_suggestions", [])
@@ -1750,7 +1752,6 @@ def _format_hotel_options(itinerary: dict) -> str:
 
     return "\n".join(lines)
 
-
 def _format_itinerary(itinerary: dict, approved: bool = False) -> str:
     if not itinerary:
         return "I wasn't able to generate a complete itinerary. Please try again."
@@ -1790,7 +1791,7 @@ def _format_itinerary(itinerary: dict, approved: bool = False) -> str:
             rating = stop.get("rating")
             cat = stop.get("category", "")
             sub_cat = stop.get("sub_category", "")
-            tags = stop.get("interest_tags", [])
+            
             cuisine = stop.get("cuisine_type", "")
             address = stop.get("address", "")
             maps_link = stop.get("maps_link", "")
@@ -1824,11 +1825,7 @@ def _format_itinerary(itinerary: dict, approved: bool = False) -> str:
             # Show cuisine type for restaurants
             if cuisine and cat == "restaurant":
                 detail_bits.append(f"🍲 {cuisine}")
-            # Show top 2 interest tags for attractions
-            if tags and cat != "restaurant":
-                shown_tags = [t.title() for t in tags[:2] if t]
-                if shown_tags:
-                    detail_bits.append(f"🎯 {', '.join(shown_tags)}")
+
             if price_level:
                 detail_bits.append(f"💰 {price_level}")
             if entry_fee:
@@ -1899,7 +1896,6 @@ def _format_itinerary(itinerary: dict, approved: bool = False) -> str:
     if not approved:
         lines.append("💡 You can ask me to modify any part of this itinerary, or say 'approve' to save it!")
     return "\n".join(lines)
-
 
 @traced(name="modify_itinerary", tags=["conversation", "modify"], metadata={"component": "orchestrator"})
 async def _handle_modify_itinerary(
@@ -2096,7 +2092,6 @@ async def _handle_modify_itinerary(
         agent_messages=agent_messages,
     )
 
-
 async def _handle_select_hotel(
     state: ConversationState,
     effective_message: str,
@@ -2206,7 +2201,6 @@ async def _handle_select_hotel(
         "agent_messages": [f"[HotelSelector] User chose: {hotel_name}"],
     }
 
-
 async def _fallback_full_regeneration(
     user_id: str,
     state: ConversationState,
@@ -2244,7 +2238,6 @@ async def _fallback_full_regeneration(
         result["message"] = message + fallback_note
 
     return result
-
 
 @traced(name="rerank_and_replan", tags=["conversation", "rerank"], metadata={"component": "orchestrator"})
 async def _rerank_and_replan(
@@ -2349,7 +2342,6 @@ async def _rerank_and_replan(
     except Exception as e:
         logger.exception("[RerankReplan] Unexpected error: %s", e)
         return None
-
 
 @traced(name="plan_trip_pipeline", tags=["conversation", "pipeline"], metadata={"component": "orchestrator"})
 async def _handle_plan_trip(user_id, user_message, extracted, image_features, token=None, state=None):

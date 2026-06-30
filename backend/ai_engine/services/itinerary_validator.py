@@ -14,11 +14,9 @@ from ai_engine.evaluation.itinerary_metrics import compute_all_metrics
 from ai_engine.llm import invoke_with_fallback
 from langchain_core.messages import SystemMessage, HumanMessage
 
-
 # ── LLM Prompt Token Budget ──────────────────────────────────────────────────
 
 _MAX_WHY_LENGTH = 150
-
 
 # ── Field Stripper (saves tokens for LLM prompt) ─────────────────────────────
 
@@ -26,7 +24,7 @@ _FIELDS_STOP_KEEP = {
     "id", "name", "category", "sub_category", "lat", "lon",
     "estimated_duration_minutes", "suggested_time_of_day",
     "travel_time_to_next_minutes", "transport_mode",
-    "interest_tags", "rating", "cuisine_type",
+    "rating", "cuisine_type",
 }
 
 _FIELDS_HOTEL_KEEP = {
@@ -37,7 +35,6 @@ _FIELDS_HOTEL_KEEP = {
 _FIELDS_DAY_KEEP = {
     "day_number", "theme", "stops", "total_travel_time_minutes",
 }
-
 
 def _strip_unnecessary_fields(itinerary: dict) -> dict:
     """Strip verbose fields from the itinerary before sending to the LLM prompt."""
@@ -77,7 +74,6 @@ def _strip_unnecessary_fields(itinerary: dict) -> dict:
         pruned["days"].append(pruned_d)
 
     return pruned
-
 
 VALIDATOR_SYSTEM_PROMPT = """
 You are the Itinerary Validator for TourMate AI. Your goal is to check the feasibility and quality of a generated travel itinerary.
@@ -119,7 +115,6 @@ JSON schema:
   "suggestion": string
 }}
 """
-
 
 async def validate_itinerary(state: TripState, on_retry=None) -> TripState:
     """

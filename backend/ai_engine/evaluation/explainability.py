@@ -30,7 +30,6 @@ from __future__ import annotations
 import re
 from typing import Any, Optional
 
-
 # ══════════════════════════════════════════════════════════════════════════════
 # Constants
 # ══════════════════════════════════════════════════════════════════════════════
@@ -65,11 +64,9 @@ _STYLE_DESCRIPTIONS = {
     "relaxation": "a relaxing retreat",
 }
 
-
 # ══════════════════════════════════════════════════════════════════════════════
 # Helpers
 # ══════════════════════════════════════════════════════════════════════════════
-
 
 def _rating_label(score: float) -> str:
     """Convert a 0.0-1.0 score to a qualitative label."""
@@ -80,7 +77,6 @@ def _rating_label(score: float) -> str:
     elif score >= _METRIC_THRESHOLDS["fair"]:
         return "fair"
     return "needs improvement"
-
 
 def _pluralize(singular: str, count: int, plural: Optional[str] = None) -> str:
     """Return ``count + word`` with correct pluralization.
@@ -102,7 +98,6 @@ def _pluralize(singular: str, count: int, plural: Optional[str] = None) -> str:
         return f"{count} {singular}"
     return f"{count} {plural or singular + 's'}"
 
-
 def _comma_list(items: list[str], conjunction: str = "and") -> str:
     """Format ``["a", "b", "c"]`` -> ``"a, b, and c"``."""
     if not items:
@@ -113,11 +108,9 @@ def _comma_list(items: list[str], conjunction: str = "and") -> str:
         return f"{items[0]} {conjunction} {items[1]}"
     return ", ".join(items[:-1]) + f", {conjunction} {items[-1]}"
 
-
 # ══════════════════════════════════════════════════════════════════════════════
 # Validation Decision Explanation
 # ══════════════════════════════════════════════════════════════════════════════
-
 
 def explain_validation_decision(
     validation: Optional[dict],
@@ -181,11 +174,9 @@ def explain_validation_decision(
 
     return lines
 
-
 # ══════════════════════════════════════════════════════════════════════════════
 # Metric Score Explanations
 # ══════════════════════════════════════════════════════════════════════════════
-
 
 def explain_metric_scores(metrics: Optional[dict[str, float]]) -> list[str]:
     """
@@ -223,7 +214,6 @@ def explain_metric_scores(metrics: Optional[dict[str, float]]) -> list[str]:
         lines.append("")
 
     return lines
-
 
 def _metric_comment(key: str, score: float) -> str:
     """Generate a qualitative comment for a specific metric score."""
@@ -265,11 +255,9 @@ def _metric_comment(key: str, score: float) -> str:
             return "Very limited geographic spread."
     return ""
 
-
 # ══════════════════════════════════════════════════════════════════════════════
 # Preference Change Explanation
 # ══════════════════════════════════════════════════════════════════════════════
-
 
 def explain_preference_change(
     old_prefs: Optional[dict],
@@ -342,11 +330,9 @@ def explain_preference_change(
 
     return lines
 
-
 # ══════════════════════════════════════════════════════════════════════════════
 # Stop Placement Explanation
 # ══════════════════════════════════════════════════════════════════════════════
-
 
 def explain_stop_placement(
     stop: dict,
@@ -371,7 +357,7 @@ def explain_stop_placement(
     time_slot = stop.get("suggested_time_of_day", "")
     duration = stop.get("estimated_duration_minutes", 60)
     why = stop.get("why_recommended", "")
-    tags = stop.get("interest_tags", [])
+    
     rating = stop.get("rating")
 
     # ── Stop header ────────────────────────────────────────────────────
@@ -420,7 +406,6 @@ def explain_stop_placement(
     lines.append("")
     return lines
 
-
 def _explain_time_slot(time_slot: str, category: str, subcategory: str) -> str:
     """Generate a reason for placing a stop at a particular time of day."""
     cat_lower = (category + " " + subcategory).lower()
@@ -452,11 +437,9 @@ def _explain_time_slot(time_slot: str, category: str, subcategory: str) -> str:
 
     return ""
 
-
 # ══════════════════════════════════════════════════════════════════════════════
 # Profile Summary
 # ══════════════════════════════════════════════════════════════════════════════
-
 
 def explain_profile(profile: Optional[dict]) -> list[str]:
     """
@@ -498,11 +481,9 @@ def explain_profile(profile: Optional[dict]) -> list[str]:
 
     return lines
 
-
 # ══════════════════════════════════════════════════════════════════════════════
 # Full Itinerary Explanation
 # ══════════════════════════════════════════════════════════════════════════════
-
 
 def format_full_explanation(
     itinerary: Optional[dict] = None,
@@ -616,11 +597,9 @@ def format_full_explanation(
 
     return result
 
-
 # ══════════════════════════════════════════════════════════════════════════════
 # Quick Summary (single string)
 # ══════════════════════════════════════════════════════════════════════════════
-
 
 def quick_summary(
     itinerary: Optional[dict] = None,
@@ -663,4 +642,4 @@ def quick_summary(
         parts.append(f"[quality: {_rating_label(overall)} at {overall * 100:.0f}%]")
 
     return " ".join(parts)
-
+

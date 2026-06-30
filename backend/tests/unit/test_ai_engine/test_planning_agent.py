@@ -79,7 +79,12 @@ def _make_restaurant_candidate(**overrides) -> dict:
 
 
 def _make_valid_itinerary() -> dict:
-    """Create a valid itinerary dict as the LLM would return."""
+    """Create a valid itinerary dict as the LLM would return.
+
+    The LLM only outputs context-dependent fields; name, category,
+    sub_category, lat, lon, cuisine_type, interest_tags are reattached
+    by the hydration step from the candidate place pool.
+    """
     return {
         "destination": "Cairo",
         "duration_days": 2,
@@ -101,22 +106,12 @@ def _make_valid_itinerary() -> dict:
                 "stops": [
                     {
                         "id": "place_001",
-                        "name": "Egyptian Museum",
-                        "category": "attractions",
-                        "sub_category": "museum",
-                        "lat": 30.0478,
-                        "lon": 31.2336,
                         "why_recommended": "World-famous museum",
                         "estimated_duration_minutes": 120,
                         "suggested_time_of_day": "morning",
                     },
                     {
                         "id": "rest_001",
-                        "name": "Zooba Restaurant",
-                        "category": "restaurant",
-                        "sub_category": "local cuisine",
-                        "lat": 30.0465,
-                        "lon": 31.2288,
                         "why_recommended": "Authentic Egyptian food",
                         "estimated_duration_minutes": 60,
                         "suggested_time_of_day": "afternoon",
@@ -129,11 +124,6 @@ def _make_valid_itinerary() -> dict:
                 "stops": [
                     {
                         "id": "place_002",
-                        "name": "Pyramids of Giza",
-                        "category": "attractions",
-                        "sub_category": "historic monument",
-                        "lat": 29.9792,
-                        "lon": 31.1342,
                         "why_recommended": "Ancient wonders",
                         "estimated_duration_minutes": 180,
                         "suggested_time_of_day": "morning",
@@ -340,7 +330,12 @@ class TestPlanningAgentEdgeCases:
 
     @pytest.mark.asyncio
     async def test_hydration_enriches_stops(self):
-        """Stops should be enriched with full place metadata from candidate_places."""
+        """Stops should be enriched with full place metadata from candidate_places.
+
+        The LLM only outputs id, why_recommended, duration, and time-of-day.
+        The hydration step reattaches name, category, sub_category, lat, lon,
+        cuisine_type, interest_tags, photos, address, maps_link from the pool.
+        """
         full_place = _make_candidate(id="place_001")
         itinerary = _make_valid_itinerary()
         state = _make_planning_state(candidate_places=[full_place])
@@ -352,9 +347,20 @@ class TestPlanningAgentEdgeCases:
 
         day1 = result["draft_itinerary"]["days"][0]
         stop = day1["stops"][0]
+        # Reattached from pool
+        assert stop.get("name") == "Egyptian Museum"
+        assert stop.get("category") == "attractions"
+        assert stop.get("sub_category") == "museum"
+        assert stop.get("lat") == 30.0478
+        assert stop.get("lon") == 31.2336
+        assert stop.get("interest_tags") == ["history", "art"]
         assert stop.get("address") == "Tahrir Square"
         assert stop.get("photos") == ["http://example.com/photo.jpg"]
         assert stop.get("maps_link") == "http://maps.example.com"
+        # LLM-provided fields preserved
+        assert stop.get("why_recommended") == "World-famous museum"
+        assert stop.get("estimated_duration_minutes") == 120
+        assert stop.get("suggested_time_of_day") == "morning"
 
     @pytest.mark.asyncio
     async def test_planner_no_longer_enriches_hotels(self):

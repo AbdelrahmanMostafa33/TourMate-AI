@@ -377,7 +377,7 @@ def _reattach_full_metadata(
     New stops (added via SWAP or ADD) come from the LLM with only the
     compact fields (id, name, category, lat, lon, why_recommended, etc.).
     This function fills in the rich metadata (address, photos, phone,
-    website, opening_hours, interest_tags, cuisine_type, etc.) from the
+    website, opening_hours, cuisine_type, etc.) from the
     original itinerary or the place pool.
     """
     # Build index of original stop IDs → full stop dict
@@ -420,7 +420,7 @@ def _reattach_full_metadata(
                 # reattached because they are position-dependent — executors
                 # like _exec_reorder and _exec_remove manage them independently.
                 for key in (
-                    "cuisine_type", "interest_tags", "address", "maps_link",
+                    "cuisine_type", "address", "maps_link",
                     "photos", "phone", "website", "price_level",
                     "opening_hours", "review_count", "rating",
                     "sub_category",
@@ -431,7 +431,7 @@ def _reattach_full_metadata(
                 # Newly introduced stop — copy full metadata from pool
                 full = pool_index[sid]
                 for key in (
-                    "cuisine_type", "interest_tags", "address", "maps_link",
+                    "cuisine_type", "address", "maps_link",
                     "photos", "phone", "website", "price_level",
                     "opening_hours", "review_count", "rating",
                     "sub_category",
@@ -572,11 +572,6 @@ def _exec_swap(itinerary: dict, op: ModifierResponse, place_pool: list[dict]) ->
             or new_place.get("duration_minutes", 60),
         "suggested_time_of_day": stops[idx].get("suggested_time_of_day", "morning"),
     }
-    # Only include interest_tags if they're non-empty (restaurants don't have them).
-    tags = new_place.get("interest_tags", [])
-    if tags:
-        new_stop["interest_tags"] = tags
-
     # Carry over travel time from the old stop if the new stop isn't last
     if old_travel_time is not None:
         new_stop["travel_time_to_next_minutes"] = old_travel_time
@@ -645,11 +640,6 @@ def _exec_add(itinerary: dict, op: ModifierResponse, place_pool: list[dict]) -> 
             or new_place.get("duration_minutes", 60),
         "suggested_time_of_day": time_slot,
     }
-    # Only include interest_tags if they're non-empty (restaurants don't have them).
-    tags = new_place.get("interest_tags", [])
-    if tags:
-        new_stop["interest_tags"] = tags
-
     stops = _insert_stop_by_time_slot(day.get("stops", []), new_stop)
     _fix_travel_times(stops)
     day["stops"] = stops
@@ -952,10 +942,6 @@ def _exec_add_category(itinerary: dict, op: ModifierResponse, place_pool: list[d
                 or place.get("duration_minutes", 60),
             "suggested_time_of_day": best_slot,
         }
-        tags = place.get("interest_tags", [])
-        if tags:
-            new_stop["interest_tags"] = tags
-
         day = _find_day(modified, best_day)
         if day is None:
             logger.warning(
@@ -1141,7 +1127,7 @@ def _place_search_text(place: dict) -> str:
     parts = [
         place.get("name") or "",
         place.get("sub_category") or place.get("subcategory") or "",
-        " ".join(place.get("interest_tags") or []),
+        "",  # interest_tags removed,
     ]
     return " ".join(parts).lower()
 
@@ -1207,13 +1193,13 @@ def _build_subcategory_texts(pool: list[dict]) -> dict[tuple[str, str], str]:
     """Build descriptive texts for each unique (category, subcategory) pair in the pool.
 
     Groups places by (category, subcategory) and for each group builds a text that
-    includes the subcategory name, interest_tags from all places in the group, and
+    includes the subcategory name, cuisine_types, and
     cuisine_types (for restaurants). The resulting text is used for embedding
     similarity comparison against user requests.
 
     Args:
-        pool: List of place dicts with ``category``, ``sub_category``, ``interest_tags``,
-            and optionally ``cuisine_type``.
+        pool: List of place dicts with ``category``, ``sub_category``,
+            and ``cuisine_type``.
 
     Returns:
         Dict mapping ``(category, subcategory)`` → descriptive text string.
@@ -1227,9 +1213,7 @@ def _build_subcategory_texts(pool: list[dict]) -> dict[tuple[str, str], str]:
         key = (cat, sub)
         if key not in groups:
             groups[key] = {"tags": set(), "cuisines": set(), "names": set()}
-        for t in (p.get("interest_tags") or []):
-            if isinstance(t, str):
-                groups[key]["tags"].add(t.lower())
+        # interest_tags removed from _build_subcategory_texts
         c = p.get("cuisine_type") or ""
         if c:
             groups[key]["cuisines"].add(c.lower())
@@ -1243,8 +1227,7 @@ def _build_subcategory_texts(pool: list[dict]) -> dict[tuple[str, str], str]:
     result: dict[tuple[str, str], str] = {}
     for (cat, sub), data in groups.items():
         parts = [f"category: {cat}", f"type: {sub}"]
-        if data["tags"]:
-            parts.append(f"tags: {', '.join(sorted(data['tags']))}")
+        # tags/interest_tags omitted
         if data["cuisines"]:
             parts.append(f"cuisine: {', '.join(sorted(data['cuisines']))}")
         if data["names"]:

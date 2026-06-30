@@ -107,9 +107,10 @@ def _build_retry_note(last_error: str) -> str:
             f"\n\nIMPORTANT: Your previous itinerary was invalid \u2014 "
             f"stops are missing required fields. "
             f"Error: {last_error}. "
-            f"\nEvery stop MUST include ALL required fields: id, name, category, "
-            f"sub_category, lat, lon, why_recommended, estimated_duration_minutes, "
-            f"suggested_time_of_day. Ensure every stop has lat and lon populated."
+            f"\nEvery stop MUST include: id, why_recommended, "
+            f"estimated_duration_minutes, suggested_time_of_day. "
+            f"Other fields (name, category, lat, lon, sub_category, cuisine_type, "
+            f"will be filled in automatically from the candidate data."
         )
 
     # Detect day-count mismatch (e.g. 1 day for a 2-day trip)
@@ -447,22 +448,26 @@ Generate the itinerary now.
     all_available = state.get("filtered_places") or candidates
     place_index = {p["id"]: p for p in all_available}
 
-    # Enrich itinerary stops.
+    # Enrich itinerary stops — reattach all deterministic fields from the
+    # candidate place pool.  The LLM only outputs id, why_recommended,
+    # estimated_duration_minutes, and suggested_time_of_day.  Everything
+    # else (name, category, sub_category, lat, lon, cuisine_type,
+    # photos, address, maps_link) is reattached here.
     for day in itinerary.get("days", []):
         for stop in day.get("stops", []):
             full = place_index.get(stop.get("id"))
             if full:
+                stop["name"] = full.get("name", stop.get("name", ""))
+                stop["category"] = full.get("category", stop.get("category", ""))
+                stop["sub_category"] = full.get("sub_category", stop.get("sub_category", ""))
+                stop["lat"] = full.get("lat", stop.get("lat", 0.0))
+                stop["lon"] = full.get("lon", stop.get("lon", 0.0))
                 stop["photos"] = full.get("photos", [])[:1]
-                stop["address"] = full.get("address")
-                stop["maps_link"] = full.get("maps_link")
-                # Reattach cuisine_type if available (the LLM may omit it)
-                if full.get("cuisine_type") and not stop.get("cuisine_type"):
+                stop["address"] = full.get("address", "")
+                stop["maps_link"] = full.get("maps_link", "")
+                # Reattach cuisine_type for restaurants
+                if full.get("cuisine_type"):
                     stop["cuisine_type"] = full["cuisine_type"]
-                # Fallback lat/lon from DB if the LLM omitted them
-                if not stop.get("lat"):
-                    stop["lat"] = full.get("lat", 0.0)
-                if not stop.get("lon"):
-                    stop["lon"] = full.get("lon", 0.0)
 
 
 

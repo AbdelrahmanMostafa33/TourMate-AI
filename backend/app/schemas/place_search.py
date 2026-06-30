@@ -73,7 +73,7 @@ class PlaceSearchResponse(BaseModel):
     - id, name, category, sub_category
     - lat, lon (coordinates)
     - rating, popularity_score, review_count
-    - interest_tags (merged from all detail sources)
+    # interest_tags removed
     - cuisine_type (restaurants only)
     - amenities, accommodation_type (hotels only)
     """
@@ -94,7 +94,7 @@ class PlaceSearchResponse(BaseModel):
                         "lon": 31.2336,
                         "rating": 4.5,
                         "popularity_score": 85.0,
-                        "interest_tags": ["history", "culture"],
+                        # "interest_tags": ["history", "culture"],
                     },
                     {
                         "id": "place_002",
@@ -105,7 +105,7 @@ class PlaceSearchResponse(BaseModel):
                         "lon": 31.2254,
                         "rating": 4.8,
                         "popularity_score": 92.0,
-                        "interest_tags": ["luxury"],
+                        # "interest_tags": ["luxury"],
                         "amenities": ["spa", "pool", "gym"],
                         "accommodation_type": "luxury",
                     }
