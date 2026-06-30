@@ -43,7 +43,8 @@ class HotelOption {
       lon: (json['lon'] as num?)?.toDouble() ?? 0.0,
       description: (json['description'] ?? json['why_recommended'] ?? '').toString(),
       rating: (json['rating'] as num?)?.toDouble(),
-      pricePerNight: (json['price_per_night'] as num?)?.toDouble(),
+      pricePerNight: (json['price_per_night'] as num?)?.toDouble() ??
+                     (json['nightly_rate'] as num?)?.toDouble(),
       currency: json['currency']?.toString(),
       photoUrl: _parsePhotoUrl(json['photos'] ?? json['photo']),
       address: json['address']?.toString(),

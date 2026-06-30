@@ -9,6 +9,7 @@ import '../data/models/chat_message.dart';
 import '../data/models/itinerary_data.dart';
 import '../data/models/hotel_option.dart';
 import '../data/models/booking_data.dart';
+import '../data/models/flight_offer.dart';
 import 'chat_state.dart';
 
 /// A single step in the AI pipeline progress (visible to the UI).
@@ -31,6 +32,22 @@ class ChatCubit extends Cubit<ChatState> {
   final List<PipelineStep> _pipelineSteps = [];
   String _buffer = "";
   ItineraryData? _pendingItinerary;
+  
+  /// Tracks the signature of the most recently rendered itinerary card.
+  /// Used to suppress duplicate itinerary cards during phase transitions
+  /// (e.g. when the AI re-sends the same itinerary during FLIGHT_SELECTION
+  /// or HOTEL_SELECTION even though it hasn't actually changed).
+  String? _renderedItinerarySignature;
+
+  /// Whether the booking card has been shown (i.e., we're in the BOOKING
+  /// phase on the backend).  When true, ANY user text input is redirected
+  /// to "approve" because the backend's message interpreter has no BOOKING-
+  /// phase action — the only valid action is approve_itinerary, which
+  /// transitions from BOOKING to COMPLETED.  Without this, any user text
+  /// gets classified as ask_clarification → safety-overridden to plan_trip
+  /// → starts planning a new trip instead of completing the booking flow.
+  bool _inBookingPhase = false;
+  
   StreamSubscription<dynamic>? _subscription;
   StreamSubscription<WsConnectionState>? _wsStateSubscription;
   
@@ -42,6 +59,13 @@ class ChatCubit extends Cubit<ChatState> {
 
   /// Called when a trip is created via chat so the parent can refresh trips.
   Function()? onTripCreated;
+
+  /// Called when the trip is approved (trip_approved event received).
+  /// Used by ChatScreen to navigate to TripDetailScreen after the backend
+  /// has finished processing the approve action and committed to the DB.
+  /// Unlike a fixed timer, this ensures the trip status is already
+  /// awaiting_booking before the screen loads.
+  Function()? onTripApproved;
 
   /// The trip_id from the most recent booking_data event, used for navigation.
   /// The ChatScreen reads this to navigate to TripDetailScreen when
@@ -63,6 +87,10 @@ class ChatCubit extends Cubit<ChatState> {
     _pipelineSteps.clear();
     _buffer = "";
     _pendingItinerary = null;
+    _renderedItinerarySignature = null;
+    _inBookingPhase = false;
+    _bookingTripId = null;
+    onTripApproved = null;
     _subscription?.cancel();
     _subscription = null;
     _lastTripId = null;
@@ -76,6 +104,10 @@ class ChatCubit extends Cubit<ChatState> {
     _pipelineSteps.clear();
     _buffer = "";
     _pendingItinerary = null;
+    _renderedItinerarySignature = null;
+    _inBookingPhase = false;
+    _bookingTripId = null;
+    onTripApproved = null;
     _subscription?.cancel();
     _subscription = null;
     _lastTripId = tripId;
@@ -167,6 +199,7 @@ class ChatCubit extends Cubit<ChatState> {
         final itinerary = ItineraryData.fromTripDetail(tripDetail);
         if (itinerary != null) {
           _attachItineraryToHistory(itinerary);
+          _renderedItinerarySignature = _computeItinerarySignature(itinerary);
         }
       }
 
@@ -274,6 +307,19 @@ class ChatCubit extends Cubit<ChatState> {
 
   void sendMessage(String message, {Uint8List? imageBytes}) {
     if (message.trim().isEmpty && imageBytes == null) return;
+
+    // ── Booking phase redirect ───────────────────────────────────────────
+    // After the booking card is shown (hotel selected, AI asks "Pay Now or
+    // Do It Later?", the backend is in the BOOKING phase.  The only action
+    // its interpreter can handle here is "approve_itinerary", which transitions
+    // to COMPLETED.  Any other text gets classified as ask_clarification →
+    // safety-overridden to plan_trip → replanning!  We redirect all text to
+    // "approve" to ensure a clean transition to COMPLETED.
+    if (_inBookingPhase && message.trim().isNotEmpty) {
+      debugPrint('[ChatCubit] Booking phase active — redirecting "${message.trim()}" → "approve"');
+      message = 'approve';
+      _inBookingPhase = false;
+    }
 
     _messages.add(ChatMessage(text: message, isUser: true, imageBytes: imageBytes));
     _resetPipeline();
@@ -402,9 +448,42 @@ class ChatCubit extends Cubit<ChatState> {
     _pendingItinerary = null;
   }
 
-  /// Parse booking_data and attach it to the last assistant message.
-  /// If the last message already has text, we add bookingData to it.
-  /// If not (e.g. a booking-only message), create a new one.
+  /// Compute a signature for an itinerary to detect duplicates.
+  /// Uses destination + duration + sorted stop IDs across all days.
+  String _computeItinerarySignature(ItineraryData itinerary) {
+    final stopIds = <String>[];
+    for (final day in itinerary.days) {
+      for (final stop in day.stops) {
+        stopIds.add(stop.id);
+      }
+    }
+    stopIds.sort();
+    return '${itinerary.destination}|${itinerary.durationDays}|${stopIds.join(",")}';
+  }
+
+  /// Check if an itinerary is a duplicate of what's already rendered.
+  /// Returns true if this exact itinerary (same destination, days, stop IDs)
+  /// has already been rendered as a card in the chat.
+  bool _isDuplicateItinerary(ItineraryData itinerary) {
+    if (_renderedItinerarySignature == null) return false;
+    final sig = _computeItinerarySignature(itinerary);
+    return sig == _renderedItinerarySignature;
+  }
+
+  /// Handle booking_data events from the backend.
+  ///
+  /// Checks for an existing booking card BEFORE adding a new one, so the
+  /// booking_confirmed response (which carries duplicate booking_data)
+  /// is skipped rather than creating a second card.
+  ///
+  /// Attaches the booking card to the last assistant message (replacing
+  /// its text) so only the card renders, without duplicated AI text above
+  /// it — matching how _attachItinerary works for the itinerary card.
+  ///
+  /// If the last assistant message already has an itinerary card attached
+  /// (e.g. from a prior _attachItinerary call in the same response), the
+  /// booking card is added as a new separate message instead, so the
+  /// itinerary card is not overwritten.
   void _handleBookingData(Map<String, dynamic> raw) {
     try {
       final booking = BookingData.fromJson(raw);
@@ -412,14 +491,25 @@ class ChatCubit extends Cubit<ChatState> {
         _bookingTripId = booking.tripId;
       }
 
-      // Attach to the last assistant message if it exists and doesn't already have bookingData
-      if (_messages.isNotEmpty && !_messages.last.isUser && _messages.last.bookingData == null) {
+      // Check BEFORE adding — if a booking card already exists, this is
+      // a booking_confirmed duplicate.  Skip it to prevent confusion.
+      final alreadyHasBookingCard = _messages.any((m) => m.bookingData != null);
+      if (alreadyHasBookingCard) {
+        debugPrint('[ChatCubit] Booking card exists — skipping duplicate booking_data (booking_confirmed)');
+        return;
+      }
+
+      // Attach booking card to the last assistant message (replace text),
+      // so only the card appears without duplicated AI text above it.
+      // If the last message already has an itinerary card, create a new
+      // message instead so we don't overwrite the itinerary.
+      if (_messages.isNotEmpty && !_messages.last.isUser && _messages.last.itinerary == null) {
         _messages[_messages.length - 1] = _messages.last.copyWith(
-          bookingData: booking,
+          text: '',
           isStreaming: false,
+          bookingData: booking,
         );
       } else {
-        // Create a new message with the booking card
         _messages.add(ChatMessage(
           text: '',
           isUser: false,
@@ -427,6 +517,10 @@ class ChatCubit extends Cubit<ChatState> {
           bookingData: booking,
         ));
       }
+
+      // Mark that we're now in the booking phase, so sendMessage()
+      // redirects any user text to "approve" to prevent replanning.
+      _inBookingPhase = true;
     } catch (e) {
       debugPrint('[ChatCubit] Failed to parse booking_data: $e');
     }
@@ -550,21 +644,37 @@ class ChatCubit extends Cubit<ChatState> {
           );
         }
         _emitConnected(isTyping: false, bumpRefresh: true);
+        // Notify the ChatScreen to navigate to TripDetailScreen.
+        // This fires only if the user tapped "Pay Now" (which set onTripApproved).
+        // "Book Later" does not set the callback, so no navigation occurs.
+        onTripApproved?.call();
         break;
 
       case "result":
         final resultPayload = data["data"];
         if (resultPayload is Map) {
-          // Parse itinerary if present
+          // Parse itinerary if present — suppress duplicates from phase transitions
           final itinerary = _tryParseItinerary(resultPayload["itinerary"]);
           if (itinerary != null) {
-            _attachItinerary(itinerary);
+            if (!_isDuplicateItinerary(itinerary)) {
+              _attachItinerary(itinerary);
+              _renderedItinerarySignature = _computeItinerarySignature(itinerary);
+            } else {
+              debugPrint('[ChatCubit] Suppressed duplicate itinerary in result event (phase transition)');
+            }
           }
 
           // Parse booking_data if present (from booking / booking_confirmed events)
           final rawBooking = resultPayload["booking_data"];
           if (rawBooking is Map<String, dynamic>) {
             _handleBookingData(rawBooking);
+          }
+
+          // Handle flight_search_results if present (for Flutter to display)
+          final flightSearchResults = resultPayload["flight_search_results"];
+          if (flightSearchResults is List && flightSearchResults.isNotEmpty) {
+            // Flight search results are handled by the AI text message,
+            // no special card rendering needed on Flutter side
           }
 
           final currentIsTyping = state.maybeWhen(
@@ -578,7 +688,16 @@ class ChatCubit extends Cubit<ChatState> {
       case "itinerary_data":
         final itinerary = _tryParseItinerary(data["data"]);
         if (itinerary != null) {
-          _attachItinerary(itinerary);
+          // Suppress duplicate itinerary cards during phase transitions.
+          // The AI engine sends the same itinerary with every response
+          // even during FLIGHT_SELECTION/HOTEL_SELECTION phases — we only
+          // want to render the card once (when it first arrives).
+          if (!_isDuplicateItinerary(itinerary)) {
+            _attachItinerary(itinerary);
+            _renderedItinerarySignature = _computeItinerarySignature(itinerary);
+          } else {
+            debugPrint('[ChatCubit] Suppressed duplicate itinerary card (phase transition)');
+          }
           final currentIsTyping = state.maybeWhen(
             connected: (_, isTyping, _, _) => isTyping,
             orElse: () => false,
@@ -592,12 +711,59 @@ class ChatCubit extends Cubit<ChatState> {
         if (rawPayload != null) {
           final payload = HotelOptionsPayload.fromJson(rawPayload);
           if (payload.options.isNotEmpty) {
-            _messages.add(ChatMessage(
-              text: payload.message ?? '',
-              isUser: false,
-              isStreaming: false,
-              hotelOptions: payload,
-            ));
+            // Attach to the last assistant message (replacing its text)
+            // so only the card shows, without duplicated AI text above it.
+            // If the last message already has an itinerary card, create a
+            // new message instead so we don't overwrite the itinerary.
+            if (_messages.isNotEmpty && !_messages.last.isUser && _messages.last.itinerary == null) {
+              _messages[_messages.length - 1] = _messages.last.copyWith(
+                text: '',
+                isStreaming: false,
+                hotelOptions: payload,
+              );
+            } else {
+              _messages.add(ChatMessage(
+                text: '',
+                isUser: false,
+                isStreaming: false,
+                hotelOptions: payload,
+              ));
+            }
+            _emitConnected(isTyping: false, bumpRefresh: true);
+          }
+        }
+        break;
+
+      case "booking_data":
+        final rawBooking = data["data"];
+        if (rawBooking is Map<String, dynamic>) {
+          _handleBookingData(rawBooking);
+        }
+        break;
+
+      case "flight_options":
+        final rawFlight = data["data"];
+        if (rawFlight is Map<String, dynamic>) {
+          final payload = FlightOptionsPayload.fromJson(rawFlight);
+          if (payload.offers.isNotEmpty) {
+            // Attach to the last assistant message (replacing its text)
+            // so only the card shows, without duplicated AI text above it.
+            // If the last message already has an itinerary card, create a
+            // new message instead so we don't overwrite the itinerary.
+            if (_messages.isNotEmpty && !_messages.last.isUser && _messages.last.itinerary == null) {
+              _messages[_messages.length - 1] = _messages.last.copyWith(
+                text: '',
+                isStreaming: false,
+                flightOptions: payload,
+              );
+            } else {
+              _messages.add(ChatMessage(
+                text: '',
+                isUser: false,
+                isStreaming: false,
+                flightOptions: payload,
+              ));
+            }
             _emitConnected(isTyping: false, bumpRefresh: true);
           }
         }

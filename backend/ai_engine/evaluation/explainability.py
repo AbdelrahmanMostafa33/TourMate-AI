@@ -357,6 +357,7 @@ def explain_stop_placement(
     time_slot = stop.get("suggested_time_of_day", "")
     duration = stop.get("estimated_duration_minutes", 60)
     why = stop.get("why_recommended", "")
+    tags = list(dict.fromkeys(t for t in [subcategory, category] if t))
     
     rating = stop.get("rating")
 

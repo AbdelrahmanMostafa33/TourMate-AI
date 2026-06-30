@@ -3,11 +3,13 @@ import '../../data/models/chat_message.dart';
 import 'itinerary_card.dart';
 import 'hotel_options_list.dart';
 import 'booking_card.dart';
+import 'flight_options_card.dart';
 
 class MessageBubble extends StatelessWidget {
   final ChatMessage msg;
   final VoidCallback? onApproveItinerary;
   final void Function(dynamic)? onSelectHotel;
+  final void Function(dynamic)? onSelectFlight;
   final VoidCallback? onBookingPayNow;
   final VoidCallback? onBookingLater;
 
@@ -16,6 +18,7 @@ class MessageBubble extends StatelessWidget {
     required this.msg,
     this.onApproveItinerary,
     this.onSelectHotel,
+    this.onSelectFlight,
     this.onBookingPayNow,
     this.onBookingLater,
   });
@@ -30,6 +33,17 @@ class MessageBubble extends StatelessWidget {
           booking: msg.bookingData!,
           onPayNow: onBookingPayNow,
           onLater: onBookingLater,
+        ),
+      );
+    }
+
+    // ── Flight Options Card ──────────────────────────────────────
+    if (msg.flightOptions != null) {
+      return Align(
+        alignment: Alignment.centerLeft,
+        child: FlightOptionsCard(
+          payload: msg.flightOptions!,
+          onSelectFlight: onSelectFlight,
         ),
       );
     }

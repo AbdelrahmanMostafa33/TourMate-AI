@@ -142,13 +142,18 @@ abstract class ApiServices {
   @POST("/api/v1/reviews/{review_id}/like")
   Future<void> likeReview(
       @Path('review_id') String reviewId,
-      );
-
-  /// DELETE A TRIP
+      );  /// DELETE A TRIP
   @DELETE("/api/v1/trips/{trip_id}")
   Future<void> deleteTrip(
-      @Path('trip_id') String tripId,
-      );
+    @Path('trip_id') String tripId,
+  );
+
+  /// UPDATE TRIP STATUS (bypasses LLM interpreter)
+  @PATCH("/api/v1/trips/{trip_id}/status")
+  Future<void> updateTripStatus(
+    @Path('trip_id') String tripId,
+    @Body() Map<String, dynamic> body,
+  );
 
   /// LIST ALL CHAT SESSIONS (conversation history)
   @GET("/api/v1/chats/")

@@ -17,7 +17,12 @@ import '../../../payments/presentation/cubit/booking_payment_cubit.dart';
 class TripDetailScreen extends StatefulWidget {
   final String tripId;
 
-  const TripDetailScreen({super.key, required this.tripId});
+  /// When true, automatically triggers the "Book My Trip" flow
+  /// (create bookings → initiate Stripe Payment Sheet) immediately
+  /// on load, skipping the intermediate button click.
+  final bool shouldAutoBook;
+
+  const TripDetailScreen({super.key, required this.tripId, this.shouldAutoBook = false});
 
   @override
   State<TripDetailScreen> createState() => _TripDetailScreenState();
@@ -29,6 +34,49 @@ class _TripDetailScreenState extends State<TripDetailScreen> {
   int? _selectedStopIndex;
   StopDetail? _selectedStop;
   bool _showPopupAnimation = false;
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.shouldAutoBook) {
+      _triggerAutoBook();
+    }
+  }
+
+  /// Auto-trigger "Book My Trip" flow when navigated from Pay Now.
+  void _triggerAutoBook() {
+    // Wait a frame for the widget tree & providers to be fully built,
+    // then wait another moment for the trip detail to finish loading.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final tripId = widget.tripId;
+      // The cubit is loading — poll until loaded, then book & pay
+      _pollForLoadAndAutoBook(tripId);
+    });
+  }
+
+  void _pollForLoadAndAutoBook(String tripId) {
+    // Check every 200ms up to 10s for the trip to load
+    int attempts = 0;
+    const maxAttempts = 50;
+
+    void check() {
+      if (!mounted) return;
+      final state = context.read<TripDetailCubit>().state;
+      state.maybeWhen(
+        loaded: (trip, _) {
+          _bookAndPay(context, tripId);
+        },
+        orElse: () {
+          attempts++;
+          if (attempts < maxAttempts) {
+            Future.delayed(const Duration(milliseconds: 200), check);
+          }
+        },
+      );
+    }
+
+    Future.delayed(const Duration(milliseconds: 200), check);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -1624,238 +1672,301 @@ class _StopTimelineCard extends StatelessWidget {
   }
 }
 
+// ═════════════════════════════════════════════════════════════════════════════
+// PAYMENT SECTION — Top-level functions
+// ═════════════════════════════════════════════════════════════════════════════
 
-  /// Payment section — Pay All button + state feedback.
-  Widget _buildPaymentSection(BuildContext context, TripDetailModel trip) {
-    // Show payment section for statuses where payment is relevant:
-    // - awaiting_booking: just approved, bookings haven't been created yet (show "Book Now")
-    // - booking_pending: bookings created, awaiting payment
-    // - payment_failed: retry
-    final paymentRelevant = ['awaiting_booking', 'booking_pending', 'payment_failed'].contains(trip.status);
+Widget _buildProcessingBanner() {
+  return Padding(
+    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+    child: Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.blue.shade50,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Colors.blue.shade200),
+      ),
+      child: Row(
+        children: [
+          SizedBox(
+            width: 20,
+            height: 20,
+            child: CircularProgressIndicator(
+              strokeWidth: 2.5,
+              color: Colors.blue.shade700,
+            ),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Finalizing your booking…',
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.blue.shade800,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  'Your trip is being approved. This should take just a moment.',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: Colors.blue.shade600,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    ),
+  );
+}
 
-    if (!paymentRelevant) return const SizedBox.shrink();
+/// Payment section — Pay All button + state feedback.
+/// Always renders the BlocConsumer so it can listen for state changes
+/// regardless of trip status (fixes the bug where the Stripe Payment
+/// Sheet state was never shown when the trip was still 'planning').
+Widget _buildPaymentSection(BuildContext context, TripDetailModel trip) {
+  final paymentRelevant = ['awaiting_booking', 'booking_pending', 'payment_failed'].contains(trip.status);
+  final isPlanning = trip.status == 'planning';
+  final isAwaitingBooking = trip.status == 'awaiting_booking';
 
-    // For awaiting_booking, we first need to create bookings, then pay
-    final isAwaitingBooking = trip.status == 'awaiting_booking';
+  return Column(
+    children: [
+      // Processing banner (shown during planning / before status update)
+      if (isPlanning)
+        _buildProcessingBanner(),
 
-    return BlocConsumer<BookingPaymentCubit, BookingPaymentState>(
-      listenWhen: (previous, current) =>
-          current is BookingPaymentSuccess || current is BookingPaymentFailure,
-      listener: (context, state) {
-        if (state is BookingPaymentSuccess) {
-          final msg = state.message ??
-              (state.simulated == true
-                  ? 'Bookings marked as completed (simulated mode)'
-                  : 'Payment successful!');
-          AppSnackbar.success(context, msg);
-          // Refresh trip detail so UI reflects new status
-          context
-              .read<TripDetailCubit>()
-              .fetchTripDetail(trip.tripId);
-        } else if (state is BookingPaymentFailure) {
-          AppSnackbar.error(context, state.error);
-          // Refresh trip detail so we see updated pending booking count
-          context
-              .read<TripDetailCubit>()
-              .fetchTripDetail(trip.tripId);
-        }
-      },
-      builder: (context, state) {
-        // ── Payment is being initiated (calling backend) ─────────────────
-        if (state is BookingPaymentInitiating) {
-          return _buildPaymentButton(
-            context: context,
-            isLoading: true,
-            label: 'Processing…',
-            icon: Icons.hourglass_top,
-          );
-        }
+      // Payment flow — always rendered so the BlocConsumer can listen for
+      // state changes from _bookAndPay / _payAll, even when the trip is
+      // still 'planning' (e.g., during auto-book flow).
+      // The builder hides the UI when not payment-relevant.
+      BlocConsumer<BookingPaymentCubit, BookingPaymentState>(
+        listenWhen: (previous, current) =>
+            current is BookingPaymentSuccess || current is BookingPaymentFailure,
+        listener: (context, state) {
+          if (state is BookingPaymentSuccess) {
+            final msg = state.message ??
+                (state.simulated == true
+                    ? 'Bookings marked as completed (simulated mode)'
+                    : 'Payment successful!');
+            AppSnackbar.success(context, msg);
+            context
+                .read<TripDetailCubit>()
+                .fetchTripDetail(trip.tripId);
+          } else if (state is BookingPaymentFailure) {
+            AppSnackbar.error(context, state.error);
+            context
+                .read<TripDetailCubit>()
+                .fetchTripDetail(trip.tripId);
+          }
+        },
+        builder: (context, state) {
+          // If state indicates an active payment flow, show it even if
+          // the trip is still planning (auto-book flow is in progress).
+          final hasActivePayment = state is BookingPaymentInitiating ||
+              state is BookingPaymentSheetOpen ||
+              state is BookingPaymentPolling ||
+              state is BookingPaymentSuccess ||
+              state is BookingPaymentFailure;
 
-        // ── Stripe Payment Sheet is open (native UI) ────────────────────
-        if (state is BookingPaymentSheetOpen) {
-          return _buildPaymentButton(
-            context: context,
-            isLoading: true,
-            label: 'Complete payment in the sheet…',
-            icon: Icons.credit_card,
-          );
-        }
+          if (hasActivePayment) {
+            if (state is BookingPaymentInitiating) {
+              return _buildPaymentButton(
+                context: context,
+                isLoading: true,
+                label: 'Processing…',
+                icon: Icons.hourglass_top,
+              );
+            }
+            if (state is BookingPaymentSheetOpen) {
+              return _buildPaymentButton(
+                context: context,
+                isLoading: true,
+                label: 'Complete payment in the sheet…',
+                icon: Icons.credit_card,
+              );
+            }
+            if (state is BookingPaymentPolling) {
+              return _buildPaymentButton(
+                context: context,
+                isLoading: true,
+                label: 'Confirming payment (${state.secondsElapsed}s)…',
+                icon: Icons.sync,
+              );
+            }
+            if (state is BookingPaymentSuccess) {
+              return _buildPaymentButton(
+                context: context,
+                isLoading: false,
+                label: 'Payment Complete',
+                icon: Icons.check_circle,
+                color: Colors.green,
+              );
+            }
+            if (state is BookingPaymentFailure) {
+              return _buildPaymentButton(
+                context: context,
+                isLoading: false,
+                label: 'Retry Payment',
+                icon: Icons.error_outline,
+                color: Colors.red.shade400,
+                onTap: () => _payAll(context, trip.tripId),
+              );
+            }
+          }
 
-        // ── Waiting for webhook confirmation after payment ──────────────
-        if (state is BookingPaymentPolling) {
-          return _buildPaymentButton(
-            context: context,
-            isLoading: true,
-            label: 'Confirming payment (${state.secondsElapsed}s)…',
-            icon: Icons.sync,
-          );
-        }
+          // No active payment flow — hide the buttons if not payment-relevant
+          if (!paymentRelevant) return const SizedBox.shrink();
 
-        // ── Payment succeeded ───────────────────────────────────────────
-        if (state is BookingPaymentSuccess) {
-          return _buildPaymentButton(
-            context: context,
-            isLoading: false,
-            label: 'Payment Complete',
-            icon: Icons.check_circle,
-            color: Colors.green,
-          );
-        }
+          // Idle state — show action button
+          final count = trip.pendingBookingsCount;
+          if (isAwaitingBooking) {
+            return Stack(
+              clipBehavior: Clip.none,
+              children: [
+                _buildPaymentButton(
+                  context: context,
+                  isLoading: false,
+                  label: 'Book My Trip',
+                  icon: Icons.book_online,
+                  onTap: () => _bookAndPay(context, trip.tripId),
+                ),
+              ],
+            );
+          }
 
-        // ── Payment failed ─────────────────────────────────────────────
-        if (state is BookingPaymentFailure) {
-          return _buildPaymentButton(
-            context: context,
-            isLoading: false,
-            label: 'Retry Payment',
-            icon: Icons.error_outline,
-            color: Colors.red.shade400,
-            onTap: () => _payAll(context, trip.tripId),
-          );
-        }
-
-        // ── Initial state — show action button with badge ─────────────
-        final count = trip.pendingBookingsCount;
-
-        if (isAwaitingBooking) {
+          final label = count > 0
+              ? 'Pay All ($count pending)'
+              : 'Pay All Bookings';
           return Stack(
             clipBehavior: Clip.none,
             children: [
               _buildPaymentButton(
                 context: context,
                 isLoading: false,
-                label: 'Book My Trip',
-                icon: Icons.book_online,
-                onTap: () => _bookAndPay(context, trip.tripId),
+                label: label,
+                icon: Icons.payment,
+                onTap: () => _payAll(context, trip.tripId),
               ),
-            ],
-          );
-        }
-
-        final label = count > 0
-            ? 'Pay All ($count pending)'
-            : 'Pay All Bookings';
-        return Stack(
-          clipBehavior: Clip.none,
-          children: [
-            _buildPaymentButton(
-              context: context,
-              isLoading: false,
-              label: label,
-              icon: Icons.payment,
-              onTap: () => _payAll(context, trip.tripId),
-            ),
-            if (count > 0)
-              Positioned(
-                right: 12,
-                top: -6,
-                child: Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 8,
-                    vertical: 2,
-                  ),
-                  decoration: BoxDecoration(
-                    color: Colors.red.shade600,
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  child: Text(
-                    '$count',
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 12,
-                      fontWeight: FontWeight.bold,
+              if (count > 0)
+                Positioned(
+                  right: 12,
+                  top: -6,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 2,
+                    ),
+                    decoration: BoxDecoration(
+                      color: Colors.red.shade600,
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Text(
+                      '$count',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 12,
+                        fontWeight: FontWeight.bold,
+                      ),
                     ),
                   ),
                 ),
-              ),
-          ],
-        );
-      },
-    );
+            ],
+          );
+        },
+      ),
+    ],
+  );
+}
+
+/// Book the trip package (all stops) then proceed to payment.
+Future<void> _bookAndPay(BuildContext context, String tripId) async {
+  // Step 1: Create bookings from the itinerary via the booking repository
+  String? error;
+  try {
+    final bookingRepo = locator<BookingRepository>();
+    await bookingRepo.bookTripPackage(tripId);
+  } catch (e) {
+    error = e.toString();
+    debugPrint('[TripDetail] Failed to book trip package: $e');
   }
 
-  /// Book the trip package (all stops) then proceed to payment.
-  Future<void> _bookAndPay(BuildContext context, String tripId) async {
-    // Step 1: Create bookings from the itinerary via the booking repository
-    String? error;
-    try {
-      final bookingRepo = locator<BookingRepository>();
-      await bookingRepo.bookTripPackage(tripId);
-    } catch (e) {
-      error = e.toString();
-      debugPrint('[TripDetail] Failed to book trip package: $e');
-    }
-
-    // Show feedback if booking creation failed
-    if (error != null) {
-      if (!context.mounted) return;
-      AppSnackbar.error(context,
-          'Could not create bookings: $error. Please try again or continue in chat.');
-      return;
-    }
-
-    // Step 2: Proceed with payment initiation (async Stripe flow)
+  // Show feedback if booking creation failed
+  if (error != null) {
     if (!context.mounted) return;
-    context.read<BookingPaymentCubit>().initiatePayAllBookings(
-      PayAllBookings(
-        tripId: tripId,
-        paymentMethod: 'card',
-        currency: 'usd',
-      ),
-    );
+    AppSnackbar.error(context,
+        'Could not create bookings: $error. Please try again or continue in chat.');
+    return;
   }
 
-  /// Triggers the Pay All flow via the BookingPaymentCubit.
-  void _payAll(BuildContext context, String tripId) {
-    context.read<BookingPaymentCubit>().initiatePayAllBookings(
-      PayAllBookings(
-        tripId: tripId,
-        paymentMethod: 'card',
-        currency: 'usd',
-      ),
-    );
-  }
+  // Step 2: Proceed with payment initiation (async Stripe flow)
+  if (!context.mounted) return;
+  context.read<BookingPaymentCubit>().initiatePayAllBookings(
+    PayAllBookings(
+      tripId: tripId,
+      paymentMethod: 'credit_card',
+      currency: 'usd',
+    ),
+  );
+}
 
-  /// Internal button widget for the payment section.
-  Widget _buildPaymentButton({
-    required BuildContext context,
-    required bool isLoading,
-    required String label,
-    required IconData icon,
-    Color? color,
-    VoidCallback? onTap,
-  }) {
-    final btnColor = color ?? Theme.of(context).primaryColor;
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-      child: SizedBox(
-        width: double.infinity,
-        child: ElevatedButton.icon(
-          onPressed: isLoading ? null : onTap,
-          icon: isLoading
-              ? const SizedBox(
-                  width: 18,
-                  height: 18,
-                  child: CircularProgressIndicator(
-                    strokeWidth: 2,
-                    color: Colors.white,
-                  ),
-                )
-              : Icon(icon, color: Colors.white),
-          label: Text(label),
-          style: ElevatedButton.styleFrom(
-            backgroundColor: btnColor,
-            foregroundColor: Colors.white,
-            padding: const EdgeInsets.symmetric(vertical: 14),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12),
-            ),
-            elevation: 0,
+/// Triggers the Pay All flow via the BookingPaymentCubit.
+void _payAll(BuildContext context, String tripId) {
+  context.read<BookingPaymentCubit>().initiatePayAllBookings(
+    PayAllBookings(
+      tripId: tripId,
+      paymentMethod: 'credit_card',
+      currency: 'usd',
+    ),
+  );
+}
+
+/// Internal button widget for the payment section.
+Widget _buildPaymentButton({
+  required BuildContext context,
+  required bool isLoading,
+  required String label,
+  required IconData icon,
+  Color? color,
+  VoidCallback? onTap,
+}) {
+  final btnColor = color ?? Theme.of(context).primaryColor;
+  return Padding(
+    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+    child: SizedBox(
+      width: double.infinity,
+      child: ElevatedButton.icon(
+        onPressed: isLoading ? null : onTap,
+        icon: isLoading
+            ? const SizedBox(
+                width: 18,
+                height: 18,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  color: Colors.white,
+                ),
+              )
+            : Icon(icon, color: Colors.white),
+        label: Text(label),
+        style: ElevatedButton.styleFrom(
+          backgroundColor: btnColor,
+          foregroundColor: Colors.white,
+          padding: const EdgeInsets.symmetric(vertical: 14),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
           ),
+          elevation: 0,
         ),
       ),
-    );
-  }
+    ),
+  );
+}
 
 String _categoryLabel(String category) {
   switch (category.toLowerCase()) {

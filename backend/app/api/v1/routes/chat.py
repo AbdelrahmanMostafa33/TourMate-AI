@@ -317,10 +317,34 @@ async def process_message_stream(
                         "type": "itinerary_data",
                         "data": result["itinerary"],
                     })
+                    # Also forward accommodation_suggestions as hotel_options for card rendering
+                    accommodation = result["itinerary"].get("accommodation_suggestions", [])
+                    if accommodation:
+                        await manager.send(ws_key, {
+                            "type": "hotel_options",
+                            "data": {"options": accommodation, "message": None},
+                        })
                     if result.get("profile"):
                         profile_from_ai = result["profile"]
                     if result.get("pool_state"):
                         pool_state_from_ai = result["pool_state"]
+
+                # Send structured booking_data to Flutter for booking card rendering
+                if result.get("booking_data"):
+                    await manager.send(ws_key, {
+                        "type": "booking_data",
+                        "data": result["booking_data"],
+                    })
+
+                # Send structured flight_search_results as flight_options for card rendering
+                if result.get("flight_search_results"):
+                    await manager.send(ws_key, {
+                        "type": "flight_options",
+                        "data": {
+                            "offers": result["flight_search_results"],
+                            "message": None,
+                        },
+                    })
 
                 # Capture image_features for DB persistence later
                 image_features_from_result = result.get("image_features")
@@ -656,6 +680,28 @@ async def websocket_new_chat(
                             await manager.send(ws_key, {
                                 "type": "itinerary_data",
                                 "data": result["itinerary"],
+                            })
+                            # Also forward accommodation_suggestions as hotel_options for card rendering
+                            accommodation = result["itinerary"].get("accommodation_suggestions", [])
+                            if accommodation:
+                                await manager.send(ws_key, {
+                                    "type": "hotel_options",
+                                    "data": {"options": accommodation, "message": None},
+                                })
+                        # Send structured booking_data to Flutter for booking card rendering
+                        if result.get("booking_data"):
+                            await manager.send(ws_key, {
+                                "type": "booking_data",
+                                "data": result["booking_data"],
+                            })
+                        # Send structured flight_search_results as flight_options for card rendering
+                        if result.get("flight_search_results"):
+                            await manager.send(ws_key, {
+                                "type": "flight_options",
+                                "data": {
+                                    "offers": result["flight_search_results"],
+                                    "message": None,
+                                },
                             })
                         if result.get("profile"):
                             profile_data_from_ai = result["profile"]

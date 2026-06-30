@@ -2,7 +2,8 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:tourmate/features/bookings/data/repository/booking_repository.dart';
 import 'package:tourmate/features/bookings/data/models/booking_models.dart';
-import 'package:tourmate/features/bookings/presentation/cubit/booking_payment_cubit.dart';
+import 'package:tourmate/features/payments/data/datasource/payment_service.dart';
+import 'package:tourmate/features/payments/presentation/cubit/booking_payment_cubit.dart';
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
@@ -17,6 +18,26 @@ BookingResponse _defaultBooking({String status = 'pending'}) {
     currency: 'USD',
     payment: null,
     createdAt: null,
+  );
+}
+
+InitiatePackagePaymentResponse _defaultInitiateResponse({bool simulated = false}) {
+  return InitiatePackagePaymentResponse(
+    tripId: 'trip-001',
+    currency: 'USD',
+    initiatedCount: 1,
+    skippedCount: 0,
+    initiatedBookings: [
+      InitiatedBookingItem(
+        bookingId: 'bk-001',
+        paymentId: 'pay-001',
+        clientSecret: simulated ? null : 'pi_001_secret_abc123',
+        stripePaymentIntentId: simulated ? null : 'pi_001',
+        simulated: simulated,
+        message: simulated ? 'Simulated' : 'Payment initiated',
+      ),
+    ],
+    skippedBookings: [],
   );
 }
 
@@ -37,9 +58,16 @@ class FakeBookingRepository implements BookingRepository {
 
   late Future<BookingResponse> Function(String bookingId) getBookingStub;
 
+  late Future<InitiatePackagePaymentResponse> Function({
+    required String tripId,
+    required String paymentMethod,
+    String? currency,
+  }) initiateTripPackagePaymentStub;
+
   int initiatePaymentCallCount = 0;
   int payBookingCallCount = 0;
   int getBookingCallCount = 0;
+  int initiateTripPackagePaymentCallCount = 0;
 
   FakeBookingRepository() {
     initiatePaymentStub = ({required bookingId, required paymentMethod, currency}) async =>
@@ -47,6 +75,12 @@ class FakeBookingRepository implements BookingRepository {
     payBookingStub = ({required bookingId, required paymentMethod, currency}) async =>
         <String, dynamic>{'success': true, 'simulated': true};
     getBookingStub = (String bookingId) async => _defaultBooking();
+    initiateTripPackagePaymentStub = ({
+      required tripId,
+      required paymentMethod,
+      currency,
+    }) async =>
+        _defaultInitiateResponse(simulated: true);
   }
 
   @override
@@ -56,11 +90,8 @@ class FakeBookingRepository implements BookingRepository {
     String? currency,
   }) async {
     initiatePaymentCallCount++;
-    final result = await initiatePaymentStub(
-        bookingId: bookingId,
-        paymentMethod: paymentMethod,
-        currency: currency);
-    return result;
+    return initiatePaymentStub(
+        bookingId: bookingId, paymentMethod: paymentMethod, currency: currency);
   }
 
   @override
@@ -70,22 +101,17 @@ class FakeBookingRepository implements BookingRepository {
     String? currency,
   }) async {
     payBookingCallCount++;
-    final result = await payBookingStub(
-        bookingId: bookingId,
-        paymentMethod: paymentMethod,
-        currency: currency);
-    return result;
+    return payBookingStub(
+        bookingId: bookingId, paymentMethod: paymentMethod, currency: currency);
   }
 
   @override
-  late Future<InitiatePackagePaymentResponse> Function({
-    required String tripId,
-    required String paymentMethod,
-    String? currency,
-  }) initiateTripPackagePaymentStub;
+  Future<BookingResponse> getBooking(String bookingId) async {
+    getBookingCallCount++;
+    return getBookingStub(bookingId);
+  }
 
-  int initiateTripPackagePaymentCallCount = 0;
-
+  @override
   Future<InitiatePackagePaymentResponse> initiateTripPackagePayment({
     required String tripId,
     required String paymentMethod,
@@ -93,16 +119,7 @@ class FakeBookingRepository implements BookingRepository {
   }) async {
     initiateTripPackagePaymentCallCount++;
     return initiateTripPackagePaymentStub(
-      tripId: tripId,
-      paymentMethod: paymentMethod,
-      currency: currency,
-    );
-  }
-
-  @override
-  Future<BookingResponse> getBooking(String bookingId) async {
-    getBookingCallCount++;
-    return getBookingStub(bookingId);
+        tripId: tripId, paymentMethod: paymentMethod, currency: currency);
   }
 
   // ── Unused by the payment flow — required by the interface ─────────
@@ -112,10 +129,7 @@ class FakeBookingRepository implements BookingRepository {
       throw UnimplementedError('Not used in these tests');
 
   @override
-  Future<List<BookingResponse>> listTripBookings(
-    String tripId, {
-    String? status,
-  }) =>
+  Future<List<BookingResponse>> listTripBookings(String tripId, {String? status}) =>
       throw UnimplementedError('Not used in these tests');
 
   @override
@@ -127,263 +141,153 @@ class FakeBookingRepository implements BookingRepository {
       throw UnimplementedError('Not used in these tests');
 }
 
+// ── Fake payment service ─────────────────────────────────────────────────
+
+class FakePaymentService extends PaymentService {
+  @override
+  Future<bool> payWithStripeSheet({
+    required String clientSecret,
+    String merchantDisplayName = 'TourMate',
+  }) async {
+    return true; // Simulate successful payment sheet
+  }
+}
+
 // ── Tests ──────────────────────────────────────────────────────────────────
 
 void main() {
   group('BookingPaymentCubit', () {
     late FakeBookingRepository repository;
+    late FakePaymentService paymentService;
     late BookingPaymentCubit cubit;
 
     setUp(() {
       repository = FakeBookingRepository();
-      cubit = BookingPaymentCubit(repository);
+      paymentService = FakePaymentService();
+      cubit = BookingPaymentCubit(
+        bookingRepo: repository,
+        paymentService: paymentService,
+      );
     });
 
     tearDown(() async {
       await cubit.close();
     });
 
-    test('initial state is BookingPaymentStatus.initial', () {
-      expect(cubit.state.status, BookingPaymentStatus.initial);
-      expect(cubit.state.simulated, false);
-      expect(cubit.state.error, isNull);
-      expect(cubit.state.pollAttempts, 0);
+    test('initial state is BookingPaymentInitial', () {
+      expect(cubit.state, isA<BookingPaymentInitial>());
     });
 
-    test('initiate -> simulated -> immediate success (skips polling)',
+    test('initiatePayAllBookings with simulated payments -> success',
         () async {
-      repository.initiatePaymentStub = ({required bookingId, required paymentMethod, currency}) async =>
-          <String, dynamic>{
-            'success': true,
-            'simulated': true,
-            'client_secret': null,
-            'payment_id': 'pay_sim_001',
-            'message': 'Payment initiated (simulated).',
-          };
+      repository.initiateTripPackagePaymentStub = ({
+        required tripId,
+        required paymentMethod,
+        currency,
+      }) async =>
+          _defaultInitiateResponse(simulated: true);
 
       final matcher = expectLater(
         cubit.stream,
         emitsInOrder([
-          isA<BookingPaymentState>()
-              .having((s) => s.status, 'status', BookingPaymentStatus.initiating),
-          isA<BookingPaymentState>()
-              .having((s) => s.status, 'status', BookingPaymentStatus.sheetOpen)
-              .having((s) => s.simulated, 'simulated', true),
-          isA<BookingPaymentState>()
-              .having((s) => s.status, 'status', BookingPaymentStatus.success)
+          isA<BookingPaymentInitiating>(),
+          isA<BookingPaymentSheetOpen>(),
+          isA<BookingPaymentSuccess>()
               .having((s) => s.simulated, 'simulated', true),
         ]),
       );
 
-      await cubit.startPayment(
-        bookingId: 'bk-001',
-        paymentMethod: 'credit_card',
-        currency: 'USD',
+      cubit.initiatePayAllBookings(
+        PayAllBookings(
+          tripId: 'trip-001',
+          paymentMethod: 'credit_card',
+          currency: 'usd',
+        ),
       );
 
       await matcher;
-
-      expect(repository.initiatePaymentCallCount, 1);
-      expect(repository.payBookingCallCount, 0);
-      expect(repository.getBookingCallCount, 0);
+      expect(repository.initiateTripPackagePaymentCallCount, 1);
     }, timeout: const Timeout(Duration(seconds: 15)));
 
-    test('initiate -> polling -> success (webhook confirms)',
-        () async {
-      repository.initiatePaymentStub = ({required bookingId, required paymentMethod, currency}) async =>
-          <String, dynamic>{
-            'success': true,
-            'simulated': false,
-            'client_secret': 'pi_001_secret_abc123',
-            'payment_id': 'pay_001',
-            'message': 'Payment initiated. Complete via Stripe Payment Sheet.',
-          };
-
-      repository.getBookingStub = (String bookingId) async {
-        if (repository.getBookingCallCount >= 2) {
-          return _defaultBooking(status: 'confirmed');
-        }
-        return _defaultBooking(status: 'pending');
-      };
+    test('initiatePayAllBookings with no bookings -> failure', () async {
+      repository.initiateTripPackagePaymentStub = ({
+        required tripId,
+        required paymentMethod,
+        currency,
+      }) async =>
+          InitiatePackagePaymentResponse(
+            tripId: 'trip-001',
+            currency: 'USD',
+            initiatedCount: 0,
+            skippedCount: 0,
+            initiatedBookings: [],
+            skippedBookings: [],
+          );
 
       final matcher = expectLater(
         cubit.stream,
         emitsInOrder([
-          isA<BookingPaymentState>()
-              .having((s) => s.status, 'status', BookingPaymentStatus.initiating),
-          isA<BookingPaymentState>()
-              .having((s) => s.status, 'status', BookingPaymentStatus.sheetOpen)
-              .having((s) => s.clientSecret, 'clientSecret', 'pi_001_secret_abc123'),
-          isA<BookingPaymentState>()
-              .having((s) => s.status, 'status', BookingPaymentStatus.polling)
-              .having((s) => s.pollAttempts, 'pollAttempts', 0),
-          isA<BookingPaymentState>()
-              .having((s) => s.status, 'status', BookingPaymentStatus.polling)
-              .having((s) => s.pollAttempts, 'pollAttempts', 1),
-          isA<BookingPaymentState>()
-              .having((s) => s.status, 'status', BookingPaymentStatus.success)
-              .having((s) => s.message, 'message', 'Booking confirmed via webhook.'),
-        ]),
-      );
-
-      await cubit.startPayment(
-        bookingId: 'bk-001',
-        paymentMethod: 'credit_card',
-        currency: 'USD',
-      );
-
-      await matcher;
-
-      expect(repository.initiatePaymentCallCount, 1);
-      expect(repository.payBookingCallCount, 0);
-      expect(repository.getBookingCallCount, greaterThanOrEqualTo(2));
-    }, timeout: const Timeout(Duration(seconds: 20)));
-
-    test('initiate throws -> fallback payBooking succeeds',
-        () async {
-      repository.initiatePaymentStub = ({required bookingId, required paymentMethod, currency}) async =>
-          Future.error(Exception('initiate endpoint unavailable'));
-
-      repository.payBookingStub = ({required bookingId, required paymentMethod, currency}) async =>
-          <String, dynamic>{
-            'success': true,
-            'simulated': true,
-            'client_secret': null,
-            'payment_id': 'pay_fallback_001',
-            'message': 'Payment processed (fallback).',
-          };
-
-      final matcher = expectLater(
-        cubit.stream,
-        emitsInOrder([
-          isA<BookingPaymentState>()
-              .having((s) => s.status, 'status', BookingPaymentStatus.initiating),
-          isA<BookingPaymentState>()
-              .having((s) => s.status, 'status', BookingPaymentStatus.sheetOpen)
-              .having((s) => s.simulated, 'simulated', true),
-          isA<BookingPaymentState>()
-              .having((s) => s.status, 'status', BookingPaymentStatus.success)
-              .having((s) => s.message, 'message', 'Payment completed (simulated).'),
-        ]),
-      );
-
-      await cubit.startPayment(
-        bookingId: 'bk-001',
-        paymentMethod: 'credit_card',
-        currency: 'USD',
-      );
-
-      await matcher;
-
-      expect(repository.initiatePaymentCallCount, 1);
-      expect(repository.payBookingCallCount, 1);
-    }, timeout: const Timeout(Duration(seconds: 15)));
-
-    test('initiate -> polling -> failure (booking cancelled)',
-        () async {
-      repository.initiatePaymentStub = ({required bookingId, required paymentMethod, currency}) async =>
-          <String, dynamic>{
-            'success': true,
-            'simulated': false,
-            'client_secret': 'pi_002_secret_xyz789',
-            'payment_id': 'pay_002',
-            'message': 'Payment initiated.',
-          };
-
-      repository.getBookingStub = (String bookingId) async =>
-          _defaultBooking(status: 'cancelled');
-
-      final matcher = expectLater(
-        cubit.stream,
-        emitsInOrder([
-          isA<BookingPaymentState>()
-              .having((s) => s.status, 'status', BookingPaymentStatus.initiating),
-          isA<BookingPaymentState>()
-              .having((s) => s.status, 'status', BookingPaymentStatus.sheetOpen),
-          isA<BookingPaymentState>()
-              .having((s) => s.status, 'status', BookingPaymentStatus.polling),
-          isA<BookingPaymentState>()
-              .having((s) => s.status, 'status', BookingPaymentStatus.failure)
+          isA<BookingPaymentInitiating>(),
+          isA<BookingPaymentFailure>()
               .having((s) => s.error, 'error',
-                  predicate((String? e) => e != null && e.contains('cancelled'))),
+                  predicate((String e) => e.contains('No bookings were initiated'))),
         ]),
       );
 
-      await cubit.startPayment(
-        bookingId: 'bk-001',
-        paymentMethod: 'credit_card',
-        currency: 'USD',
+      cubit.initiatePayAllBookings(
+        PayAllBookings(
+          tripId: 'trip-001',
+          paymentMethod: 'credit_card',
+          currency: 'usd',
+        ),
       );
 
       await matcher;
     }, timeout: const Timeout(Duration(seconds: 15)));
 
-    test('initiate returns success:false -> failure state',
-        () async {
-      repository.initiatePaymentStub = ({required bookingId, required paymentMethod, currency}) async =>
-          <String, dynamic>{
-            'success': false,
-            'simulated': false,
-            'client_secret': null,
-            'payment_id': null,
-            'message': 'Insufficient funds.',
-          };
+    test('initiatePayAllBookings throws exception -> failure state', () async {
+      repository.initiateTripPackagePaymentStub = ({
+        required tripId,
+        required paymentMethod,
+        currency,
+      }) async =>
+          Future.error(Exception('Payment service unavailable'));
 
       final matcher = expectLater(
         cubit.stream,
         emitsInOrder([
-          isA<BookingPaymentState>()
-              .having((s) => s.status, 'status', BookingPaymentStatus.initiating),
-          isA<BookingPaymentState>()
-              .having((s) => s.status, 'status', BookingPaymentStatus.failure)
+          isA<BookingPaymentInitiating>(),
+          isA<BookingPaymentFailure>()
               .having((s) => s.error, 'error',
-                  predicate((String? e) => e != null && e.contains('Insufficient funds'))),
+                  predicate((String e) => e.contains('Payment service unavailable'))),
         ]),
       );
 
-      await cubit.startPayment(
-        bookingId: 'bk-001',
-        paymentMethod: 'credit_card',
-        currency: 'USD',
-      );
-
-      await matcher;
-    }, timeout: const Timeout(Duration(seconds: 15)));
-
-    test('initiate + fallback both throw -> failure state',
-        () async {
-      repository.initiatePaymentStub = ({required bookingId, required paymentMethod, currency}) async =>
-          Future.error(Exception('initiate failed'));
-
-      repository.payBookingStub = ({required bookingId, required paymentMethod, currency}) async =>
-          Future.error(Exception('payBooking also failed'));
-
-      final matcher = expectLater(
-        cubit.stream,
-        emitsInOrder([
-          isA<BookingPaymentState>()
-              .having((s) => s.status, 'status', BookingPaymentStatus.initiating),
-          isA<BookingPaymentState>()
-              .having((s) => s.status, 'status', BookingPaymentStatus.failure)
-              .having((s) => s.error, 'error',
-                  predicate((String? e) => e != null && e.contains('payBooking also failed'))),
-        ]),
-      );
-
-      await cubit.startPayment(
-        bookingId: 'bk-001',
-        paymentMethod: 'credit_card',
-        currency: 'USD',
+      cubit.initiatePayAllBookings(
+        PayAllBookings(
+          tripId: 'trip-001',
+          paymentMethod: 'credit_card',
+          currency: 'usd',
+        ),
       );
 
       await matcher;
     }, timeout: const Timeout(Duration(seconds: 15)));
 
     test('reset returns to initial state', () {
-      cubit.reset();
-      expect(cubit.state.status, BookingPaymentStatus.initial);
-      expect(cubit.state.error, isNull);
-      expect(cubit.state.pollAttempts, 0);
+      cubit.initiatePayAllBookings(
+        PayAllBookings(
+          tripId: 'trip-001',
+          paymentMethod: 'credit_card',
+          currency: 'usd',
+        ),
+      );
+
+      // Wait for processing to complete, then reset
+      Future(() {
+        cubit.reset();
+        expect(cubit.state, isA<BookingPaymentInitial>());
+      });
     });
   });
 }

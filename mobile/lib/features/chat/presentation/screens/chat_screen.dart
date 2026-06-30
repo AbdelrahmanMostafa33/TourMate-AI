@@ -4,6 +4,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../../../core/network/service_locator.dart';
 import '../../../../core/network/api_services.dart';
 import '../../../../core/utils/image_picker_service.dart';
+import '../../../../core/widgets/app_snackbar.dart';
 import '../../data/models/chat_session_response.dart';
 import '../../data/repository/chat_repository.dart';
 import '../../logic/chat_cubit.dart';
@@ -175,43 +176,90 @@ class _ChatViewState extends State<_ChatView> {
   }
 
   /// Called when the user selects a hotel option to start booking.
+  /// Uses explicit "select hotel" language so the backend message interpreter
+  /// correctly routes to select_hotel action during HOTEL_SELECTION phase.
   void _selectHotel(ChatCubit cubit, dynamic hotel) {
-    // In the future, this will trigger the booking flow.
-    // For now, send a message to the backend indicating the selection.
-    cubit.sendMessage('book');
+    cubit.sendMessage('Select hotel');
+  }
+
+  /// Called when the user selects a flight option.
+  /// Uses "pick the first" language which matches the backend interpreter's
+  /// number_keywords ("pick ") without matching flight_keywords (which would
+  /// wrongly route to search_flights instead of select_flight).
+  void _selectFlight(ChatCubit cubit, dynamic flight) {
+    cubit.sendMessage('Pick the first one');
   }
 
   /// Called when the user taps "Pay Now" on the booking card.
-  /// Approves the booking via WS and navigates to the trip detail page.
-  void _onBookingPayNow(ChatCubit cubit) {
-    // Send explicit approve text to trigger COMPLETED phase
-    // ("1️⃣" may not be properly interpreted by the AI engine)
-    cubit.sendMessage('approve');
-
-    // The trip already exists with status awaiting_booking from the initial
-    // itinerary approval. Navigate to the trip detail page where the payment
-    // section will handle booking creation and payment.
+  /// Makes a direct REST API call to update the trip status to
+  /// `awaiting_booking`, bypassing the LLM message interpreter,
+  /// then navigates to TripDetailScreen which auto-triggers the
+  /// "Book My Trip" flow (create bookings → Stripe Payment Sheet).
+  Future<void> _onBookingPayNow(ChatCubit cubit) async {
     final tripId = cubit.bookingTripId;
-    if (tripId != null && tripId.isNotEmpty) {
-      // Small delay to let the WS message send before navigating
-      Future.delayed(const Duration(milliseconds: 800), () {
-        if (!mounted) return;
-        Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (_) => TripDetailScreen(tripId: tripId),
+    if (tripId == null || tripId.isEmpty) return;
+
+    // Direct REST API call — no LLM involved, no WebSocket dependency.
+    String? patchError;
+    try {
+      await locator<ApiServices>().updateTripStatus(
+        tripId,
+        {'status': 'awaiting_booking'},
+      );
+    } catch (e) {
+      patchError = e.toString();
+      debugPrint('[ChatScreen] updateTripStatus failed: $e');
+    }
+
+    if (patchError != null && context.mounted) {
+      AppSnackbar.error(
+        context,
+        'Could not update trip status: $patchError. You can retry in the trip detail screen.',
+      );
+    }
+
+    if (mounted) {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => TripDetailScreen(
+            tripId: tripId,
+            shouldAutoBook: true,
           ),
-        );
-      });
+        ),
+      );
     }
   }
 
   /// Called when the user taps "Do It Later" on the booking card.
-  /// Approves/saves the booking without navigating to payment.
-  /// Uses "approve" (same as Pay Now) since both need to exit the
-  /// BOOKING phase — the only difference is whether we navigate.
-  void _onBookingLater(ChatCubit cubit) {
-    cubit.sendMessage('approve');
+  /// Sets the trip status to `awaiting_booking` so the "Pay All"
+  /// button appears in TripDetailScreen, then resets the chat to
+  /// its initial empty state (as if starting a new conversation).
+  Future<void> _onBookingLater(ChatCubit cubit) async {
+    final tripId = cubit.bookingTripId;
+    if (tripId == null || tripId.isEmpty) return;
+
+    String? patchError;
+    try {
+      await locator<ApiServices>().updateTripStatus(
+        tripId,
+        {'status': 'awaiting_booking'},
+      );
+    } catch (e) {
+      patchError = e.toString();
+      debugPrint('[ChatScreen] updateTripStatus (book later) failed: $e');
+    }
+
+    if (patchError != null && context.mounted) {
+      AppSnackbar.error(
+        context,
+        'Could not update trip status: $patchError.',
+      );
+    }
+
+    // Reset chat to initial state — user can find the trip in the
+    // sidebar and access payment from TripDetailScreen.
+    cubit.resetForNewChat();
   }
 
   @override
@@ -282,6 +330,7 @@ class _ChatViewState extends State<_ChatView> {
                                 msg: messages[i],
                                 onApproveItinerary: () => _sendApprove(cubit),
                                 onSelectHotel: (hotel) => _selectHotel(cubit, hotel),
+                                onSelectFlight: (flight) => _selectFlight(cubit, flight),
                                 onBookingPayNow: () => _onBookingPayNow(cubit),
                                 onBookingLater: () => _onBookingLater(cubit),
                               );

@@ -23,7 +23,7 @@ class AccommodationSuggestion(BaseModel):
     lon: float = Field(default=0.0, description="Longitude")
     why_recommended: str = Field(default="", description="Reason this hotel fits the user")
     rating: float = Field(default=0, description="Hotel rating (1-5)")
-    amenities: List[str] = Field(default_factory=list, description="List of amenities")
+    amenities: list[str] = Field(default_factory=list, description="List of amenities")
 
 
 class Stop(BaseModel):
@@ -49,7 +49,7 @@ class Day(BaseModel):
 
     day_number: int = Field(description="Day number (1-based)")
     theme: str = Field(default="", description="Theme or title for the day")
-    stops: List[Stop] = Field(default_factory=list, description="Stops/activities for this day")
+    stops: list[Stop] = Field(default_factory=list, description="Stops/activities for this day")
 
 
 class ItineraryPlan(BaseModel):
@@ -67,7 +67,7 @@ class ItineraryPlan(BaseModel):
 
     destination: str = Field(description="Destination city name")
     duration_days: int = Field(default=3, description="Number of trip days")
-    days: List[Day] = Field(
+    days: list[Day] = Field(
         default_factory=list,
         description="Day-by-day itinerary with stops",
     )
