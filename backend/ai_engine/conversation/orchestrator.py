@@ -401,6 +401,7 @@ async def _process_message_inner(
                 "booking_data": booking_data,
                 "flight_booking": flight_booking,
                 "image_features": image_features,
+                "action": "approve_itinerary",
             }
 
         # ── If already in HOTEL_SELECTION ──────────────────────────────
@@ -427,6 +428,7 @@ async def _process_message_inner(
                         "message": final_message,
                         "itinerary": state.itinerary,
                         "image_features": None,
+                        "action": "approve_itinerary",
                     }
                 else:
                     response = {
@@ -456,6 +458,7 @@ async def _process_message_inner(
                 "message": message,
                 "itinerary": state.itinerary,
                 "image_features": image_features,
+                "action": "approve_itinerary",
             }
 
     # ── ACTION: SEARCH FLIGHTS (during flight_selection phase) ─────────────
@@ -676,6 +679,8 @@ async def handle_chat_stream(user_id, user_message, image_bytes=None, token=None
             "phase": phase_value,
             "session_id": state.session_id,
         }
+        if response.get("action"):
+            result_data["action"] = response["action"]
 
         # Itinerary data
         if response.get("itinerary"):

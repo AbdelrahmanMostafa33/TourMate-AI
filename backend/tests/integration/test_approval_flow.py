@@ -110,14 +110,30 @@ def _utc_ts(dt: datetime) -> float:
     return dt.timestamp()
 
 
-def _simulate_approval(trip: Trip, now: datetime) -> None:
-    """Simulate the exact DB updates done by process_message_stream on approval."""
-    trip.status = TripStatus.awaiting_booking
+def _simulate_approval(
+    trip: Trip,
+    now: datetime,
+    status: TripStatus = TripStatus.awaiting_booking,
+) -> None:
+    """Simulate the exact DB updates done by process_message_stream on approval.
+
+    Args:
+        trip:   The Trip ORM object to update.
+        now:    Current UTC datetime for timestamps.
+        status: Which TripStatus to set.
+                - ``TripStatus.awaiting_booking`` (default): final booking
+                  approval — also activates the itinerary.
+                - ``TripStatus.itinerary_draft``: first-time itinerary
+                  approval — itinerary stays in ``draft``.
+    """
+    trip.status = status
     trip.approved_at = now
     trip.updated_at = now
     if trip.itineraries:
         for itin in trip.itineraries:
-            itin.status = ItineraryStatus.active
+            if status == TripStatus.awaiting_booking:
+                itin.status = ItineraryStatus.active
+            # itinerary_draft leaves itin.status as-is (draft)
             itin.updated_at = now
     if trip.trip_profiles:
         for prof in trip.trip_profiles:
@@ -513,15 +529,121 @@ class TestProcessMessageStreamApproval:
 
                 assert trip_r.status == TripStatus.awaiting_booking
                 assert trip_r.approved_at is not None
-                assert _utc_ts(trip_r.updated_at) > _utc_ts(trip_r.created_at)
+                # SQLite has second-level precision — use >= to avoid flaky
+                # failures when created_at and updated_at fall in the same second.
+                assert _utc_ts(trip_r.updated_at) >= _utc_ts(trip_r.created_at)
 
                 itin_r = trip_r.itineraries[0]
                 assert itin_r.status == ItineraryStatus.active
-                assert _utc_ts(itin_r.updated_at) > _utc_ts(itin_r.created_at)
+                assert _utc_ts(itin_r.updated_at) >= _utc_ts(itin_r.created_at)
 
                 if trip_r.trip_profiles:
                     prof = trip_r.trip_profiles[0]
-                    assert _utc_ts(prof.updated_at) > _utc_ts(prof.generated_at)
+                    assert _utc_ts(prof.updated_at) >= _utc_ts(prof.generated_at)
+            finally:
+                manager.disconnect(ws_key)
+
+    @pytest.mark.asyncio
+    async def test_stream_first_time_approval_sets_itinerary_draft(self, db_session):
+        """
+        First-time approval (APPROVE_ITINERARY) sets trip status to
+        itinerary_draft (NOT awaiting_booking) and does NOT activate
+        the itinerary.
+        """
+        # ── 1. Create trip in DB ──────────────────────────────────────────
+        data = await _create_trip_with_itinerary_and_profile(db_session)
+        trip = data["trip"]
+
+        from app.models.chat import Conversation
+        from app.models.enums import ConversationStatus
+
+        conv = Conversation(
+            conversation_id="test_conv_first_approve_001",
+            user_id="approval_test_user",
+            status=ConversationStatus.active,
+        )
+        db_session.add(conv)
+        trip.conversation_id = conv.conversation_id
+        await db_session.commit()
+
+        # ── 2. Build mock stream that yields first-time approval ──────────
+        #    Note: no phase "completed" event — the result event has
+        #    action="approve_itinerary" with phase="flight_selection",
+        #    which triggers APPROVE_ITINERARY → itinerary_draft.
+        async def mock_stream(*args, **kwargs):
+            yield {"type": "session", "data": {"session_id": "sess_first_approve_001"}}
+            yield {"type": "phase", "data": {"phase": "flight_selection"}}
+            yield {"type": "text", "content": "Your stops look great! "}
+            yield {
+                "type": "result",
+                "data": {
+                    "action": "approve_itinerary",
+                    "message": "Your stops look great! Before we find you a place to stay, would you like to book a flight?",
+                    "itinerary": {"destination": "Cairo", "days": []},
+                    "phase": "flight_selection",
+                },
+            }
+            yield {"type": "done"}
+
+        # ── 3. Patch handle_chat_stream and call process_message_stream ──
+        with patch(
+            "ai_engine.conversation.orchestrator.handle_chat_stream",
+            side_effect=mock_stream,
+        ):
+            from app.api.v1.routes.chat import process_message_stream
+            from app.ws.manager import manager
+
+            ws_key = trip.trip_id + "_first_approve"
+            mock_ws = AsyncMock()
+            await manager.connect_existing(ws_key, mock_ws)
+
+            try:
+                await process_message_stream(
+                    user_text="I approve this itinerary",
+                    trip=trip,
+                    conversation=conv,
+                    profile_data={},
+                    ws_key=ws_key,
+                    db=db_session,
+                    user_id="approval_test_user",
+                    token="mock_token",
+                )
+
+                # ── 4. Verify DB updates ────────────────────────────────────
+                result = await db_session.execute(
+                    select(Trip)
+                    .options(
+                        selectinload(Trip.itineraries),
+                        selectinload(Trip.trip_profiles),
+                    )
+                    .where(Trip.trip_id == trip.trip_id)
+                )
+                trip_r = result.scalar_one()
+
+                # Status is itinerary_draft (NOT awaiting_booking)
+                assert trip_r.status == TripStatus.itinerary_draft, (
+                    f"Expected itinerary_draft, got {trip_r.status}"
+                )
+                assert trip_r.approved_at is not None
+                # SQLite has second-level precision — use >= to avoid flaky failures
+                assert _utc_ts(trip_r.updated_at) >= _utc_ts(trip_r.created_at)
+
+                # Itinerary status should NOT be activated (stays draft)
+                itin_r = trip_r.itineraries[0]
+                assert itin_r.status == ItineraryStatus.draft, (
+                    f"Expected draft, got {itin_r.status} — "
+                    "itinerary should NOT be activated on first-time approval"
+                )
+                # Version should NOT increment on approval
+                assert itin_r.version_number == 1, (
+                    f"Expected version=1, got {itin_r.version_number} — "
+                    "version should NOT increment on approval"
+                )
+
+                # TripProfile should have updated_at advanced
+                if trip_r.trip_profiles:
+                    prof = trip_r.trip_profiles[0]
+                    assert _utc_ts(prof.updated_at) >= _utc_ts(prof.generated_at)
             finally:
                 manager.disconnect(ws_key)
 

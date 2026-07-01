@@ -307,9 +307,11 @@ async def process_message_stream(
 
                 action_type = result.get("action", "create_trip")
                 if action_type == "approve_itinerary":
-                    approve_action = {
-                        "type": "APPROVE_TRIP",
-                    }
+                    result_phase = result.get("phase", "")
+                    if result_phase == "completed":
+                        approve_action = {"type": "APPROVE_TRIP"}
+                    else:
+                        approve_action = {"type": "APPROVE_ITINERARY"}
                 elif result.get("itinerary"):
                     actions = [{"type": "CREATE_TRIP", "data": result["itinerary"]}]
                     # Send structured itinerary data to Flutter for card rendering
@@ -398,25 +400,30 @@ async def process_message_stream(
 
         from sqlalchemy.sql import func as sqlfunc
 
-        # Update trip: status → awaiting_booking (itinerary approved, ready for bookings),
-        # approved_at → now (Cairo via DB)
-        trip.status      = TripStatus.awaiting_booking
-        trip.approved_at = sqlfunc.now()
-
-        # Update itinerary: status → active (updated_at handled by onupdate)
-        if trip.itineraries:
-            for itin in trip.itineraries:
-                itin.status = ItineraryStatus.active
+        if approve_action["type"] == "APPROVE_TRIP":
+            # Final booking approval — mark as awaiting_booking
+            trip.status      = TripStatus.awaiting_booking
+            trip.approved_at = sqlfunc.now()
+            if trip.itineraries:
+                for itin in trip.itineraries:
+                    itin.status = ItineraryStatus.active
+            logger.info(
+                "[ChatRoutes] Trip %s fully approved — status=awaiting_booking",
+                trip.trip_id,
+            )
+        elif approve_action["type"] == "APPROVE_ITINERARY":
+            # First-time itinerary approval — mark as itinerary_draft
+            trip.status      = TripStatus.itinerary_draft
+            trip.approved_at = sqlfunc.now()
+            logger.info(
+                "[ChatRoutes] Trip %s itinerary approved — status=itinerary_draft",
+                trip.trip_id,
+            )
 
         # Touch trip_profile updated_at (Cairo via DB)
         if trip.trip_profiles:
             for prof in trip.trip_profiles:
                 prof.updated_at = sqlfunc.now()
-
-        logger.info(
-            "[ChatRoutes] Trip %s approved — status=awaiting_booking",
-            trip.trip_id,
-        )
 
         # ── Update traveler_persona based on this approved trip ────────
         try:

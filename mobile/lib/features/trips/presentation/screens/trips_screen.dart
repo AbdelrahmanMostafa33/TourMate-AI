@@ -116,6 +116,39 @@ class _TripsScreenState extends State<TripsScreen> {
     );
   }
 
+  /// Convert a trip status string to a user-friendly label.
+  String _statusLabel(String status) {
+    switch (status.toLowerCase()) {
+      case 'planning':
+        return 'Planning';
+      case 'itinerary_draft':
+        return 'Draft';
+      case 'awaiting_booking':
+        return 'Ready to Book';
+      case 'booking_pending':
+        return 'Payment Pending';
+      case 'payment_processing':
+        return 'Processing Payment';
+      case 'payment_failed':
+        return 'Payment Failed';
+      case 'booking_confirmed':
+        return 'Confirmed';
+      case 'active':
+        return 'Active';
+      case 'completed':
+        return 'Completed';
+      case 'cancelled':
+        return 'Cancelled';
+      default:
+        // Fallback: replace underscores with spaces and capitalize words
+        return status
+            .replaceAll('_', ' ')
+            .split(' ')
+            .map((w) => w.isEmpty ? '' : '${w[0].toUpperCase()}${w.substring(1)}')
+            .join(' ');
+    }
+  }
+
   Widget _tripCard(TripSummaryModel trip, BuildContext context) {
     final card = Container(
       margin: const EdgeInsets.only(bottom: 16),
@@ -162,7 +195,7 @@ class _TripsScreenState extends State<TripsScreen> {
                 ),
                 const SizedBox(height: 6),
                 Text(
-                  trip.status.toUpperCase(),
+                  _statusLabel(trip.status),
                   style: const TextStyle(
                     color: Colors.black,
                     fontWeight: FontWeight.bold,

@@ -43,7 +43,7 @@ class TripSummaryModel extends Equatable {
       startDate: json['start_date'],
       endDate: json['end_date'],
       numberOfTravelers: json['number_of_travelers'] ?? 1,
-      status: json['status'] ?? '',
+      status: json['status'] as String? ?? 'planning',
       duration: json['duration'] as int?,
     );
   }
