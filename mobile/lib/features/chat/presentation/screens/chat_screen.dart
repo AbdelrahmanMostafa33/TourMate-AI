@@ -329,18 +329,17 @@ class _ChatViewState extends State<_ChatView> {
       return;
     }
     
-    if (hotelInfo != null) {
-      final placeId = hotelInfo['place_id'] as String?;
-      final totalCost = (hotelInfo['total_cost'] as num?)?.toDouble() ??
-                        (hotelInfo['nightly_rate'] as num?)?.toDouble() ?? 0;
-      final currency = hotelInfo['currency'] as String? ?? 'USD';
+    final placeId = hotelInfo['place_id'] as String?;
+    final totalCost = (hotelInfo['total_cost'] as num?)?.toDouble() ??
+                      (hotelInfo['nightly_rate'] as num?)?.toDouble() ?? 0;
+    final currency = hotelInfo['currency'] as String? ?? 'USD';
 
-      debugPrint('[ChatScreen] placeId: $placeId, totalCost: $totalCost, currency: $currency');
-      debugPrint('[ChatScreen] placeId != null: ${placeId != null}, placeId.isNotEmpty: ${placeId?.isNotEmpty ?? false}, totalCost > 0: ${totalCost > 0}');
+    debugPrint('[ChatScreen] placeId: $placeId, totalCost: $totalCost, currency: $currency');
+    debugPrint('[ChatScreen] placeId != null: ${placeId != null}, placeId.isNotEmpty: ${placeId?.isNotEmpty ?? false}, totalCost > 0: ${totalCost > 0}');
 
-      if (placeId != null && placeId.isNotEmpty) {
-        try {
-          debugPrint('[ChatScreen] Creating hotel booking for place_id: $placeId, cost: $totalCost');
+    if (placeId != null && placeId.isNotEmpty) {
+      try {
+        debugPrint('[ChatScreen] Creating hotel booking for place_id: $placeId, cost: $totalCost');
           
           // Create pending booking (no payment yet)
           final dio = locator<Dio>();
@@ -386,7 +385,6 @@ class _ChatViewState extends State<_ChatView> {
             AppSnackbar.error(context, 'Hotel booking failed: $e');
           }
         }
-      }
     }
 
     // ── Step 4: If no hotel to pay for, finalize flight booking only ───────────
