@@ -2,7 +2,7 @@ import 'dart:typed_data';
 import 'itinerary_data.dart';
 import 'hotel_option.dart';
 import 'booking_data.dart';
-import 'flight_offer.dart';
+import 'flight_options_payload.dart';
 
 class ChatMessage {
   final String text;

@@ -9,7 +9,7 @@ import '../data/models/chat_message.dart';
 import '../data/models/itinerary_data.dart';
 import '../data/models/hotel_option.dart';
 import '../data/models/booking_data.dart';
-import '../data/models/flight_offer.dart';
+import '../data/models/flight_options_payload.dart';
 import 'chat_state.dart';
 
 /// A single step in the AI pipeline progress (visible to the UI).

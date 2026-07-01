@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
-import '../../data/models/flight_offer.dart';
+import '../../../flights/data/models/flight_offer.dart';
+import '../../data/models/flight_options_payload.dart';
 
 /// Displays a list of flight options with airline, route, times, and pricing.
 /// Each option has a "Select" button so the user can pick a flight.

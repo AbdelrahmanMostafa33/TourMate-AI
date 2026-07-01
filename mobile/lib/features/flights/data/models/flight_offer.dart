@@ -1,66 +1,198 @@
 import 'package:equatable/equatable.dart';
 
-/// Matches the backend FlightOfferItem schema from flight search results.
+/// Matches a single flight offer from the backend's flight search results
+/// or smart-search API.
+///
+/// Handles two JSON formats:
+///   - **Chat format** (flight_search_results / flight_options):
+///     ``departure_at_formatted`` and ``arrival_at_formatted`` are pre-formatted
+///     display strings; ``duration``, ``stops``, ``cabin`` are present.
+///   - **Flights API format** (smart-search):
+///     ``departure_at`` / ``arrival_at`` are ISO-8601 DateTime strings;
+///     ``offer_index``, ``cabin_class``, ``price_per_adult``, ``raw_offer``
+///     are present; ``departure_at_formatted`` / ``arrival_at_formatted`` are
+///     derived from the DateTime fields.
 class FlightOffer extends Equatable {
-  final int offerIndex;
-  final String airlineCode;
+  /// Display name (e.g. "EgyptAir")
   final String airlineName;
+
+  /// IATA code (e.g. "MS")
+  final String airlineCode;
+
+  /// Flight number (e.g. "MS777")
   final String flightNumber;
+
+  /// Origin IATA code
   final String originIata;
+
+  /// Destination IATA code
   final String destinationIata;
-  final DateTime departureAt;
-  final DateTime arrivalAt;
-  final String cabinClass;
+
+  /// Pre-formatted departure time string for display ("08:30")
+  final String departureAtFormatted;
+
+  /// Pre-formatted arrival time string for display ("11:45")
+  final String arrivalAtFormatted;
+
+  /// Total price
   final double totalPrice;
+
+  /// Currency (e.g. "USD", "EGP")
   final String currency;
+
+  /// Human-readable duration ("2h 15m")
+  final String? duration;
+
+  /// Number of stops (0 = non-stop)
+  final int? stops;
+
+  /// Cabin type (e.g. "ECONOMY")
+  final String? cabin;
+
+  /// Offer index within the search results (flights API format)
+  final int offerIndex;
+
+  /// Parsed departure DateTime (flights API format)
+  final DateTime? departureAt;
+
+  /// Parsed arrival DateTime (flights API format)
+  final DateTime? arrivalAt;
+
+  /// Cabin class string (flights API format)
+  final String? cabinClass;
+
+  /// Price per adult (flights API format)
   final double pricePerAdult;
+
+  /// Raw offer JSON for downstream booking (flights API format)
   final Map<String, dynamic> rawOffer;
 
   const FlightOffer({
-    required this.offerIndex,
-    required this.airlineCode,
-    required this.airlineName,
-    required this.flightNumber,
-    required this.originIata,
-    required this.destinationIata,
-    required this.departureAt,
-    required this.arrivalAt,
-    required this.cabinClass,
-    required this.totalPrice,
-    required this.currency,
-    required this.pricePerAdult,
-    required this.rawOffer,
+    this.airlineName = '',
+    this.airlineCode = '',
+    this.flightNumber = '',
+    this.originIata = '',
+    this.destinationIata = '',
+    this.departureAtFormatted = '',
+    this.arrivalAtFormatted = '',
+    this.totalPrice = 0,
+    this.currency = 'USD',
+    this.duration,
+    this.stops,
+    this.cabin,
+    this.offerIndex = 0,
+    this.departureAt,
+    this.arrivalAt,
+    this.cabinClass,
+    this.pricePerAdult = 0,
+    this.rawOffer = const {},
   });
 
+  /// Parse from either chat-format or flights-API-format JSON.
   factory FlightOffer.fromJson(Map<String, dynamic> json) {
+    // ── Parse display times ───────────────────────────────────────────
+    // Chat format: departure_at_formatted / arrival_at_formatted
+    // Flights API format: departure_at / arrival_at (ISO-8601)
+    String depFormatted = (json['departure_at_formatted'] as String? ?? '').toString();
+    String arrFormatted = (json['arrival_at_formatted'] as String? ?? '').toString();
+    DateTime? depDt;
+    DateTime? arrDt;
+
+    // Try to parse DateTime from departure_at / arrival_at
+    final rawDep = json['departure_at'];
+    final rawArr = json['arrival_at'];
+    if (rawDep is String && rawDep.isNotEmpty) {
+      try {
+        depDt = DateTime.parse(rawDep);
+        if (depFormatted.isEmpty) {
+          // Derive display time from DateTime
+          depFormatted =
+              '${depDt.hour.toString().padLeft(2, '0')}:${depDt.minute.toString().padLeft(2, '0')}';
+        }
+      } catch (_) {
+        // Not an ISO datetime — use as formatted string if no explicit formatted field
+        if (depFormatted.isEmpty) depFormatted = rawDep;
+      }
+    }
+    if (rawArr is String && rawArr.isNotEmpty) {
+      try {
+        arrDt = DateTime.parse(rawArr);
+        if (arrFormatted.isEmpty) {
+          arrFormatted =
+              '${arrDt.hour.toString().padLeft(2, '0')}:${arrDt.minute.toString().padLeft(2, '0')}';
+        }
+      } catch (_) {
+        if (arrFormatted.isEmpty) arrFormatted = rawArr;
+      }
+    }
+
     return FlightOffer(
-      offerIndex: json['offer_index'] as int? ?? 0,
-      airlineCode: json['airline_code'] as String? ?? '',
-      airlineName: json['airline_name'] as String? ?? '',
-      flightNumber: json['flight_number'] as String? ?? '',
-      originIata: json['origin_iata'] as String? ?? '',
-      destinationIata: json['destination_iata'] as String? ?? '',
-      departureAt: DateTime.parse(json['departure_at'] as String),
-      arrivalAt: DateTime.parse(json['arrival_at'] as String),
-      cabinClass: json['cabin_class'] as String? ?? '',
-      totalPrice: (json['total_price'] as num?)?.toDouble() ?? 0.0,
-      currency: json['currency'] as String? ?? 'USD',
-      pricePerAdult: (json['price_per_adult'] as num?)?.toDouble() ?? 0.0,
+      airlineName: (json['airline_name'] ?? '').toString(),
+      airlineCode: (json['airline_code'] ?? '').toString(),
+      flightNumber: (json['flight_number'] ?? '').toString(),
+      originIata: (json['origin_iata'] ?? json['origin'] ?? '').toString(),
+      destinationIata:
+          (json['destination_iata'] ?? json['destination'] ?? '').toString(),
+      departureAtFormatted: depFormatted,
+      arrivalAtFormatted: arrFormatted,
+      totalPrice: (json['total_price'] as num?)?.toDouble() ?? 0,
+      currency: (json['currency'] ?? 'USD').toString(),
+      duration: json['duration']?.toString(),
+      stops: (json['stops'] as num?)?.toInt(),
+      cabin: json['cabin']?.toString(),
+      offerIndex: (json['offer_index'] as num?)?.toInt() ?? 0,
+      departureAt: depDt,
+      arrivalAt: arrDt,
+      cabinClass: json['cabin_class']?.toString(),
+      pricePerAdult: (json['price_per_adult'] as num?)?.toDouble() ?? 0,
       rawOffer: json['raw_offer'] as Map<String, dynamic>? ?? {},
     );
   }
 
-  String get formattedPrice => '${currency == 'USD' ? '\$' : currency}${totalPrice.toStringAsFixed(2)}';
+  /// Computed: display-friendly airline name (prefers name over code).
+  String get airline => airlineName.isNotEmpty ? airlineName : airlineCode;
 
-  String get duration {
-    final diff = arrivalAt.difference(departureAt);
-    return '${diff.inHours}h ${diff.inMinutes.remainder(60)}m';
+  /// Computed: route string ("CAI → LHR").
+  String get route => '$originIata → $destinationIata';
+
+  /// Computed: price with currency symbol.
+  String get priceFormatted {
+    final symbol = currency == 'USD'
+        ? '\$'
+        : (currency == 'EUR' ? '€' : '$currency ');
+    if (totalPrice == totalPrice.roundToDouble()) {
+      return '$symbol${totalPrice.toInt()}';
+    }
+    return '$symbol${totalPrice.toStringAsFixed(2)}';
+  }
+
+  /// Computed: human-readable duration.
+  /// Uses the explicit ``duration`` field if present, otherwise derives
+  /// from ``departureAt`` / ``arrivalAt`` DateTime fields.
+  String get computedDuration {
+    if (duration != null && duration!.isNotEmpty) return duration!;
+    if (departureAt != null && arrivalAt != null) {
+      final diff = arrivalAt!.difference(departureAt!);
+      return '${diff.inHours}h ${diff.inMinutes.remainder(60)}m';
+    }
+    return '';
   }
 
   @override
   List<Object?> get props => [
-        offerIndex, airlineCode, airlineName, flightNumber,
-        originIata, destinationIata, departureAt, arrivalAt,
-        cabinClass, totalPrice, currency, pricePerAdult,
+        airlineName,
+        airlineCode,
+        flightNumber,
+        originIata,
+        destinationIata,
+        totalPrice,
+        currency,
+        offerIndex,
+        departureAt,
+        arrivalAt,
+        cabinClass,
+        pricePerAdult,
+        stops,
+        cabin,
       ];
 }
