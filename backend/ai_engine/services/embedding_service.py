@@ -8,8 +8,8 @@ Provides:
     load_place_embeddings()  Batch-load embeddings from the database.
 
 Uses gemini-embedding-2 (768-dim) via the google-genai SDK.
-Place embeddings are pre-generated (see scripts/generate_embeddings.py) and
-stored as JSON arrays in the ``places.embedding`` column.
+Place embeddings are pre-generated and stored as JSON arrays in the
+``places.embedding`` column.
 """
 
 from __future__ import annotations
