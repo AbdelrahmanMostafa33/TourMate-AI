@@ -1,7 +1,13 @@
-from fastapi import Depends, HTTPException, Header
+from typing import Optional
+from fastapi import Depends, HTTPException, Header, status
 from app.core.firebase import verify_token
 
-async def get_current_user(authorization: str = Header(...)):
+async def get_current_user(authorization: Optional[str] = Header(None)):
+    if not authorization:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authorization header required"
+        )
 
     if not authorization.startswith("Bearer "):
         raise HTTPException(status_code=401, detail="Invalid token format")

@@ -16,7 +16,7 @@ Endpoints:
   - ``POST   /flights/{booking_id}/cancel``    — Cancel a flight booking (auth)
 """
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -182,7 +182,7 @@ async def initiate_flight_booking(
 # POST /flights/book/confirm
 # ═══════════════════════════════════════════════════════════════════════════════
 
-@router.post("/flights/book/confirm", response_model=FlightBookingResponse)
+@router.post("/flights/book/confirm", response_model=FlightBookingResponse, status_code=status.HTTP_201_CREATED)
 async def confirm_flight_booking(
     data:         FlightBookConfirmRequest,
     current_user: dict         = Depends(get_current_user),

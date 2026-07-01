@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from app.core.database import get_db
@@ -10,7 +10,7 @@ import uuid
 router = APIRouter()
 
 
-@router.post("/register", response_model=UserResponse)
+@router.post("/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
 async def register(
     body:         RegisterRequest,
     current_user: dict         = Depends(get_current_user),
@@ -67,7 +67,7 @@ async def login(
 
 """------------ Test Only ------------"""
 
-@router.post("/test-register")
+@router.post("/test-register", status_code=status.HTTP_201_CREATED)
 async def test_register(
     body: RegisterRequest,
     db:   AsyncSession = Depends(get_db),

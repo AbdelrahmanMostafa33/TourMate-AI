@@ -18,7 +18,7 @@ import uuid
 import logging
 from datetime import date, datetime
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -69,7 +69,7 @@ async def _load_booking(db: AsyncSession, booking_id: str) -> Booking | None:
 # POST /
 # ═══════════════════════════════════════════════════════════════════════════════
 
-@router.post("/", response_model=BookingResponse)
+@router.post("/", response_model=BookingResponse, status_code=status.HTTP_201_CREATED)
 async def create_booking(
     data:         BookingCreate,
     current_user: dict         = Depends(get_current_user),

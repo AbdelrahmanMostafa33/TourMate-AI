@@ -1,6 +1,6 @@
 """Reviews routes – place reviews with CRUD + likes."""
 import uuid
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 from sqlalchemy.orm import selectinload
@@ -18,7 +18,7 @@ router = APIRouter()
 # POST /reviews/  –  Create a review for a place
 # ═════════════════════════════════════════════════════════════════════════════
 
-@router.post("/", response_model=ReviewResponse)
+@router.post("/", response_model=ReviewResponse, status_code=status.HTTP_201_CREATED)
 async def create_review(
     body: ReviewCreate,
     current_user: dict = Depends(get_current_user),

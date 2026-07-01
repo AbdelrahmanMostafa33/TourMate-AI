@@ -1,6 +1,6 @@
 """Saved Places routes."""
 import uuid
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
@@ -17,7 +17,7 @@ from app.repositories.place_repo import PlaceRepository
 router = APIRouter()
 
 
-@router.post("/", response_model=SavedPlaceResponse)
+@router.post("/", response_model=SavedPlaceResponse, status_code=status.HTTP_201_CREATED)
 async def save_place(
     body: SavedPlaceCreate,
     current_user: dict = Depends(get_current_user),

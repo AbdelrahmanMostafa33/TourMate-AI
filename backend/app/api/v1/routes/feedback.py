@@ -1,6 +1,6 @@
 """Feedback routes."""
 import uuid
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
@@ -12,7 +12,7 @@ from app.schemas.feedback import FeedbackCreate, FeedbackUpdate, FeedbackRespons
 router = APIRouter()
 
 
-@router.post("/", response_model=FeedbackResponse)
+@router.post("/", response_model=FeedbackResponse, status_code=status.HTTP_201_CREATED)
 async def create_feedback(
     body: FeedbackCreate,
     current_user: dict = Depends(get_current_user),

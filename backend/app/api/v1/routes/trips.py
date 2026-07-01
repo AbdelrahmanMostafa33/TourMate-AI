@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
@@ -39,7 +39,7 @@ def build_auto_message(data: TripCreate, delta: int) -> str:
 # POST /trips/
 # ═════════════════════════════════════════════════════════════════════════════
 
-@router.post("/")
+@router.post("/", status_code=status.HTTP_201_CREATED)
 async def create_trip(
     data:         TripCreate,
     current_user: dict         = Depends(get_current_user),
