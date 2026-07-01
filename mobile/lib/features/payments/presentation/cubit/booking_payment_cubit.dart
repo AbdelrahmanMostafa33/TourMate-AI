@@ -33,10 +33,6 @@ class PaySingleBooking extends BookingPaymentEvent {
 }
 
 /// Reset the payment state (e.g., after navigating away).
-class PaymentSheetOpened extends BookingPaymentEvent {
-  const PaymentSheetOpened();
-}
-
 class ResetPayment extends BookingPaymentEvent {
   const ResetPayment();
 }
