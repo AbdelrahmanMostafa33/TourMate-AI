@@ -50,6 +50,7 @@ class ChatService:
         sender: str,
         content: str,
         image_data: Optional[str] = None,
+        card_data: Optional[dict] = None,
     ) -> Message:
         """Persist a single message to the DB.
 
@@ -58,6 +59,9 @@ class ChatService:
             sender:           'user' | 'agent'
             content:          Message text.
             image_data:       Optional base64-encoded image data.
+            card_data:        Optional structured card data (itinerary, hotel_options,
+                              flight_options, booking_data). Persisted so chat history
+                              can reconstruct cards exactly as they appeared live.
 
         Returns:
             The newly created Message ORM object.
@@ -68,6 +72,7 @@ class ChatService:
             sender=sender,
             content=content,
             image_data=image_data,
+            card_data=card_data,
         )
         self.db.add(msg)
         return msg
@@ -85,9 +90,10 @@ class ChatService:
         self,
         conversation_id: str,
         content: str,
+        card_data: Optional[dict] = None,
     ) -> Message:
-        """Convenience: save an agent (AI) message."""
-        return await self.save_message(conversation_id, "agent", content)
+        """Convenience: save an agent (AI) message with optional structured card data."""
+        return await self.save_message(conversation_id, "agent", content, card_data=card_data)
 
     async def get_recent_messages(
         self,
