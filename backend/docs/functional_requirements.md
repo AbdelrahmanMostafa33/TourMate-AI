@@ -39,44 +39,51 @@
 
 ## 6. Flight & Hotel Booking
 
-1. The system shall enable users to search for real flight options, with city names automatically resolved to airport codes.
-2. Users shall be able to book flights and hotels through a secure payment flow, with explicit confirmation required before any booking is finalized.
-3. Users shall have full control to cancel bookings, with refunds processed for cancellations.
-4. Bulk operations (booking all accommodations at once, paying all pending bookings together) shall be supported for efficient trip finalization.
-5. A simulated payment mode shall be available for development and testing without real financial transactions.
+1. The system shall enable users to search for real-time flight availability and pricing through the Amadeus service, with city names automatically resolved to airport codes.
+2. Users shall be able to book flights and hotels through the chat conversation, with explicit confirmation required before any booking is finalized.
+3. Hotel bookings shall be simulated — the system generates realistic confirmation numbers and provider details without connecting to a live hotel booking API.
+4. Users shall have full control to cancel bookings before payment is completed.
+5. Bulk operations such as booking accommodation for all itinerary stops at once shall be supported for efficient trip finalization.
 
-## 7. Reviews & Personal Bookmarks
+## 7. Payment Management
+
+1. All payments shall run in a secure test environment with no real financial transactions taking place, supporting both individual and batch payments.
+2. Users shall be able to pay for a single booking, pay all pending bookings together, or pay for flights and hotels in a single combined checkout.
+3. If the payment service is unavailable, the system shall fall back to a fully simulated payment with no external service calls.
+4. If a payment succeeds but the booking confirmation fails (e.g., an Amadeus error), the affected bookings shall be refunded and the user guided through resolution.
+
+## 8. Reviews & Personal Bookmarks
 
 1. Users shall be able to rate and review places they have visited, with one review allowed per user per place.
 2. Users shall be able to like reviews written by others and view their own review history.
 3. Users shall be able to bookmark places for future reference, with the ability to add personal notes and organize their saved collection.
 
-## 8. Image-Based Travel Inspiration
+## 9. Image-Based Travel Inspiration
 
 1. Users shall be able to upload travel photos that the system analyzes to extract travel style cues and interests.
 2. Extracted preferences from images shall be incorporated into trip planning when confidence is high.
 3. Users shall be able to view and manage all images associated with their trips.
 
-## 9. Trip Lifecycle Management
+## 10. Trip Lifecycle Management
 
 1. Users shall be able to create, view, update, and cancel trips throughout their lifecycle.
 2. Trip status shall progress naturally through stages: planning → itinerary ready → booking → confirmed → in progress → completed.
 3. Users shall explicitly approve itineraries before advancing to the booking phase.
 4. Failed payments shall be recoverable, allowing users to retry without losing progress.
 
-## 10. Conversation Flow & Context Management
+## 11. Conversation Flow & Context Management
 
 1. The system shall maintain conversation context across chat sessions, remembering previous interactions and user choices.
 2. Each message shall be interpreted to determine the user's intent and routed to the appropriate feature.
 3. In-progress conversations shall be preserved if disconnected, allowing users to resume where they left off.
 
-## 11. Transparency & Continuous Improvement
+## 12. Transparency & Continuous Improvement
 
 1. The system shall log AI actions and decisions for auditing and quality assurance purposes.
 2. User feedback on completed trips and itineraries shall be collected to improve future recommendations.
 3. All AI operations shall be observable for monitoring performance, latency, and resource usage.
 
-## 12. System Health & Monitoring
+## 13. System Health & Monitoring
 
 1. The system shall expose a health check endpoint for monitoring service availability.
 2. Performance metrics (response times, error rates, usage patterns) shall be tracked for operational visibility.

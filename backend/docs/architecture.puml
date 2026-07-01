@@ -69,7 +69,7 @@ rectangle "🧠 TripState (Central Workflow State)" as TripState #e1f5fe {
 
 rectangle "🤖 Pipeline Agents" as Agents #e8f5e9 {
 
-  rectangle "1. Profile Loader\n───\n→ token, trip_id\n← profile" as A1
+  rectangle "1. Profile Loader\n───\n→ token, trip_id\n← per-trip profile" as A1
 
   rectangle "2. Place Retriever\n───\n→ destination_city, profile\n← filtered_places\n← matched_interest_subcats\n← agent_messages" as A2
 
@@ -81,7 +81,7 @@ rectangle "🤖 Pipeline Agents" as Agents #e8f5e9 {
 
   rectangle "6. Itinerary Validator\n───\n→ optimized_itinerary, user_message\n→ profile\n← is_valid, validation, agent_messages" as A7
 
-  rectangle "7. Hotel Selector\n(post-approval)\n───\n→ optimized_itinerary\n→ candidate_places, profile\n← accommodation_suggestions\n← agent_messages" as A6
+  rectangle "7. Hotel Selector\n(post-approval)\n───\n→ optimized_itinerary\n→ candidate_places, profile\n← accommodation_suggestions (simulated)\n← agent_messages" as A6
 }
 
 ' ── Edges ───────────────────────────────────────────────────────────────────
@@ -97,7 +97,7 @@ rectangle "🔁 LangGraph Edges" as Edges [
 ' ── External ────────────────────────────────────────────────────────────────
 
 rectangle "🌐 External Services" as External {
-  rectangle "(Mock/Firebase) Profile DB" as ES1
+  rectangle "PostgreSQL (TripProfile)" as ES1
   rectangle "PostgreSQL Places DB" as ES2
   rectangle "(Mock) OSRM Routing" as ES3
   rectangle "LLM (OpenAI/Groq/Claude)" as ES4
@@ -141,7 +141,8 @@ ES2 -right-> A2
 ES3 -right-> A5
 ES4 -right-> A4
 ES4 -right-> A7
-ES4 -right-> A6
+' ES4 -right-> A6
+A6 -right> A6 : simulated hotel match
 ES1 -right-> A1
 
 ' End node
