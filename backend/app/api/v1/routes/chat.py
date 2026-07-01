@@ -338,10 +338,29 @@ async def process_message_stream(
 
                 # Send structured flight_search_results as flight_options for card rendering
                 if result.get("flight_search_results"):
+                    offers = result["flight_search_results"]
+                    # DEBUG: Log first offer keys to confirm raw_offer is present
+                    if offers and len(offers) > 0:
+                        first = offers[0]
+                        has_raw = "raw_offer" in first
+                        raw_type = type(first.get("raw_offer")).__name__ if has_raw else "N/A"
+                        logger.info(
+                            "[FlightOptions] Sending %d offers. First offer keys=%s, has_raw_offer=%s, raw_type=%s",
+                            len(offers),
+                            list(first.keys()),
+                            has_raw,
+                            raw_type,
+                        )
+                        if has_raw and first["raw_offer"] is not None:
+                            logger.info(
+                                "[FlightOptions] raw_offer has %d keys: %s",
+                                len(first["raw_offer"]),
+                                list(first["raw_offer"].keys())[:20],
+                            )
                     await manager.send(ws_key, {
                         "type": "flight_options",
                         "data": {
-                            "offers": result["flight_search_results"],
+                            "offers": offers,
                             "message": None,
                         },
                     })
@@ -696,10 +715,23 @@ async def websocket_new_chat(
                             })
                         # Send structured flight_search_results as flight_options for card rendering
                         if result.get("flight_search_results"):
+                            offers2 = result["flight_search_results"]
+                            # DEBUG: Log first offer keys to confirm raw_offer is present
+                            if offers2 and len(offers2) > 0:
+                                first2 = offers2[0]
+                                has_raw2 = "raw_offer" in first2
+                                raw_type2 = type(first2.get("raw_offer")).__name__ if has_raw2 else "N/A"
+                                logger.info(
+                                    "[FlightOptions][new_chat] Sending %d offers. First offer has_raw_offer=%s, raw_type=%s, keys=%s",
+                                    len(offers2),
+                                    has_raw2,
+                                    raw_type2,
+                                    list(first2.keys()),
+                                )
                             await manager.send(ws_key, {
                                 "type": "flight_options",
                                 "data": {
-                                    "offers": result["flight_search_results"],
+                                    "offers": offers2,
                                     "message": None,
                                 },
                             })

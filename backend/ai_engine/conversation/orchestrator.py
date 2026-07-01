@@ -698,6 +698,20 @@ async def handle_chat_stream(user_id, user_message, image_bytes=None, token=None
             list(has_fb.keys()) if isinstance(has_fb, dict) else "N/A",
         )
         if has_fb:
+            # DEBUG: Check raw_offer inside flight_booking
+            fb_raw = has_fb.get("raw_offer")
+            logger.info(
+                "[StreamResult] flight_booking.raw_offer present=%s, type=%s, is None=%s",
+                "raw_offer" in has_fb if isinstance(has_fb, dict) else "N/A",
+                type(fb_raw).__name__ if fb_raw is not None else "None",
+                fb_raw is None,
+            )
+            if fb_raw is not None and isinstance(fb_raw, dict):
+                logger.info(
+                    "[StreamResult] flight_booking.raw_offer has %d keys: %s",
+                    len(fb_raw),
+                    list(fb_raw.keys())[:10],
+                )
             result_data["flight_booking"] = response["flight_booking"]
 
         # Flight search results (for Flutter to display)
@@ -984,6 +998,25 @@ async def _handle_select_flight(
         selected.get("currency", ""),
     )
 
+    # DEBUG: Deep inspection of selected offer's raw_offer
+    raw_val = selected.get("raw_offer")
+    logger.info(
+        "[_handle_select_flight] SELECTED offer keys=%s, raw_offer key present=%s, raw_offer value type=%s, raw_offer is None=%s",
+        list(selected.keys()),
+        "raw_offer" in selected,
+        type(raw_val).__name__,
+        raw_val is None,
+    )
+    if raw_val is not None and isinstance(raw_val, dict):
+        logger.info(
+            "[_handle_select_flight] raw_offer has %d keys: %s",
+            len(raw_val),
+            list(raw_val.keys())[:20],
+        )
+        for key in ["id", "type", "source", "instantTicketingRequired"]:
+            if key in raw_val:
+                logger.info("[_handle_select_flight] raw_offer.%s=%s", key, raw_val[key])
+
     # Build flight booking info for the Flutter client
     has_raw = selected.get("raw_offer") is not None
     logger.info(
@@ -992,7 +1025,7 @@ async def _handle_select_flight(
         selected.get("airline_name", ""),
         selected.get("flight_number", ""),
         has_raw,
-        type(selected.get("raw_offer")).__name__ if selected.get("raw_offer") else "N/A",
+        type(selected.get("raw_offer")).__name__ if selected.get("raw_offer") else "None",
     )
     flight_booking = {
         "selected_offer": selected,

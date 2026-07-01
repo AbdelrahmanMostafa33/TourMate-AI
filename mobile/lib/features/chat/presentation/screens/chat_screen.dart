@@ -192,6 +192,8 @@ class _ChatViewState extends State<_ChatView> {
   /// Called when the user taps a specific flight option.
   /// Sends airline + flight number so the backend's message interpreter
   /// can match it to a flight offer and route to select_flight action.
+  /// Also stores the selected flight's raw_offer in the cubit so the
+  /// Pay Now flow can later use it to book the exact flight.
   void _selectFlight(ChatCubit cubit, dynamic flight) {
     // flight is a FlightOffer object with airlineName, flightNumber, etc.
     // Dynamic access works: flight.airlineName returns FlightOffer.airlineName
@@ -203,6 +205,18 @@ class _ChatViewState extends State<_ChatView> {
     final msg = desc.isNotEmpty
         ? "I'll take the $desc flight"
         : 'Pick the first one';
+
+    // DEBUG: Log the flight object's rawOffer status
+    debugPrint('[ChatScreen] _selectFlight — flight type=${flight.runtimeType}, rawOffer type=${flight?.rawOffer.runtimeType}, rawOffer isEmpty=${flight?.rawOffer is Map ? (flight!.rawOffer as Map).isEmpty : "N/A"}, rawOffer keys=${flight?.rawOffer is Map ? (flight!.rawOffer as Map).keys.take(10).toList() : "N/A"}');
+
+    // Store the selected flight's raw_offer so Pay Now can use it
+    final rawOffer = flight?.rawOffer;
+    if (rawOffer is Map<String, dynamic> && rawOffer.isNotEmpty) {
+      cubit.setFlightBookingData(rawOffer);
+    } else {
+      debugPrint('[ChatScreen] ⚠️ No raw_offer on selected flight — Pay Now will only cover hotel');
+    }
+
     cubit.sendMessage(msg);
   }
 
@@ -389,9 +403,9 @@ class _ChatViewState extends State<_ChatView> {
 
 
   /// Called when the user taps "Do It Later" on the booking card.
-  /// Sets the trip status to `awaiting_booking` so the "Pay All"
-  /// button appears in TripDetailScreen, then resets the chat to
-  /// its initial empty state (as if starting a new conversation).
+  /// Sets the trip status to `awaiting_booking` so the trip is ready
+  /// for payment later.  Does NOT reset the chat — the booking card
+  /// stays visible so the user can tap Pay Now at any time.
   Future<void> _onBookingLater(ChatCubit cubit) async {
     final tripId = cubit.bookingTripId;
     if (tripId == null || tripId.isEmpty) return;
@@ -412,11 +426,16 @@ class _ChatViewState extends State<_ChatView> {
         context,
         'Could not update trip status: $patchError.',
       );
+    } else if (context.mounted) {
+      AppSnackbar.info(
+        context,
+        'Trip saved — you can pay whenever you\'re ready.',
+      );
     }
 
-    // Reset chat to initial state — user can find the trip in the
-    // sidebar and access payment from TripDetailScreen.
-    cubit.resetForNewChat();
+    // Allow the user to type freely — prevent sendMessage from redirecting
+    // their next input to "approve" (which was active during the booking phase).
+    cubit.leaveBookingPhase();
   }
 
   @override

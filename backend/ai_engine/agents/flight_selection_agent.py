@@ -146,7 +146,15 @@ async def search_flights_for_trip(
         return []
 
     if not raw_offers:
+        logger.info("[FlightAgent] search_flights_for_trip — raw_offers is empty (got %d from Amadeus)", len(raw_offers) if raw_offers else 0)
         return []
+
+    logger.info(
+        "[FlightAgent] search_flights_for_trip — got %d raw offers from Amadeus. First offer type=%s, keys=%s",
+        len(raw_offers),
+        type(raw_offers[0]).__name__ if raw_offers else "N/A",
+        list(raw_offers[0].keys())[:20] if raw_offers and isinstance(raw_offers[0], dict) else "N/A",
+    )
 
     # Parse offers into a clean format
     parsed: list[dict] = []
@@ -157,6 +165,14 @@ async def search_flights_for_trip(
         except (KeyError, IndexError, ValueError, TypeError) as exc:
             logger.warning("[FlightAgent] Skipping malformed offer %d: %s", idx, exc)
             continue
+
+    logger.info(
+        "[FlightAgent] search_flights_for_trip — parsed %d offers. First offer has raw_offer=%s, raw_offer is None=%s, raw_offer type=%s",
+        len(parsed),
+        "raw_offer" in parsed[0] if parsed else "N/A",
+        parsed[0].get("raw_offer") is None if parsed else "N/A",
+        type(parsed[0].get("raw_offer")).__name__ if parsed and parsed[0].get("raw_offer") is not None else "N/A",
+    )
 
     return parsed
 
@@ -201,7 +217,15 @@ def _parse_offer(offer: dict, idx: int) -> dict:
     depart_formatted = departure_at.strftime("%b %d, %H:%M")
     arrival_formatted = arrival_at.strftime("%b %d, %H:%M")
 
-    return {
+    logger.info(
+        "[_parse_offer] idx=%d airline=%s flight=%s raw_offer type=%s, raw_offer is None=%s, keys=%s",
+        idx, airline_code, flight_number,
+        type(offer).__name__,
+        offer is None,
+        list(offer.keys())[:15] if isinstance(offer, dict) else "N/A",
+    )
+
+    result = {
         "offer_index": idx,
         "airline_code": airline_code,
         "airline_name": airline_name,
@@ -220,6 +244,15 @@ def _parse_offer(offer: dict, idx: int) -> dict:
         "duration": itinerary.get("duration", ""),
         "raw_offer": offer,
     }
+
+    logger.info(
+        "[_parse_offer] result for idx=%d has raw_offer key=%s, raw_offer is None=%s",
+        idx,
+        "raw_offer" in result,
+        result.get("raw_offer") is None,
+    )
+
+    return result
 
 
 # ── Flight Display Formatting ───────────────────────────────────────────────

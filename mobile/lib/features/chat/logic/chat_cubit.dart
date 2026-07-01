@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../../core/errors/api_result.dart';
+import '../../bookings/data/cache/booking_draft_cache.dart';
 import '../data/datasource/chat_ws_service.dart';
 import '../data/repository/chat_repository.dart';
 import '../data/models/chat_message.dart';
@@ -95,6 +96,10 @@ class ChatCubit extends Cubit<ChatState> {
   /// Start a fresh chat: disconnect current WS, clear all state, connect anew.
   Future<void> resetForNewChat() async {
     _repo.disconnect();
+    // Clear cached draft for the abandoned trip
+    if (_bookingTripId != null) {
+      BookingDraftCache.clearDraft(_bookingTripId!);
+    }
     _messages.clear();
     _pipelineSteps.clear();
     _buffer = "";
@@ -114,6 +119,10 @@ class ChatCubit extends Cubit<ChatState> {
   /// Switch to a trip chat: disconnect, clear state, load history, connect.
   Future<void> switchToTrip(String tripId) async {
     _repo.disconnect();
+    // Note: we do NOT clear the old trip's cached draft here.
+    // The cache is keyed by tripId, so switching to a different trip
+    // won't cause a collision. If the user switches back, the cached
+    // draft is still available.
     _messages.clear();
     _pipelineSteps.clear();
     _buffer = "";
@@ -219,7 +228,25 @@ class ChatCubit extends Cubit<ChatState> {
         }
       }
 
-      // 3. Connect WebSocket (without auto_msg to avoid regenerating the trip)
+      // 3. Restore cached booking draft (flight raw_offer + hotel info)
+      //    so Pay Now works even after app restart or session switch.
+      final draft = await BookingDraftCache.loadDraft(tripId);
+      if (draft != null) {
+        if (draft['flight_booking'] is Map<String, dynamic>) {
+          _flightBookingData = draft['flight_booking'] as Map<String, dynamic>;
+          debugPrint('[ChatCubit] ✅ Restored flight_booking from cache');
+        }
+        if (draft['hotel_info'] is Map<String, dynamic>) {
+          _selectedHotelInfo = draft['hotel_info'] as Map<String, dynamic>;
+          debugPrint('[ChatCubit] ✅ Restored hotel info from cache');
+        }
+      }
+
+      // 4. Set bookingTripId so Pay Now works immediately after reconnect,
+      //    even before any WebSocket booking_data event arrives.
+      _bookingTripId = tripId;
+
+      // 5. Connect WebSocket (without auto_msg to avoid regenerating the trip)
       await _repo.connectToTrip(tripId, autoMsg: null);
       // Stream listener is set up by _onConnectionStateChanged(connected).
       final hasItineraryCard = _messages.any((m) => m.itinerary != null);
@@ -540,6 +567,13 @@ class ChatCubit extends Cubit<ChatState> {
       if (rawHotel != null) {
         _selectedHotelInfo = rawHotel;
         debugPrint('[ChatCubit] Stored selected hotel info: ${rawHotel["name"]} (place_id=${rawHotel["place_id"]})');
+        // Persist to local storage so it survives app restarts
+        if (_bookingTripId != null) {
+          BookingDraftCache.saveDraft(
+            tripId: _bookingTripId!,
+            hotelInfo: rawHotel,
+          );
+        }
       }
 
       // Mark that we're now in the booking phase, so sendMessage()
@@ -561,8 +595,31 @@ class ChatCubit extends Cubit<ChatState> {
   /// from the last booking_data event.  Null until the booking card is shown.
   Map<String, dynamic>? get selectedHotelInfo => _selectedHotelInfo;
 
+  /// Store the selected flight's raw_offer so Pay Now can use it.
+  /// Called from ChatScreen._selectFlight when the user taps a flight option.
+  void setFlightBookingData(Map<String, dynamic> rawOffer) {
+    _flightBookingData = {'raw_offer': rawOffer};
+    debugPrint('[ChatCubit] ✅ Stored flight_booking data from flight selection (raw_offer keys: ${rawOffer.keys.toList()})');
+    // Persist to local storage so it survives app restarts
+    if (_bookingTripId != null) {
+      BookingDraftCache.saveDraft(
+        tripId: _bookingTripId!,
+        flightBookingData: _flightBookingData,
+      );
+    }
+  }
+
+  /// Exit the booking phase so the user can type freely after "Do It Later".
+  /// Without this, the first message after "Do It Later" would be silently
+  /// redirected to "approve" by sendMessage().
+  void leaveBookingPhase() {
+    _inBookingPhase = false;
+    debugPrint('[ChatCubit] Exited booking phase — user can type freely');
+  }
+
   /// Mark the booking card as confirmed after Pay Now succeeds.
   /// Updates the booking data in-place so the UI shows the confirmed badge.
+  /// Also clears the persisted draft since payment has been completed.
   void markBookingConfirmed() {
     for (var i = 0; i < _messages.length; i++) {
       final bd = _messages[i].bookingData;
@@ -572,6 +629,10 @@ class ChatCubit extends Cubit<ChatState> {
         );
         _emitConnected(isTyping: false, bumpRefresh: true);
         debugPrint('[ChatCubit] Marked booking card as confirmed');
+        // Clear the persisted draft — booking is done
+        if (_bookingTripId != null) {
+          BookingDraftCache.clearDraft(_bookingTripId!);
+        }
         return;
       }
     }
@@ -739,6 +800,13 @@ class ChatCubit extends Cubit<ChatState> {
           if (flightBooking is Map<String, dynamic> && flightBooking.isNotEmpty) {
             _flightBookingData = flightBooking;
             debugPrint('[ChatCubit] ✅ Stored flight_booking data (raw_offer available: ${flightBooking.containsKey("raw_offer") && flightBooking["raw_offer"] != null})');
+            // Persist to local storage so it survives app restarts
+            if (_bookingTripId != null) {
+              BookingDraftCache.saveDraft(
+                tripId: _bookingTripId!,
+                flightBookingData: flightBooking,
+              );
+            }
           } else {
             debugPrint('[ChatCubit] ❌ flight_booking NOT stored — type=${flightBooking?.runtimeType}, value=$flightBooking, isMap=${flightBooking is Map}, isNotEmpty=${(flightBooking is Map ? flightBooking.isNotEmpty : false)}');
           }
@@ -809,7 +877,11 @@ class ChatCubit extends Cubit<ChatState> {
 
       case "flight_options":
         final rawFlight = data["data"];
+        // DEBUG: Log flight_options event structure
+        debugPrint('[ChatCubit] 📡 flight_options event — rawFlight type=${rawFlight.runtimeType}, isMap=${rawFlight is Map}');
         if (rawFlight is Map<String, dynamic>) {
+          final offersList = rawFlight['offers'] ?? [];
+          debugPrint('[ChatCubit] 📡 flight_options — offers type=${offersList.runtimeType}, length=${offersList is List ? offersList.length : "N/A"}, first keys=${offersList is List && offersList.isNotEmpty && offersList[0] is Map ? (offersList[0] as Map).keys.toList() : "N/A"}');
           final payload = FlightOptionsPayload.fromJson(rawFlight);
           if (payload.offers.isNotEmpty) {
             // Attach to the last assistant message (replacing its text)

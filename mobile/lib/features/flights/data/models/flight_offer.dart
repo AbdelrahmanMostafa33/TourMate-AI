@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:equatable/equatable.dart';
 
 /// Matches a single flight offer from the backend's flight search results
@@ -126,6 +127,16 @@ class FlightOffer extends Equatable {
       }
     }
 
+    // DEBUG: Log raw_offer parsing details
+    final rawOfferRaw = json['raw_offer'];
+    final rawKeyExists = json.containsKey('raw_offer');
+    final rawIsMap = rawOfferRaw is Map<String, dynamic>;
+    debugPrint(
+      '[FlightOffer.fromJson] raw_offer: keyExists=$rawKeyExists, '
+      'type=${rawOfferRaw.runtimeType}, isMap=$rawIsMap, '
+      'keys=${rawIsMap ? rawOfferRaw.keys.take(10).toList() : "N/A"}',
+    );
+
     return FlightOffer(
       airlineName: (json['airline_name'] ?? '').toString(),
       airlineCode: (json['airline_code'] ?? '').toString(),
@@ -145,7 +156,7 @@ class FlightOffer extends Equatable {
       arrivalAt: arrDt,
       cabinClass: json['cabin_class']?.toString(),
       pricePerAdult: (json['price_per_adult'] as num?)?.toDouble() ?? 0,
-      rawOffer: json['raw_offer'] as Map<String, dynamic>? ?? {},
+      rawOffer: rawOfferRaw as Map<String, dynamic>? ?? {},
     );
   }
 

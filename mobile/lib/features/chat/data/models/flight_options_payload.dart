@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import '../../../flights/data/models/flight_offer.dart';
 
 /// A payload containing multiple flight offers, sent from the backend
@@ -20,6 +21,13 @@ class FlightOptionsPayload {
       for (final raw in rawOffers) {
         if (raw is Map) {
           try {
+            // DEBUG: Check if raw_offer is present in the raw map
+            if (raw.containsKey('raw_offer')) {
+              final ro = raw['raw_offer'];
+              debugPrint('[FlightOptionsPayload] raw_offer present: type=${ro.runtimeType}, null=${ro == null}, isEmpty=${ro is Map ? ro.isEmpty : "N/A"}, keys=${ro is Map ? ro.keys.take(10).toList() : "N/A"}');
+            } else {
+              debugPrint('[FlightOptionsPayload] raw_offer MISSING from raw. Keys=${raw.keys.toList()}');
+            }
             offers.add(FlightOffer.fromJson(Map<String, dynamic>.from(raw)));
           } catch (_) {}
         }
