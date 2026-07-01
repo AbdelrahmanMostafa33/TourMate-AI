@@ -1,19 +1,17 @@
 # backend/app/services/booking_service.py
 
 """
-Booking Service — Hybrid Booking System.
+Booking Service — Booking & Payment System.
 
-Architecture (Hybrid):
-  - **Booking/Confirmation**: Simulated by default, but uses the **Expedia Rapid API**
-    for real-time hotel booking when the hotel has a stored Expedia property ID
-    and the API credentials are configured.  Falls back to simulation gracefully.
+Architecture:
+  - **Booking/Confirmation**: Simulated by default — generates mock confirmation
+    numbers and provider info locally.  No external hotel booking API is called.
   - **Payment**: Stripe sandbox (test mode).  Creates real PaymentIntent
     objects in Stripe's test environment using test card tokens.
     On success, a Payment + Receipt record is persisted.
 
 Flow:
-  1. ``book_hotel_via_expedia()`` → real-time pricing from Expedia → Booking (confirmed)
-     or ``create_booking()`` → Booking (status = pending), mock confirmation
+  1. ``create_booking()`` → Booking (status = pending), mock confirmation
   2. ``process_payment()`` → Stripe PaymentIntent (sandbox) → Payment + Receipt
   3. ``confirm_booking()`` → Booking (status = confirmed)
   4. ``cancel_booking()`` / ``complete_booking()`` → status transitions
@@ -38,11 +36,10 @@ from app.models.enums import (
     PaymentMethod, PaymentStatus, PaymentProvider, TripStatus,
 )
 from app.models.itinerary import Itinerary, Day, ItineraryStop
-from app.models.place import Place, HotelDetails
+from app.models.place import HotelDetails
 from app.models.trip import Trip
 from app.schemas.booking import BookingCreate, PaymentCreate, PackageBookingItem, BulkPaymentRequest
 
-from app.external.expedia_client import expedia_client
 
 logger = logging.getLogger(__name__)
 
@@ -64,7 +61,6 @@ def _generate_confirmation_number(provider: BookingProvider = BookingProvider.di
 
     Format per provider:
       - Booking.com  → ``1234567890``           (10-digit numeric)
-      - Expedia      → ``EXP-A3F9C2K7L``        (EXP- + 9 alphanumeric)
       - Airbnb       → ``HXABCDEFGH``           (HX + 8 uppercase letters)
       - Amadeus      → ``WXYZAB``               (6 uppercase letters, PNR-style)
       - Direct/hotel → ``H-8X2KM9P1``           (H- + 8 alphanumeric)
@@ -72,10 +68,6 @@ def _generate_confirmation_number(provider: BookingProvider = BookingProvider.di
     if provider == BookingProvider.booking_com:
         # Booking.com format: 10-digit numeric
         return "".join(random.choices(string.digits, k=10))
-
-    if provider == BookingProvider.expedia:
-        # Expedia format: EXP- + 9 uppercase alphanumeric
-        return "EXP-" + "".join(random.choices(string.ascii_uppercase + string.digits, k=9))
 
     if provider == BookingProvider.airbnb:
         # Airbnb format: HX + 8 uppercase letters
@@ -116,20 +108,6 @@ def _determine_booking_provider(booking_type: BookingType) -> BookingProvider:
     return mapping.get(booking_type, BookingProvider.direct)
 
 
-def _extract_expedia_property_id(booking_platforms: list[str] | None) -> str | None:
-    """Extract the Expedia property ID from a hotel's ``booking_platforms`` list.
-
-    Expected format: ``"expedia:<property_id>"`` (e.g. ``"expedia:123456"``).
-    Returns ``None`` if no Expedia ID is found.
-    """
-    if not booking_platforms:
-        return None
-    for entry in booking_platforms:
-        if entry.startswith("expedia:"):
-            return entry.split(":", 1)[1]
-    return None
-
-
 # ── Provider display info ─────────────────────────────────────────────────────
 
 # ── Payment method display names ─────────────────────────────────────────────
@@ -148,12 +126,6 @@ _PROVIDER_DISPLAY: dict[BookingProvider, dict[str, str]] = {
         "website":        "https://www.booking.com",
         "support_url":    "https://www.booking.com/help",
         "logo_url":       "https://logos.example.com/bookingcom.png",
-    },
-    BookingProvider.expedia: {
-        "display_name":   "Expedia",
-        "website":        "https://www.expedia.com",
-        "support_url":    "https://www.expedia.com/help",
-        "logo_url":       "https://logos.example.com/expedia.png",
     },
     BookingProvider.airbnb: {
         "display_name":   "Airbnb",
@@ -1066,126 +1038,6 @@ class BookingService:
             "status": booking.status.value,
         }
 
-    # ── Expedia hotel booking (real-time) ───────────────────────────────
-
-    @staticmethod
-    def _check_expedia_available() -> bool:
-        """Check if Expedia Rapid API credentials are configured."""
-        return bool(expedia_client._configured)
-
-    async def book_hotel_via_expedia(
-        self,
-        trip_id: str,
-        user_id: str,
-        place_id: str,
-        checkin: str,
-        checkout: str,
-        guests: int = 2,
-        currency: str = "USD",
-    ) -> Booking:
-        """Book a hotel via the Expedia Rapid API with real-time pricing.
-
-        Looks up the Expedia property ID from the hotel's ``booking_platforms``
-        field, fetches real-time pricing, creates a pending Booking record,
-        and returns it.  The booking is already marked as ``confirmed``
-        because Expedia confirms immediately on payment.
-
-        Falls back to simulated booking when:
-        - No Expedia property ID is stored for this hotel
-        - The Expedia API is not configured
-        - The Expedia API call fails
-
-        Args:
-            trip_id:  Trip to associate the booking with.
-            user_id:  User making the booking.
-            place_id: The place_id of the hotel (looked up in DB for Expedia ID).
-            checkin:  ISO-8601 check-in date.
-            checkout: ISO-8601 check-out date.
-            guests:   Number of guests (default 2).
-            currency: Currency code (default USD).
-
-        Returns:
-            The created ``Booking`` ORM object (not yet committed).
-        """
-        if not self._check_expedia_available():
-            logger.info(
-                "[BookingService] Expedia not configured — falling back to simulated booking for %s",
-                place_id,
-            )
-            raise ValueError("Expedia not configured")
-
-        # ── Load hotel to get Expedia property ID ─────────────────────────
-        result = await self.db.execute(
-            select(Place)
-            .options(selectinload(Place.hotel_details))
-            .where(Place.place_id == place_id)
-        )
-        place = result.scalar_one_or_none()
-        if not place or not place.hotel_details:
-            raise ValueError(f"Hotel {place_id} not found or has no hotel_details")
-
-        hd = place.hotel_details
-        expedia_id = _extract_expedia_property_id(hd.booking_platforms)
-        if not expedia_id:
-            raise ValueError(f"Hotel {place.name} has no Expedia property ID stored")
-
-        # ── Get real-time pricing ─────────────────────────────────────────
-        try:
-            offer = await expedia_client.get_offer(
-                property_id=expedia_id,
-                checkin=checkin,
-                checkout=checkout,
-                guests=guests,
-            )
-        except ValueError as exc:
-            logger.warning(
-                "[BookingService] Expedia pricing failed for %s: %s — falling back",
-                place_id, exc,
-            )
-            raise  # Let the caller handle the fallback
-
-        total_cost = offer["total"]
-        currency_used = offer["currency"] or currency
-
-        # ── Create Booking record (confirmed directly via Expedia) ────────
-        start_dt = datetime.fromisoformat(checkin)
-        end_dt = datetime.fromisoformat(checkout)
-
-        booking = Booking(
-            booking_id          = _generate_booking_id(),
-            trip_id             = trip_id,
-            user_id             = user_id,
-            place_id            = place_id,
-            booking_type        = BookingType.hotel,
-            provider            = BookingProvider.expedia,
-            provider_reference  = f"expedia:{expedia_id}",
-            confirmation_number = offer.get("offer_id", ""),
-            start_datetime      = start_dt,
-            end_datetime        = end_dt,
-            total_cost          = total_cost,
-            currency            = currency_used,
-            status              = BookingStatus.confirmed,  # Expedia confirms immediately
-            raw_response        = {
-                "expedia": True,
-                "expedia_property_id": expedia_id,
-                "offer_id": offer.get("offer_id"),
-                "name": offer.get("name", place.name),
-                "rate": offer.get("rate"),
-                "tax_info": offer.get("tax_info"),
-                "refundable": offer.get("refundable"),
-                "note": "Booked via Expedia Rapid API",
-            },
-        )
-
-        self.db.add(booking)
-
-        logger.info(
-            "[BookingService] Booked hotel via Expedia: %s (cost=%.2f %s) for trip %s",
-            place.name, total_cost, currency_used, trip_id,
-        )
-
-        return booking
-
     # ── book_trip_package ────────────────────────────────────────────────
 
     async def book_trip_package(
@@ -1343,7 +1195,6 @@ class BookingService:
                     "confirmation_number": conf_number,
                     "confirmation_format": (
                         "bookingcom-numeric" if provider == BookingProvider.booking_com
-                        else "expedia-alpha" if provider == BookingProvider.expedia
                         else "airbnb-alpha" if provider == BookingProvider.airbnb
                         else "pnr-alpha" if provider == BookingProvider.amadeus
                         else "generic-alpha"

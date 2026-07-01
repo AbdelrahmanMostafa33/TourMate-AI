@@ -33,11 +33,6 @@ class Settings(BaseSettings):
     AMADEUS_CLIENT_ID: str = "mLjsVmui1JG5cVkLkjfeW6UrhSs8Fpue"
     AMADEUS_CLIENT_SECRET: str = "FAeo2yaQAaNEPrKj"
 
-    # === Expedia Rapid API (Hotel Booking) ===
-    # Get credentials at https://developers.expediagroup.com/
-    EXPEDIA_API_KEY: str = ""
-    EXPEDIA_API_SECRET: str = ""
-
     # === LangSmith (Observability) ===
     # Set these in your .env to enable tracing:
     #   LANGCHAIN_TRACING_V2=true

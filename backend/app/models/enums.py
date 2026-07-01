@@ -79,7 +79,6 @@ class BookingType(str, PyEnum):
 class BookingProvider(str, PyEnum):
     direct     = "direct"
     booking_com = "booking_com"
-    expedia    = "expedia"
     airbnb     = "airbnb"
     amadeus    = "amadeus"
     other      = "other"
