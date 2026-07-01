@@ -812,6 +812,12 @@ async def websocket_new_chat(
 
     except WebSocketDisconnect:
         manager.disconnect(ws_key)
+    except Exception as exc:
+        # Catch any unexpected runtime error (e.g. Starlette "WebSocket is not
+        # connected. Need to call 'accept' first.") that would otherwise
+        # propagate as an ASGI exception and crash the server process.
+        logger.error("[ChatRoutes] websocket_new_chat unexpected error: %s", exc)
+        manager.disconnect(ws_key)
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -913,6 +919,12 @@ async def websocket_chat(
                 )
 
     except WebSocketDisconnect:
+        manager.disconnect(trip_id)
+    except Exception as exc:
+        # Catch any unexpected runtime error (e.g. Starlette "WebSocket is not
+        # connected. Need to call 'accept' first.") that would otherwise
+        # crash the server process.
+        logger.error("[ChatRoutes] websocket_chat unexpected error: %s", exc)
         manager.disconnect(trip_id)
 
 

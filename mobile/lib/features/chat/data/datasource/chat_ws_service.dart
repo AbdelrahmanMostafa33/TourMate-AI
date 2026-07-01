@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io' show WebSocket;
 import 'package:flutter/foundation.dart';
 import 'package:stream_channel/stream_channel.dart';
 import 'package:web_socket_channel/io.dart';
@@ -154,9 +155,19 @@ class ChatWebSocketService {
       final token = await _authService.getToken();
       final url = _buildUrl(token);
       debugPrint('[WS] _connect: url=${url.split('?').first}… (token=${token != null ? 'present' : 'null'})');
-      _channel = _channelFactory != null
-          ? _channelFactory(url)
-          : IOWebSocketChannel.connect(url) as StreamChannel<dynamic>;
+
+      if (_channelFactory != null) {
+        _channel = _channelFactory(url);
+      } else {
+        // Use WebSocket.connect() directly (not IOWebSocketChannel.connect())
+        // so connection errors (e.g. 403) are caught by this try-catch at the
+        // Future level, not by the stream's onError handler alone.  The
+        // web_socket_channel package's internal Future<WebSocket> can propagate
+        // errors to the zone as unhandled exceptions even when the stream's
+        // onError catches them.
+        final ws = await WebSocket.connect(url);
+        _channel = IOWebSocketChannel(ws) as StreamChannel<dynamic>;
+      }
 
       // Listen for connection close to trigger reconnection,
       // and relay data messages through the broadcast controller.
