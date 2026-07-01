@@ -45,9 +45,4 @@ class BookingRepository {
     });
     return result.data;
   }
-
-  /// Get a single booking.
-  Future<BookingResponse> getBooking(String bookingId) async {
-    return await _api.getBooking(bookingId);
-  }
 }

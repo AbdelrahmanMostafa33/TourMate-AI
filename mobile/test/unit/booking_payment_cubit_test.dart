@@ -7,20 +7,6 @@ import 'package:tourmate/features/payments/presentation/cubit/booking_payment_cu
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
-BookingResponse _defaultBooking({String status = 'pending'}) {
-  return BookingResponse(
-    bookingId: 'bk-001',
-    tripId: 'trip-001',
-    userId: 'user-001',
-    bookingType: 'hotel',
-    status: status,
-    totalCost: 150.0,
-    currency: 'USD',
-    payment: null,
-    createdAt: null,
-  );
-}
-
 Future<Map<String, dynamic>> _successInitiateResult({bool simulated = false}) async {
   return {
     'success': true,
@@ -42,15 +28,11 @@ class FakeBookingRepository implements BookingRepository {
     String? currency,
   }) initiatePaymentStub;
 
-  late Future<BookingResponse> Function(String bookingId) getBookingStub;
-
   int initiatePaymentCallCount = 0;
-  int getBookingCallCount = 0;
 
   FakeBookingRepository() {
     initiatePaymentStub = ({required bookingId, required paymentMethod, required amount, currency}) async =>
         <String, dynamic>{'success': true, 'simulated': true};
-    getBookingStub = (String bookingId) async => _defaultBooking();
   }
 
   @override
@@ -63,12 +45,6 @@ class FakeBookingRepository implements BookingRepository {
     initiatePaymentCallCount++;
     return initiatePaymentStub(
         bookingId: bookingId, paymentMethod: paymentMethod, amount: amount, currency: currency);
-  }
-
-  @override
-  Future<BookingResponse> getBooking(String bookingId) async {
-    getBookingCallCount++;
-    return getBookingStub(bookingId);
   }
 
   @override

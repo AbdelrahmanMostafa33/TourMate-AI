@@ -1,18 +1,17 @@
 """
 Booking routes — Hybrid booking system.
 
-Provides a full CRUD + lifecycle API for the Booking → Payment → Receipt
-pipeline.  Booking confirmations are simulated (no real hotel/restaurant API),
+Provides a focused API for the Booking → Payment → Receipt pipeline.
+Booking confirmations are simulated (no real hotel/restaurant API),
 while payments are processed through Stripe sandbox (test mode) with a
 simulated fallback.
 
 Endpoints:
   - ``POST   /``                          — Create a booking
-  - ``GET    /{booking_id}``              — Get booking details
   - ``GET    /trip/{trip_id}``            — List bookings for a trip
-  - ``PATCH  /{booking_id}/status``       — Update booking status
   - ``POST   /{booking_id}/cancel``       — Cancel a booking
-  - ``POST   /{booking_id}/complete``     — Mark booking as completed
+  - ``POST   /{booking_id}/initiate-payment``   — Initiate Stripe Payment Sheet
+  - ``POST   /{booking_id}/confirm-after-payment``  — Confirm after Payment Sheet success
 """
 
 import logging
@@ -27,12 +26,11 @@ logger = logging.getLogger(__name__)
 from app.core.database import get_db
 from app.core.security import get_current_user
 from app.models.booking import Booking, Payment
-from app.models.enums import BookingStatus, TripStatus
+from app.models.enums import TripStatus
 from app.models.trip import Trip
 from app.schemas.booking import (
-    BookingCreate, BookingResponse, BookingStatusUpdate,
-    PaymentCreate,
-    HotelBookRequest, ConfirmAfterPaymentRequest,
+    BookingCreate, BookingResponse,
+    PaymentCreate, ConfirmAfterPaymentRequest,
 )
 from app.services.booking_service import BookingService
 
@@ -81,23 +79,6 @@ async def create_booking(
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# GET /{booking_id}
-# ═══════════════════════════════════════════════════════════════════════════════
-
-@router.get("/{booking_id}", response_model=BookingResponse)
-async def get_booking(
-    booking_id:   str,
-    current_user: dict         = Depends(get_current_user),
-    db:           AsyncSession = Depends(get_db),
-):
-    """Get full details for a single booking, including payment + receipt."""
-    booking = await _load_booking(db, booking_id)
-    if not booking or booking.user_id != current_user["uid"]:
-        raise HTTPException(status_code=404, detail="Booking not found")
-    return booking
-
-
-# ═══════════════════════════════════════════════════════════════════════════════
 # GET /trip/{trip_id}
 # ═══════════════════════════════════════════════════════════════════════════════
 
@@ -109,46 +90,10 @@ async def list_trip_bookings(
     db:           AsyncSession = Depends(get_db),
 ):
     """List all bookings for a trip, optionally filtered by status."""
-    status_enum = None
-    if status:
-        try:
-            status_enum = BookingStatus(status)
-        except ValueError:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Invalid status '{status}'. Valid values: {[s.value for s in BookingStatus]}",
-            )
-
     svc = BookingService(db)
-    bookings = await svc.list_trip_bookings(trip_id, status=status_enum)
+    bookings = await svc.list_trip_bookings(trip_id, status=status)
     bookings = [b for b in bookings if b.user_id == current_user["uid"]]
     return bookings
-
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# PATCH /{booking_id}/status
-# ═══════════════════════════════════════════════════════════════════════════════
-
-@router.patch("/{booking_id}/status", response_model=BookingResponse)
-async def update_booking_status(
-    booking_id:   str,
-    body:         BookingStatusUpdate,
-    current_user: dict         = Depends(get_current_user),
-    db:           AsyncSession = Depends(get_db),
-):
-    """Manually update the status of a booking."""
-    booking = await _load_booking(db, booking_id)
-    if not booking or booking.user_id != current_user["uid"]:
-        raise HTTPException(status_code=404, detail="Booking not found")
-
-    booking.status = body.status
-    booking.raw_response = {
-        **(booking.raw_response or {}),
-        f"status_changed_to_{body.status.value}_at": None,
-    }
-    await db.commit()
-    booking = await _load_booking(db, booking_id)
-    return booking
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -244,33 +189,6 @@ async def cancel_booking(
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# POST /{booking_id}/complete
-# ═══════════════════════════════════════════════════════════════════════════════
-
-@router.post("/{booking_id}/complete", response_model=BookingResponse)
-async def complete_booking(
-    booking_id:   str,
-    current_user: dict         = Depends(get_current_user),
-    db:           AsyncSession = Depends(get_db),
-):
-    """Mark a confirmed booking as completed (post-visit)."""
-    svc = BookingService(db)
-
-    booking = await _load_booking(db, booking_id)
-    if not booking or booking.user_id != current_user["uid"]:
-        raise HTTPException(status_code=404, detail="Booking not found")
-
-    try:
-        await svc.complete_booking(booking_id)
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
-
-    await db.commit()
-    booking = await _load_booking(db, booking_id)
-    return booking
-
-
-# ═══════════════════════════════════════════════════════════════════════════════
 # POST /{booking_id}/confirm-after-payment
 # ═══════════════════════════════════════════════════════════════════════════════
 
@@ -315,62 +233,4 @@ async def confirm_booking_after_payment(
     await db.commit()
     return result
 
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# POST /hotel-book — Single hotel booking (create + pay + confirm)
-# ═══════════════════════════════════════════════════════════════════════════════
-
-@router.post("/hotel-book", response_model=BookingResponse)
-async def book_hotel(
-    data:         HotelBookRequest,
-    current_user: dict         = Depends(get_current_user),
-    db:           AsyncSession = Depends(get_db),
-):
-    """Create, pay, and confirm a single hotel booking in one call.
-
-    Used by the Pay Now flow when a user has selected a specific hotel.
-    Creates a pending booking, processes payment (sandbox), and confirms it.
-    Unlike ``book_trip_package``, this only books ONE hotel — not all stops.
-    """
-    logger.info(
-        "[BookingsRoute] /hotel-book called - trip_id=%s, place_id=%s, cost=%.2f %s, user=%s",
-        data.trip_id, data.place_id, data.total_cost, data.currency or "USD", current_user.get("uid", "unknown")
-    )
-    svc = BookingService(db)
-
-    # ── 1. Create booking ─────────────────────────────────────────────
-    booking_create = BookingCreate(
-        trip_id=data.trip_id,
-        place_id=data.place_id,
-        booking_type=BookingType.hotel,
-        total_cost=data.total_cost,
-        currency=data.currency or "USD",
-        start_datetime=data.start_datetime,
-        end_datetime=data.end_datetime,
-    )
-    booking = await svc.create_booking(
-        trip_id=data.trip_id,
-        user_id=current_user["uid"],
-        data=booking_create,
-    )
-
-    # ── 2. Process payment ────────────────────────────────────────────
-    payment_data = PaymentCreate(
-        amount=data.total_cost,
-        currency=data.currency or "USD",
-        payment_method=PaymentMethod.credit_card,
-    )
-    await svc.process_payment(booking.booking_id, payment_data)
-
-    # ── 3. Confirm booking ────────────────────────────────────────────
-    await svc.confirm_booking(booking.booking_id)
-
-    await db.commit()
-
-    booking = await _load_booking(db, booking.booking_id)
-    logger.info(
-        "[BookingsRoute] Single hotel booked: %s for trip %s (cost=%.2f %s)",
-        booking.booking_id, data.trip_id, data.total_cost, data.currency or "USD",
-    )
-    return booking
 

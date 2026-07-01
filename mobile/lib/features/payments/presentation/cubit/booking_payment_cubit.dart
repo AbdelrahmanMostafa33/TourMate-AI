@@ -1,12 +1,8 @@
-import 'dart:async';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:equatable/equatable.dart';
 
 import '../../../bookings/data/repository/booking_repository.dart';
 import '../../data/datasource/payment_service.dart';
-
-const _kPollInterval = Duration(seconds: 2);
-const _kPollTimeout = Duration(seconds: 30);
 
 // ── Events ─────────────────────────────────────────────────────────────────
 
@@ -70,16 +66,6 @@ class BookingPaymentSheetOpen extends BookingPaymentState {
   const BookingPaymentSheetOpen();
 }
 
-/// Payment succeeded on Stripe, waiting for webhook to confirm booking.
-class BookingPaymentPolling extends BookingPaymentState {
-  final int secondsElapsed;
-
-  const BookingPaymentPolling({this.secondsElapsed = 0});
-
-  @override
-  List<Object?> get props => [secondsElapsed];
-}
-
 /// Payment succeeded.
 class BookingPaymentSuccess extends BookingPaymentState {
   final String bookingId;
@@ -103,17 +89,13 @@ class BookingPaymentSuccess extends BookingPaymentState {
 /// Payment failed.
 class BookingPaymentFailure extends BookingPaymentState {
   final String error;
-  final int? initiatedCount;
-  final int? completedCount;
 
   const BookingPaymentFailure({
     required this.error,
-    this.initiatedCount,
-    this.completedCount,
   });
 
   @override
-  List<Object?> get props => [error, initiatedCount, completedCount];
+  List<Object?> get props => [error];
 }
 
 // ── Cubit ─────────────────────────────────────────────────────────────────
@@ -123,7 +105,7 @@ class BookingPaymentFailure extends BookingPaymentState {
 /// Flow:
 /// 1. Calls the backend to initiate payment → gets client_secret
 /// 2. Opens the Stripe Payment Sheet for card entry
-/// 3. On success: emits [BookingPaymentSuccess]
+/// 3. On success: calls confirm-after-payment → emits [BookingPaymentSuccess]
 /// 4. On failure: emits [BookingPaymentFailure]
 class BookingPaymentCubit extends Cubit<BookingPaymentState> {
   final BookingRepository _bookingRepo;
@@ -155,16 +137,17 @@ class BookingPaymentCubit extends Cubit<BookingPaymentState> {
 
     if (result.success) {
       // If we have a stripe payment intent and it's not simulated,
-      // try server-side verification first, fall back to polling
+      // verify with confirm-after-payment (backend checks Stripe directly).
       if (result.stripePaymentIntentId != null && !result.simulated) {
-        final confirmed = await _confirmViaApiOrPoll(
-          bookingId: event.bookingId,
-          stripePaymentIntentId: result.stripePaymentIntentId!,
-        );
-        if (!confirmed) {
+        try {
+          await _bookingRepo.confirmAfterPayment(
+            bookingId: event.bookingId,
+            stripePaymentIntentId: result.stripePaymentIntentId!,
+          );
+        } catch (e) {
           emit(BookingPaymentFailure(
             error: 'Payment went through successfully, but booking '
-                'confirmation timed out. '
+                'confirmation failed. '
                 'Your card has been charged — the booking will be '
                 'confirmed automatically once the webhook arrives. '
                 'Please check your bookings later.',
@@ -183,49 +166,6 @@ class BookingPaymentCubit extends Cubit<BookingPaymentState> {
         error: result.error ?? 'Payment failed unexpectedly.',
       ));
     }
-  }
-
-  /// Try server-side verification first (confirm-after-payment), then fall back to polling.
-  /// Returns true if booking was confirmed, false if not.
-  Future<bool> _confirmViaApiOrPoll({
-    required String bookingId,
-    required String stripePaymentIntentId,
-  }) async {
-    // Step 1: Try server-side verification — backend checks Stripe directly
-    try {
-      await _bookingRepo.confirmAfterPayment(
-        bookingId: bookingId,
-        stripePaymentIntentId: stripePaymentIntentId,
-      );
-      return true; // Booking confirmed immediately!
-    } catch (e) {
-      print('[BookingPaymentCubit] confirm-after-payment failed: $e — falling back to polling');
-    }
-
-    // Step 2: Fall back to polling for webhook confirmation
-    return await _pollForBookingConfirmation(bookingId);
-  }
-
-  /// Poll GET /bookings/{id} until the booking is confirmed or timeout.
-  /// Returns true if confirmed, false if timed out.
-  Future<bool> _pollForBookingConfirmation(String bookingId) async {
-    final stopwatch = Stopwatch()..start();
-    while (stopwatch.elapsed < _kPollTimeout) {
-      emit(BookingPaymentPolling(
-        secondsElapsed: stopwatch.elapsed.inSeconds,
-      ));
-      await Future.delayed(_kPollInterval);
-      try {
-        final booking = await _bookingRepo.getBooking(bookingId);
-        if (booking.status == 'confirmed' || booking.status == 'completed') {
-          return true; // Booking confirmed!
-        }
-      } catch (_) {
-        // Network error during poll — keep trying
-      }
-    }
-    // Timeout — booking wasn't confirmed by webhook
-    return false;
   }
 
   /// Reset to initial state.

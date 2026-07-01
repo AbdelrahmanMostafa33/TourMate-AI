@@ -169,12 +169,6 @@ abstract class ApiServices {
   // BOOKING & PAYMENT ENDPOINTS (existing backend)
   // ═════════════════════════════════════════════════════════════════════════
 
-  /// Get a single booking
-  @GET("/api/v1/bookings/{booking_id}")
-  Future<BookingResponse> getBooking(
-    @Path('booking_id') String bookingId,
-  );
-
   /// List bookings for a trip
   @GET("/api/v1/bookings/trip/{trip_id}")
   Future<List<BookingResponse>> listTripBookings(

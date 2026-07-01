@@ -8,7 +8,7 @@ SQLite database.  Stripe is forced to ``None`` so all payments are simulated
 Lifecycle tested:
   1. Seed: User + Trip + Place
   2. Create  booking (status = pending)
-  3. Process payment (simulated) → Payment + Receipt created, booking → confirmed
+  3. Initiate payment + confirm (simulated) → Payment + Receipt created, booking → confirmed
   4. Simulate Stripe webhook ``payment_intent.succeeded`` (idempotent)
   5. List trip bookings
   6. Cancel booking → Payment refunded, booking → cancelled
@@ -31,7 +31,7 @@ from app.models.enums import (
     PaymentMethod, PaymentStatus, PaymentProvider,
     PlaceCategory, AccommodationType,
 )
-from app.schemas.booking import BookingCreate, PaymentCreate, BulkPaymentRequest
+from app.schemas.booking import BookingCreate, PaymentCreate
 from app.services.booking_service import BookingService
 
 
@@ -162,7 +162,7 @@ class TestBookingLifecycle:
 
         1. Seed User + Trip + Place
         2. Create booking (pending)
-        3. Pay via simulated payment (confirmed)
+        3. Initiate payment + confirm (confirmed)
         4. Webhook payment_intent.succeeded (idempotent → no-op)
         5. List trip bookings
         6. Cancel booking (cancelled + refunded)
@@ -203,52 +203,46 @@ class TestBookingLifecycle:
         assert booking.raw_response["simulated"] is True
 
         # ═══════════════════════════════════════════════════════════════════
-        # Phase 3: Process payment (simulated)
+        # Phase 3: Initiate payment + confirm (simulated)
         # ═══════════════════════════════════════════════════════════════════
-        result = await svc.process_payment(
+        init_result = await svc.initiate_payment(
             booking_id=booking.booking_id,
             data=_make_payment_create(),
         )
-        # Auto-confirm (as the pay endpoint does)
-        await svc.confirm_booking(booking.booking_id)
+        assert init_result["success"] is True
+        assert init_result["simulated"] is True
+        pi_id = init_result["stripe_payment_intent_id"]
+        assert pi_id is not None
+
+        # Confirm payment and booking (simulates what confirm-after-payment does)
+        confirm_result = await svc.confirm_payment_and_booking(
+            booking_id=booking.booking_id,
+            stripe_payment_intent_id=pi_id,
+        )
         await db_session.commit()
 
-        # Verify payment result
-        assert result["success"] is True
-        assert result["payment"] is not None
-        assert result["receipt"] is not None
-        assert result["stripe_payment_intent_id"].startswith("pi_simulated_")
+        assert confirm_result["status"] == "confirmed"
+        assert confirm_result["payment_id"] == init_result["payment_id"]
 
-        payment = result["payment"]
-        receipt = result["receipt"]
-        assert payment.amount == 250.00
-        assert payment.currency == "USD"
-        assert payment.status == PaymentStatus.completed
-        assert payment.provider == PaymentProvider.stripe
-        assert payment.payment_method == PaymentMethod.credit_card
-
-        assert receipt.receipt_number.startswith("RCT-")
-        assert receipt.subtotal == 250.00
-        assert receipt.tax == 25.00  # 10%
-        assert receipt.total == 275.00  # 250 + 25
-        assert receipt.currency == "USD"
-
-        # Verify booking confirmed
+        # Verify booking confirmed with payment + receipt
         booking = await _assert_booking_state(
             db_session, booking.booking_id,
             expected_status=BookingStatus.confirmed,
             expected_payment_status=PaymentStatus.completed,
             expected_receipt_exists=True,
         )
-        assert booking.payment.payment_id == payment.payment_id
-        assert booking.payment.receipt.receipt_id == receipt.receipt_id
+        assert booking.payment.amount == 250.00
+        assert booking.payment.currency == "USD"
+        assert booking.payment.provider == PaymentProvider.stripe
+        assert booking.payment.receipt.subtotal == 250.00
+        assert booking.payment.receipt.tax == 25.00  # 10%
+        assert booking.payment.receipt.total == 275.00  # 250 + 25
+        assert booking.payment.receipt.currency == "USD"
 
         # ═══════════════════════════════════════════════════════════════════
         # Phase 4: Webhook payment_intent.succeeded (idempotent)
         # ═══════════════════════════════════════════════════════════════════
-        webhook_result = await svc.handle_webhook_payment_succeeded(
-            result["stripe_payment_intent_id"],
-        )
+        webhook_result = await svc.handle_webhook_payment_succeeded(pi_id)
 
         # Should return already_completed — not change anything
         assert webhook_result["status"] == "already_completed"
@@ -303,16 +297,13 @@ class TestBookingLifecycle:
         assert booking.payment.raw_response["reason"] == "booking_cancelled"
 
         # ═══════════════════════════════════════════════════════════════════
-        # Phase 7: Verify cannot pay or complete a cancelled booking
+        # Phase 7: Cannot initiate payment for a cancelled booking
         # ═══════════════════════════════════════════════════════════════════
         with pytest.raises(ValueError, match="cancelled"):
-            await svc.process_payment(
+            await svc.initiate_payment(
                 booking_id=booking.booking_id,
                 data=_make_payment_create(),
             )
-
-        with pytest.raises(ValueError, match="must be 'confirmed'"):
-            await svc.complete_booking(booking.booking_id)
 
 
 class TestBookingEdgeCases:
@@ -372,28 +363,6 @@ class TestBookingEdgeCases:
         assert cancelled.payment is None
 
     @pytest.mark.asyncio
-    async def test_complete_booking(self, db_session):
-        """A confirmed booking can be marked as completed."""
-        svc = BookingService(db_session)
-        svc._stripe = None
-        await _seed_db(db_session)
-
-        booking = await svc.create_booking(
-            trip_id="booking_test_trip",
-            user_id="booking_test_user",
-            data=_make_booking_create(),
-        )
-        await svc.process_payment(booking.booking_id, _make_payment_create())
-        await svc.confirm_booking(booking.booking_id)
-        await db_session.commit()
-
-        # Complete the booking
-        completed = await svc.complete_booking(booking.booking_id)
-        await db_session.commit()
-
-        assert completed.status == BookingStatus.completed
-
-    @pytest.mark.asyncio
     async def test_webhook_payment_failed(self, db_session):
         """A payment failure webhook should mark the payment as failed without cancelling."""
         svc = BookingService(db_session)
@@ -405,11 +374,13 @@ class TestBookingEdgeCases:
             user_id="booking_test_user",
             data=_make_booking_create(),
         )
-        # Process payment to get a simulated PI ID
-        result = await svc.process_payment(booking.booking_id, _make_payment_create())
+        # Initiate payment to get a simulated PI ID
+        init_result = await svc.initiate_payment(
+            booking.booking_id, _make_payment_create(),
+        )
         await db_session.commit()
 
-        pi_id = result["stripe_payment_intent_id"]
+        pi_id = init_result["stripe_payment_intent_id"]
 
         # Simulate failure webhook
         fail_result = await svc.handle_webhook_payment_failed(pi_id)
@@ -436,11 +407,16 @@ class TestBookingEdgeCases:
             user_id="booking_test_user",
             data=_make_booking_create(),
         )
-        result = await svc.process_payment(booking.booking_id, _make_payment_create())
-        await svc.confirm_booking(booking.booking_id)
+        # Initiate + confirm
+        init_result = await svc.initiate_payment(
+            booking.booking_id, _make_payment_create(),
+        )
+        await svc.confirm_payment_and_booking(
+            booking.booking_id, init_result["stripe_payment_intent_id"],
+        )
         await db_session.commit()
 
-        pi_id = result["stripe_payment_intent_id"]
+        pi_id = init_result["stripe_payment_intent_id"]
 
         # Simulate refund webhook
         refund_result = await svc.handle_webhook_charge_refunded(pi_id)
@@ -466,8 +442,12 @@ class TestBookingEdgeCases:
             user_id="booking_test_user",
             data=_make_booking_create(),
         )
-        await svc.process_payment(booking.booking_id, _make_payment_create())
-        await svc.confirm_booking(booking.booking_id)
+        init_result = await svc.initiate_payment(
+            booking.booking_id, _make_payment_create(),
+        )
+        await svc.confirm_payment_and_booking(
+            booking.booking_id, init_result["stripe_payment_intent_id"],
+        )
         await db_session.commit()
 
         loaded = await svc.get_booking(booking.booking_id)
@@ -489,11 +469,15 @@ class TestBookingEdgeCases:
             user_id="booking_test_user",
             data=_make_booking_create(),
         )
-        result = await svc.process_payment(booking.booking_id, _make_payment_create())
-        await svc.confirm_booking(booking.booking_id)
+        init_result = await svc.initiate_payment(
+            booking.booking_id, _make_payment_create(),
+        )
+        await svc.confirm_payment_and_booking(
+            booking.booking_id, init_result["stripe_payment_intent_id"],
+        )
         await db_session.commit()
 
-        pi_id = result["stripe_payment_intent_id"]
+        pi_id = init_result["stripe_payment_intent_id"]
 
         # First webhook: succeeded
         r1 = await svc.handle_webhook_payment_succeeded(pi_id)
@@ -508,204 +492,24 @@ class TestBookingEdgeCases:
         assert r3["status"] == BookingStatus.cancelled.value
 
         # Second succeeded webhook after refund (edge case - should not crash)
-        # The booking is cancelled, so it stays cancelled
         r4 = await svc.handle_webhook_payment_succeeded(pi_id)
         assert r4["status"] == "cancelled"
 
-
-def _make_bulk_payment_request() -> BulkPaymentRequest:
-    """Standard BulkPaymentRequest for tests."""
-    return BulkPaymentRequest(
-        payment_method=PaymentMethod.credit_card,
-        currency="USD",
-    )
-
-
-class TestBulkPayAll:
-    """Tests for the bulk pay-all endpoint (pay_trip_package)."""
-
     @pytest.mark.asyncio
-    async def test_pay_all_pending_bookings(self, db_session):
-        """Pay all pending bookings in a trip in one call."""
+    async def test_initiate_payment_rejects_already_completed(self, db_session):
+        """Initiate payment should fail if booking already has a payment."""
         svc = BookingService(db_session)
         svc._stripe = None
         await _seed_db(db_session)
 
-        # Create 2 pending bookings
-        booking1 = await svc.create_booking(
-            trip_id="booking_test_trip",
-            user_id="booking_test_user",
-            data=_make_booking_create(),
-        )
-        booking2 = await svc.create_booking(
-            trip_id="booking_test_trip",
-            user_id="booking_test_user",
-            data=BookingCreate(
-                trip_id="booking_test_trip",
-                booking_type=BookingType.hotel,
-                total_cost=75.00,
-                currency="USD",
-            ),
-        )
-        await db_session.commit()
-
-        # Pay all
-        result = await svc.pay_trip_package(
-            trip_id="booking_test_trip",
-            user_id="booking_test_user",
-            data=_make_bulk_payment_request(),
-        )
-        await db_session.commit()
-
-        assert result["paid_count"] == 2
-        assert result["skipped_count"] == 0
-        assert result["trip_id"] == "booking_test_trip"
-        assert result["total_charged"] > 0
-        assert result["currency"] == "USD"
-        assert len(result["paid_bookings"]) == 2
-        assert len(result["skipped_bookings"]) == 0
-
-        # Verify both bookings are now confirmed
-        for item in result["paid_bookings"]:
-            assert item["status"] == "confirmed"
-            assert item["receipt_number"].startswith("RCT-")
-
-        booking1_loaded = await svc.get_booking(booking1.booking_id)
-        assert booking1_loaded.status == BookingStatus.confirmed
-        assert booking1_loaded.payment is not None
-
-        booking2_loaded = await svc.get_booking(booking2.booking_id)
-        assert booking2_loaded.status == BookingStatus.confirmed
-        assert booking2_loaded.payment is not None
-
-    @pytest.mark.asyncio
-    async def test_pay_all_skips_non_pending(self, db_session):
-        """Non-pending bookings (confirmed, cancelled) are skipped."""
-        svc = BookingService(db_session)
-        svc._stripe = None
-        await _seed_db(db_session)
-
-        # Create 3 bookings: one pending, one already paid (confirmed), one cancelled
-        pending_booking = await svc.create_booking(
-            trip_id="booking_test_trip",
-            user_id="booking_test_user",
-            data=_make_booking_create(),
-        )
-        confirmed_booking = await svc.create_booking(
-            trip_id="booking_test_trip",
-            user_id="booking_test_user",
-            data=BookingCreate(
-                trip_id="booking_test_trip",
-                booking_type=BookingType.hotel,
-                total_cost=75.00,
-                currency="USD",
-            ),
-        )
-        cancelled_booking = await svc.create_booking(
-            trip_id="booking_test_trip",
-            user_id="booking_test_user",
-            data=BookingCreate(
-                trip_id="booking_test_trip",
-                booking_type=BookingType.hotel,
-                total_cost=50.00,
-                currency="USD",
-            ),
-        )
-        # Pay + confirm the second one
-        conf_result = await svc.process_payment(
-            confirmed_booking.booking_id, _make_payment_create(),
-        )
-        await svc.confirm_booking(confirmed_booking.booking_id)
-        # Cancel the third one
-        await svc.cancel_booking(cancelled_booking.booking_id)
-        await db_session.commit()
-
-        # Pay all — should only pay the pending one
-        result = await svc.pay_trip_package(
-            trip_id="booking_test_trip",
-            user_id="booking_test_user",
-            data=_make_bulk_payment_request(),
-        )
-        await db_session.commit()
-
-        assert result["paid_count"] == 1
-        assert result["skipped_count"] == 2  # confirmed + cancelled
-        assert len(result["paid_bookings"]) == 1
-        assert len(result["skipped_bookings"]) == 2
-
-        # Check skipped reasons
-        skipped_ids = [s["booking_id"] for s in result["skipped_bookings"]]
-        assert confirmed_booking.booking_id in skipped_ids
-        assert cancelled_booking.booking_id in skipped_ids
-
-        # Verify pending booking is now confirmed
-        pending_loaded = await svc.get_booking(pending_booking.booking_id)
-        assert pending_loaded.status == BookingStatus.confirmed
-
-        # Confirmed booking should still be confirmed (not double-paid)
-        confirmed_loaded = await svc.get_booking(confirmed_booking.booking_id)
-        assert confirmed_loaded.status == BookingStatus.confirmed
-
-    @pytest.mark.asyncio
-    async def test_pay_all_no_pending_bookings(self, db_session):
-        """Error if no pending bookings exist."""
-        svc = BookingService(db_session)
-        svc._stripe = None
-        await _seed_db(db_session)
-
-        # Create and immediately cancel a booking so there are no pending
         booking = await svc.create_booking(
             trip_id="booking_test_trip",
             user_id="booking_test_user",
             data=_make_booking_create(),
         )
-        await svc.cancel_booking(booking.booking_id)
-        await db_session.commit()
+        # Initiate once
+        await svc.initiate_payment(booking.booking_id, _make_payment_create())
 
-        with pytest.raises(ValueError, match="No pending bookings"):
-            await svc.pay_trip_package(
-                trip_id="booking_test_trip",
-                user_id="booking_test_user",
-                data=_make_bulk_payment_request(),
-            )
-
-    @pytest.mark.asyncio
-    async def test_pay_all_other_users_bookings_not_affected(self, db_session):
-        """Only the current user's bookings are paid; other users' bookings are ignored."""
-        svc = BookingService(db_session)
-        svc._stripe = None
-        await _seed_db(db_session)
-
-        # Create a booking for the test user
-        booking = await svc.create_booking(
-            trip_id="booking_test_trip",
-            user_id="booking_test_user",
-            data=_make_booking_create(),
-        )
-        # Create another booking for a DIFFERENT user on the same trip
-        other_booking = await svc.create_booking(
-            trip_id="booking_test_trip",
-            user_id="other_user",
-            data=BookingCreate(
-                trip_id="booking_test_trip",
-                booking_type=BookingType.hotel,
-                total_cost=100.00,
-                currency="USD",
-            ),
-        )
-        await db_session.commit()
-
-        # Pay all as test user
-        result = await svc.pay_trip_package(
-            trip_id="booking_test_trip",
-            user_id="booking_test_user",
-            data=_make_bulk_payment_request(),
-        )
-        await db_session.commit()
-
-        assert result["paid_count"] == 1
-        assert result["paid_bookings"][0]["booking_id"] == booking.booking_id
-
-        # Other user's booking should remain pending
-        other_loaded = await svc.get_booking(other_booking.booking_id)
-        assert other_loaded.status == BookingStatus.pending
+        # Second initiation should fail
+        with pytest.raises(ValueError, match="already has a payment"):
+            await svc.initiate_payment(booking.booking_id, _make_payment_create())

@@ -12,9 +12,9 @@ Architecture:
 
 Flow:
   1. ``create_booking()`` → Booking (status = pending), mock confirmation
-  2. ``process_payment()`` → Stripe PaymentIntent (sandbox) → Payment + Receipt
-  3. ``confirm_booking()`` → Booking (status = confirmed)
-  4. ``cancel_booking()`` / ``complete_booking()`` → status transitions
+  2. ``initiate_payment()`` → Stripe PaymentIntent → Payment (pending)
+  3. ``confirm_payment_and_booking()`` or webhook → Payment (completed) + Booking (confirmed)
+  4. ``cancel_booking()`` → Booking cancelled, Payment refunded
 """
 
 from __future__ import annotations
@@ -38,7 +38,7 @@ from app.models.enums import (
 from app.models.itinerary import Itinerary, Day, ItineraryStop
 from app.models.place import HotelDetails
 from app.models.trip import Trip
-from app.schemas.booking import BookingCreate, PaymentCreate, PackageBookingItem, BulkPaymentRequest
+from app.schemas.booking import BookingCreate, PaymentCreate
 
 
 logger = logging.getLogger(__name__)
@@ -419,224 +419,6 @@ class BookingService:
                        else "Payment initiated (simulated).",
         }
 
-    # ── process_payment ────────────────────────────────────────────────────
-
-    async def process_payment(
-        self,
-        booking_id: str,
-        data: PaymentCreate,
-    ) -> dict:
-        """Process a payment via Stripe sandbox or fall back to simulation.
-
-        Actual behaviour depends on configuration:
-          - **Stripe configured** — creates a real ``PaymentIntent`` in
-            Stripe test mode with the test token ``pm_card_visa``.
-          - **Stripe not configured** — fully simulated (no external call).
-
-        Args:
-            booking_id: The booking to pay for.
-            data:       Payment details (amount, currency, method).
-
-        Returns:
-            A dict with keys:
-              - success: bool
-              - payment: ``Payment`` ORM object
-              - receipt: ``Receipt`` ORM object (or None)
-              - stripe_payment_intent_id: str | None
-              - message: str
-
-        Raises:
-            ValueError: If booking not found, already paid, or cancelled.
-        """
-        # ── Load booking (eager-load payment to avoid lazy-load MissingGreenlet in async) ──
-        result = await self.db.execute(
-            select(Booking)
-            .options(selectinload(Booking.payment))
-            .where(Booking.booking_id == booking_id)
-        )
-        booking = result.scalar_one_or_none()
-        if not booking:
-            raise ValueError(f"Booking {booking_id} not found")
-
-        if booking.status == BookingStatus.cancelled:
-            raise ValueError(f"Booking {booking_id} is cancelled — cannot process payment")
-        if booking.status == BookingStatus.completed:
-            raise ValueError(f"Booking {booking_id} is already completed")
-
-        # Check if payment already exists
-        if booking.payment:
-            raise ValueError(f"Booking {booking_id} already has a payment")
-
-        amount   = data.amount if data.amount is not None else (booking.total_cost or 0)
-        currency = (data.currency or booking.currency or "USD").lower()
-
-        payment_id = str(uuid.uuid4())
-        stripe_pi_id = None
-        raw_response = {}
-
-        # ── Stripe sandbox payment (if available) ─────────────────────────
-        if self._stripe is not None:
-            try:
-                # Create PaymentIntent with automatic_payment_methods so
-                # the Flutter client can use the Stripe Payment Sheet.
-                intent = self._stripe.PaymentIntent.create(
-                    amount=int(round(amount * 100)),  # cents
-                    currency=currency,
-                    automatic_payment_methods={"enabled": True},
-                    metadata={
-                        "booking_id": booking_id,
-                        "trip_id":    booking.trip_id,
-                        "mode":       "sandbox",
-                    },
-                )
-                stripe_pi_id = intent["id"]
-                # Stripe SDK v15+ StripeObject supports attribute access, NOT .get()
-                intent_client_secret = intent.client_secret
-
-                # ══ DEBUG: if client_secret is unexpectedly None, log the full Stripe response ══
-                if intent_client_secret is None:
-                    logger.warning(
-                        "[BookingService] ⚠️ client_secret is NULL for PaymentIntent %s (process_payment)! "
-                        "Full Stripe response follows:\n%s",
-                        stripe_pi_id, intent.to_dict(),
-                    )
-                else:
-                    logger.info(
-                        "[BookingService] client_secret OK for PI %s (process_payment, len=%d)",
-                        stripe_pi_id, len(intent_client_secret),
-                    )
-
-                raw_response = {
-                    "stripe_payment_intent_id": stripe_pi_id,
-                    "status": intent["status"],
-                    "amount": intent["amount"],
-                    "currency": intent["currency"],
-                    "sandbox": True,
-                    "client_secret": intent_client_secret,
-                }
-                logger.info(
-                    "[BookingService] Stripe PaymentIntent %s created (status=%s) for booking %s",
-                    stripe_pi_id, intent["status"], booking_id,
-                )
-            except Exception as exc:
-                logger.error(
-                    "[BookingService] Stripe payment failed for booking %s: %s",
-                    booking_id, exc,
-                )
-                # Fall through to simulated payment
-                raw_response = {
-                    "stripe_error": str(exc),
-                    "note": "Fell back to simulated payment after Stripe error.",
-                }
-                stripe_pi_id = None
-
-        # ── Fallback: fully simulated payment ─────────────────────────────
-        if stripe_pi_id is None:
-            stripe_pi_id = f"pi_simulated_{uuid.uuid4().hex[:12]}"
-            raw_response = {
-                "simulated": True,
-                "stripe_payment_intent_id": stripe_pi_id,
-                "amount": amount,
-                "currency": currency,
-                "note": "Payment processed in simulation mode (no Stripe API call).",
-            }
-            logger.info(
-                "[BookingService] Simulated payment for booking %s (amount=%.2f %s)",
-                booking_id, amount, currency,
-            )
-
-        # ── Create Payment record ─────────────────────────────────────────
-        payment = Payment(
-            payment_id              = payment_id,
-            booking_id              = booking_id,
-            amount                  = amount,
-            currency                = currency.upper(),
-            payment_method          = data.payment_method,
-            provider                = PaymentProvider.stripe,
-            stripe_payment_intent_id = stripe_pi_id,
-            transaction_reference   = data.transaction_reference or _generate_transaction_reference(),
-            status                  = PaymentStatus.completed,
-            raw_response            = raw_response,
-            paid_at                 = datetime.utcnow(),
-        )
-        self.db.add(payment)
-        # Link the Python-side relationship so booking.payment is populated
-        # in-memory (avoids MissingGreenlet from async lazy-loading later).
-        booking.payment = payment
-
-        # ── Create Receipt record ─────────────────────────────────────────
-        tax_amount = round(amount * 0.10, 2)   # simulated 10% tax
-        total_amount = round(amount * 1.10, 2)
-        currency_upper = currency.upper()
-
-        payment_method_display = _PAYMENT_METHOD_NAMES.get(
-            data.payment_method, data.payment_method.value
-        )
-
-        receipt = Receipt(
-            receipt_id     = str(uuid.uuid4()),
-            payment_id     = payment_id,
-            receipt_number = _generate_receipt_number(),
-            subtotal       = amount,
-            tax            = tax_amount,
-            total          = total_amount,
-            currency       = currency_upper,
-        )
-        self.db.add(receipt)
-        # Link the Python-side relationship so payment.receipt is populated.
-        payment.receipt = receipt
-
-        # ── Enrich receipt detail in payment's raw_response ───────────────
-        payment.raw_response = {
-            **(payment.raw_response or {}),
-            "receipt_detail": {
-                "payment_method":     payment_method_display,
-                "payment_method_type": data.payment_method.value,
-                "subtotal":           amount,
-                "tax_rate":           "10%",
-                "tax_amount":         tax_amount,
-                "total":              total_amount,
-                "line_items": [
-                    {
-                        "description": "Accommodation (per night)",
-                        "quantity":    1,
-                        "unit_price":  amount,
-                        "total":       amount,
-                    },
-                    {
-                        "description": "Service fee",
-                        "quantity":    1,
-                        "unit_price":  tax_amount,
-                        "total":       tax_amount,
-                    },
-                ],
-                "billing_address": {
-                    "line1":       "123 Demo Street",
-                    "city":        "Cairo",
-                    "country":     "Egypt",
-                    "postal_code": "12345",
-                },
-                "issuer": {
-                    "name":         "TourMate AI Booking Services",
-                    "email":        "receipts@tourmate.ai",
-                    "support_url":  "https://tourmate.ai/support",
-                },
-            },
-        }
-
-        logger.info(
-            "[BookingService] Payment %s / Receipt %s created for booking %s",
-            payment.payment_id, receipt.receipt_number, booking_id,
-        )
-
-        return {
-            "success": True,
-            "payment": payment,
-            "receipt": receipt,
-            "stripe_payment_intent_id": stripe_pi_id,
-            "message": "Payment processed successfully (sandbox/simulated).",
-        }
-
     # ── confirm_booking ────────────────────────────────────────────────────
 
     async def confirm_booking(self, booking_id: str) -> Booking:
@@ -707,36 +489,6 @@ class BookingService:
             }
 
         logger.info("[BookingService] Cancelled booking %s (was %s)", booking_id, old_status)
-        return booking
-
-    # ── complete_booking ───────────────────────────────────────────────────
-
-    async def complete_booking(self, booking_id: str) -> Booking:
-        """Mark a confirmed booking as completed (post-visit).
-
-        Raises:
-            ValueError: If booking not found or not in confirmed status.
-        """
-        result = await self.db.execute(
-            select(Booking)
-            .options(selectinload(Booking.payment))
-            .where(Booking.booking_id == booking_id)
-        )
-        booking = result.scalar_one_or_none()
-        if not booking:
-            raise ValueError(f"Booking {booking_id} not found")
-        if booking.status != BookingStatus.confirmed:
-            raise ValueError(
-                f"Booking {booking_id} must be 'confirmed' to complete (current: {booking.status.value})"
-            )
-
-        booking.status = BookingStatus.completed
-        booking.raw_response = {
-            **(booking.raw_response or {}),
-            "completed_at": datetime.utcnow().isoformat(),
-        }
-
-        logger.info("[BookingService] Completed booking %s", booking_id)
         return booking
 
     # ── Stripe webhook event handlers ─────────────────────────────────────
