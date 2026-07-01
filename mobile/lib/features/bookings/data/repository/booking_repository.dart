@@ -16,22 +16,6 @@ class BookingRepository {
     return await _api.listTripBookings(tripId, status);
   }
 
-  /// Pay for a single booking via Stripe Payment Sheet.
-  /// Returns a map with payment_id, client_secret, stripe_payment_intent_id, etc.
-  Future<Map<String, dynamic>> payBooking({
-    required String bookingId,
-    required String paymentMethod,
-    required double amount,
-    String? currency,
-  }) async {
-    final result = await _api.payBooking(bookingId, {
-      'payment_method': paymentMethod,
-      'amount': amount,
-      if (currency != null) 'currency': currency,
-    });
-    return result.data;
-  }
-
   /// Initiate an async Stripe Payment Sheet payment.
   /// Creates a PaymentIntent without confirming it.
   /// Returns client_secret for the Payment Sheet.

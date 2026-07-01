@@ -190,14 +190,6 @@ abstract class ApiServices {
     @Body() Map<String, dynamic> body,
   );
 
-  /// Pay for a single booking via Stripe Payment Sheet.
-  /// Returns payment_id, stripe_payment_intent_id, client_secret for Payment Sheet.
-  @POST("/api/v1/bookings/{booking_id}/pay")
-  Future<JsonMap> payBooking(
-    @Path('booking_id') String bookingId,
-    @Body() Map<String, dynamic> body,
-  );
-
   /// Confirm a booking after the Payment Sheet succeeds (client-side verification).
   /// Backend verifies the PaymentIntent with Stripe directly, then confirms the booking.
   @POST("/api/v1/bookings/{booking_id}/confirm-after-payment")

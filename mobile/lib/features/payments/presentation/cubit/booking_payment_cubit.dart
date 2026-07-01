@@ -140,27 +140,15 @@ class BookingPaymentCubit extends Cubit<BookingPaymentState> {
   Future<void> paySingleBooking(PaySingleBooking event) async {
     emit(const BookingPaymentInitiating());
 
-    // Try initiate-payment first (async flow — opens Stripe Payment Sheet).
-    // Falls back to payBooking (sync flow) if initiate fails.
     final result = await _paymentService.processBookingPayment(
       payFuture: () async {
         emit(const BookingPaymentSheetOpen());
-        try {
-          return await _bookingRepo.initiateBookingPayment(
-            bookingId: event.bookingId,
-            paymentMethod: event.paymentMethod,
-            amount: event.amount,
-            currency: event.currency,
-          );
-        } catch (_) {
-          // Fallback: initiate not available, use sync pay endpoint
-          return await _bookingRepo.payBooking(
-            bookingId: event.bookingId,
-            paymentMethod: event.paymentMethod,
-            amount: event.amount,
-            currency: event.currency,
-          );
-        }
+        return await _bookingRepo.initiateBookingPayment(
+          bookingId: event.bookingId,
+          paymentMethod: event.paymentMethod,
+          amount: event.amount,
+          currency: event.currency,
+        );
       },
       bookingId: event.bookingId,
     );

@@ -11,7 +11,6 @@ Endpoints:
   - ``GET    /{booking_id}``              — Get booking details
   - ``GET    /trip/{trip_id}``            — List bookings for a trip
   - ``PATCH  /{booking_id}/status``       — Update booking status
-  - ``POST   /{booking_id}/pay``          — Process payment (Stripe sandbox)
   - ``POST   /{booking_id}/cancel``       — Cancel a booking
   - ``POST   /{booking_id}/complete``     — Mark booking as completed
 """
@@ -153,10 +152,6 @@ async def update_booking_status(
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# POST /{booking_id}/pay
-# ═══════════════════════════════════════════════════════════════════════════════
-
-# ═══════════════════════════════════════════════════════════════════════════════
 # POST /{booking_id}/initiate-payment
 # ═══════════════════════════════════════════════════════════════════════════════
 
@@ -174,9 +169,9 @@ async def initiate_booking_payment(
     Sheet for card entry.  The booking is NOT confirmed here — the Stripe
     webhook handler (``payment_intent.succeeded``) will do that.
 
-    Unlike ``POST /{booking_id}/pay``, this endpoint does NOT confirm the
-    payment or booking synchronously.  This is the correct endpoint for the
-    async Stripe Payment Sheet flow.
+    This endpoint does NOT confirm the payment or booking synchronously —
+    the ``confirm-after-payment`` endpoint does that after the Stripe
+    Payment Sheet is completed on the client.
 
     Returns:
         - client_secret: str (for Payment Sheet initialization)
@@ -218,92 +213,6 @@ async def initiate_booking_payment(
         "stripe_payment_intent_id":     result["stripe_payment_intent_id"],
         "simulated":                    result["simulated"],
         "message":                      result["message"],
-    }
-
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# POST /{booking_id}/pay
-# ═══════════════════════════════════════════════════════════════════════════════
-
-@router.post("/{booking_id}/pay")
-async def pay_booking(
-    booking_id:   str,
-    data:         PaymentCreate,
-    current_user: dict         = Depends(get_current_user),
-    db:           AsyncSession = Depends(get_db),
-):
-    """Process payment for a booking (Stripe sandbox with simulation fallback).
-
-    Trip status transitions:
-      booking_pending → payment_processing → booking_confirmed  (all paid)
-      booking_pending → payment_processing → booking_pending    (more unpaid)
-    """
-    svc = BookingService(db)
-
-    booking = await _load_booking(db, booking_id)
-    if not booking or booking.user_id != current_user["uid"]:
-        raise HTTPException(status_code=404, detail="Booking not found")
-
-    # ── Update trip status: enter payment_processing ────────────────────────
-    trip_result = await db.execute(
-        select(Trip).where(Trip.trip_id == booking.trip_id)
-    )
-    trip = trip_result.scalar_one_or_none()
-    if trip and trip.status in (TripStatus.booking_pending, TripStatus.payment_failed):
-        trip.status = TripStatus.payment_processing
-        trip.updated_at = None  # trigger onupdate
-        await db.commit()  # persist so Flutter/Stripe sees the processing state
-
-    # ── Process payment ─────────────────────────────────────────────────────
-    try:
-        result = await svc.process_payment(booking_id, data)
-    except ValueError as exc:
-        # Revert to payment_failed so the user can retry
-        if trip and trip.status == TripStatus.payment_processing:
-            trip.status = TripStatus.payment_failed
-            await db.commit()
-        raise HTTPException(status_code=400, detail=str(exc))
-
-    await svc.confirm_booking(booking_id)
-
-    # ── After payment: check if all bookings are now paid ────────────────────
-    if trip and trip.status == TripStatus.payment_processing:
-        remaining_pending = await svc.list_trip_bookings(
-            booking.trip_id, status=BookingStatus.pending
-        )
-        if not remaining_pending:
-            trip.status = TripStatus.booking_confirmed
-            logger.info(
-                "[BookingsRoute] All bookings paid for trip %s → booking_confirmed",
-                booking.trip_id,
-            )
-        else:
-            trip.status = TripStatus.booking_pending
-            logger.info(
-                "[BookingsRoute] Booking %s paid, %d still pending for trip %s",
-                booking_id, len(remaining_pending), booking.trip_id,
-            )
-
-    await db.commit()
-
-    payment = result["payment"]
-    receipt = result["receipt"]
-
-    # Extract client_secret for Stripe Payment Sheet async flow
-    client_secret = (payment.raw_response or {}).get("client_secret")
-
-    return {
-        "success":                    True,
-        "payment_id":                 payment.payment_id,
-        "stripe_payment_intent_id":   result["stripe_payment_intent_id"],
-        "client_secret":              client_secret,
-        "amount":                     payment.amount,
-        "currency":                   payment.currency,
-        "receipt_number":             receipt.receipt_number,
-        "receipt_id":                 receipt.receipt_id,
-        "total_charged":              receipt.total,
-        "simulated":                  payment.raw_response.get("simulated", False),
-        "message":                    result["message"],
     }
 
 
