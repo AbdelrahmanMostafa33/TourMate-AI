@@ -38,6 +38,3 @@ from app.models.saved_place import SavedPlace
 
 # --- Image upload & features ---
 from app.models.image import Image, ImageFeature
-
-# --- Event log ---
-from app.models.system_log import EventLog

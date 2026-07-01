@@ -1,23 +1,13 @@
 """Booking, Payment, Receipt schemas."""
 
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 from typing import Optional
-from datetime import datetime
+from datetime import date, datetime
 
 from app.models.enums import (
     BookingType, BookingStatus, BookingProvider,
     PaymentMethod, PaymentStatus, PaymentProvider,
 )
-
-
-# ─── Receipt ─────────────────────────────────────────────────────────────────
-
-class ReceiptCreate(BaseModel):
-    """Create schema for Receipt – aligns with model fields."""
-    receipt_number: str
-    subtotal:       float
-    tax:            Optional[float] = None
-    total:          float
 
 
 class ReceiptResponse(BaseModel):
@@ -119,6 +109,82 @@ class ConfirmAfterPaymentRequest(BaseModel):
     directly (not trusting the client) and confirms the booking immediately.
     """
     stripe_payment_intent_id: str
+
+
+# ─── Combined (flight + hotel) booking ───────────────────────────────────
+
+class CombinedBookInitiateRequest(BaseModel):
+    """Initiate a combined flight + hotel payment.
+
+    Prices the flight via Amadeus, creates a pending hotel booking, and
+    generates a single Stripe PaymentIntent for the combined total.
+
+    Supports three modes:
+    - **Both** (flight + hotel): set ``raw_offer`` + ``hotel_place_id``
+    - **Flight only**: set ``raw_offer``, leave ``hotel_place_id`` null
+    - **Hotel only**: set ``hotel_place_id``, leave ``raw_offer`` null
+    """
+    trip_id:              str
+    raw_offer:            Optional[dict]   = None
+    hotel_place_id:       Optional[str]    = None
+    hotel_total_cost:     Optional[float]  = None
+    hotel_currency:       Optional[str]    = None
+    hotel_start_datetime: Optional[datetime] = None
+    hotel_end_datetime:   Optional[datetime] = None
+
+
+class CombinedBookInitiateResponse(BaseModel):
+    """Response from combined initiate — single Stripe PaymentIntent.
+
+    Flight fields are null when only a hotel is booked (and vice versa).
+    """
+    client_secret:          str
+    payment_intent_id:      str
+    combined_amount:        float
+    currency:               str
+    # Flight fields (null when hotel-only)
+    flight_airline_name:    Optional[str] = None
+    flight_number:          Optional[str] = None
+    flight_origin_iata:     Optional[str] = None
+    flight_destination_iata: Optional[str] = None
+    flight_departure_at:    Optional[datetime] = None
+    flight_arrival_at:      Optional[datetime] = None
+    flight_cabin_class:     Optional[str] = None
+    flight_amount:          Optional[float] = None
+    # Hotel fields (null when flight-only)
+    hotel_booking_id:       Optional[str] = None
+    hotel_amount:           Optional[float] = None
+    # Flutter stores this and sends it back on confirm (null when hotel-only)
+    priced_offer:           Optional[dict] = None
+
+
+class CombinedBookConfirmRequest(BaseModel):
+    """Confirm after Stripe succeeds — supports flight-only, hotel-only, or both.
+
+    ``priced_offer`` + traveler fields are required for flight booking, but
+    ``hotel_booking_id`` is optional (null when flight-only).
+    Conversely, ``priced_offer`` can be null when hotel-only.
+    """
+    payment_intent_id:     str
+    priced_offer:          Optional[dict]   = None
+    trip_id:               str
+    hotel_booking_id:      Optional[str]    = None
+    traveler_first_name:   Optional[str]    = None
+    traveler_last_name:    Optional[str]    = None
+    traveler_date_of_birth: Optional[date]  = None
+    traveler_gender:       Optional[str]    = None
+    traveler_email:        Optional[str]    = None
+    traveler_phone:        Optional[str]    = None
+
+    @field_validator("traveler_gender")
+    @classmethod
+    def validate_gender(cls, v: str) -> str:
+        if v is None:
+            return v
+        upper = v.strip().upper()
+        if upper not in ("MALE", "FEMALE"):
+            raise ValueError("traveler_gender must be 'MALE' or 'FEMALE'")
+        return upper
 
 
 

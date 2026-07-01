@@ -14,8 +14,6 @@ import '../widgets/message_bubble.dart';
 import '../widgets/pipeline_progress_widget.dart';
 import '../../../trips/presentation/screens/trip_detail_screen.dart';
 import '../../../payments/data/datasource/payment_service.dart';
-import '../../../payments/presentation/screens/booking_payment_screen.dart';
-import '../../../flights/data/repository/flight_repository.dart';
 import '../../../auth/data/datasource/firebase_auth_service.dart';
 
 class ChatScreen extends StatefulWidget {
@@ -210,31 +208,59 @@ class _ChatViewState extends State<_ChatView> {
 
   /// Called when the user taps "Pay Now" on the booking card.
   ///
-  /// Books the selected flight (if any) AND the selected hotel (if any)
-  /// in sequence — never falls through to the old all-stops package booking.
-  ///
-  /// Flow:
-  ///   1. Update trip status to awaiting_booking
-  ///   2. If flight selected:
-  ///      a. POST /flights/book/initiate  → client_secret, priced_offer
-  ///      b. Open Stripe Payment Sheet
-  ///      c. POST /flights/book/confirm   → finalize flight booking
-  ///   3. If hotel selected:
-  ///      a. POST /bookings/              → create pending booking
-  ///      b. Navigate to BookingPaymentPage (opens Stripe Payment Sheet)
-  ///   4. Show success message
+  /// **Smart flow** — handles flight-only, hotel-only, or both together:
+  ///   - Both: POST /bookings/combined/initiate (flight + hotel) → one Stripe sheet
+  ///     → POST /bookings/combined/confirm
+  ///   - Flight only: POST /bookings/combined/initiate (no hotel) → Stripe sheet
+  ///     → POST /bookings/combined/confirm (no hotel_booking_id)
+  ///   - Hotel only: POST /bookings/combined/initiate (no flight) → Stripe sheet
+  ///     → POST /bookings/combined/confirm (no priced_offer)
   Future<void> _onBookingPayNow(ChatCubit cubit) async {
     debugPrint('[ChatScreen] _onBookingPayNow CALLED');
     final tripId = cubit.bookingTripId;
-    debugPrint('[ChatScreen] tripId: $tripId');
     if (tripId == null || tripId.isEmpty) {
       debugPrint('[ChatScreen] tripId is null or empty, returning early');
       return;
     }
 
-    debugPrint('[ChatScreen] Pay Now clicked for trip: $tripId');
+    // ── Gather available data ─────────────────────────────
+    final flightBooking = cubit.flightBookingData;
+    final rawOffer = flightBooking?['raw_offer'] as Map<String, dynamic>?;
+    final hotelInfo = cubit.selectedHotelInfo;
 
-    // ── Step 1: Update trip status ────────────────────────────────
+    final hasFlight = rawOffer != null && rawOffer.isNotEmpty;
+    final hasHotel = hotelInfo != null;
+
+    debugPrint('[ChatScreen] Pay Now — hasFlight=$hasFlight, hasHotel=$hasHotel');
+
+    if (!hasFlight && !hasHotel) {
+      if (context.mounted) {
+        AppSnackbar.error(context,
+            'Please select both or at least one (flight / hotel) before paying.');
+      }
+      return;
+    }
+
+    // Extract hotel fields (if any)
+    String? placeId;
+    double totalCost = 0;
+    String currency = 'USD';
+    if (hasHotel) {
+      placeId = hotelInfo['place_id'] as String?;
+      totalCost = (hotelInfo['total_cost'] as num?)?.toDouble() ??
+          (hotelInfo['nightly_rate'] as num?)?.toDouble() ?? 0;
+      currency = hotelInfo['currency'] as String? ?? 'USD';
+
+      if (placeId == null || placeId.isEmpty || totalCost <= 0) {
+        if (context.mounted) {
+          AppSnackbar.error(
+              context, 'Hotel info is incomplete. Please re-select the hotel.');
+        }
+        return;
+      }
+    }
+
+    // ── Step 1: Update trip status ────────────────────────
     try {
       await locator<ApiServices>().updateTripStatus(
         tripId,
@@ -244,197 +270,119 @@ class _ChatViewState extends State<_ChatView> {
       debugPrint('[ChatScreen] updateTripStatus failed: $e');
     }
 
-    bool flightBooked = false;
-    bool hotelBooked = false;
-    String? flightBookingId;
-    String? hotelBookingId;
+    final dio = locator<Dio>();
 
-    // ── Step 2: Book flight (if selected) ─────────────────────────
-    final flightBooking = cubit.flightBookingData;
-    final rawOffer = flightBooking?['raw_offer'] as Map<String, dynamic>?;
-
-    if (rawOffer != null && rawOffer.isNotEmpty) {
-      try {
-        // 2a. Initiate flight booking
-        final initiateResponse = await locator<FlightRepository>().initiateBooking(
-          rawOffer: rawOffer,
-          tripId: tripId,
-        );
-
-        // 2b. Open Stripe Payment Sheet for card entry
-        final paymentService = locator<PaymentService>();
-        final paymentSuccess = await paymentService.payWithStripeSheet(
-          clientSecret: initiateResponse.clientSecret,
-        );
-
-        if (paymentSuccess) {
-          // 2c. Confirm flight booking
-          String travelerEmail = 'traveler@example.com';
-          String travelerFirstName = 'Test';
-          String travelerLastName = 'User';
-
-          try {
-            final firebaseAuth = locator<FirebaseAuthService>();
-            final user = firebaseAuth.currentUser;
-            if (user != null) {
-              travelerEmail = user.email ?? travelerEmail;
-              final displayName = user.displayName ?? '';
-              final parts = displayName.split(' ');
-              if (parts.length >= 2) {
-                travelerFirstName = parts[0];
-                travelerLastName = parts.sublist(1).join(' ');
-              } else if (parts.isNotEmpty) {
-                travelerFirstName = parts[0];
-              }
-            }
-          } catch (_) {}
-
-          final confirmResponse = await locator<FlightRepository>().confirmBooking(
-            paymentIntentId: initiateResponse.paymentIntentId,
-            pricedOffer: initiateResponse.pricedOffer,
-            tripId: tripId,
-            travelerFirstName: travelerFirstName,
-            travelerLastName: travelerLastName,
-            travelerDateOfBirth: '1990-01-15',
-            travelerGender: 'MALE',
-            travelerEmail: travelerEmail,
-            travelerPhone: '+201000000000',
-          );
-
-          flightBooked = true;
-          flightBookingId = confirmResponse.confirmationNumber ?? confirmResponse.bookingId;
-          debugPrint('[ChatScreen] Flight booked successfully: $flightBookingId');
-        }
-      } catch (e) {
-        debugPrint('[ChatScreen] Flight booking failed: $e');
-        if (context.mounted) {
-          AppSnackbar.error(context, 'Flight booking failed: $e');
-        }
+    try {
+      // ── Step 2: Combined initiate ──────────────────────
+      // Build body dynamically — only include what's available
+      final initiateBody = <String, dynamic>{
+        'trip_id': tripId,
+      };
+      if (hasFlight) {
+        initiateBody['raw_offer'] = rawOffer;
       }
-    }
-
-    // ── Step 3: Create pending booking for selected hotel (if available) ────────
-    final hotelInfo = cubit.selectedHotelInfo;
-    debugPrint('[ChatScreen] selectedHotelInfo: ${hotelInfo != null ? hotelInfo["name"] : "null"}');
-    
-    if (hotelInfo == null) {
-      // No hotel selected - show error to user
-      if (context.mounted) {
-        AppSnackbar.error(
-          context,
-          'Please select a hotel first by tapping "Select Hotel" before paying.',
-        );
+      if (hasHotel) {
+        initiateBody['hotel_place_id'] = placeId;
+        initiateBody['hotel_total_cost'] = totalCost;
+        initiateBody['hotel_currency'] = currency;
       }
-      debugPrint('[ChatScreen] No hotel selected - cannot proceed with payment');
-      return;
-    }
-    
-    final placeId = hotelInfo['place_id'] as String?;
-    final totalCost = (hotelInfo['total_cost'] as num?)?.toDouble() ??
-                      (hotelInfo['nightly_rate'] as num?)?.toDouble() ?? 0;
-    final currency = hotelInfo['currency'] as String? ?? 'USD';
 
-    debugPrint('[ChatScreen] placeId: $placeId, totalCost: $totalCost, currency: $currency');
-    debugPrint('[ChatScreen] placeId != null: ${placeId != null}, placeId.isNotEmpty: ${placeId?.isNotEmpty ?? false}, totalCost > 0: ${totalCost > 0}');
+      debugPrint('[ChatScreen] Calling POST /bookings/combined/initiate (flight=$hasFlight, hotel=$hasHotel)...');
+      final initiateResp =
+          await dio.post('/api/v1/bookings/combined/initiate', data: initiateBody);
 
-    if (placeId != null && placeId.isNotEmpty) {
-      try {
-        debugPrint('[ChatScreen] Creating hotel booking for place_id: $placeId, cost: $totalCost');
-          
-          // Create pending booking (no payment yet)
-          final dio = locator<Dio>();
-          final response = await dio.post('/api/v1/bookings/', data: {
-            'trip_id': tripId,
-            'place_id': placeId,
-            'booking_type': 'hotel',
-            'total_cost': totalCost,
-            'currency': currency,
-          });
-          
-          hotelBookingId = response.data['booking_id'] as String?;
-          debugPrint('[ChatScreen] Hotel booking created: $hotelBookingId');
-          
-          // Navigate to Payment Sheet for this booking
-          if (hotelBookingId != null && context.mounted) {
-            final bookingId = hotelBookingId; // Non-nullable for type system
-            Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (_) => BookingPaymentPage(
-                  bookingId: bookingId,
-                  tripId: tripId,
-                  amount: totalCost,
-                  currency: currency,
-                ),
-              ),
-            ).then((result) {
-              // Payment completed - check result
-              if (result == true) {
-                hotelBooked = true;
-                debugPrint('[ChatScreen] Hotel payment completed successfully');
-                _finalizeBookingAfterPayment(cubit, tripId, flightBooked, hotelBooked, flightBookingId);
-              } else {
-                debugPrint('[ChatScreen] Hotel payment cancelled or failed');
-              }
-            });
-            return; // Exit here - navigation handles the rest
-          }
-        } catch (e) {
-          debugPrint('[ChatScreen] Hotel booking creation failed: $e');
-          if (context.mounted) {
-            AppSnackbar.error(context, 'Hotel booking failed: $e');
-          }
-        }
-    }
+      final initData = initiateResp.data as Map<String, dynamic>;
+      final clientSecret = initData['client_secret'] as String;
+      final pricedOffer = initData['priced_offer']; // null when hotel-only
+      final hotelBookingId = initData['hotel_booking_id']; // null when flight-only
+      debugPrint('[ChatScreen] Combined initiate OK: PI=${initData['payment_intent_id']}, '
+          'combined_amount=${initData['combined_amount']} ${initData['currency']}');
 
-    // ── Step 4: If no hotel to pay for, finalize flight booking only ───────────
-    if (flightBooked && !hotelBooked) {
-      _finalizeBookingAfterPayment(cubit, tripId, flightBooked, hotelBooked, flightBookingId);
-    }
-  }
-
-  /// Shared finalization logic after payment completes
-  void _finalizeBookingAfterPayment(
-    ChatCubit cubit,
-    String tripId,
-    bool flightBooked,
-    bool hotelBooked,
-    String? flightBookingId,
-  ) {
-    // ── Update trip status to booking_confirmed ───────────
-    final anythingBooked = flightBooked || hotelBooked;
-    if (anythingBooked) {
-      locator<ApiServices>().updateTripStatus(
-        tripId,
-        {'status': 'booking_confirmed'},
-      ).catchError((e) {
-        debugPrint('[ChatScreen] updateTripStatus → booking_confirmed failed: $e');
-      });
-    }
-
-    // ── Update booking card to show confirmed badge ──────
-    if (anythingBooked) {
-      cubit.markBookingConfirmed();
-    }
-
-    // ── Show success message ──────────────────────────────
-    final parts = <String>[];
-    if (flightBooked) parts.add('Flight: $flightBookingId');
-    if (hotelBooked) parts.add('Hotel booked');
-    if (anythingBooked && context.mounted) {
-      AppSnackbar.success(context, '✅ ${parts.join(" • ")}');
-    } else if (!anythingBooked && context.mounted) {
-      AppSnackbar.info(context, 'No items were booked. You can book later from the trip details.');
-    }
-
-    // ── Navigate to TripDetailScreen ──────────────────────
-    if (anythingBooked && context.mounted) {
-      Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (_) => TripDetailScreen(tripId: tripId),
-        ),
+      // ── Step 3: Open Stripe Payment Sheet (ONCE) ───────
+      final paymentService = locator<PaymentService>();
+      debugPrint('[ChatScreen] Opening Stripe Payment Sheet...');
+      final paymentSuccess = await paymentService.payWithStripeSheet(
+        clientSecret: clientSecret,
       );
+      debugPrint('[ChatScreen] Stripe Payment Sheet result: $paymentSuccess');
+
+      if (!paymentSuccess) {
+        if (context.mounted) {
+          AppSnackbar.error(
+              context, 'Payment was cancelled or failed. You can try again later.');
+        }
+        return;
+      }
+
+      // ── Step 4: Combined confirm ───────────────────────
+      // Build traveler info from Firebase user (if available)
+      String travelerEmail = 'traveler@example.com';
+      String travelerFirstName = 'Test';
+      String travelerLastName = 'User';
+      try {
+        final firebaseAuth = locator<FirebaseAuthService>();
+        final user = firebaseAuth.currentUser;
+        if (user != null) {
+          travelerEmail = user.email ?? travelerEmail;
+          final displayName = user.displayName ?? '';
+          final parts = displayName.split(' ');
+          if (parts.length >= 2) {
+            travelerFirstName = parts[0];
+            travelerLastName = parts.sublist(1).join(' ');
+          } else if (parts.isNotEmpty) {
+            travelerFirstName = parts[0];
+          }
+        }
+      } catch (_) {}
+
+      final confirmBody = <String, dynamic>{
+        'payment_intent_id': initData['payment_intent_id'],
+        'trip_id': tripId,
+      };
+      if (pricedOffer != null) {
+        confirmBody['priced_offer'] = pricedOffer;
+        confirmBody['traveler_first_name'] = travelerFirstName;
+        confirmBody['traveler_last_name'] = travelerLastName;
+        confirmBody['traveler_date_of_birth'] = '1990-01-15';
+        confirmBody['traveler_gender'] = 'MALE';
+        confirmBody['traveler_email'] = travelerEmail;
+        confirmBody['traveler_phone'] = '+201000000000';
+      }
+      if (hotelBookingId != null) {
+        confirmBody['hotel_booking_id'] = hotelBookingId;
+      }
+
+      debugPrint('[ChatScreen] Calling POST /bookings/combined/confirm...');
+      final confirmResp =
+          await dio.post('/api/v1/bookings/combined/confirm', data: confirmBody);
+
+      debugPrint('[ChatScreen] Combined confirm OK: ${confirmResp.data}');
+
+      // ── Step 5: Finalize UI ─────────────────────────────
+      cubit.markBookingConfirmed();
+
+      // Build success message based on what was booked
+      final label = (hasFlight && hasHotel)
+          ? 'Flight + Hotel'
+          : hasFlight
+              ? 'Flight'
+              : 'Hotel';
+
+      if (context.mounted) {
+        AppSnackbar.success(context, '✅ $label booked!');
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => TripDetailScreen(tripId: tripId),
+          ),
+        );
+      }
+    } catch (e) {
+      debugPrint('[ChatScreen] Combined booking FAILED: $e');
+      if (context.mounted) {
+        AppSnackbar.error(context,
+            'Booking failed: ${e.toString().replaceFirst(RegExp(r'^.+?: '), '')}');
+      }
     }
   }
 

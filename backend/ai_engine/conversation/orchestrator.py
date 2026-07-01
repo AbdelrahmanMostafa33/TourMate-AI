@@ -374,6 +374,11 @@ async def _process_message_inner(
             state.transition_to(ConversationPhase.COMPLETED)
             booking_data = _build_booking_data(state)
             flight_booking = None
+            has_offer = state.slots.selected_flight_offer is not None
+            logger.info(
+                "[ApproveBooking] selected_flight_offer present=%s",
+                has_offer,
+            )
             if state.slots.selected_flight_offer:
                 selected = state.slots.selected_flight_offer
                 flight_booking = {
@@ -686,7 +691,13 @@ async def handle_chat_stream(user_id, user_message, image_bytes=None, token=None
             result_data["booking_data"] = response["booking_data"]
 
         # Flight booking data (for Flutter to process payment)
-        if response.get("flight_booking"):
+        has_fb = response.get("flight_booking")
+        logger.info(
+            "[StreamResult] flight_booking present=%s, keys=%s",
+            bool(has_fb),
+            list(has_fb.keys()) if isinstance(has_fb, dict) else "N/A",
+        )
+        if has_fb:
             result_data["flight_booking"] = response["flight_booking"]
 
         # Flight search results (for Flutter to display)
@@ -974,6 +985,15 @@ async def _handle_select_flight(
     )
 
     # Build flight booking info for the Flutter client
+    has_raw = selected.get("raw_offer") is not None
+    logger.info(
+        "[SelectFlight] Building flight_booking - selected=%s %s, "
+        "raw_offer present=%s, raw_offer type=%s",
+        selected.get("airline_name", ""),
+        selected.get("flight_number", ""),
+        has_raw,
+        type(selected.get("raw_offer")).__name__ if selected.get("raw_offer") else "N/A",
+    )
     flight_booking = {
         "selected_offer": selected,
         "origin_city": state.slots.origin_city,

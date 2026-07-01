@@ -701,6 +701,15 @@ class ChatCubit extends Cubit<ChatState> {
       case "result":
         final resultPayload = data["data"];
         if (resultPayload is Map) {
+          // 🔍 DEBUG: Log all keys in the result payload to see what's available
+          debugPrint('[ChatCubit] 🔍 result event received — payload keys: ${resultPayload.keys.toList()}');
+          final hasFlightBooking = resultPayload.containsKey("flight_booking");
+          debugPrint('[ChatCubit] 🔍 result payload has flight_booking key? $hasFlightBooking');
+          if (hasFlightBooking) {
+            final fb = resultPayload["flight_booking"];
+            debugPrint('[ChatCubit] 🔍 flight_booking value type=${fb.runtimeType}, null? ${fb == null}, value=$fb');
+          }
+
           // Parse itinerary if present — suppress duplicates from phase transitions
           final itinerary = _tryParseItinerary(resultPayload["itinerary"]);
           if (itinerary != null) {
@@ -729,7 +738,9 @@ class ChatCubit extends Cubit<ChatState> {
           final flightBooking = resultPayload["flight_booking"];
           if (flightBooking is Map<String, dynamic> && flightBooking.isNotEmpty) {
             _flightBookingData = flightBooking;
-            debugPrint('[ChatCubit] Stored flight_booking data (raw_offer available: ${flightBooking.containsKey("raw_offer") && flightBooking["raw_offer"] != null})');
+            debugPrint('[ChatCubit] ✅ Stored flight_booking data (raw_offer available: ${flightBooking.containsKey("raw_offer") && flightBooking["raw_offer"] != null})');
+          } else {
+            debugPrint('[ChatCubit] ❌ flight_booking NOT stored — type=${flightBooking?.runtimeType}, value=$flightBooking, isMap=${flightBooking is Map}, isNotEmpty=${(flightBooking is Map ? flightBooking.isNotEmpty : false)}');
           }
 
           final currentIsTyping = state.maybeWhen(

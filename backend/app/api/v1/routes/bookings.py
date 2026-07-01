@@ -14,7 +14,9 @@ Endpoints:
   - ``POST   /{booking_id}/confirm-after-payment``  — Confirm after Payment Sheet success
 """
 
+import uuid
 import logging
+from datetime import date, datetime
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
@@ -26,13 +28,25 @@ logger = logging.getLogger(__name__)
 from app.core.database import get_db
 from app.core.security import get_current_user
 from app.models.booking import Booking, Payment
-from app.models.enums import TripStatus
+from app.models.enums import (
+    TripStatus,
+    BookingType,
+    PaymentMethod,
+    PaymentProvider,
+    PaymentStatus,
+)
 from app.models.trip import Trip
 from app.schemas.booking import (
     BookingCreate, BookingResponse,
     PaymentCreate, ConfirmAfterPaymentRequest,
+    CombinedBookInitiateRequest,
+    CombinedBookInitiateResponse,
+    CombinedBookConfirmRequest,
 )
+from app.schemas.flight import FlightBookConfirmRequest
 from app.services.booking_service import BookingService
+from app.services.flight_service import FlightService
+from app.services.amadeus_client import amadeus_client
 
 router = APIRouter()
 
@@ -232,5 +246,323 @@ async def confirm_booking_after_payment(
 
     await db.commit()
     return result
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# POST /combined/initiate — Single Stripe charge for flight + hotel
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@router.post("/combined/initiate", response_model=CombinedBookInitiateResponse)
+async def combined_initiate_booking(
+    data:         CombinedBookInitiateRequest,
+    current_user: dict         = Depends(get_current_user),
+    db:           AsyncSession = Depends(get_db),
+):
+    """Initiate a single Stripe PaymentIntent for flight-only, hotel-only, or both.
+
+    Branches based on what data is provided:
+    - ``raw_offer`` present → price flight via Amadeus
+    - ``hotel_place_id`` present → create pending hotel booking + Payment record
+    - Both present → combine into one PI
+    """
+    has_flight = data.raw_offer is not None
+    has_hotel  = data.hotel_place_id is not None
+
+    logger.info(
+        "[BookingsRoute] POST /bookings/combined/initiate — trip=%s, "
+        "flight=%s, hotel=%s",
+        data.trip_id, has_flight, has_hotel,
+    )
+
+    flight_amount = 0.0
+    flight_offer = None
+    airline_name = None
+    flight_number = None
+    origin = None
+    destination = None
+    departure_at = None
+    arrival_at = None
+    cabin_class = None
+    base_currency = "USD"  # fallback if neither flight nor hotel provides it
+
+    # ── 1. Price flight via Amadeus (if raw_offer provided) ────────────────
+    if has_flight:
+        try:
+            priced_offer = amadeus_client.price_flight(data.raw_offer)
+
+            if "flightOffers" in priced_offer:
+                flight_offer = priced_offer["flightOffers"][0]
+            else:
+                flight_offer = priced_offer
+
+            flight_amount = float(flight_offer["price"]["total"])
+            base_currency = flight_offer["price"]["currency"]
+            segment = flight_offer["itineraries"][0]["segments"][0]
+            last_segment = flight_offer["itineraries"][0]["segments"][-1]
+            origin = segment["departure"]["iataCode"]
+            destination = last_segment["arrival"]["iataCode"]
+            departure_at = datetime.fromisoformat(
+                segment["departure"]["at"].replace("Z", "+00:00")
+            )
+            arrival_at = datetime.fromisoformat(
+                last_segment["arrival"]["at"].replace("Z", "+00:00")
+            )
+            airline_code = flight_offer["validatingAirlineCodes"][0]
+            flight_number = f"{segment['carrierCode']}{segment['number']}"
+            cabin_class = (
+                flight_offer["travelerPricings"][0]
+                ["fareDetailsBySegment"][0]["cabin"]
+            )
+
+            try:
+                r = amadeus_client._client.reference_data.airlines.get(
+                    airlineCodes=airline_code
+                )
+                airline_name = r.data[0]["businessName"]
+            except Exception:
+                airline_name = airline_code
+        except (ValueError, KeyError, IndexError, TypeError) as exc:
+            logger.warning("[BookingsRoute] Flight pricing failed: %s", exc)
+            raise HTTPException(
+                status_code=400,
+                detail=f"Could not price the selected flight: {exc}",
+            )
+
+    # ── 2. Create pending hotel booking (if hotel_place_id provided) ───────
+    hotel_booking_id = None
+    hotel_amount = 0.0
+    hotel_currency = data.hotel_currency or base_currency
+
+    if has_hotel:
+        svc = BookingService(db)
+        hotel_booking = await svc.create_booking(
+            trip_id=data.trip_id,
+            user_id=current_user["uid"],
+            data=BookingCreate(
+                place_id=data.hotel_place_id,
+                booking_type=BookingType.hotel,
+                total_cost=data.hotel_total_cost,
+                currency=hotel_currency,
+                start_datetime=data.hotel_start_datetime,
+                end_datetime=data.hotel_end_datetime,
+            ),
+        )
+        hotel_booking_id = hotel_booking.booking_id
+        hotel_amount = data.hotel_total_cost or 0.0
+        base_currency = hotel_currency
+
+    # ── 3. Create Stripe PaymentIntent for the combined total ──────────────
+    combined_amount = flight_amount + hotel_amount
+    combined_currency = base_currency.lower()
+
+    import stripe
+    from app.core.config import settings
+    stripe.api_key = settings.STRIPE_SECRET_KEY
+    stripe.api_version = "2026-06-24.dahlia"
+
+    metadata: dict[str, str] = {
+        "trip_id": data.trip_id,
+        "mode": "combined",
+    }
+    if hotel_booking_id:
+        metadata["hotel_booking_id"] = hotel_booking_id
+    if flight_number:
+        metadata["flight_number"] = flight_number
+    if origin and destination:
+        metadata["origin"] = origin
+        metadata["destination"] = destination
+
+    intent = stripe.PaymentIntent.create(
+        amount=int(round(combined_amount * 100)),
+        currency=combined_currency,
+        automatic_payment_methods={"enabled": True},
+        metadata=metadata,
+    )
+
+    # ── 4. Create pending Payment record for the hotel booking (if any) ────
+    if has_hotel:
+        payment_id = str(uuid.uuid4())
+        payment = Payment(
+            payment_id=payment_id,
+            booking_id=hotel_booking_id,
+            amount=hotel_amount,
+            currency=combined_currency.upper(),
+            payment_method=PaymentMethod.credit_card,
+            provider=PaymentProvider.stripe,
+            stripe_payment_intent_id=intent["id"],
+            transaction_reference=intent["id"],
+            status=PaymentStatus.pending,
+            raw_response={
+                "combined": True,
+                "flight_amount": flight_amount,
+                "stripe_payment_intent_id": intent["id"],
+                "initiated": True,
+            },
+        )
+        db.add(payment)
+        hotel_booking = await db.get(Booking, hotel_booking_id)
+        if hotel_booking:
+            hotel_booking.payment = payment
+
+    await db.commit()
+
+    logger.info(
+        "[BookingsRoute] Combined initiate: flight=%.2f + hotel=%.2f = %.2f %s "
+        "(PI=%s)",
+        flight_amount, hotel_amount, combined_amount,
+        combined_currency.upper(), intent["id"],
+    )
+
+    return CombinedBookInitiateResponse(
+        client_secret=intent["client_secret"],
+        payment_intent_id=intent["id"],
+        combined_amount=combined_amount,
+        currency=combined_currency.upper(),
+        flight_airline_name=airline_name,
+        flight_number=flight_number,
+        flight_origin_iata=origin,
+        flight_destination_iata=destination,
+        flight_departure_at=departure_at,
+        flight_arrival_at=arrival_at,
+        flight_cabin_class=cabin_class,
+        flight_amount=flight_amount if has_flight else None,
+        hotel_booking_id=hotel_booking_id,
+        hotel_amount=hotel_amount if has_hotel else None,
+        priced_offer=flight_offer,
+    )
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# POST /combined/confirm — Finalize both flight + hotel after Stripe success
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@router.post("/combined/confirm")
+async def combined_confirm_booking(
+    data:         CombinedBookConfirmRequest,
+    current_user: dict         = Depends(get_current_user),
+    db:           AsyncSession = Depends(get_db),
+):
+    """Confirm after Stripe success — supports flight-only, hotel-only, or both.
+
+    1. Verifies the Stripe PaymentIntent status is ``succeeded``
+    2. If ``priced_offer`` provided → books flight via Amadeus
+    3. If ``hotel_booking_id`` provided → confirms hotel booking
+
+    If flight fails after payment received, returns 402 with refund message.
+    If hotel fails after flight succeeds, returns 402 with refund message.
+    """
+    has_flight = data.priced_offer is not None
+    has_hotel  = data.hotel_booking_id is not None
+
+    logger.info(
+        "[BookingsRoute] POST /bookings/combined/confirm — trip=%s, "
+        "flight=%s, hotel=%s, PI=%s",
+        data.trip_id, has_flight, has_hotel, data.payment_intent_id,
+    )
+
+    # ── 1. Verify Stripe PaymentIntent ─────────────────────────────────────
+    import stripe
+    from app.core.config import settings
+    stripe.api_key = settings.STRIPE_SECRET_KEY
+    stripe.api_version = "2026-06-24.dahlia"
+
+    try:
+        intent = stripe.PaymentIntent.retrieve(data.payment_intent_id)
+        pi_status = intent.status
+    except Exception as exc:
+        err_str = str(exc)
+        if "No such PaymentIntent" in err_str:
+            raise HTTPException(
+                status_code=400,
+                detail=f"PaymentIntent '{data.payment_intent_id}' not found in Stripe. "
+                       "It may have been created in a different environment.",
+            )
+        logger.error("[BookingsRoute] Stripe verify failed for PI %s: %s",
+                     data.payment_intent_id, exc)
+        raise HTTPException(
+            status_code=400,
+            detail=f"Stripe verification failed: {exc}",
+        )
+
+    if pi_status != "succeeded":
+        raise HTTPException(status_code=400, detail="Payment not completed")
+
+    flight_booking_id = None
+    hotel_booking_id = None
+
+    # ── 2. Book flight via Amadeus (if priced_offer provided) ────────────────
+    if has_flight:
+        flight_svc = FlightService(db)
+        flight_confirm_data = FlightBookConfirmRequest(
+            payment_intent_id=data.payment_intent_id,
+            priced_offer=data.priced_offer,
+            trip_id=data.trip_id,
+            traveler_first_name=data.traveler_first_name or "",
+            traveler_last_name=data.traveler_last_name or "",
+            traveler_date_of_birth=data.traveler_date_of_birth or date(1990, 1, 1),
+            traveler_gender=data.traveler_gender or "MALE",
+            traveler_email=data.traveler_email or "traveler@example.com",
+            traveler_phone=data.traveler_phone or "+201000000000",
+        )
+
+        try:
+            flight_booking = await flight_svc.confirm_flight_booking(
+                current_user["uid"], flight_confirm_data,
+            )
+            flight_booking_id = flight_booking.booking_id
+        except ValueError as exc:
+            if str(exc) == "PAYMENT_RECEIVED_BOOKING_FAILED":
+                detail: dict[str, object] = {
+                    "message": "Payment received but flight booking failed.",
+                    "refund_status": "simulated_refund",
+                    "note": "Flight refund will be processed.",
+                }
+                if data.hotel_booking_id:
+                    detail["hotel_booking_id"] = data.hotel_booking_id
+                raise HTTPException(status_code=402, detail=detail)
+            raise HTTPException(status_code=400, detail=str(exc))
+
+    # ── 3. Confirm hotel booking (if hotel_booking_id provided) ──────────────
+    if has_hotel:
+        hotel_svc = BookingService(db)
+        try:
+            await hotel_svc.confirm_payment_and_booking(
+                booking_id=data.hotel_booking_id,
+                stripe_payment_intent_id=data.payment_intent_id,
+            )
+            hotel_booking_id = data.hotel_booking_id
+        except ValueError as exc:
+            detail: dict[str, object] = {
+                "message": "Payment received but hotel confirmation failed.",
+                "refund_status": "simulated_refund",
+                "note": "Hotel refund will be processed.",
+            }
+            if flight_booking_id:
+                detail["flight_booking_id"] = flight_booking_id
+            if data.hotel_booking_id:
+                detail["hotel_booking_id"] = data.hotel_booking_id
+            raise HTTPException(status_code=402, detail=detail)
+
+    # ── 4. Update trip status ──────────────────────────────────────────────
+    trip_result = await db.execute(
+        select(Trip).where(Trip.trip_id == data.trip_id)
+    )
+    trip = trip_result.scalar_one_or_none()
+    if trip and trip.status in (TripStatus.awaiting_booking, TripStatus.booking_pending):
+        trip.status = TripStatus.booking_confirmed
+
+    await db.commit()
+
+    logger.info(
+        "[BookingsRoute] Combined booking confirmed: flight=%s, hotel=%s",
+        flight_booking_id, hotel_booking_id,
+    )
+
+    return {
+        "success": True,
+        "flight_booking_id": flight_booking_id,
+        "hotel_booking_id": hotel_booking_id,
+        "status": "confirmed",
+    }
 
 
