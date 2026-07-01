@@ -8,23 +8,6 @@ class BookingRepository {
 
   BookingRepository(this._api);
 
-  /// Book all stops in a trip's itinerary as a package.
-  Future<TripPackageBookingResponse> bookTripPackage(String tripId) async {
-    return await _api.bookTripPackage(tripId);
-  }
-
-  /// Pay all pending bookings in a trip at once.
-  Future<TripPackagePaymentResponse> payTripPackage({
-    required String tripId,
-    required String paymentMethod,
-    String? currency,
-  }) async {
-    return await _api.payTripPackage(tripId, {
-      'payment_method': paymentMethod,
-      if (currency != null) 'currency': currency,
-    });
-  }
-
   /// List bookings for a trip.
   Future<List<BookingResponse>> listTripBookings(
     String tripId, {
@@ -64,20 +47,6 @@ class BookingRepository {
       if (currency != null) 'currency': currency,
     });
     return result.data;
-  }
-
-  /// Initiate async Stripe Payment Sheet payments for all pending bookings.
-  /// Creates PaymentIntents without confirming them.
-  /// Returns initiated (with client_secret) + skipped lists.
-  Future<InitiatePackagePaymentResponse> initiateTripPackagePayment({
-    required String tripId,
-    required String paymentMethod,
-    String? currency,
-  }) async {
-    return await _api.initiateTripPackagePayment(tripId, {
-      'payment_method': paymentMethod,
-      if (currency != null) 'currency': currency,
-    });
   }
 
   /// Confirm a booking after the Payment Sheet succeeds.

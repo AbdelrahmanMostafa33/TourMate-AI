@@ -169,19 +169,6 @@ abstract class ApiServices {
   // BOOKING & PAYMENT ENDPOINTS (existing backend)
   // ═════════════════════════════════════════════════════════════════════════
 
-  /// Book all stops in a trip's itinerary as a package
-  @POST("/api/v1/bookings/trip/{trip_id}/package")
-  Future<TripPackageBookingResponse> bookTripPackage(
-    @Path('trip_id') String tripId,
-  );
-
-  /// Pay all pending bookings in a trip at once
-  @POST("/api/v1/bookings/trip/{trip_id}/pay-all")
-  Future<TripPackagePaymentResponse> payTripPackage(
-    @Path('trip_id') String tripId,
-    @Body() Map<String, dynamic> body,
-  );
-
   /// Get a single booking
   @GET("/api/v1/bookings/{booking_id}")
   Future<BookingResponse> getBooking(
@@ -208,13 +195,6 @@ abstract class ApiServices {
   @POST("/api/v1/bookings/{booking_id}/pay")
   Future<JsonMap> payBooking(
     @Path('booking_id') String bookingId,
-    @Body() Map<String, dynamic> body,
-  );// ═════════════════════════════════════════════════════════════════════════
-  /// Initiate async Stripe Payment Sheet payments for all pending bookings in a trip.
-  /// Returns initiated_bookings with client_secret values and skipped_bookings.
-  @POST("/api/v1/bookings/trip/{trip_id}/initiate-pay-all")
-  Future<InitiatePackagePaymentResponse> initiateTripPackagePayment(
-    @Path('trip_id') String tripId,
     @Body() Map<String, dynamic> body,
   );
 
