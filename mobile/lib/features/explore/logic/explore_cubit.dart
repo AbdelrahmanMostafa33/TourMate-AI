@@ -155,10 +155,10 @@ class ExploreCubit extends Cubit<ExploreState> {
     List<PlaceModel> currentPlaces = [];
     int currentTotal = 0;
     state.maybeWhen(
-      loaded: (p, t, _, _, c, _, s) {
+      loaded: (p, t, _, _, _, ct, s) {
         currentPlaces = p;
         currentTotal = t;
-        cat = c;
+        cat = ct;
         saved = s;
       },
       orElse: () {},

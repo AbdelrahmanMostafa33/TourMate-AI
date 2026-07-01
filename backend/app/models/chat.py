@@ -3,6 +3,7 @@
 from sqlalchemy import (
     Column, String, Text, DateTime, ForeignKey, Enum as SAEnum
 )
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 
@@ -41,6 +42,7 @@ class Message(Base):
     sender          = Column(String, nullable=False)            # "user" | "agent"
     content         = Column(Text, nullable=False)
     image_data      = Column(Text, nullable=True)               # Base64-encoded image for user-uploaded photos
+    card_data       = Column(JSONB, nullable=True)                # Structured card data: itinerary, hotel_options, flight_options, booking_data
     timestamp       = Column(DateTime, default=func.now())
 
     # Relationships

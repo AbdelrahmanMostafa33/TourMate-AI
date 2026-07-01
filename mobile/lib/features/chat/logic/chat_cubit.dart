@@ -191,9 +191,13 @@ class ChatCubit extends Cubit<ChatState> {
     debugPrint('[ChatCubit] connectToTrip: tripId=$tripId');
     emit(const ChatState.loading());
     try {
-      // 1. Load existing chat history from REST API
+      // 1. Load existing chat history from REST API.
+      //    Each message may contain `metadata` — structured card data that
+      //    was persisted alongside the text during the live chat. We parse
+      //    it here to reconstruct cards exactly as they appeared live.
       final historyResult = await _repo.loadChatHistory(tripId);
-      _messages.clear();        historyResult.when(
+      _messages.clear();
+      historyResult.when(
         success: (history) {
           debugPrint('[ChatCubit] loaded ${history.length} history messages');
           for (final msg in history) {
@@ -205,11 +209,86 @@ class ChatCubit extends Cubit<ChatState> {
                 debugPrint('[ChatCubit] Failed to decode image_data: $e');
               }
             }
+
+            // ── Parse structured card_data into card data ─────────────
+            //    The backend persists `rendered_cards` in card_data to
+            //    explicitly tell us which card types were shown in live chat.
+            //    Structured data like flight_booking is persisted for Pay Now
+            //    even without being in rendered_cards.
+            ItineraryData? itinerary;
+            HotelOptionsPayload? hotelOptions;
+            BookingData? bookingData;
+            FlightOptionsPayload? flightOptions;
+
+            final meta = msg.cardData;
+            if (meta != null && meta.isNotEmpty) {
+              // Read the rendered_cards list — only render cards explicitly
+              // listed here. Empty list or absent = plain text message.
+              final renderedCards =
+                  (meta['rendered_cards'] as List?)?.cast<String>() ?? [];
+
+              // itinerary_data — only parse if explicitly marked as rendered
+              if (renderedCards.contains('itinerary') &&
+                  meta['itinerary_data'] is Map<String, dynamic>) {
+                itinerary = _tryParseItinerary(meta['itinerary_data']);
+              }
+              // hotel_options — only parse if explicitly marked as rendered
+              if (renderedCards.contains('hotel') &&
+                  meta['hotel_options'] is Map<String, dynamic>) {
+                try {
+                  hotelOptions = HotelOptionsPayload.fromJson(
+                    meta['hotel_options'] as Map<String, dynamic>,
+                  );
+                } catch (e) {
+                  debugPrint('[ChatCubit] Failed to parse hotel_options: $e');
+                }
+              }
+              // booking_data — only parse if explicitly marked as rendered.
+              // Also restore selectedHotelInfo and bookingTripId for Pay Now.
+              if (renderedCards.contains('booking') &&
+                  meta['booking_data'] is Map<String, dynamic>) {
+                try {
+                  bookingData = BookingData.fromJson(
+                    meta['booking_data'] as Map<String, dynamic>,
+                  );
+                  final rawHotel = meta['booking_data']['hotel'] as Map<String, dynamic>?;
+                  if (rawHotel != null) {
+                    _selectedHotelInfo = rawHotel;
+                  }
+                  _bookingTripId = tripId;
+                } catch (e) {
+                  debugPrint('[ChatCubit] Failed to parse booking_data: $e');
+                }
+              }
+              // flight_options — only parse if explicitly marked as rendered
+              if (renderedCards.contains('flight') &&
+                  meta['flight_options'] is Map<String, dynamic>) {
+                try {
+                  flightOptions = FlightOptionsPayload.fromJson(
+                    meta['flight_options'] as Map<String, dynamic>,
+                  );
+                } catch (e) {
+                  debugPrint('[ChatCubit] Failed to parse flight_options: $e');
+                }
+              }
+              // flight_booking — raw_offer needed for Pay Now flow.
+              // Parsed regardless of rendered_cards (this is data, not a card).
+              if (meta['flight_booking'] is Map<String, dynamic>) {
+                _flightBookingData =
+                    meta['flight_booking'] as Map<String, dynamic>;
+                debugPrint('[ChatCubit] ✅ Restored flight_booking from card_data');
+              }
+            }
+
             _messages.add(ChatMessage(
               text: msg.content,
               isUser: msg.isUser,
               isStreaming: false,
               imageBytes: decodedImage,
+              itinerary: itinerary,
+              hotelOptions: hotelOptions,
+              bookingData: bookingData,
+              flightOptions: flightOptions,
             ));
           }
         },
@@ -218,17 +297,7 @@ class ChatCubit extends Cubit<ChatState> {
         },
       );
 
-      // 2. Hydrate itinerary cards from persisted trip data (history is text-only).
-      final tripDetail = await _repo.fetchTripDetail(tripId);
-      if (tripDetail != null) {
-        final itinerary = ItineraryData.fromTripDetail(tripDetail);
-        if (itinerary != null) {
-          _attachItineraryToHistory(itinerary);
-          _renderedItinerarySignature = _computeItinerarySignature(itinerary);
-        }
-      }
-
-      // 3. Restore cached booking draft (flight raw_offer + hotel info)
+      // 2. Restore cached booking draft (flight raw_offer + hotel info)
       //    so Pay Now works even after app restart or session switch.
       final draft = await BookingDraftCache.loadDraft(tripId);
       if (draft != null) {
@@ -447,37 +516,6 @@ class ChatCubit extends Cubit<ChatState> {
       );
     }
     _pendingItinerary = null;
-  }
-
-  void _attachItineraryToHistory(ItineraryData itineraryData) {
-    for (var i = _messages.length - 1; i >= 0; i--) {
-      if (_messages[i].isUser) continue;
-      if (_looksLikeItineraryMessage(_messages[i].text)) {
-        _messages[i] = _messages[i].copyWith(
-          itinerary: itineraryData,
-          text: '',
-        );
-        return;
-      }
-    }
-
-    for (var i = _messages.length - 1; i >= 0; i--) {
-      if (!_messages[i].isUser) {
-        _messages[i] = _messages[i].copyWith(
-          itinerary: itineraryData,
-          text: '',
-        );
-        return;
-      }
-    }
-  }
-
-  bool _looksLikeItineraryMessage(String text) {
-    final normalized = text.toLowerCase();
-    return normalized.contains('day 1') ||
-        normalized.contains('itinerary') ||
-        text.contains('🗓') ||
-        text.contains('✨');
   }
 
   void _applyPendingItineraryToLastAssistant() {

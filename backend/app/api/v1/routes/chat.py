@@ -10,6 +10,12 @@ import uuid
 
 logger = logging.getLogger(__name__)
 
+# Track which conversations have already persisted an itinerary card.
+# This is used to avoid rendering duplicate itinerary cards in chat history
+# for follow-up text messages that carry the itinerary as AI context.
+# Key: conversation_id, Value: True if itinerary card was already persisted.
+_conversations_with_itinerary_card: set = set()
+
 from app.core.database import get_db
 from app.core.firebase import verify_token
 from app.core.security import get_current_user
@@ -262,6 +268,9 @@ async def process_message_stream(
     profile_from_ai = None
     pool_state_from_ai = None
     image_features_from_result = None
+    # Collect structured card data for this response so chat history can
+    # reconstruct cards exactly as they appeared during live chat.
+    response_metadata: dict = {}
 
     initial_pool_state = await svc.load_pool_for_trip(trip.trip_id)
 
@@ -312,13 +321,28 @@ async def process_message_stream(
                         approve_action = {"type": "APPROVE_TRIP"}
                     else:
                         approve_action = {"type": "APPROVE_ITINERARY"}
-                elif result.get("itinerary"):
+
+                # ── Build rendered_cards list for chat history ─────────────────
+                #    This explicitly tells Flutter which card types to render.
+                #    Structured data may be persisted for reference (e.g. flight_booking
+                #    for Pay Now) without being listed here, so text messages that
+                #    carry itinerary/booking data as AI context don't get cards.
+                rendered_cards: list = []
+
+                if result.get("itinerary"):
                     actions = [{"type": "CREATE_TRIP", "data": result["itinerary"]}]
                     # Send structured itinerary data to Flutter for card rendering
                     await manager.send(ws_key, {
                         "type": "itinerary_data",
                         "data": result["itinerary"],
                     })
+                    # Persist itinerary data — only render as card if this is the
+                    # first itinerary for this conversation (avoid rendering cards
+                    # for follow-up text messages that carry itinerary as context).
+                    response_metadata["itinerary_data"] = result["itinerary"]
+                    if conversation.conversation_id not in _conversations_with_itinerary_card:
+                        rendered_cards.append("itinerary")
+                        _conversations_with_itinerary_card.add(conversation.conversation_id)
                     # Also forward accommodation_suggestions as hotel_options for card rendering
                     accommodation = result["itinerary"].get("accommodation_suggestions", [])
                     if accommodation:
@@ -326,6 +350,10 @@ async def process_message_stream(
                             "type": "hotel_options",
                             "data": {"options": accommodation, "message": None},
                         })
+                        # Only persist hotel_options as a card if the itinerary is also rendered
+                        response_metadata["hotel_options"] = {"options": accommodation, "message": None}
+                        if "itinerary" in rendered_cards:
+                            rendered_cards.append("hotel")
                     if result.get("profile"):
                         profile_from_ai = result["profile"]
                     if result.get("pool_state"):
@@ -337,11 +365,12 @@ async def process_message_stream(
                         "type": "booking_data",
                         "data": result["booking_data"],
                     })
+                    response_metadata["booking_data"] = result["booking_data"]
+                    rendered_cards.append("booking")
 
                 # Send structured flight_search_results as flight_options for card rendering
                 if result.get("flight_search_results"):
                     offers = result["flight_search_results"]
-                    # DEBUG: Log first offer keys to confirm raw_offer is present
                     if offers and len(offers) > 0:
                         first = offers[0]
                         has_raw = "raw_offer" in first
@@ -366,6 +395,20 @@ async def process_message_stream(
                             "message": None,
                         },
                     })
+                    response_metadata["flight_options"] = {
+                        "offers": offers,
+                        "message": None,
+                    }
+                    rendered_cards.append("flight")
+
+                # Capture flight_booking data (with raw_offer) for persistence
+                # so Pay Now works from chat history even without a cached draft.
+                # flight_booking is NOT added to rendered_cards — it's just data.
+                if result.get("flight_booking"):
+                    response_metadata["flight_booking"] = result["flight_booking"]
+
+                # Save the rendered_cards list so Flutter knows what to render
+                response_metadata["rendered_cards"] = rendered_cards
 
                 # Capture image_features for DB persistence later
                 image_features_from_result = result.get("image_features")
@@ -538,9 +581,14 @@ async def process_message_stream(
             stops_created,
         )
 
-    # ── Save AI response to DB ───────────────────────────────────────
+    # ── Save AI response to DB (with structured card_data for history) ──
     if full_response:
-        await svc.save_agent_message(conversation.conversation_id, full_response)
+        card_data_for_db = response_metadata if response_metadata else None
+        await svc.save_agent_message(
+            conversation.conversation_id,
+            full_response,
+            card_data=card_data_for_db,
+        )
 
     # ── Sync Redis state to DB ────────────────────────────────────────────
     if ai_session_id:
@@ -667,6 +715,9 @@ async def websocket_new_chat(
             profile_data_from_ai = None
             pool_state_from_ai = None
             image_features_from_result = None
+            # Collect structured card data for this response so chat history can
+            # reconstruct cards exactly as they appeared during live chat.
+            response_metadata_new: dict = {}
 
             try:
                 from ai_engine.conversation.orchestrator import handle_chat_stream
@@ -700,6 +751,9 @@ async def websocket_new_chat(
                         result_message = result.get("message", "")
                         if result_message:
                             full_response = result_message
+                        # ── Build rendered_cards list for chat history ─────────────────
+                        rendered_cards_new: list = []
+
                         if result.get("itinerary"):
                             actions = [{"type": "CREATE_TRIP", "data": result["itinerary"]}]
                             # Send structured itinerary data to Flutter for card rendering
@@ -707,6 +761,10 @@ async def websocket_new_chat(
                                 "type": "itinerary_data",
                                 "data": result["itinerary"],
                             })
+                            # Persist itinerary data — for a NEW chat this is always
+                            # the first (and only) itinerary card for this conversation.
+                            response_metadata_new["itinerary_data"] = result["itinerary"]
+                            rendered_cards_new.append("itinerary")
                             # Also forward accommodation_suggestions as hotel_options for card rendering
                             accommodation = result["itinerary"].get("accommodation_suggestions", [])
                             if accommodation:
@@ -714,16 +772,19 @@ async def websocket_new_chat(
                                     "type": "hotel_options",
                                     "data": {"options": accommodation, "message": None},
                                 })
+                                response_metadata_new["hotel_options"] = {"options": accommodation, "message": None}
+                                rendered_cards_new.append("hotel")
                         # Send structured booking_data to Flutter for booking card rendering
                         if result.get("booking_data"):
                             await manager.send(ws_key, {
                                 "type": "booking_data",
                                 "data": result["booking_data"],
                             })
+                            response_metadata_new["booking_data"] = result["booking_data"]
+                            rendered_cards_new.append("booking")
                         # Send structured flight_search_results as flight_options for card rendering
                         if result.get("flight_search_results"):
                             offers2 = result["flight_search_results"]
-                            # DEBUG: Log first offer keys to confirm raw_offer is present
                             if offers2 and len(offers2) > 0:
                                 first2 = offers2[0]
                                 has_raw2 = "raw_offer" in first2
@@ -742,10 +803,24 @@ async def websocket_new_chat(
                                     "message": None,
                                 },
                             })
+                            response_metadata_new["flight_options"] = {
+                                "offers": offers2,
+                                "message": None,
+                            }
+                            rendered_cards_new.append("flight")
                         if result.get("profile"):
                             profile_data_from_ai = result["profile"]
                         if result.get("pool_state"):
                             pool_state_from_ai = result["pool_state"]
+
+                        # Capture flight_booking data (with raw_offer) for persistence
+                        # so Pay Now works from chat history even without a cached draft.
+                        # flight_booking is NOT added to rendered_cards — it's just data.
+                        if result.get("flight_booking"):
+                            response_metadata_new["flight_booking"] = result["flight_booking"]
+
+                        # Save the rendered_cards list so Flutter knows what to render
+                        response_metadata_new["rendered_cards"] = rendered_cards_new
 
                         # Capture image_features for DB persistence later
                         image_features_from_result = result.get("image_features")
@@ -776,6 +851,12 @@ async def websocket_new_chat(
 
                         trip         = created["trip"]
                         conversation = created["conversation"]
+
+                        # Mark this conversation as having an itinerary card
+                        # so subsequent process_message_stream calls (follow-ups)
+                        # don't render duplicate itinerary cards.
+                        if conversation and "itinerary" in rendered_cards_new:
+                            _conversations_with_itinerary_card.add(conversation.conversation_id)
 
                         for msg in pending_messages:
                             await svc.save_message(
@@ -837,7 +918,12 @@ async def websocket_new_chat(
             pending_messages.append({"role": "assistant", "content": full_response})
 
             if conversation and full_response:
-                await svc.save_agent_message(conversation.conversation_id, full_response)
+                card_data_for_db = response_metadata_new if response_metadata_new else None
+                await svc.save_agent_message(
+                    conversation.conversation_id,
+                    full_response,
+                    card_data=card_data_for_db,
+                )
                 await db.commit()
 
             if updated_actions:
@@ -998,6 +1084,7 @@ async def get_history(
             "sender":          m.sender,
             "content":         m.content,
             "image_data":      m.image_data,
+            "card_data":       m.card_data,
             "timestamp":       m.timestamp,
         }
         for m in messages

@@ -122,9 +122,12 @@ class PlaceRepository(BaseRepository):
                 ])
             filters.append(or_(*interest_conditions))
 
+        # ── Exclude categories not in the Python enum (avoids LookupError) ──
+        valid_categories = [c.value for c in PlaceCategory]
+        filters.append(cast(Place.category, SAString).in_(valid_categories))
+
         # ── Apply filters to main query ────────────────────────────────────
-        if filters:
-            query = query.where(and_(*filters))
+        query = query.where(and_(*filters))
 
         # ── Get total count (rebuilt with same joins + DISTINCT) ────────────
         count_query = select(func.count(func.distinct(Place.place_id)))
@@ -185,6 +188,9 @@ class PlaceRepository(BaseRepository):
             .order_by(Place.popularity_score.desc().nullslast())
             .limit(limit)
         )
+        # Exclude categories not in the Python enum (avoids LookupError)
+        valid_categories = [c.value for c in PlaceCategory]
+        query = query.where(cast(Place.category, SAString).in_(valid_categories))
         result = await self.session.execute(query)
         places = result.scalars().unique().all()
         return [self._place_to_dict(p) for p in places]
@@ -449,6 +455,10 @@ class PlaceRepository(BaseRepository):
         # Order by popularity to get the best match
         query = query.order_by(Place.popularity_score.desc().nullslast()).limit(1)
 
+        # Exclude categories not in the Python enum (avoids LookupError)
+        valid_categories = [c.value for c in PlaceCategory]
+        query = query.where(cast(Place.category, SAString).in_(valid_categories))
+
         result = await self.session.execute(query)
         place = result.scalar_one_or_none()
 
@@ -477,7 +487,7 @@ class PlaceRepository(BaseRepository):
         countries: list[dict] = []
         cities: list[dict] = []
 
-        # ── Locations are only computed once the user has typed something ──
+        # ── When no query, return ALL cities for the explore dropdown ──
         if q:
             pattern = f"%{q}%"
 
@@ -540,6 +550,38 @@ class PlaceRepository(BaseRepository):
                     "type": "city",
                     "count": row[2],
                 })
+        else:
+            # ── No query: return ALL cities for the city dropdown filter ──
+            # The Flutter explore screen calls this endpoint to populate its
+            # city picker. Without a query we return every distinct city
+            # (with country) sorted by place count so the dropdown is usable.
+            all_cities_q = (
+                select(
+                    Place.city,
+                    Place.country,
+                    func.count(Place.place_id).label("cnt"),
+                )
+                .where(Place.city.isnot(None))
+                .where(Place.city != "")
+                .where(Place.country.isnot(None))
+                .where(Place.country != "")
+                .group_by(Place.city, Place.country)
+                .order_by(func.count(Place.place_id).desc())
+                .limit(50)
+            )
+            all_cities_result = await self.session.execute(all_cities_q)
+            for row in all_cities_result.all():
+                city_name = (row[0] or "").strip()
+                country_name = (row[1] or "").strip()
+                cities.append({
+                    "key": city_name.lower(),
+                    "city": city_name,
+                    "country": country_name,
+                    "display": f"{city_name}, {country_name}",
+                    "subtitle": f"{city_name}, {country_name}",
+                    "type": "city",
+                    "count": row[2],
+                })
 
         # Merge: countries first, then cities.
         # Safety cap: limit countries so a pathological short query can never
@@ -547,17 +589,18 @@ class PlaceRepository(BaseRepository):
         locations = countries[:5] + cities
 
         # ── Categories with counts (always returned, independent of q) ──
+        # Cast to text to avoid LookupError for DB values not in the Python enum.
         cat_q = (
-            select(Place.category, func.count(Place.place_id).label("cnt"))
-            .group_by(Place.category)
+            select(cast(Place.category, SAString), func.count(Place.place_id).label("cnt"))
+            .group_by(cast(Place.category, SAString))
             .order_by(func.count(Place.place_id).desc())
         )
         cat_result = await self.session.execute(cat_q)
         categories = []
         for row in cat_result.all():
-            val = row[0]
-            cat_val = val.value if hasattr(val, "value") else str(val) if val else ""
-            categories.append({"key": cat_val, "display": cat_val.title(), "count": row[1]})
+            cat_val = (row[0] or "").strip().lower()
+            if cat_val:
+                categories.append({"key": cat_val, "display": cat_val.title(), "count": row[1]})
 
         return {
             "locations": locations,
