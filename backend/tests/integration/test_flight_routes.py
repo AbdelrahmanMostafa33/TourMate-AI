@@ -167,8 +167,9 @@ def mock_offer_data() -> list[dict]:
 
 @pytest.fixture
 def mock_priced_offer_data() -> dict:
-    """Mock priced offer response."""
+    """Mock priced offer response (with validatingAirlineCodes)."""
     return {
+        "validatingAirlineCodes": ["MS"],
         "price": {"total": "150.00", "currency": "USD", "base": "130.00"},
         "itineraries": [{
             "segments": [{
@@ -370,6 +371,7 @@ class TestSearchFlightsEndpoint:
         mock_amadeus.search_flights.assert_called_with(
             origin="HBE", destination="CAI",
             departure_date="2026-08-01", adults=1, max_results=5,
+            return_date=None,
         )
         data = response.json()
         assert len(data) == 1
@@ -446,9 +448,9 @@ class TestSmartSearchFlightsEndpoint:
         assert response.status_code == 200
         data = response.json()
         assert data["origin"]["iata_code"] == "CAI"
-        assert data["origin"]["city_name"] == "CAIRO"
+        assert data["origin"]["city_name"] == "cairo"  # preserves input case
         assert data["destination"]["iata_code"] == "LHR"
-        assert data["destination"]["city_name"] == "LONDON"
+        assert data["destination"]["city_name"] == "london"  # preserves input case
         assert len(data["offers"]) == 1
         assert data["offers"][0]["airline_code"] == "MS"
 
@@ -582,133 +584,118 @@ class TestTripFlightContextEndpoint:
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# 3. Auth-Required Endpoints — Save / Get Offer
+# 3. Auth-Required Endpoints — Initiate Flight Booking
 # ═══════════════════════════════════════════════════════════════════════════════
 
 @pytest.mark.asyncio
-class TestSaveOfferEndpoint:
-    """POST /api/v1/flights/offer — Save a selected flight offer."""
+class TestInitiateFlightBookingEndpoint:
+    """POST /api/v1/flights/book/initiate — Price + Stripe PaymentIntent."""
 
-    async def test_save_offer_returns_saved_response(
+    async def test_initiate_returns_client_secret_and_priced_offer(
         self, db_session, seeded_db, raw_offer,
+        mock_amadeus, mock_priced_offer_data,
     ):
-        """Saving an offer returns SavedFlightOfferResponse with parsed fields."""
+        """Given raw_offer + trip_id, return client_secret and priced_offer."""
+        mock_amadeus.price_flight.return_value = mock_priced_offer_data
         client = _make_client(db_session)
 
-        response = client.post(
-            "/api/v1/flights/offer",
-            json={"trip_id": TRIP_ID, "offer_index": 0, "raw_offer": raw_offer},
-        )
+        # Mock Stripe PaymentIntent.create
+        fake_intent = {
+            "id": "pi_test_123",
+            "client_secret": "pi_test_123_secret_test",
+            "status": "requires_payment_method",
+            "amount": 15000,
+            "currency": "usd",
+        }
+
+        with patch("stripe.PaymentIntent.create") as mock_create:
+            mock_create.return_value = fake_intent
+
+            response = client.post(
+                "/api/v1/flights/book/initiate",
+                json={
+                    "trip_id": TRIP_ID,
+                    "raw_offer": raw_offer,
+                },
+            )
 
         assert response.status_code == 200
         data = response.json()
-        assert data["offer_id"].startswith("OFR-")
-        assert data["trip_id"] == TRIP_ID
-        assert data["offer_index"] == 0
+        assert data["client_secret"] == "pi_test_123_secret_test"
+        assert data["payment_intent_id"] == "pi_test_123"
+        assert data["amount"] == 150.00
+        assert data["currency"] == "USD"
         assert data["origin_iata"] == "HBE"
         assert data["destination_iata"] == "CAI"
-        assert data["airline_code"] == "MS"
+        assert data["airline_name"] == "MS"
         assert data["flight_number"] == "MS777"
-        assert data["total_price"] == 150.00
-        assert data["currency"] == "USD"
+        assert data["cabin_class"] == "ECONOMY"
+        assert "priced_offer" in data
+        assert "departure_at" in data
+        assert "arrival_at" in data
 
-    async def test_save_offer_unauthenticated(
+    async def test_initiate_unauthenticated(
         self, db_session, seeded_db, raw_offer,
     ):
-        """No auth → 401/403/422."""
+        """No auth returns 401/403/422."""
         app.dependency_overrides[get_db] = lambda: db_session
         if get_current_user in app.dependency_overrides:
             del app.dependency_overrides[get_current_user]
         client = TestClient(app)
 
         response = client.post(
-            "/api/v1/flights/offer",
-            json={"trip_id": TRIP_ID, "offer_index": 0, "raw_offer": raw_offer},
+            "/api/v1/flights/book/initiate",
+            json={"trip_id": TRIP_ID, "raw_offer": raw_offer},
         )
         assert response.status_code in (401, 403, 422)
 
-
-@pytest.mark.asyncio
-class TestGetSavedOfferEndpoint:
-    """GET /api/v1/flights/offer/{offer_id} — Retrieve a saved offer."""
-
-    async def test_get_saved_offer_success(
-        self, db_session, seeded_db, raw_offer,
+    async def test_initiate_pricing_error_returns_400(
+        self, db_session, seeded_db, raw_offer, mock_amadeus,
     ):
-        """After saving an offer, it can be retrieved by ID."""
-        client = _make_client(db_session)
-
-        # First save the offer
-        save_resp = client.post(
-            "/api/v1/flights/offer",
-            json={"trip_id": TRIP_ID, "offer_index": 0, "raw_offer": raw_offer},
-        )
-        offer_id = save_resp.json()["offer_id"]
-
-        # Then retrieve it
-        response = client.get(f"/api/v1/flights/offer/{offer_id}")
-
-        assert response.status_code == 200
-        data = response.json()
-        assert data["offer_id"] == offer_id
-        assert data["trip_id"] == TRIP_ID
-        assert data["origin_iata"] == "HBE"
-        assert data["total_price"] == 150.00
-
-    async def test_get_saved_offer_not_found(
-        self, db_session,
-    ):
-        """Non-existent offer_id returns 404."""
-        client = _make_client(db_session)
-        response = client.get("/api/v1/flights/offer/OFR-NONEXIST")
-        assert response.status_code == 404
-
-    async def test_get_saved_offer_wrong_user(
-        self, db_session, seeded_db, raw_offer,
-    ):
-        """Offer saved by one user can't be retrieved by another."""
-        client = _make_client(db_session)
-        save_resp = client.post(
-            "/api/v1/flights/offer",
-            json={"trip_id": TRIP_ID, "offer_index": 0, "raw_offer": raw_offer},
-        )
-        offer_id = save_resp.json()["offer_id"]
-
-        other_client = _make_client(db_session, _override_get_other_user)
-        response = other_client.get(f"/api/v1/flights/offer/{offer_id}")
-        assert response.status_code == 404
-
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# 4. Auth-Required Endpoints — Book / Get / List / Cancel
-# ═══════════════════════════════════════════════════════════════════════════════
-
-@pytest.mark.asyncio
-class TestBookFlightEndpoint:
-    """POST /api/v1/flights/book — Book a flight."""
-
-    async def test_book_flight_creates_confirmed_booking(
-        self, db_session, seeded_db, raw_offer,
-        mock_amadeus, mock_priced_offer_data, mock_order_data,
-    ):
-        """Given traveler details + raw offer, create a confirmed booking."""
-        mock_amadeus.price_flight.return_value = mock_priced_offer_data
-        mock_amadeus.book_flight.return_value = mock_order_data
+        """When Amadeus pricing fails, return 400."""
+        mock_amadeus.price_flight.side_effect = ValueError("Amadeus pricing error")
         client = _make_client(db_session)
 
         response = client.post(
-            "/api/v1/flights/book",
-            json={
-                "trip_id": TRIP_ID,
-                "raw_offer": raw_offer,
-                "traveler_first_name": "Ahmed",
-                "traveler_last_name": "Hassan",
-                "traveler_date_of_birth": "1995-06-15",
-                "traveler_gender": "MALE",
-                "traveler_email": "ahmed@example.com",
-                "traveler_phone": "+201234567890",
-            },
+            "/api/v1/flights/book/initiate",
+            json={"trip_id": TRIP_ID, "raw_offer": raw_offer},
         )
+        assert response.status_code == 400
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# 4. Auth-Required Endpoints — Confirm Flight Booking
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@pytest.mark.asyncio
+class TestConfirmFlightBookingEndpoint:
+    """POST /api/v1/flights/book/confirm — Confirm after Stripe success."""
+
+    async def test_confirm_creates_confirmed_booking(
+        self, db_session, seeded_db,
+        mock_amadeus, mock_priced_offer_data, mock_order_data,
+    ):
+        """Given payment_intent_id + priced_offer + traveler info, create confirmed booking."""
+        mock_amadeus.book_flight.return_value = mock_order_data
+        client = _make_client(db_session)
+
+        with patch("stripe.PaymentIntent.retrieve") as mock_retrieve:
+            mock_retrieve.return_value = type("obj", (), {"status": "succeeded"})()
+
+            response = client.post(
+                "/api/v1/flights/book/confirm",
+                json={
+                    "payment_intent_id": "pi_test_succeeded",
+                    "priced_offer": mock_priced_offer_data,
+                    "trip_id": TRIP_ID,
+                    "traveler_first_name": "Ahmed",
+                    "traveler_last_name": "Hassan",
+                    "traveler_date_of_birth": "1995-06-15",
+                    "traveler_gender": "MALE",
+                    "traveler_email": "ahmed@example.com",
+                    "traveler_phone": "+201234567890",
+                },
+            )
 
         assert response.status_code == 200
         data = response.json()
@@ -726,45 +713,17 @@ class TestBookFlightEndpoint:
         assert data["confirmation_number"] is not None
         assert data["amadeus_order_id"] == "AMADEUS_ORDER_001"
 
-    async def test_book_flight_pricing_fallback(
-        self, db_session, seeded_db, raw_offer,
-        mock_amadeus, mock_priced_offer_data, mock_order_data,
-    ):
-        """When pricing fails, fall back to direct booking from raw offer."""
-        mock_amadeus.price_flight.side_effect = ValueError("Pricing failed")
-        mock_amadeus.book_flight.return_value = mock_order_data
-        client = _make_client(db_session)
-
-        response = client.post(
-            "/api/v1/flights/book",
-            json={
-                "trip_id": TRIP_ID,
-                "raw_offer": raw_offer,
-                "traveler_first_name": "Ahmed",
-                "traveler_last_name": "Hassan",
-                "traveler_date_of_birth": "1995-06-15",
-                "traveler_gender": "MALE",
-                "traveler_email": "ahmed@example.com",
-                "traveler_phone": "+201234567890",
-            },
-        )
-
-        assert response.status_code == 200
-        data = response.json()
-        assert data["status"] == "confirmed"
-        # Verify fallback: book_flight was called once after pricing failed
-        assert mock_amadeus.book_flight.call_count == 1
-
-    async def test_book_flight_invalid_gender(
-        self, db_session, seeded_db, raw_offer,
+    async def test_confirm_invalid_gender(
+        self, db_session, seeded_db, mock_priced_offer_data,
     ):
         """Invalid gender returns 422."""
         client = _make_client(db_session)
         response = client.post(
-            "/api/v1/flights/book",
+            "/api/v1/flights/book/confirm",
             json={
+                "payment_intent_id": "pi_test",
+                "priced_offer": mock_priced_offer_data,
                 "trip_id": TRIP_ID,
-                "raw_offer": raw_offer,
                 "traveler_first_name": "Ahmed",
                 "traveler_last_name": "Hassan",
                 "traveler_date_of_birth": "1995-06-15",
@@ -775,39 +734,66 @@ class TestBookFlightEndpoint:
         )
         assert response.status_code == 422
 
-    async def test_book_flight_amadeus_error(
-        self, db_session, seeded_db, raw_offer, mock_amadeus,
+    async def test_confirm_stripe_payment_not_completed(
+        self, db_session, seeded_db, mock_priced_offer_data,
+        mock_amadeus,
     ):
-        """When both pricing AND booking fail, return 400."""
-        # The service catches ValueError from price_flight and falls back
-        # to direct booking. So we need BOTH to fail for the error to propagate.
-        mock_amadeus.price_flight.side_effect = ValueError(
-            "Amadeus API error: Could not price"
-        )
-        mock_amadeus.book_flight.side_effect = ValueError(
-            "Amadeus API error: Could not book"
-        )
+        """When Stripe payment has not succeeded, return 400."""
         client = _make_client(db_session)
 
-        response = client.post(
-            "/api/v1/flights/book",
-            json={
-                "trip_id": TRIP_ID,
-                "raw_offer": raw_offer,
-                "traveler_first_name": "Ahmed",
-                "traveler_last_name": "Hassan",
-                "traveler_date_of_birth": "1995-06-15",
-                "traveler_gender": "MALE",
-                "traveler_email": "ahmed@example.com",
-                "traveler_phone": "+201234567890",
-            },
-        )
+        with patch("stripe.PaymentIntent.retrieve") as mock_retrieve:
+            mock_retrieve.return_value = type("obj", (), {"status": "requires_payment_method"})()
+
+            response = client.post(
+                "/api/v1/flights/book/confirm",
+                json={
+                    "payment_intent_id": "pi_test_failed",
+                    "priced_offer": mock_priced_offer_data,
+                    "trip_id": TRIP_ID,
+                    "traveler_first_name": "Ahmed",
+                    "traveler_last_name": "Hassan",
+                    "traveler_date_of_birth": "1995-06-15",
+                    "traveler_gender": "MALE",
+                    "traveler_email": "ahmed@example.com",
+                    "traveler_phone": "+201234567890",
+                },
+            )
 
         assert response.status_code == 400
-        assert "Amadeus" in response.json()["detail"]
+        assert "Payment not completed" in response.json()["detail"]
 
-    async def test_book_flight_unauthenticated(
-        self, db_session, seeded_db, raw_offer,
+    async def test_confirm_amadeus_failure_returns_402(
+        self, db_session, seeded_db, mock_priced_offer_data,
+        mock_amadeus,
+    ):
+        """When Amadeus booking fails after Stripe succeeded, return 402."""
+        mock_amadeus.book_flight.side_effect = Exception("Amadeus booking error")
+        client = _make_client(db_session)
+
+        with patch("stripe.PaymentIntent.retrieve") as mock_retrieve:
+            mock_retrieve.return_value = type("obj", (), {"status": "succeeded"})()
+
+            response = client.post(
+                "/api/v1/flights/book/confirm",
+                json={
+                    "payment_intent_id": "pi_test_refund",
+                    "priced_offer": mock_priced_offer_data,
+                    "trip_id": TRIP_ID,
+                    "traveler_first_name": "Ahmed",
+                    "traveler_last_name": "Hassan",
+                    "traveler_date_of_birth": "1995-06-15",
+                    "traveler_gender": "MALE",
+                    "traveler_email": "ahmed@example.com",
+                    "traveler_phone": "+201234567890",
+                },
+            )
+
+        assert response.status_code == 402
+        data = response.json()
+        assert "refund" in str(data["detail"]).lower()
+
+    async def test_confirm_unauthenticated(
+        self, db_session, seeded_db, mock_priced_offer_data,
     ):
         """No auth returns 401/403/422."""
         app.dependency_overrides[get_db] = lambda: db_session
@@ -816,15 +802,16 @@ class TestBookFlightEndpoint:
         client = TestClient(app)
 
         response = client.post(
-            "/api/v1/flights/book",
+            "/api/v1/flights/book/confirm",
             json={
+                "payment_intent_id": "pi_test",
+                "priced_offer": mock_priced_offer_data,
                 "trip_id": TRIP_ID,
-                "raw_offer": raw_offer,
-                "traveler_first_name": "Ahmed",
-                "traveler_last_name": "Hassan",
+                "traveler_first_name": "A",
+                "traveler_last_name": "B",
                 "traveler_date_of_birth": "1995-06-15",
                 "traveler_gender": "MALE",
-                "traveler_email": "ahmed@example.com",
+                "traveler_email": "a@b.com",
                 "traveler_phone": "+201234567890",
             },
         )
@@ -832,98 +819,41 @@ class TestBookFlightEndpoint:
 
 
 @pytest.mark.asyncio
-class TestBookFromOfferEndpoint:
-    """POST /api/v1/flights/offer/{offer_id}/book — Book from saved offer."""
-
-    async def test_book_from_offer_creates_confirmed_booking(
-        self, db_session, seeded_db, raw_offer,
-        mock_amadeus, mock_priced_offer_data, mock_order_data,
-    ):
-        """Book a flight using a previously saved offer ID."""
-        mock_amadeus.price_flight.return_value = mock_priced_offer_data
-        mock_amadeus.book_flight.return_value = mock_order_data
-        client = _make_client(db_session)
-
-        # First save the offer
-        save_resp = client.post(
-            "/api/v1/flights/offer",
-            json={"trip_id": TRIP_ID, "offer_index": 0, "raw_offer": raw_offer},
-        )
-        offer_id = save_resp.json()["offer_id"]
-
-        # Then book from it (no raw_offer in request)
-        response = client.post(
-            f"/api/v1/flights/offer/{offer_id}/book",
-            json={
-                "trip_id": TRIP_ID,
-                "traveler_first_name": "Ahmed",
-                "traveler_last_name": "Hassan",
-                "traveler_date_of_birth": "1995-06-15",
-                "traveler_gender": "MALE",
-                "traveler_email": "ahmed@example.com",
-                "traveler_phone": "+201234567890",
-            },
-        )
-
-        assert response.status_code == 200
-        data = response.json()
-        assert data["booking_id"].startswith("FL-")
-        assert data["status"] == "confirmed"
-        assert data["origin_iata"] == "HBE"
-        assert data["destination_iata"] == "CAI"
-        assert data["total_cost"] == 150.00
-
-    async def test_book_from_offer_not_found(
-        self, db_session,
-    ):
-        """Non-existent offer_id returns 400 (ValueError from service)."""
-        client = _make_client(db_session)
-        response = client.post(
-            "/api/v1/flights/offer/OFR-NONEXIST/book",
-            json={
-                "trip_id": "trip_x",
-                "traveler_first_name": "Ahmed",
-                "traveler_last_name": "Hassan",
-                "traveler_date_of_birth": "1995-06-15",
-                "traveler_gender": "MALE",
-                "traveler_email": "a@b.com",
-                "traveler_phone": "+201234567890",
-            },
-        )
-        assert response.status_code == 400
-        assert "not found" in response.json()["detail"].lower()
-
-
-@pytest.mark.asyncio
 class TestGetFlightBookingEndpoint:
     """GET /api/v1/flights/{booking_id} — Get booking details."""
 
     async def test_get_flight_booking_returns_details(
-        self, db_session, seeded_db, raw_offer,
-        mock_amadeus, mock_priced_offer_data, mock_order_data,
+        self, db_session, seeded_db,
     ):
         """After booking, retrieve full booking details."""
-        mock_amadeus.price_flight.return_value = mock_priced_offer_data
-        mock_amadeus.book_flight.return_value = mock_order_data
-        client = _make_client(db_session)
-
-        book_resp = client.post(
-            "/api/v1/flights/book",
-            json={
-                "trip_id": TRIP_ID, "raw_offer": raw_offer,
-                "traveler_first_name": "A", "traveler_last_name": "B",
-                "traveler_date_of_birth": "1995-06-15",
-                "traveler_gender": "MALE",
-                "traveler_email": "a@b.com", "traveler_phone": "+201234567890",
+        booking = Booking(
+            booking_id="FL-GET001",
+            trip_id=TRIP_ID,
+            user_id=TEST_USER_ID,
+            booking_type=BookingType.flight,
+            provider=BookingProvider.amadeus,
+            status=BookingStatus.confirmed,
+            total_cost=150.00,
+            currency="USD",
+            raw_response={
+                "origin_iata": "HBE",
+                "destination_iata": "CAI",
+                "airline_code": "MS",
+                "airline_name": "EgyptAir",
+                "flight_number": "MS777",
+                "cabin_class": "ECONOMY",
+                "amadeus_order_id": "AMADEUS_ORDER_001",
             },
         )
-        booking_id = book_resp.json()["booking_id"]
+        db_session.add(booking)
+        await db_session.commit()
 
-        response = client.get(f"/api/v1/flights/{booking_id}")
+        client = _make_client(db_session)
+        response = client.get("/api/v1/flights/FL-GET001")
 
         assert response.status_code == 200
         data = response.json()
-        assert data["booking_id"] == booking_id
+        assert data["booking_id"] == "FL-GET001"
         assert data["trip_id"] == TRIP_ID
         assert data["user_id"] == TEST_USER_ID
         assert data["status"] == "confirmed"
@@ -939,28 +869,25 @@ class TestGetFlightBookingEndpoint:
         assert response.status_code == 404
 
     async def test_get_flight_booking_wrong_user(
-        self, db_session, seeded_db, raw_offer,
-        mock_amadeus, mock_priced_offer_data, mock_order_data,
+        self, db_session, seeded_db,
     ):
         """Booking owned by another user returns 404."""
-        mock_amadeus.price_flight.return_value = mock_priced_offer_data
-        mock_amadeus.book_flight.return_value = mock_order_data
-        client = _make_client(db_session)
-
-        book_resp = client.post(
-            "/api/v1/flights/book",
-            json={
-                "trip_id": TRIP_ID, "raw_offer": raw_offer,
-                "traveler_first_name": "A", "traveler_last_name": "B",
-                "traveler_date_of_birth": "1995-06-15",
-                "traveler_gender": "MALE",
-                "traveler_email": "a@b.com", "traveler_phone": "+201234567890",
-            },
+        booking = Booking(
+            booking_id="FL-GET002",
+            trip_id=TRIP_ID,
+            user_id=TEST_USER_ID,
+            booking_type=BookingType.flight,
+            provider=BookingProvider.amadeus,
+            status=BookingStatus.confirmed,
+            total_cost=150.00,
+            currency="USD",
+            raw_response={"origin_iata": "HBE", "destination_iata": "CAI"},
         )
-        booking_id = book_resp.json()["booking_id"]
+        db_session.add(booking)
+        await db_session.commit()
 
         other_client = _make_client(db_session, _override_get_other_user)
-        response = other_client.get(f"/api/v1/flights/{booking_id}")
+        response = other_client.get("/api/v1/flights/FL-GET002")
         assert response.status_code == 404
 
 
@@ -969,28 +896,25 @@ class TestListTripFlightBookingsEndpoint:
     """GET /api/v1/flights/trip/{trip_id} — List trip flight bookings."""
 
     async def test_list_trip_flight_bookings(
-        self, db_session, seeded_db, raw_offer,
-        mock_amadeus, mock_priced_offer_data, mock_order_data,
+        self, db_session, seeded_db,
     ):
         """List all flight bookings for a trip."""
-        mock_amadeus.price_flight.return_value = mock_priced_offer_data
-        mock_amadeus.book_flight.return_value = mock_order_data
-        client = _make_client(db_session)
-
-        # Create 2 bookings
         for i in range(2):
-            client.post(
-                "/api/v1/flights/book",
-                json={
-                    "trip_id": TRIP_ID, "raw_offer": raw_offer,
-                    "traveler_first_name": f"A{i}", "traveler_last_name": "B",
-                    "traveler_date_of_birth": "1995-06-15",
-                    "traveler_gender": "MALE",
-                    "traveler_email": f"a{i}@b.com",
-                    "traveler_phone": "+201234567890",
-                },
+            booking = Booking(
+                booking_id=f"FL-LIST00{i}",
+                trip_id=TRIP_ID,
+                user_id=TEST_USER_ID,
+                booking_type=BookingType.flight,
+                provider=BookingProvider.amadeus,
+                status=BookingStatus.confirmed,
+                total_cost=150.00,
+                currency="USD",
+                raw_response={"origin_iata": "HBE", "destination_iata": "CAI"},
             )
+            db_session.add(booking)
+        await db_session.commit()
 
+        client = _make_client(db_session)
         response = client.get(f"/api/v1/flights/trip/{TRIP_ID}")
 
         assert response.status_code == 200
@@ -1014,58 +938,51 @@ class TestCancelFlightBookingEndpoint:
     """POST /api/v1/flights/{booking_id}/cancel — Cancel a flight booking."""
 
     async def test_cancel_flight_booking(
-        self, db_session, seeded_db, raw_offer,
-        mock_amadeus, mock_priced_offer_data, mock_order_data,
+        self, db_session, seeded_db,
     ):
         """Cancel a confirmed booking → status becomes cancelled."""
-        mock_amadeus.price_flight.return_value = mock_priced_offer_data
-        mock_amadeus.book_flight.return_value = mock_order_data
-        client = _make_client(db_session)
-
-        book_resp = client.post(
-            "/api/v1/flights/book",
-            json={
-                "trip_id": TRIP_ID, "raw_offer": raw_offer,
-                "traveler_first_name": "A", "traveler_last_name": "B",
-                "traveler_date_of_birth": "1995-06-15",
-                "traveler_gender": "MALE",
-                "traveler_email": "a@b.com", "traveler_phone": "+201234567890",
-            },
+        booking = Booking(
+            booking_id="FL-CAN001",
+            trip_id=TRIP_ID,
+            user_id=TEST_USER_ID,
+            booking_type=BookingType.flight,
+            provider=BookingProvider.amadeus,
+            status=BookingStatus.confirmed,
+            total_cost=150.00,
+            currency="USD",
+            raw_response={"origin_iata": "HBE", "destination_iata": "CAI"},
         )
-        booking_id = book_resp.json()["booking_id"]
+        db_session.add(booking)
+        await db_session.commit()
 
-        cancel_resp = client.post(f"/api/v1/flights/{booking_id}/cancel")
+        client = _make_client(db_session)
+        cancel_resp = client.post("/api/v1/flights/FL-CAN001/cancel")
 
         assert cancel_resp.status_code == 200
         data = cancel_resp.json()
         assert data["status"] == "cancelled"
-        assert data["booking_id"] == booking_id
+        assert data["booking_id"] == "FL-CAN001"
 
     async def test_cancel_flight_booking_already_cancelled(
-        self, db_session, seeded_db, raw_offer,
-        mock_amadeus, mock_priced_offer_data, mock_order_data,
+        self, db_session, seeded_db,
     ):
         """Cancelling an already cancelled booking returns 400."""
-        mock_amadeus.price_flight.return_value = mock_priced_offer_data
-        mock_amadeus.book_flight.return_value = mock_order_data
-        client = _make_client(db_session)
-
-        book_resp = client.post(
-            "/api/v1/flights/book",
-            json={
-                "trip_id": TRIP_ID, "raw_offer": raw_offer,
-                "traveler_first_name": "A", "traveler_last_name": "B",
-                "traveler_date_of_birth": "1995-06-15",
-                "traveler_gender": "MALE",
-                "traveler_email": "a@b.com", "traveler_phone": "+201234567890",
-            },
+        booking = Booking(
+            booking_id="FL-CAN002",
+            trip_id=TRIP_ID,
+            user_id=TEST_USER_ID,
+            booking_type=BookingType.flight,
+            provider=BookingProvider.amadeus,
+            status=BookingStatus.cancelled,
+            total_cost=150.00,
+            currency="USD",
+            raw_response={"origin_iata": "HBE", "destination_iata": "CAI"},
         )
-        booking_id = book_resp.json()["booking_id"]
+        db_session.add(booking)
+        await db_session.commit()
 
-        # Cancel once
-        client.post(f"/api/v1/flights/{booking_id}/cancel")
-        # Cancel again
-        cancel_resp = client.post(f"/api/v1/flights/{booking_id}/cancel")
+        client = _make_client(db_session)
+        cancel_resp = client.post("/api/v1/flights/FL-CAN002/cancel")
 
         assert cancel_resp.status_code == 400
         assert "already cancelled" in cancel_resp.json()["detail"].lower()
@@ -1079,38 +996,35 @@ class TestCancelFlightBookingEndpoint:
         assert response.status_code == 400
 
     async def test_cancel_flight_booking_wrong_user(
-        self, db_session, seeded_db, raw_offer,
-        mock_amadeus, mock_priced_offer_data, mock_order_data,
+        self, db_session, seeded_db,
     ):
         """Booking owned by another user returns 400."""
-        mock_amadeus.price_flight.return_value = mock_priced_offer_data
-        mock_amadeus.book_flight.return_value = mock_order_data
-        client = _make_client(db_session)
-
-        book_resp = client.post(
-            "/api/v1/flights/book",
-            json={
-                "trip_id": TRIP_ID, "raw_offer": raw_offer,
-                "traveler_first_name": "A", "traveler_last_name": "B",
-                "traveler_date_of_birth": "1995-06-15",
-                "traveler_gender": "MALE",
-                "traveler_email": "a@b.com", "traveler_phone": "+201234567890",
-            },
+        booking = Booking(
+            booking_id="FL-CAN003",
+            trip_id=TRIP_ID,
+            user_id=TEST_USER_ID,
+            booking_type=BookingType.flight,
+            provider=BookingProvider.amadeus,
+            status=BookingStatus.confirmed,
+            total_cost=150.00,
+            currency="USD",
+            raw_response={"origin_iata": "HBE", "destination_iata": "CAI"},
         )
-        booking_id = book_resp.json()["booking_id"]
+        db_session.add(booking)
+        await db_session.commit()
 
         other_client = _make_client(db_session, _override_get_other_user)
-        response = other_client.post(f"/api/v1/flights/{booking_id}/cancel")
+        response = other_client.post("/api/v1/flights/FL-CAN003/cancel")
         assert response.status_code == 400
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# 5. Cross-Feature: Full Booking Lifecycle (search → save → book → get → cancel)
+# 5. Cross-Feature: Full Booking Lifecycle (search → initiate → confirm → get → cancel)
 # ═══════════════════════════════════════════════════════════════════════════════
 
 @pytest.mark.asyncio
 class TestFullFlightLifecycle:
-    """End-to-end flow: search → save → book → get → cancel."""
+    """End-to-end flow: search → initiate → confirm → get → cancel."""
 
     async def test_full_lifecycle(
         self, db_session, seeded_db,
@@ -1134,58 +1048,73 @@ class TestFullFlightLifecycle:
         assert search_resp.status_code == 200
         offers = search_resp.json()
         assert len(offers) == 1
+        raw_offer = offers[0]["raw_offer"]
 
-        # ── 2. Save offer ──────────────────────────────────────────────
-        save_resp = client.post(
-            "/api/v1/flights/offer",
-            json={
-                "trip_id": TRIP_ID,
-                "offer_index": 0,
-                "raw_offer": offers[0]["raw_offer"],
-            },
-        )
-        assert save_resp.status_code == 200
-        offer_id = save_resp.json()["offer_id"]
-
-        # ── 3. Get saved offer ─────────────────────────────────────────
-        get_offer_resp = client.get(f"/api/v1/flights/offer/{offer_id}")
-        assert get_offer_resp.status_code == 200
-        assert get_offer_resp.json()["offer_id"] == offer_id
-
-        # ── 4. Book flight ─────────────────────────────────────────────
+        # ── 2. Initiate booking (price + Stripe PaymentIntent) ─────────
         mock_amadeus.price_flight.return_value = mock_priced_offer_data
+
+        fake_intent = {
+            "id": "pi_test_lifecycle",
+            "client_secret": "pi_test_lifecycle_secret",
+            "status": "requires_payment_method",
+            "amount": 15000,
+            "currency": "usd",
+        }
+        with patch("stripe.PaymentIntent.create") as mock_create:
+            mock_create.return_value = fake_intent
+
+            initiate_resp = client.post(
+                "/api/v1/flights/book/initiate",
+                json={"trip_id": TRIP_ID, "raw_offer": raw_offer},
+            )
+
+        assert initiate_resp.status_code == 200
+        initiate_data = initiate_resp.json()
+        assert initiate_data["client_secret"] == "pi_test_lifecycle_secret"
+        assert initiate_data["payment_intent_id"] == "pi_test_lifecycle"
+        priced_offer = initiate_data["priced_offer"]
+        assert priced_offer is not None
+
+        # ── 3. Confirm booking (verify Stripe + book via Amadeus) ──────
         mock_amadeus.book_flight.return_value = mock_order_data
 
-        book_resp = client.post(
-            f"/api/v1/flights/offer/{offer_id}/book",
-            json={
-                "trip_id": TRIP_ID,
-                "traveler_first_name": "Ahmed",
-                "traveler_last_name": "Hassan",
-                "traveler_date_of_birth": "1995-06-15",
-                "traveler_gender": "MALE",
-                "traveler_email": "ahmed@example.com",
-                "traveler_phone": "+201234567890",
-            },
-        )
-        assert book_resp.status_code == 200
-        booking_data = book_resp.json()
+        with patch("stripe.PaymentIntent.retrieve") as mock_retrieve:
+            mock_retrieve.return_value = type("obj", (), {"status": "succeeded"})()
+
+            confirm_resp = client.post(
+                "/api/v1/flights/book/confirm",
+                json={
+                    "payment_intent_id": "pi_test_lifecycle",
+                    "priced_offer": priced_offer,
+                    "trip_id": TRIP_ID,
+                    "traveler_first_name": "Ahmed",
+                    "traveler_last_name": "Hassan",
+                    "traveler_date_of_birth": "1995-06-15",
+                    "traveler_gender": "MALE",
+                    "traveler_email": "ahmed@example.com",
+                    "traveler_phone": "+201234567890",
+                },
+            )
+
+        assert confirm_resp.status_code == 200
+        booking_data = confirm_resp.json()
         booking_id = booking_data["booking_id"]
         assert booking_data["status"] == "confirmed"
         assert booking_data["origin_iata"] == "HBE"
         assert booking_data["total_cost"] == 150.00
+        assert booking_data["amadeus_order_id"] == "AMADEUS_ORDER_001"
 
-        # ── 5. Get booking details ─────────────────────────────────────
+        # ── 4. Get booking details ─────────────────────────────────────
         get_resp = client.get(f"/api/v1/flights/{booking_id}")
         assert get_resp.status_code == 200
         assert get_resp.json()["status"] == "confirmed"
 
-        # ── 6. Cancel booking ──────────────────────────────────────────
+        # ── 5. Cancel booking ──────────────────────────────────────────
         cancel_resp = client.post(f"/api/v1/flights/{booking_id}/cancel")
         assert cancel_resp.status_code == 200
         assert cancel_resp.json()["status"] == "cancelled"
 
-        # ── 7. Verify cancelled in get ─────────────────────────────────
+        # ── 6. Verify cancelled in get ─────────────────────────────────
         final_resp = client.get(f"/api/v1/flights/{booking_id}")
         assert final_resp.status_code == 200
         assert final_resp.json()["status"] == "cancelled"

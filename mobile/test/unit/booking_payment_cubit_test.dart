@@ -47,12 +47,14 @@ class FakeBookingRepository implements BookingRepository {
   late Future<Map<String, dynamic>> Function({
     required String bookingId,
     required String paymentMethod,
+    required double amount,
     String? currency,
   }) initiatePaymentStub;
 
   late Future<Map<String, dynamic>> Function({
     required String bookingId,
     required String paymentMethod,
+    required double amount,
     String? currency,
   }) payBookingStub;
 
@@ -70,9 +72,9 @@ class FakeBookingRepository implements BookingRepository {
   int initiateTripPackagePaymentCallCount = 0;
 
   FakeBookingRepository() {
-    initiatePaymentStub = ({required bookingId, required paymentMethod, currency}) async =>
+    initiatePaymentStub = ({required bookingId, required paymentMethod, required amount, currency}) async =>
         <String, dynamic>{'success': true, 'simulated': true};
-    payBookingStub = ({required bookingId, required paymentMethod, currency}) async =>
+    payBookingStub = ({required bookingId, required paymentMethod, required amount, currency}) async =>
         <String, dynamic>{'success': true, 'simulated': true};
     getBookingStub = (String bookingId) async => _defaultBooking();
     initiateTripPackagePaymentStub = ({
@@ -87,22 +89,24 @@ class FakeBookingRepository implements BookingRepository {
   Future<Map<String, dynamic>> initiateBookingPayment({
     required String bookingId,
     required String paymentMethod,
+    required double amount,
     String? currency,
   }) async {
     initiatePaymentCallCount++;
     return initiatePaymentStub(
-        bookingId: bookingId, paymentMethod: paymentMethod, currency: currency);
+        bookingId: bookingId, paymentMethod: paymentMethod, amount: amount, currency: currency);
   }
 
   @override
   Future<Map<String, dynamic>> payBooking({
     required String bookingId,
     required String paymentMethod,
+    required double amount,
     String? currency,
   }) async {
     payBookingCallCount++;
     return payBookingStub(
-        bookingId: bookingId, paymentMethod: paymentMethod, currency: currency);
+        bookingId: bookingId, paymentMethod: paymentMethod, amount: amount, currency: currency);
   }
 
   @override

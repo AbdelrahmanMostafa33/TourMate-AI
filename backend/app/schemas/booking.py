@@ -142,6 +142,34 @@ class TripPackageBookingResponse(BaseModel):
     booking_count: int
 
 
+# ─── Hotel Book Request (single-hotel booking) ────────────────────────────
+
+class HotelBookRequest(BaseModel):
+    """Request for booking a single hotel via POST /bookings/hotel-book.
+
+    Used by the Pay Now flow to book exactly one hotel (the one the user
+    selected) rather than all hotel stops in the itinerary.
+    """
+    trip_id:      str
+    place_id:     str
+    total_cost:   float
+    currency:     Optional[str] = None
+    start_datetime: Optional[datetime] = None
+    end_datetime:   Optional[datetime] = None
+
+
+# ─── Confirm After Payment (client-side verification) ────────────────────
+
+class ConfirmAfterPaymentRequest(BaseModel):
+    """Request for confirming a booking after the Payment Sheet succeeds.
+
+    The Flutter app sends this after the Stripe Payment Sheet completes
+    successfully.  The backend verifies the PaymentIntent status with Stripe
+    directly (not trusting the client) and confirms the booking immediately.
+    """
+    stripe_payment_intent_id: str
+
+
 # ─── Trip Package Payment ─────────────────────────────────────────────────
 
 class PackagePaymentItem(BaseModel):

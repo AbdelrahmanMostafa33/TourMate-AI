@@ -1,6 +1,7 @@
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:dio/dio.dart';
 import '../../../../core/network/service_locator.dart';
 import '../../../../core/network/api_services.dart';
 import '../../../../core/utils/image_picker_service.dart';
@@ -12,6 +13,10 @@ import '../../logic/chat_state.dart';
 import '../widgets/message_bubble.dart';
 import '../widgets/pipeline_progress_widget.dart';
 import '../../../trips/presentation/screens/trip_detail_screen.dart';
+import '../../../payments/data/datasource/payment_service.dart';
+import '../../../payments/presentation/screens/booking_payment_screen.dart';
+import '../../../flights/data/repository/flight_repository.dart';
+import '../../../auth/data/datasource/firebase_auth_service.dart';
 
 class ChatScreen extends StatefulWidget {
   final VoidCallback? onTripCreated;
@@ -175,61 +180,267 @@ class _ChatViewState extends State<_ChatView> {
     cubit.sendMessage('approve');
   }
 
-  /// Called when the user selects a hotel option to start booking.
-  /// Uses explicit "select hotel" language so the backend message interpreter
-  /// correctly routes to select_hotel action during HOTEL_SELECTION phase.
+  /// Called when the user taps a specific hotel option.
+  /// Sends the hotel name so the backend's message interpreter extracts
+  /// ``selected_hotel_name`` and routes to select_hotel action.
   void _selectHotel(ChatCubit cubit, dynamic hotel) {
-    cubit.sendMessage('Select hotel');
+    // hotel is a HotelOption object with name, id, etc.
+    // Dynamic access works: hotel.name returns HotelOption.name
+    final name = hotel?.name ?? '';
+    final msg = name.isNotEmpty ? 'Select hotel: $name' : 'Select hotel';
+    cubit.sendMessage(msg);
   }
 
-  /// Called when the user selects a flight option.
-  /// Uses "pick the first" language which matches the backend interpreter's
-  /// number_keywords ("pick ") without matching flight_keywords (which would
-  /// wrongly route to search_flights instead of select_flight).
+  /// Called when the user taps a specific flight option.
+  /// Sends airline + flight number so the backend's message interpreter
+  /// can match it to a flight offer and route to select_flight action.
   void _selectFlight(ChatCubit cubit, dynamic flight) {
-    cubit.sendMessage('Pick the first one');
+    // flight is a FlightOffer object with airlineName, flightNumber, etc.
+    // Dynamic access works: flight.airlineName returns FlightOffer.airlineName
+    final airline = flight?.airlineName ?? flight?.airlineCode ?? '';
+    final flightNum = flight?.flightNumber ?? '';
+    final desc = airline.isNotEmpty && flightNum.isNotEmpty
+        ? '$airline $flightNum'
+        : (airline.isNotEmpty ? airline : '');
+    final msg = desc.isNotEmpty
+        ? "I'll take the $desc flight"
+        : 'Pick the first one';
+    cubit.sendMessage(msg);
   }
 
   /// Called when the user taps "Pay Now" on the booking card.
-  /// Makes a direct REST API call to update the trip status to
-  /// `awaiting_booking`, bypassing the LLM message interpreter,
-  /// then navigates to TripDetailScreen which auto-triggers the
-  /// "Book My Trip" flow (create bookings → Stripe Payment Sheet).
+  ///
+  /// Books the selected flight (if any) AND the selected hotel (if any)
+  /// in sequence — never falls through to the old all-stops package booking.
+  ///
+  /// Flow:
+  ///   1. Update trip status to awaiting_booking
+  ///   2. If flight selected:
+  ///      a. POST /flights/book/initiate  → client_secret, priced_offer
+  ///      b. Open Stripe Payment Sheet
+  ///      c. POST /flights/book/confirm   → finalize flight booking
+  ///   3. If hotel selected:
+  ///      a. POST /bookings/              → create pending booking
+  ///      b. Navigate to BookingPaymentPage (opens Stripe Payment Sheet)
+  ///   4. Show success message
   Future<void> _onBookingPayNow(ChatCubit cubit) async {
+    debugPrint('[ChatScreen] _onBookingPayNow CALLED');
     final tripId = cubit.bookingTripId;
-    if (tripId == null || tripId.isEmpty) return;
+    debugPrint('[ChatScreen] tripId: $tripId');
+    if (tripId == null || tripId.isEmpty) {
+      debugPrint('[ChatScreen] tripId is null or empty, returning early');
+      return;
+    }
 
-    // Direct REST API call — no LLM involved, no WebSocket dependency.
-    String? patchError;
+    debugPrint('[ChatScreen] Pay Now clicked for trip: $tripId');
+
+    // ── Step 1: Update trip status ────────────────────────────────
     try {
       await locator<ApiServices>().updateTripStatus(
         tripId,
         {'status': 'awaiting_booking'},
       );
     } catch (e) {
-      patchError = e.toString();
       debugPrint('[ChatScreen] updateTripStatus failed: $e');
     }
 
-    if (patchError != null && context.mounted) {
-      AppSnackbar.error(
-        context,
-        'Could not update trip status: $patchError. You can retry in the trip detail screen.',
-      );
+    bool flightBooked = false;
+    bool hotelBooked = false;
+    String? flightBookingId;
+    String? hotelBookingId;
+
+    // ── Step 2: Book flight (if selected) ─────────────────────────
+    final flightBooking = cubit.flightBookingData;
+    final rawOffer = flightBooking?['raw_offer'] as Map<String, dynamic>?;
+
+    if (rawOffer != null && rawOffer.isNotEmpty) {
+      try {
+        // 2a. Initiate flight booking
+        final initiateResponse = await locator<FlightRepository>().initiateBooking(
+          rawOffer: rawOffer,
+          tripId: tripId,
+        );
+
+        // 2b. Open Stripe Payment Sheet for card entry
+        final paymentService = locator<PaymentService>();
+        final paymentSuccess = await paymentService.payWithStripeSheet(
+          clientSecret: initiateResponse.clientSecret,
+        );
+
+        if (paymentSuccess) {
+          // 2c. Confirm flight booking
+          String travelerEmail = 'traveler@example.com';
+          String travelerFirstName = 'Test';
+          String travelerLastName = 'User';
+
+          try {
+            final firebaseAuth = locator<FirebaseAuthService>();
+            final user = firebaseAuth.currentUser;
+            if (user != null) {
+              travelerEmail = user.email ?? travelerEmail;
+              final displayName = user.displayName ?? '';
+              final parts = displayName.split(' ');
+              if (parts.length >= 2) {
+                travelerFirstName = parts[0];
+                travelerLastName = parts.sublist(1).join(' ');
+              } else if (parts.isNotEmpty) {
+                travelerFirstName = parts[0];
+              }
+            }
+          } catch (_) {}
+
+          final confirmResponse = await locator<FlightRepository>().confirmBooking(
+            paymentIntentId: initiateResponse.paymentIntentId,
+            pricedOffer: initiateResponse.pricedOffer,
+            tripId: tripId,
+            travelerFirstName: travelerFirstName,
+            travelerLastName: travelerLastName,
+            travelerDateOfBirth: '1990-01-15',
+            travelerGender: 'MALE',
+            travelerEmail: travelerEmail,
+            travelerPhone: '+201000000000',
+          );
+
+          flightBooked = true;
+          flightBookingId = confirmResponse.confirmationNumber ?? confirmResponse.bookingId;
+          debugPrint('[ChatScreen] Flight booked successfully: $flightBookingId');
+        }
+      } catch (e) {
+        debugPrint('[ChatScreen] Flight booking failed: $e');
+        if (context.mounted) {
+          AppSnackbar.error(context, 'Flight booking failed: $e');
+        }
+      }
     }
 
-    if (mounted) {
+    // ── Step 3: Create pending booking for selected hotel (if available) ────────
+    final hotelInfo = cubit.selectedHotelInfo;
+    debugPrint('[ChatScreen] selectedHotelInfo: ${hotelInfo != null ? hotelInfo["name"] : "null"}');
+    
+    if (hotelInfo == null) {
+      // No hotel selected - show error to user
+      if (context.mounted) {
+        AppSnackbar.error(
+          context,
+          'Please select a hotel first by tapping "Select Hotel" before paying.',
+        );
+      }
+      debugPrint('[ChatScreen] No hotel selected - cannot proceed with payment');
+      return;
+    }
+    
+    if (hotelInfo != null) {
+      final placeId = hotelInfo['place_id'] as String?;
+      final totalCost = (hotelInfo['total_cost'] as num?)?.toDouble() ??
+                        (hotelInfo['nightly_rate'] as num?)?.toDouble() ?? 0;
+      final currency = hotelInfo['currency'] as String? ?? 'USD';
+
+      debugPrint('[ChatScreen] placeId: $placeId, totalCost: $totalCost, currency: $currency');
+      debugPrint('[ChatScreen] placeId != null: ${placeId != null}, placeId.isNotEmpty: ${placeId?.isNotEmpty ?? false}, totalCost > 0: ${totalCost > 0}');
+
+      if (placeId != null && placeId.isNotEmpty) {
+        try {
+          debugPrint('[ChatScreen] Creating hotel booking for place_id: $placeId, cost: $totalCost');
+          
+          // Create pending booking (no payment yet)
+          final dio = locator<Dio>();
+          final response = await dio.post('/api/v1/bookings/', data: {
+            'trip_id': tripId,
+            'place_id': placeId,
+            'booking_type': 'hotel',
+            'total_cost': totalCost,
+            'currency': currency,
+          });
+          
+          hotelBookingId = response.data['booking_id'] as String?;
+          debugPrint('[ChatScreen] Hotel booking created: $hotelBookingId');
+          
+          // Navigate to Payment Sheet for this booking
+          if (hotelBookingId != null && context.mounted) {
+            final bookingId = hotelBookingId; // Non-nullable for type system
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => BookingPaymentPage(
+                  bookingId: bookingId,
+                  tripId: tripId,
+                  amount: totalCost,
+                  currency: currency,
+                ),
+              ),
+            ).then((result) {
+              // Payment completed - check result
+              if (result == true) {
+                hotelBooked = true;
+                debugPrint('[ChatScreen] Hotel payment completed successfully');
+                _finalizeBookingAfterPayment(cubit, tripId, flightBooked, hotelBooked, flightBookingId);
+              } else {
+                debugPrint('[ChatScreen] Hotel payment cancelled or failed');
+              }
+            });
+            return; // Exit here - navigation handles the rest
+          }
+        } catch (e) {
+          debugPrint('[ChatScreen] Hotel booking creation failed: $e');
+          if (context.mounted) {
+            AppSnackbar.error(context, 'Hotel booking failed: $e');
+          }
+        }
+      }
+    }
+
+    // ── Step 4: If no hotel to pay for, finalize flight booking only ───────────
+    if (flightBooked && !hotelBooked) {
+      _finalizeBookingAfterPayment(cubit, tripId, flightBooked, hotelBooked, flightBookingId);
+    }
+  }
+
+  /// Shared finalization logic after payment completes
+  void _finalizeBookingAfterPayment(
+    ChatCubit cubit,
+    String tripId,
+    bool flightBooked,
+    bool hotelBooked,
+    String? flightBookingId,
+  ) {
+    // ── Update trip status to booking_confirmed ───────────
+    final anythingBooked = flightBooked || hotelBooked;
+    if (anythingBooked) {
+      locator<ApiServices>().updateTripStatus(
+        tripId,
+        {'status': 'booking_confirmed'},
+      ).catchError((e) {
+        debugPrint('[ChatScreen] updateTripStatus → booking_confirmed failed: $e');
+      });
+    }
+
+    // ── Update booking card to show confirmed badge ──────
+    if (anythingBooked) {
+      cubit.markBookingConfirmed();
+    }
+
+    // ── Show success message ──────────────────────────────
+    final parts = <String>[];
+    if (flightBooked) parts.add('Flight: $flightBookingId');
+    if (hotelBooked) parts.add('Hotel booked');
+    if (anythingBooked && context.mounted) {
+      AppSnackbar.success(context, '✅ ${parts.join(" • ")}');
+    } else if (!anythingBooked && context.mounted) {
+      AppSnackbar.info(context, 'No items were booked. You can book later from the trip details.');
+    }
+
+    // ── Navigate to TripDetailScreen ──────────────────────
+    if (anythingBooked && context.mounted) {
       Navigator.push(
         context,
         MaterialPageRoute(
-          builder: (_) => TripDetailScreen(
-            tripId: tripId,
-            shouldAutoBook: true,
-          ),
+          builder: (_) => TripDetailScreen(tripId: tripId),
         ),
       );
     }
   }
+
+
 
   /// Called when the user taps "Do It Later" on the booking card.
   /// Sets the trip status to `awaiting_booking` so the "Pay All"

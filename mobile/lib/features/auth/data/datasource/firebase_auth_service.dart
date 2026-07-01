@@ -24,6 +24,9 @@ class FirebaseAuthService {
     return await _auth.currentUser?.getIdToken(true);
   }
 
+  /// Get the currently signed-in user.
+  User? get currentUser => _auth.currentUser;
+
   /// Sign out
   Future<void> signOut() async {
     await _auth.signOut();

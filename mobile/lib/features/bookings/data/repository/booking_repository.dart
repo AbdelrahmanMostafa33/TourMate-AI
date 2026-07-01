@@ -38,10 +38,12 @@ class BookingRepository {
   Future<Map<String, dynamic>> payBooking({
     required String bookingId,
     required String paymentMethod,
+    required double amount,
     String? currency,
   }) async {
     final result = await _api.payBooking(bookingId, {
       'payment_method': paymentMethod,
+      'amount': amount,
       if (currency != null) 'currency': currency,
     });
     return result.data;
@@ -53,10 +55,12 @@ class BookingRepository {
   Future<Map<String, dynamic>> initiateBookingPayment({
     required String bookingId,
     required String paymentMethod,
+    required double amount,
     String? currency,
   }) async {
     final result = await _api.initiateBookingPayment(bookingId, {
       'payment_method': paymentMethod,
+      'amount': amount,
       if (currency != null) 'currency': currency,
     });
     return result.data;
@@ -74,6 +78,19 @@ class BookingRepository {
       'payment_method': paymentMethod,
       if (currency != null) 'currency': currency,
     });
+  }
+
+  /// Confirm a booking after the Payment Sheet succeeds.
+  /// Calls POST /bookings/{bookingId}/confirm-after-payment.
+  /// The backend verifies the PaymentIntent with Stripe directly.
+  Future<Map<String, dynamic>> confirmAfterPayment({
+    required String bookingId,
+    required String stripePaymentIntentId,
+  }) async {
+    final result = await _api.confirmAfterPayment(bookingId, {
+      'stripe_payment_intent_id': stripePaymentIntentId,
+    });
+    return result.data;
   }
 
   /// Get a single booking.

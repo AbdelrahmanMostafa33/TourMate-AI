@@ -1173,6 +1173,7 @@ def _build_booking_data(state: ConversationState) -> dict:
             "nightly_rate": selected_hotel.get("nightly_rate", 0),
             "total_cost": hotel_cost,
             "currency": currency,
+            "place_id": selected_hotel.get("id", ""),
         } if selected_hotel else None,
         "trip_summary": {
             "destination": state.slots.destination_city or "",

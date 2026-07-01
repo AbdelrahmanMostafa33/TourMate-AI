@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
+import '../../../../core/network/service_locator.dart';
 import '../../../bookings/data/repository/booking_repository.dart';
 import '../../data/datasource/payment_service.dart';
 import '../cubit/booking_payment_cubit.dart';
@@ -39,8 +40,8 @@ class BookingPaymentPage extends StatelessWidget {
   Widget build(BuildContext context) {
     return BlocProvider(
       create: (_) => BookingPaymentCubit(
-        bookingRepo: context.read<BookingRepository>(),
-        paymentService: context.read<PaymentService>(),
+        bookingRepo: locator<BookingRepository>(),
+        paymentService: locator<PaymentService>(),
       ),
       child: _BookingPaymentView(
         bookingId: bookingId,
@@ -79,6 +80,8 @@ class _BookingPaymentViewState extends State<_BookingPaymentView> {
             PaySingleBooking(
               bookingId: widget.bookingId,
               paymentMethod: 'credit_card',
+              amount: widget.amount,
+              currency: widget.currency,
             ),
           );
     });
@@ -102,8 +105,9 @@ class _BookingPaymentViewState extends State<_BookingPaymentView> {
               ),
             );
             // Pop back after a short delay
+            final navigator = Navigator.of(context);
             Future.delayed(const Duration(seconds: 1), () {
-              if (mounted) Navigator.of(context).pop(true);
+              if (mounted) navigator.pop(true);
             });
           } else if (state is BookingPaymentFailure) {
             ScaffoldMessenger.of(context).showSnackBar(
@@ -164,6 +168,8 @@ class _BookingPaymentViewState extends State<_BookingPaymentView> {
               PaySingleBooking(
                 bookingId: widget.bookingId,
                 paymentMethod: 'credit_card',
+                amount: widget.amount,
+                currency: widget.currency,
               ),
             );
       },
@@ -216,15 +222,8 @@ class _BookingPaymentViewState extends State<_BookingPaymentView> {
         ),
         const SizedBox(height: 24),
         ElevatedButton(
-          onPressed: () {
-            context.read<BookingPaymentCubit>().paySingleBooking(
-                  PaySingleBooking(
-                    bookingId: widget.bookingId,
-                    paymentMethod: 'credit_card',
-                  ),
-                );
-          },
-          child: const Text('Retry'),
+          onPressed: () => Navigator.of(context).pop(false),
+          child: const Text('Go Back'),
         ),
       ],
     );

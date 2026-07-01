@@ -14,6 +14,7 @@ class BookingData {
   final String? tripId;
   final bool hasFlight;
   final bool hasHotel;
+  final bool isConfirmed;
 
   const BookingData({
     this.flight,
@@ -23,6 +24,7 @@ class BookingData {
     this.tripId,
     this.hasFlight = false,
     this.hasHotel = false,
+    this.isConfirmed = false,
   });
 
   factory BookingData.fromJson(Map<String, dynamic> json) {
@@ -42,6 +44,29 @@ class BookingData {
       tripId: json['trip_id'] as String?,
       hasFlight: json['has_flight'] as bool? ?? false,
       hasHotel: json['has_hotel'] as bool? ?? false,
+    );
+  }
+
+  /// Create a copy with optional field overrides.
+  BookingData copyWith({
+    BookingFlight? flight,
+    BookingHotel? hotel,
+    TripSummary? tripSummary,
+    PricingData? pricing,
+    String? tripId,
+    bool? hasFlight,
+    bool? hasHotel,
+    bool? isConfirmed,
+  }) {
+    return BookingData(
+      flight: flight ?? this.flight,
+      hotel: hotel ?? this.hotel,
+      tripSummary: tripSummary ?? this.tripSummary,
+      pricing: pricing ?? this.pricing,
+      tripId: tripId ?? this.tripId,
+      hasFlight: hasFlight ?? this.hasFlight,
+      hasHotel: hasHotel ?? this.hasHotel,
+      isConfirmed: isConfirmed ?? this.isConfirmed,
     );
   }
 }

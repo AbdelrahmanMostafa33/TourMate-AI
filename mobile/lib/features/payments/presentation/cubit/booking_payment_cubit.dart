@@ -22,16 +22,18 @@ abstract class BookingPaymentEvent extends Equatable {
 class PaySingleBooking extends BookingPaymentEvent {
   final String bookingId;
   final String paymentMethod;
+  final double amount;
   final String? currency;
 
   const PaySingleBooking({
     required this.bookingId,
     required this.paymentMethod,
+    required this.amount,
     this.currency,
   });
 
   @override
-  List<Object?> get props => [bookingId, paymentMethod, currency];
+  List<Object?> get props => [bookingId, paymentMethod, amount, currency];
 }
 
 /// Start payment for all pending bookings in a trip.
@@ -163,6 +165,7 @@ class BookingPaymentCubit extends Cubit<BookingPaymentState> {
           return await _bookingRepo.initiateBookingPayment(
             bookingId: event.bookingId,
             paymentMethod: event.paymentMethod,
+            amount: event.amount,
             currency: event.currency,
           );
         } catch (_) {
@@ -170,6 +173,7 @@ class BookingPaymentCubit extends Cubit<BookingPaymentState> {
           return await _bookingRepo.payBooking(
             bookingId: event.bookingId,
             paymentMethod: event.paymentMethod,
+            amount: event.amount,
             currency: event.currency,
           );
         }
@@ -178,12 +182,20 @@ class BookingPaymentCubit extends Cubit<BookingPaymentState> {
     );
 
     if (result.success) {
-      // If we have a stripe payment intent, start polling for webhook confirmation
+      // If we have a stripe payment intent and it's not simulated,
+      // try server-side verification first, fall back to polling
       if (result.stripePaymentIntentId != null && !result.simulated) {
-        final confirmed = await _pollForBookingConfirmation(event.bookingId);
+        final confirmed = await _confirmViaApiOrPoll(
+          bookingId: event.bookingId,
+          stripePaymentIntentId: result.stripePaymentIntentId!,
+        );
         if (!confirmed) {
           emit(BookingPaymentFailure(
-            error: 'Booking confirmation timed out. Please check your bookings.',
+            error: 'Payment went through successfully, but booking '
+                'confirmation timed out. '
+                'Your card has been charged — the booking will be '
+                'confirmed automatically once the webhook arrives. '
+                'Please check your bookings later.',
           ));
           return;
         }
@@ -199,6 +211,27 @@ class BookingPaymentCubit extends Cubit<BookingPaymentState> {
         error: result.error ?? 'Payment failed unexpectedly.',
       ));
     }
+  }
+
+  /// Try server-side verification first (confirm-after-payment), then fall back to polling.
+  /// Returns true if booking was confirmed, false if not.
+  Future<bool> _confirmViaApiOrPoll({
+    required String bookingId,
+    required String stripePaymentIntentId,
+  }) async {
+    // Step 1: Try server-side verification — backend checks Stripe directly
+    try {
+      await _bookingRepo.confirmAfterPayment(
+        bookingId: bookingId,
+        stripePaymentIntentId: stripePaymentIntentId,
+      );
+      return true; // Booking confirmed immediately!
+    } catch (e) {
+      print('[BookingPaymentCubit] confirm-after-payment failed: $e — falling back to polling');
+    }
+
+    // Step 2: Fall back to polling for webhook confirmation
+    return await _pollForBookingConfirmation(bookingId);
   }
 
   /// Poll GET /bookings/{id} until the booking is confirmed or timeout.
@@ -264,7 +297,9 @@ class BookingPaymentCubit extends Cubit<BookingPaymentState> {
   /// 2. Iterates through each initiated booking:
   ///    - Simulated/no client_secret: counts as completed immediately.
   ///    - Real: opens Stripe Payment Sheet, polls for webhook confirmation.
-  /// 3. Emits success/failure after all bookings are processed.
+  /// 3. If webhook confirmation times out on ANY booking, stops immediately
+  ///    with a clear message — does NOT continue to the next sheet.
+  /// 4. Emits success/failure.
   Future<void> initiatePayAllBookings(PayAllBookings event) async {
     emit(const BookingPaymentInitiating());
 
@@ -286,7 +321,6 @@ class BookingPaymentCubit extends Cubit<BookingPaymentState> {
 
       int completed = 0;
       final total = response.initiatedBookings.length;
-      final List<String> errors = [];
 
       // Process each initiated booking sequentially
       for (final item in response.initiatedBookings) {
@@ -302,38 +336,43 @@ class BookingPaymentCubit extends Cubit<BookingPaymentState> {
             clientSecret: item.clientSecret!,
           );
 
-          // Poll for webhook confirmation
+          // Try server-side verification first, fall back to polling
           if (item.stripePaymentIntentId != null) {
-            final confirmed = await _pollForBookingConfirmation(item.bookingId);
+            final confirmed = await _confirmViaApiOrPoll(
+              bookingId: item.bookingId,
+              stripePaymentIntentId: item.stripePaymentIntentId!,
+            );
             if (!confirmed) {
-              errors.add('Booking ${item.bookingId}: confirmation timed out');
-              continue;
+              emit(BookingPaymentFailure(
+                error: 'Payment went through successfully, but booking '
+                    'confirmation timed out. '
+                    'Your card has been charged — the booking will be '
+                    'confirmed automatically once the webhook arrives. '
+                    'Please check your bookings later.',
+                initiatedCount: total,
+                completedCount: completed,
+              ));
+              return; // ⛔ Stop immediately — don't open more Payment Sheets
             }
           }
           completed++;
         } catch (e) {
-          errors.add('Booking ${item.bookingId}: $e');
-          // Continue with next booking
+          // Payment Sheet itself failed (card declined, cancelled, etc.)
+          emit(BookingPaymentFailure(
+            error: 'Payment failed for ${item.bookingId}: $e',
+            initiatedCount: total,
+            completedCount: completed,
+          ));
+          return; // ⛔ Stop immediately
         }
       }
 
-      if (completed > 0) {
-        emit(BookingPaymentSuccess(
-          bookingId: event.tripId,
-          simulated: completed == total,
-          message: errors.isEmpty
-              ? '$completed of $total payments completed.'
-              : '$completed of $total completed (${errors.length} failed: ${errors.join('; ')})',
-        ));
-      } else {
-        emit(BookingPaymentFailure(
-          error: errors.isNotEmpty
-              ? errors.join('; ')
-              : 'All payment attempts failed.',
-          initiatedCount: total,
-          completedCount: completed,
-        ));
-      }
+      // All bookings processed successfully
+      emit(BookingPaymentSuccess(
+        bookingId: event.tripId,
+        simulated: completed == total,
+        message: '$completed of $total payments completed.',
+      ));
     } catch (e) {
       emit(BookingPaymentFailure(error: e.toString()));
     }

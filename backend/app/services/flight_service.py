@@ -445,6 +445,7 @@ class FlightService:
         import stripe
         from app.core.config import settings
         stripe.api_key = settings.STRIPE_SECRET_KEY
+        stripe.api_version = "2026-06-24.dahlia"
 
         intent = stripe.PaymentIntent.create(
             amount=int(total_price * 100),
@@ -511,6 +512,7 @@ class FlightService:
         import stripe
         from app.core.config import settings
         stripe.api_key = settings.STRIPE_SECRET_KEY
+        stripe.api_version = "2026-06-24.dahlia"
 
         intent = stripe.PaymentIntent.retrieve(data.payment_intent_id)
         if intent.status != "succeeded":

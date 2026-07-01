@@ -276,6 +276,7 @@ async def run_hotel_selection(state: TripState) -> TripState:
                 ),
                 "rating": hotel.get("rating", 0),
                 "amenities": hotel.get("amenities", []),
+                "nightly_rate": hotel.get("nightly_rate", 0),
             })
         print(
             f"[HotelAgent] Rule-based selection ({len(selected)} candidates): "
@@ -303,6 +304,8 @@ async def run_hotel_selection(state: TripState) -> TripState:
             hotel.setdefault("address", full.get("address"))
             hotel.setdefault("maps_link", full.get("maps_link"))
             hotel.setdefault("category", "hotel")
+            # Always overwrite nightly_rate from DB (LLM may output 0 if it doesn't know)
+            hotel["nightly_rate"] = full.get("nightly_rate", hotel.get("nightly_rate", 0))
 
     # ── Store on itinerary ──────────────────────────────────────────────
     itinerary["accommodation_suggestions"] = selected
@@ -416,6 +419,7 @@ Consider: proximity to daily centroids, accommodation type match, rating, and va
             ),
             "rating": hotel.get("rating", 0),
             "amenities": hotel.get("amenities", []),
+            "nightly_rate": hotel.get("nightly_rate", 0),
         }
         for hotel, _ in top_candidates[:3]
     ]

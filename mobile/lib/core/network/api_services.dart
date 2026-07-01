@@ -218,6 +218,14 @@ abstract class ApiServices {
     @Body() Map<String, dynamic> body,
   );
 
+  /// Confirm a booking after the Payment Sheet succeeds (client-side verification).
+  /// Backend verifies the PaymentIntent with Stripe directly, then confirms the booking.
+  @POST("/api/v1/bookings/{booking_id}/confirm-after-payment")
+  Future<JsonMap> confirmAfterPayment(
+    @Path('booking_id') String bookingId,
+    @Body() Map<String, dynamic> body,
+  );
+
   // FLIGHT BOOKING ENDPOINTS (existing backend)
   // ═════════════════════════════════════════════════════════════════════════
 

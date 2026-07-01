@@ -72,6 +72,18 @@ class ChatCubit extends Cubit<ChatState> {
   /// the user taps "Pay Now" on the BookingCard.
   String? _bookingTripId;
 
+  /// The flight_booking payload (with raw_offer) from the backend,
+  /// sent during the select_flight phase.  Stored here so the Pay Now
+  /// flow can use it to call POST /flights/book/initiate without needing
+  /// the raw_offer from the chat WebSocket again.
+  Map<String, dynamic>? _flightBookingData;
+
+  /// The hotel info from the booking_data payload (name, place_id,
+  /// nightly_rate, total_cost, currency).  Populated when booking_data
+  /// is received during the BOOKING phase.  Used by Pay Now to book
+  /// the exact hotel the user selected rather than all stops.
+  Map<String, dynamic>? _selectedHotelInfo;
+
   ChatCubit(this._repo) : super(const ChatState.initial()) {
     // Listen to WebSocket connection state changes for reconnection feedback.
     _wsStateSubscription = _repo.connectionStateStream.listen(_onConnectionStateChanged);
@@ -90,6 +102,8 @@ class ChatCubit extends Cubit<ChatState> {
     _renderedItinerarySignature = null;
     _inBookingPhase = false;
     _bookingTripId = null;
+    _flightBookingData = null;
+    _selectedHotelInfo = null;
     onTripApproved = null;
     _subscription?.cancel();
     _subscription = null;
@@ -107,6 +121,8 @@ class ChatCubit extends Cubit<ChatState> {
     _renderedItinerarySignature = null;
     _inBookingPhase = false;
     _bookingTripId = null;
+    _flightBookingData = null;
+    _selectedHotelInfo = null;
     onTripApproved = null;
     _subscription?.cancel();
     _subscription = null;
@@ -518,6 +534,14 @@ class ChatCubit extends Cubit<ChatState> {
         ));
       }
 
+      // Store selected hotel info (place_id, nightly_rate, total_cost)
+      // so Pay Now can book the exact selected hotel.
+      final rawHotel = raw['hotel'] as Map<String, dynamic>?;
+      if (rawHotel != null) {
+        _selectedHotelInfo = rawHotel;
+        debugPrint('[ChatCubit] Stored selected hotel info: ${rawHotel["name"]} (place_id=${rawHotel["place_id"]})');
+      }
+
       // Mark that we're now in the booking phase, so sendMessage()
       // redirects any user text to "approve" to prevent replanning.
       _inBookingPhase = true;
@@ -528,6 +552,30 @@ class ChatCubit extends Cubit<ChatState> {
 
   /// The trip_id from the most recent booking_data event, for UI navigation.
   String? get bookingTripId => _bookingTripId;
+
+  /// The flight_booking data (with raw_offer) stored from the last
+  /// select_flight event.  Null until a flight is selected.
+  Map<String, dynamic>? get flightBookingData => _flightBookingData;
+
+  /// The hotel info (place_id, nightly_rate, total_cost, name, currency)
+  /// from the last booking_data event.  Null until the booking card is shown.
+  Map<String, dynamic>? get selectedHotelInfo => _selectedHotelInfo;
+
+  /// Mark the booking card as confirmed after Pay Now succeeds.
+  /// Updates the booking data in-place so the UI shows the confirmed badge.
+  void markBookingConfirmed() {
+    for (var i = 0; i < _messages.length; i++) {
+      final bd = _messages[i].bookingData;
+      if (bd != null) {
+        _messages[i] = _messages[i].copyWith(
+          bookingData: bd.copyWith(isConfirmed: true),
+        );
+        _emitConnected(isTyping: false, bumpRefresh: true);
+        debugPrint('[ChatCubit] Marked booking card as confirmed');
+        return;
+      }
+    }
+  }
 
   Future<void> _handleEvent(dynamic event) async {
     final Map<String, dynamic> data;
@@ -675,6 +723,13 @@ class ChatCubit extends Cubit<ChatState> {
           if (flightSearchResults is List && flightSearchResults.isNotEmpty) {
             // Flight search results are handled by the AI text message,
             // no special card rendering needed on Flutter side
+          }
+
+          // Store flight_booking data (with raw_offer) for Pay Now flow
+          final flightBooking = resultPayload["flight_booking"];
+          if (flightBooking is Map<String, dynamic> && flightBooking.isNotEmpty) {
+            _flightBookingData = flightBooking;
+            debugPrint('[ChatCubit] Stored flight_booking data (raw_offer available: ${flightBooking.containsKey("raw_offer") && flightBooking["raw_offer"] != null})');
           }
 
           final currentIsTyping = state.maybeWhen(

@@ -4,6 +4,9 @@ import '../../data/models/booking_data.dart';
 /// Displays a booking confirmation card after the user selects a hotel
 /// (and optionally a flight). Shows trip summary, pricing, and action
 /// buttons to proceed to payment or book later.
+///
+/// When [booking.isConfirmed] is true, shows a green "✅ Booking Confirmed"
+/// badge and hides the Pay Now / Book Later action buttons.
 class BookingCard extends StatelessWidget {
   final BookingData booking;
   final VoidCallback? onPayNow;
@@ -18,16 +21,22 @@ class BookingCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isConfirmed = booking.isConfirmed;
+
     return Container(
       width: double.infinity,
       margin: const EdgeInsets.symmetric(vertical: 8),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: Colors.grey.shade200),
+        border: Border.all(
+          color: isConfirmed ? Colors.green.shade300 : Colors.grey.shade200,
+        ),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.06),
+            color: isConfirmed
+                ? Colors.green.withValues(alpha: 0.08)
+                : Colors.black.withValues(alpha: 0.06),
             blurRadius: 16,
             offset: const Offset(0, 4),
           ),
@@ -37,25 +46,28 @@ class BookingCard extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           // ── Header ─────────────────────────────────────
-          _buildHeader(),
+          _buildHeader(isConfirmed),
           const Divider(height: 1),
 
           // ── Trip Summary ───────────────────────────────
           _buildTripSummary(),
-          const Divider(height: 1),
-
-          // ── Pricing Breakdown ──────────────────────────
-          _buildPricing(),
-          const Divider(height: 1),
-
-          // ── Action Buttons ─────────────────────────────
-          _buildActions(context),
+          if (isConfirmed) ...[
+            const Divider(height: 1),
+            _buildConfirmedBanner(),
+          ] else ...[
+            const Divider(height: 1),
+            // ── Pricing Breakdown ────────────────────────
+            _buildPricing(),
+            const Divider(height: 1),
+            // ── Action Buttons ───────────────────────────
+            _buildActions(context),
+          ],
         ],
       ),
     );
   }
 
-  Widget _buildHeader() {
+  Widget _buildHeader(bool isConfirmed) {
     return Container(
       padding: const EdgeInsets.fromLTRB(20, 20, 20, 16),
       child: Row(
@@ -77,8 +89,8 @@ class BookingCard extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text(
-                  'Trip Confirmed!',
+                Text(
+                  isConfirmed ? '✅ Booking Confirmed!' : 'Trip Confirmed!',
                   style: TextStyle(
                     fontSize: 18,
                     fontWeight: FontWeight.w700,
@@ -332,6 +344,15 @@ class BookingCard extends StatelessWidget {
               ),
             ),
           ),
+          // Debug: Show if onPayNow is null
+          if (onPayNow == null)
+            Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: Text(
+                'DEBUG: onPayNow is null',
+                style: TextStyle(color: Colors.red, fontSize: 10),
+              ),
+            ),
           const SizedBox(height: 10),
           // Do it Later button
           SizedBox(
@@ -354,6 +375,48 @@ class BookingCard extends StatelessWidget {
                   borderRadius: BorderRadius.circular(16),
                 ),
               ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildConfirmedBanner() {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(20, 16, 20, 20),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(6),
+            decoration: BoxDecoration(
+              color: Colors.green.shade50,
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Icon(Icons.check_circle, color: Colors.green[600], size: 20),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Booking Confirmed',
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w700,
+                    color: Colors.green[800],
+                  ),
+                ),
+                const SizedBox(height: 1),
+                Text(
+                  'Your payment was successful and your trip is all set!',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: Colors.green[600],
+                  ),
+                ),
+              ],
             ),
           ),
         ],
