@@ -101,7 +101,7 @@ class _ProfileView extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    data.fullName ?? "User",                        style: TextStyle(
+                    data.fullName ?? "User",style: TextStyle(
                       fontSize: 22,
                       fontWeight: FontWeight.bold,
                       color: tm.textPrimary,

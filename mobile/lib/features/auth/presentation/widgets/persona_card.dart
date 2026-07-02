@@ -4,11 +4,9 @@ import '../../../../app/app_theme.dart';
 import '../../../../core/theme/design_tokens.dart';
 import '../../data/models/user_response.dart';
 
-/// A visually prominent card that showcases the user's traveler persona.
-///
-/// When the backend [UserResponse.travelerPersona] is null (the current
-/// default), the card shows a friendly "Globe Trotter" default rather
-/// than an empty space.
+/// A redesigned, premium traveler persona card with modern layout and
+/// visual style — dark gradient header, large icon, trait chips, and
+/// a subtle stats section.
 class PersonaCard extends StatelessWidget {
   final UserResponse profile;
 
@@ -18,171 +16,158 @@ class PersonaCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final tm = context.tm;
     final persona = _derivePersona(profile);
-    final isDark = persona.themeBrightness == Brightness.dark;
-    final hasBackendData = profile.travelerPersona != null &&
-        profile.travelerPersona!.isNotEmpty;
+    final hasBackendData =
+        profile.travelerPersona != null && profile.travelerPersona!.isNotEmpty;
 
     return Container(
       width: double.infinity,
       decoration: BoxDecoration(
-        gradient: persona.gradient,
+        color: tm.pureWhite,
         borderRadius: BorderRadius.circular(RadiusTokens.xl4),
-        border: Border.all(
-          color: persona.accentColor.withValues(alpha: 0.3),
-          width: 0.5,
-        ),
+        border: Border.all(color: tm.borderLight),
         boxShadow: [
           BoxShadow(
-            color: persona.accentColor.withValues(alpha: 0.25),
-            blurRadius: 16,
-            offset: const Offset(0, 6),
+            color: tm.pureBlack.withValues(alpha: 0.04),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
+          ),
+          BoxShadow(
+            color: persona.accentColor.withValues(alpha: 0.08),
+            blurRadius: 24,
+            offset: const Offset(0, 8),
           ),
         ],
       ),
-      child: Padding(
-        padding: const EdgeInsets.all(Spacing.xl4),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // ── Header row ────────────────────────────────────────
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.center,
+      clipBehavior: Clip.antiAlias,
+      child: Column(
+        children: [
+          // ── Top gradient header ───────────────────────────────────────
+          _HeaderSection(persona: persona, tm: tm),
+
+          // ── Body ──────────────────────────────────────────────────────
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 18, 20, 4),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // Icon with accent border accent
+                // Persona title
+                Text(
+                  persona.name,
+                  style: GoogleFonts.inter(
+                    fontSize: 22,
+                    fontWeight: FontWeight.w800,
+                    color: tm.textPrimary,
+                    letterSpacing: -0.4,
+                    height: 1.1,
+                  ),
+                ),
+
+                // Accent underline
+                const SizedBox(height: 8),
                 Container(
-                  padding: const EdgeInsets.all(10),
+                  width: 32,
+                  height: 3,
                   decoration: BoxDecoration(
-                    color: isDark
-                        ? tm.pureWhite.withValues(alpha: 0.15)
-                        : tm.pureBlack.withValues(alpha: 0.06),
-                    borderRadius: BorderRadius.circular(RadiusTokens.xl2),
-                    border: Border.all(
-                      color: persona.accentColor.withValues(alpha: 0.25),
-                      width: 0.5,
-                    ),
-                  ),
-                  child: Icon(
-                    persona.icon,
-                    size: 26,
-                    color: isDark ? tm.pureWhite : tm.textPrimary,
-                  ),
-                ),
-                const SizedBox(width: 14),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        "YOUR TRAVELER PERSONA",
-                        style: GoogleFonts.inter(
-                          fontSize: 10,
-                          fontWeight: FontWeight.w700,
-                          letterSpacing: 1.5,
-                          color: isDark
-                              ? tm.pureWhite.withValues(alpha: 0.6)
-                              : tm.textPrimary.withValues(alpha: 0.45),
-                        ),
-                      ),
-                      const SizedBox(height: 3),
-                      Text(
-                        persona.name,
-                        style: GoogleFonts.inter(
-                          fontSize: 20,
-                          fontWeight: FontWeight.w800,
-                          color: isDark ? tm.pureWhite : tm.textPrimary,
-                          letterSpacing: -0.3,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                // Confidentiality gauge
-                if (hasBackendData)
-                  _ConfidenceGauge(
-                    accentColor: persona.accentColor,
-                    isDark: isDark,
-                    tm: tm,
-                  ),
-              ],
-            ),
-
-            const SizedBox(height: 14),
-
-            // ── Description ───────────────────────────────────────
-            Text(
-              persona.description,
-              style: GoogleFonts.inter(
-                fontSize: 13,
-                height: 1.45,
-                color: isDark
-                    ? tm.pureWhite.withValues(alpha: 0.8)
-                    : tm.textPrimary.withValues(alpha: 0.65),
-              ),
-            ),
-
-            // ── Trait chips with icons ────────────────────────────
-            if (persona.traits.isNotEmpty) ...[
-              const SizedBox(height: Spacing.xl3),
-              Wrap(
-                spacing: 6,
-                runSpacing: 6,
-                children: persona.traits.map((trait) {
-                  final traitInfo = _traitDisplay(trait);
-                  return Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 10,
-                      vertical: 5,
-                    ),
-                    decoration: BoxDecoration(
-                      color: isDark
-                          ? tm.pureWhite.withValues(alpha: 0.15)
-                          : persona.accentColor.withValues(alpha: 0.1),
-                      borderRadius: BorderRadius.circular(RadiusTokens.xl),
-                      border: Border.all(
-                        color: persona.accentColor.withValues(alpha: 0.15),
-                        width: 0.5,
-                      ),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(
-                          traitInfo.icon,
-                          size: 12,
-                          color: isDark
-                              ? tm.pureWhite
-                              : persona.accentColor,
-                        ),
-                        const SizedBox(width: 4),
-                        Text(
-                          traitInfo.label,
-                          style: GoogleFonts.inter(
-                            fontSize: 11,
-                            fontWeight: FontWeight.w600,
-                            color: isDark
-                                ? tm.pureWhite
-                                : persona.accentColor,
-                          ),
-                        ),
+                    gradient: LinearGradient(
+                      colors: [
+                        persona.accentColor,
+                        persona.accentColor.withValues(alpha: 0.4),
                       ],
                     ),
-                  );
-                }).toList(),
-              ),
-            ],
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
 
-            // ── Knowledge progress bar (only for default state) ───
-            if (!hasBackendData) ...[
-              const SizedBox(height: Spacing.xl3),
-              _KnowledgeProgress(tm: tm),
-            ],
-          ],
-        ),
+                // Description
+                const SizedBox(height: 14),
+                Text(
+                  persona.description,
+                  style: GoogleFonts.inter(
+                    fontSize: 13,
+                    height: 1.55,
+                    color: tm.textSecondary.withValues(alpha: 0.85),
+                  ),
+                ),
+
+                // ── Trait chips ──────────────────────────────────────────
+                if (persona.traits.isNotEmpty) ...[
+                  const SizedBox(height: 18),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: persona.traits.map((trait) {
+                      final traitInfo = _traitDisplay(trait);
+                      return Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 6,
+                        ),
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            colors: [
+                              persona.accentColor.withValues(alpha: 0.1),
+                              persona.accentColor.withValues(alpha: 0.04),
+                            ],
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                          ),
+                          borderRadius:
+                              BorderRadius.circular(RadiusTokens.full),
+                          border: Border.all(
+                            color: persona.accentColor.withValues(alpha: 0.15),
+                            width: 0.5,
+                          ),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              traitInfo.icon,
+                              size: 13,
+                              color: persona.accentColor,
+                            ),
+                            const SizedBox(width: 5),
+                            Text(
+                              traitInfo.label,
+                              style: GoogleFonts.inter(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                                color: persona.accentColor,
+                              ),
+                            ),
+                          ],
+                        ),
+                      );
+                    }).toList(),
+                  ),
+                ],
+              ],
+            ),
+          ),
+
+          const SizedBox(height: 4),
+
+          // ── Bottom stats bar ──────────────────────────────────────────
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.fromLTRB(20, 14, 20, 16),
+            decoration: BoxDecoration(
+              color: tm.surface.withValues(alpha: 0.5),
+              border: Border(
+                top: BorderSide(color: tm.borderLight.withValues(alpha: 0.5)),
+              ),
+            ),
+            child: hasBackendData
+                ? _DataStatsRow(tm: tm, persona: persona)
+                : _DefaultStatsRow(tm: tm, persona: persona),
+          ),
+        ],
       ),
     );
   }
 
-  /// Maps a raw trait string to an icon + display label.
+  // ── Trait display mapping ───────────────────────────────────────────
+
   static _TraitDisplay _traitDisplay(String trait) {
     final lower = trait.toLowerCase();
     if (lower.contains('ready') || lower.contains('new')) {
@@ -223,8 +208,6 @@ class PersonaCard extends StatelessWidget {
 
   // ── Persona derivation ─────────────────────────────────────────────
 
-  /// Derive a [DerivedPersona] from the user, falling back to a generic
-  /// "Globe Trotter" when [travelerPersona] has not been set yet.
   static DerivedPersona _derivePersona(UserResponse profile) {
     final backendPersona = profile.travelerPersona;
 
@@ -237,7 +220,7 @@ class PersonaCard extends StatelessWidget {
         icon: personaInfo.icon,
         accentColor: personaInfo.accentColor,
         gradient: personaInfo.gradient,
-        traits: ['Personalized for you'],
+        traits: _extractTraits(backendPersona),
         themeBrightness: Brightness.light,
       );
     }
@@ -245,7 +228,49 @@ class PersonaCard extends StatelessWidget {
     return _defaultPersona;
   }
 
-  /// Extract a short, readable title from the full persona description.
+  /// Extract meaningful traits from the persona description.
+  static List<String> _extractTraits(String text) {
+    final lower = text.toLowerCase();
+    final traits = <String>[];
+
+    if (lower.contains('adventure') || lower.contains('thrill')) {
+      traits.add('Adventure');
+    }
+    if (lower.contains('luxury') || lower.contains('premium') || lower.contains('comfort')) {
+      traits.add('Luxury');
+    }
+    if (lower.contains('budget') || lower.contains('save')) {
+      traits.add('Budget-conscious');
+    }
+    if (lower.contains('food') || lower.contains('cuisine') || lower.contains('culinary')) {
+      traits.add('Foodie');
+    }
+    if (lower.contains('nature') || lower.contains('outdoor') || lower.contains('hike')) {
+      traits.add('Nature');
+    }
+    if (lower.contains('culture') || lower.contains('history') || lower.contains('museum')) {
+      traits.add('Culture');
+    }
+    if (lower.contains('slow') || lower.contains('relax')) {
+      traits.add('Slow-paced');
+    }
+    if (lower.contains('fast') || lower.contains('quick')) {
+      traits.add('Fast-paced');
+    }
+    if (lower.contains('sport') || lower.contains('active')) {
+      traits.add('Active');
+    }
+    if (lower.contains('personalized')) {
+      traits.add('Personalized');
+    }
+
+    if (traits.isEmpty) {
+      traits.add('Personalized');
+    }
+
+    return traits;
+  }
+
   static String _derivePersonaName(String text) {
     final lower = text.toLowerCase();
 
@@ -284,15 +309,14 @@ class PersonaCard extends StatelessWidget {
     return 'Your Travel Style';
   }
 
-  /// Derive a matching icon/color/gradient based on the persona text.
   static _PersonaStyle _derivePersonaStyle(String text) {
     final lower = text.toLowerCase();
     if (lower.contains('adventure') || lower.contains('thrill')) {
       return _PersonaStyle(
         icon: Icons.flash_on_rounded,
-        accentColor: const Color(0xFFE65100),
+        accentColor: const Color(0xFF3B82F6),
         gradient: const LinearGradient(
-          colors: [Color(0x33FF6D00), Color(0x0DFF6D00)],
+          colors: [Color(0x1A3B82F6), Color(0x003B82F6)],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
@@ -301,9 +325,9 @@ class PersonaCard extends StatelessWidget {
     if (lower.contains('luxury') || lower.contains('premium') || lower.contains('comfort')) {
       return _PersonaStyle(
         icon: Icons.star_rounded,
-        accentColor: const Color(0xFF2563EB),
+        accentColor: const Color(0xFF1E3A8A),
         gradient: const LinearGradient(
-          colors: [Color(0x66DBEAFE), Color(0xFFEFF6FF)],
+          colors: [Color(0x1A1E3A8A), Color(0x001E3A8A)],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
@@ -312,9 +336,9 @@ class PersonaCard extends StatelessWidget {
     if (lower.contains('nature') || lower.contains('outdoor') || lower.contains('hike')) {
       return _PersonaStyle(
         icon: Icons.forest_outlined,
-        accentColor: const Color(0xFF2E7D32),
+        accentColor: const Color(0xFF60A5FA),
         gradient: const LinearGradient(
-          colors: [Color(0x33A5D6A7), Color(0x0DA5D6A7)],
+          colors: [Color(0x1A60A5FA), Color(0x0060A5FA)],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
@@ -323,9 +347,9 @@ class PersonaCard extends StatelessWidget {
     if (lower.contains('food') || lower.contains('cuisine') || lower.contains('culinary')) {
       return _PersonaStyle(
         icon: Icons.restaurant_outlined,
-        accentColor: const Color(0xFFC62828),
+        accentColor: const Color(0xFF2563EB),
         gradient: const LinearGradient(
-          colors: [Color(0x33EF9A9A), Color(0x0DEF9A9A)],
+          colors: [Color(0x1A2563EB), Color(0x002563EB)],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
@@ -334,9 +358,9 @@ class PersonaCard extends StatelessWidget {
     if (lower.contains('culture') || lower.contains('history') || lower.contains('museum')) {
       return _PersonaStyle(
         icon: Icons.museum_outlined,
-        accentColor: const Color(0xFF1565C0),
+        accentColor: const Color(0xFF1D4ED8),
         gradient: const LinearGradient(
-          colors: [Color(0x3390CAF9), Color(0x0D90CAF9)],
+          colors: [Color(0x1A1D4ED8), Color(0x001D4ED8)],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
@@ -345,9 +369,9 @@ class PersonaCard extends StatelessWidget {
     if (lower.contains('budget') || lower.contains('save')) {
       return _PersonaStyle(
         icon: Icons.savings_outlined,
-        accentColor: const Color(0xFF6B6B6B),
+        accentColor: const Color(0xFF64748B),
         gradient: const LinearGradient(
-          colors: [Color(0x339E9E9E), Color(0x0D9E9E9E)],
+          colors: [Color(0x1A64748B), Color(0x0064748B)],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
@@ -357,7 +381,7 @@ class PersonaCard extends StatelessWidget {
       icon: Icons.public_rounded,
       accentColor: const Color(0xFF2563EB),
       gradient: const LinearGradient(
-        colors: [Color(0x66DBEAFE), Color(0xFFEFF6FF)],
+        colors: [Color(0x1A2563EB), Color(0x002563EB)],
         begin: Alignment.topLeft,
         end: Alignment.bottomRight,
       ),
@@ -372,7 +396,7 @@ class PersonaCard extends StatelessWidget {
     icon: Icons.public_rounded,
     accentColor: Color(0xFF2563EB),
     gradient: LinearGradient(
-      colors: [Color(0x66DBEAFE), Color(0xFFEFF6FF)],
+      colors: [Color(0x1A2563EB), Color(0x002563EB)],
       begin: Alignment.topLeft,
       end: Alignment.bottomRight,
     ),
@@ -381,82 +405,202 @@ class PersonaCard extends StatelessWidget {
   );
 }
 
-/// A small circular confidence gauge that shows when the persona has
-/// been backed by backend data.
-class _ConfidenceGauge extends StatelessWidget {
-  final Color accentColor;
-  final bool isDark;
+// ── Header section ────────────────────────────────────────────────────
+
+class _HeaderSection extends StatelessWidget {
+  final DerivedPersona persona;
   final TourMateColors tm;
 
-  const _ConfidenceGauge({
-    required this.accentColor,
-    required this.isDark,
+  const _HeaderSection({
+    required this.persona,
     required this.tm,
   });
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      width: 36,
-      height: 36,
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(20, 24, 20, 20),
       decoration: BoxDecoration(
-        color: isDark
-            ? tm.pureWhite.withValues(alpha: 0.10)
-            : accentColor.withValues(alpha: 0.10),
-        shape: BoxShape.circle,
-        border: Border.all(
-          color: accentColor.withValues(alpha: 0.25),
-          width: 1,
+        gradient: LinearGradient(
+          colors: [
+            tm.surfaceDark,
+            tm.deepRoyalBlue.withValues(alpha: 0.85),
+            persona.accentColor.withValues(alpha: 0.7),
+          ],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
         ),
       ),
-      child: Center(
-        child: Text(
-          '90%',
-          style: GoogleFonts.inter(
-            fontSize: 10,
-            fontWeight: FontWeight.w700,
-            color: accentColor,
+      child: Row(
+        children: [
+          // Large persona icon in a glowing circle
+          Container(
+            width: 60,
+            height: 60,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              gradient: LinearGradient(
+                colors: [
+                  tm.pureWhite.withValues(alpha: 0.25),
+                  tm.pureWhite.withValues(alpha: 0.08),
+                ],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
+              border: Border.all(
+                color: tm.pureWhite.withValues(alpha: 0.25),
+                width: 1.5,
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: tm.pureWhite.withValues(alpha: 0.1),
+                  blurRadius: 16,
+                  offset: const Offset(0, 4),
+                ),
+              ],
+            ),
+            child: Icon(
+              persona.icon,
+              size: 28,
+              color: tm.pureWhite,
+            ),
           ),
-        ),
+          const SizedBox(width: 16),
+          // Label + confidence
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'TRAVELER PERSONA',
+                  style: GoogleFonts.inter(
+                    fontSize: 10,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 1.8,
+                    color: tm.pureWhite.withValues(alpha: 0.6),
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  persona.name,
+                  style: GoogleFonts.inter(
+                    fontSize: 20,
+                    fontWeight: FontWeight.w700,
+                    color: tm.pureWhite,
+                    letterSpacing: -0.3,
+                    height: 1.1,
+                  ),
+                ),
+              ],
+            ),
+          ),
+
+        ],
       ),
     );
   }
 }
 
-/// Knowledge progress indicator shown when no backend persona exists yet.
-class _KnowledgeProgress extends StatelessWidget {
-  final TourMateColors tm;
+// ── Stats row for backend data ────────────────────────────────────────
 
-  const _KnowledgeProgress({required this.tm});
+class _DataStatsRow extends StatelessWidget {
+  final TourMateColors tm;
+  final DerivedPersona persona;
+
+  const _DataStatsRow({required this.tm, required this.persona});
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+    return Row(
       children: [
-        Row(
-          children: [
-            Icon(Icons.auto_awesome, size: 12, color: tm.sapphire.withValues(alpha: 0.6)),
-            const SizedBox(width: 6),
-            Text(
-              'Getting to know you',
-              style: GoogleFonts.inter(
-                fontSize: 11,
-                fontWeight: FontWeight.w600,
-                color: tm.textTertiary,
-              ),
-            ),
-          ],
+        _StatItem(
+          icon: Icons.travel_explore_rounded,
+          label: 'Learned from',
+          value: 'your trips',
+          accentColor: persona.accentColor,
+          tm: tm,
         ),
-        const SizedBox(height: 6),
-        ClipRRect(
-          borderRadius: BorderRadius.circular(2),
-          child: SizedBox(
-            height: 3,
+        const SizedBox(width: 24),
+        _StatItem(
+          icon: Icons.auto_awesome_rounded,
+          label: 'Confidence',
+          value: 'High',
+          accentColor: persona.accentColor,
+          tm: tm,
+        ),
+        const Spacer(),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+          decoration: BoxDecoration(
+            color: persona.accentColor.withValues(alpha: 0.1),
+            borderRadius: BorderRadius.circular(RadiusTokens.full),
+            border: Border.all(
+              color: persona.accentColor.withValues(alpha: 0.15),
+              width: 0.5,
+            ),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                Icons.check_circle_rounded,
+                size: 12,
+                color: persona.accentColor,
+              ),
+              const SizedBox(width: 4),
+              Text(
+                'Verified',
+                style: GoogleFonts.inter(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
+                  color: persona.accentColor,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+// ── Stats row for default (no backend data) ───────────────────────────
+
+class _DefaultStatsRow extends StatelessWidget {
+  final TourMateColors tm;
+  final DerivedPersona persona;
+
+  const _DefaultStatsRow({required this.tm, required this.persona});
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Icon(
+          Icons.auto_awesome_rounded,
+          size: 14,
+          color: persona.accentColor.withValues(alpha: 0.6),
+        ),
+        const SizedBox(width: 8),
+        Text(
+          'Getting to know you',
+          style: GoogleFonts.inter(
+            fontSize: 12,
+            fontWeight: FontWeight.w600,
+            color: tm.textTertiary,
+          ),
+        ),
+        const Spacer(),
+        SizedBox(
+          width: 80,
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(3),
             child: LinearProgressIndicator(
               value: 0.15,
+              minHeight: 4,
               backgroundColor: tm.pureBlack.withValues(alpha: 0.06),
-              valueColor: AlwaysStoppedAnimation<Color>(tm.deepRoyalBlue),
+              valueColor: AlwaysStoppedAnimation<Color>(persona.accentColor),
             ),
           ),
         ),
@@ -465,7 +609,63 @@ class _KnowledgeProgress extends StatelessWidget {
   }
 }
 
-/// Internal data class holding the display values for a derived persona.
+// ── Individual stat item ─────────────────────────────────────────────
+
+class _StatItem extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final String value;
+  final Color accentColor;
+  final TourMateColors tm;
+
+  const _StatItem({
+    required this.icon,
+    required this.label,
+    required this.value,
+    required this.accentColor,
+    required this.tm,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(
+          icon,
+          size: 14,
+          color: accentColor.withValues(alpha: 0.6),
+        ),
+        const SizedBox(width: 6),
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              label,
+              style: GoogleFonts.inter(
+                fontSize: 9,
+                fontWeight: FontWeight.w600,
+                letterSpacing: 0.5,
+                color: tm.textTertiary,
+              ),
+            ),
+            Text(
+              value,
+              style: GoogleFonts.inter(
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+                color: tm.textSecondary,
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+}
+
+// ── Data classes ─────────────────────────────────────────────────────
+
 class DerivedPersona {
   final String name;
   final String description;

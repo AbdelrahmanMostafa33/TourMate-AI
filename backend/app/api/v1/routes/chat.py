@@ -413,10 +413,11 @@ async def process_message_stream(
                             "type": "hotel_options",
                             "data": {"options": accommodation, "message": None},
                         })
-                        # Only persist hotel_options as a card if the itinerary is also rendered
+                        # Persist hotel_options so chat history can reconstruct the card.
+                        # Always mark as rendered — it may arrive without an itinerary card
+                        # (e.g. during hotel_selection phase after itinerary is already shown).
                         response_metadata["hotel_options"] = {"options": accommodation, "message": None}
-                        if "itinerary" in rendered_cards:
-                            rendered_cards.append("hotel")
+                        rendered_cards.append("hotel")
                     if result.get("profile"):
                         profile_from_ai = result["profile"]
                     if result.get("pool_state"):

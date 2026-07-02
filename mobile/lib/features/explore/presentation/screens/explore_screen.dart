@@ -6,8 +6,10 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:shimmer/shimmer.dart';
 
 import '../../../../app/app_theme.dart';
+import '../../../../core/network/service_locator.dart';
 import '../../../../core/theme/design_tokens.dart';
 import '../../../../core/widgets/premium_widgets.dart';
+import '../../data/repository/explore_repository.dart';
 import '../../data/models/place_model.dart';
 import '../../logic/explore_cubit.dart';
 import '../../logic/explore_state.dart';
@@ -20,6 +22,23 @@ class ExploreScreen extends StatefulWidget {
 }
 
 class _ExploreScreenState extends State<ExploreScreen> {
+  @override
+  Widget build(BuildContext context) {
+    return BlocProvider(
+      create: (_) => ExploreCubit(locator<ExploreRepository>()),
+      child: const _ExploreBody(),
+    );
+  }
+}
+
+class _ExploreBody extends StatefulWidget {
+  const _ExploreBody();
+
+  @override
+  State<_ExploreBody> createState() => _ExploreBodyState();
+}
+
+class _ExploreBodyState extends State<_ExploreBody> {
   TourMateColors get tm => context.tm;
 
   final TextEditingController _searchController = TextEditingController();

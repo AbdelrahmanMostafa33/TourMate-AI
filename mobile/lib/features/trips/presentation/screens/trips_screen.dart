@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../../../app/app_theme.dart';
+import '../../../../core/network/service_locator.dart';
 import '../../../../core/theme/design_tokens.dart';
 import '../../../../core/widgets/premium_widgets.dart';
 import '../../data/models/trip_summary_model.dart';
@@ -18,6 +19,39 @@ class TripsScreen extends StatefulWidget {
 }
 
 class _TripsScreenState extends State<TripsScreen> {
+  TourMateColors get tm => context.tm;
+
+  @override
+  void initState() {
+    super.initState();
+
+    /// 👇 Initial load
+    Future.microtask(() {
+      if (mounted) context.read<TripsCubit>().getTrips();
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return BlocProvider.value(
+      value: locator<TripsCubit>(),
+      child: _TripsBody(
+        onStartChatWithMessage: widget.onStartChatWithMessage,
+      ),
+    );
+  }
+}
+
+class _TripsBody extends StatefulWidget {
+  final void Function(String autoMessage)? onStartChatWithMessage;
+
+  const _TripsBody({this.onStartChatWithMessage});
+
+  @override
+  State<_TripsBody> createState() => _TripsBodyState();
+}
+
+class _TripsBodyState extends State<_TripsBody> {
   TourMateColors get tm => context.tm;
 
   @override

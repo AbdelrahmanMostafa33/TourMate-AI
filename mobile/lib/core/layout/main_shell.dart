@@ -1,16 +1,12 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import '../../core/network/service_locator.dart';
 import '../../core/theme/design_tokens.dart';
 import '../../features/chat/presentation/screens/chat_screen.dart';
 import '../../features/trips/presentation/screens/trips_screen.dart';
-import '../../features/trips/data/repository/trips_repository.dart';
 import '../../features/trips/logic/trips_cubit.dart';
 import '../../features/explore/presentation/screens/explore_screen.dart';
-import '../../features/explore/data/repository/explore_repository.dart';
-import '../../features/explore/logic/explore_cubit.dart';
 import '../../features/saved/presentation/screens/saved_screen.dart';
 import '../../features/auth/presentation/screens/profile_screen.dart';
 import '../../app/app_theme.dart';
@@ -30,52 +26,42 @@ class _MainShellState extends State<MainShell> {
   Widget build(BuildContext context) {
     final tm = context.tm;
 
-    return MultiBlocProvider(
-      providers: [
-        BlocProvider(create: (_) => TripsCubit(locator<TripsRepository>())),
-        BlocProvider(create: (_) => ExploreCubit(locator<ExploreRepository>())),
-      ],
-      child: Builder(
-        builder: (context) {
-          return Scaffold(
-            backgroundColor: tm.nearWhite,
+    return Scaffold(
+      backgroundColor: tm.nearWhite,
 
-            /// BODY — only build the active tab so off-screen widgets
-            /// (and their Cubits/WebSockets) are disposed.
-            body: _buildActivePage(context),
+      /// BODY — only build the active tab so off-screen widgets
+      /// (and their Cubits/WebSockets) are disposed.
+      body: _buildActivePage(context),
 
-            /// NAVBAR — Premium sapphire-accented bottom bar
-            bottomNavigationBar: Container(
-              decoration: BoxDecoration(
-                color: tm.pureWhite,
-                border: Border(
-                  top: BorderSide(color: tm.borderLight, width: 0.5),
-                ),
-                boxShadow: [
-                  BoxShadow(
-                    color: tm.pureBlack.withValues(alpha: 0.03),
-                    blurRadius: 8,
-                    offset: const Offset(0, -2),
-                  ),
-                ],
-              ),
-              padding: EdgeInsets.only(
-                bottom: MediaQuery.of(context).padding.bottom + 6,
-                top: 6,
-              ),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceAround,
-                children: [
-                  _navItem(tm, Icons.chat_bubble_outline, "Chat", 0),
-                  _navItem(tm, Icons.card_travel_outlined, "Trips", 1),
-                  _navItem(tm, Icons.search, "Explore", 2),
-                  _navItem(tm, Icons.favorite_border, "Saved", 3),
-                  _navItem(tm, Icons.person_outline, "You", 4),
-                ],
-              ),
+      /// NAVBAR — Premium sapphire-accented bottom bar
+      bottomNavigationBar: Container(
+        decoration: BoxDecoration(
+          color: tm.pureWhite,
+          border: Border(
+            top: BorderSide(color: tm.borderLight, width: 0.5),
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: tm.pureBlack.withValues(alpha: 0.03),
+              blurRadius: 8,
+              offset: const Offset(0, -2),
             ),
-          );
-        },
+          ],
+        ),
+        padding: EdgeInsets.only(
+          bottom: MediaQuery.of(context).padding.bottom + 6,
+          top: 6,
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceAround,
+          children: [
+            _navItem(tm, Icons.chat_bubble_outline, "Chat", 0),
+            _navItem(tm, Icons.card_travel_outlined, "Trips", 1),
+            _navItem(tm, Icons.search, "Explore", 2),
+            _navItem(tm, Icons.favorite_border, "Saved", 3),
+            _navItem(tm, Icons.person_outline, "You", 4),
+          ],
+        ),
       ),
     );
   }
@@ -101,7 +87,7 @@ class _MainShellState extends State<MainShell> {
           initialTripId: initialTripId,
           autoMessage: autoMsg,
           onTripCreated: () {
-            context.read<TripsCubit>().getTrips();
+            locator<TripsCubit>().getTrips();
           },
         );
       case 1:
@@ -135,10 +121,7 @@ class _MainShellState extends State<MainShell> {
               currentIndex = index;
             });
             if (index == 1) {
-              context.read<TripsCubit>().getTrips();
-            }
-            if (index == 2) {
-              context.read<ExploreCubit>().init();
+              locator<TripsCubit>().getTrips();
             }
           },
           child: AnimatedContainer(
@@ -158,7 +141,7 @@ class _MainShellState extends State<MainShell> {
                 Icon(
                   icon,
                   size: 20,
-                  color: isActive ? tm.deepRoyalBlue : tm.navInactive,
+                  color: isActive ? tm.pureWhite : tm.navInactive,
                 ),
                 if (isActive) ...[
                   const SizedBox(width: 6),

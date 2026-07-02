@@ -13,6 +13,7 @@ import '../../features/explore/data/repository/explore_repository.dart';
 import '../../features/saved/data/repository/saved_repository.dart';
 import '../../features/bookings/data/repository/booking_repository.dart';
 import '../../features/flights/data/repository/flight_repository.dart';
+import '../../features/trips/logic/trips_cubit.dart';
 
 import '../network/dio_factory.dart';
 import '../network/api_services.dart';
@@ -89,5 +90,10 @@ Future<void> setupLocator() async {
 
   locator.registerLazySingleton<FlightRepository>(
         () => FlightRepository(locator<ApiServices>()),
+  );
+
+  /// Cubits
+  locator.registerLazySingleton<TripsCubit>(
+        () => TripsCubit(locator<TripsRepository>()),
   );
 }
