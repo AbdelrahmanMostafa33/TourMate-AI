@@ -15,7 +15,12 @@ def mock_manager():
     storage = {}
     manager = AsyncMock()
 
-    async def fake_resume_or_create(user_id, session_id=None):
+    async def fake_resume_or_create(user_id, session_id=None, recovery_state=None):
+        if recovery_state:
+            recovery_state["user_id"] = user_id
+            state = ConversationState.from_dict(recovery_state)
+            storage[user_id] = state
+            return state
         if session_id and session_id in storage:
             return storage[session_id]
         if user_id in storage:

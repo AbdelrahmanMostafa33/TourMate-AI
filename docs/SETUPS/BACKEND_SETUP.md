@@ -376,7 +376,7 @@ backend/
 ├── app/                        # FastAPI application layer
 │   ├── api/v1/routes/          # Route handlers
 │   │   ├── auth.py             # Register, login (Firebase)
-│   │   ├── users.py            # Profile & quiz endpoints
+│   │   ├── users.py            # Profile endpoints
 │   │   ├── trips.py            # Trip CRUD & itinerary
 │   │   ├── chat.py             # WebSocket chat + history
 │   │   ├── places.py           # Place search & exploration

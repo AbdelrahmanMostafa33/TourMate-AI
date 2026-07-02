@@ -29,7 +29,7 @@ Instead of browsing generic travel guides, users simply **chat** with TourMate �
 
 ### What Makes TourMate Different?
 
-- 🧠 **Behavioral Profiling** — Learns your travel style through an onboarding quiz and adapts over time
+- 🧠 **Behavioral Profiling** — Learns your travel style through an onboarding flow and adapts over time
 - 🤖 **6-Stage Pipeline** — Profile Loader → Place Retriever → Candidate Scorer → Planner → Route Optimizer → Itinerary Validator, orchestrated via LangGraph
 - 🖼️ **Multimodal Input** — Gemini 2.5 Flash VLM understands both text and images to extract travel preferences
 - 🗺️ **Real-World Data** — PostgreSQL-backed place database with Bayesian popularity scores + OSRM routing
@@ -46,7 +46,7 @@ Instead of browsing generic travel guides, users simply **chat** with TourMate �
 - Role-based access control (user/admin)
 
 ### 🧬 Intelligent Profiling
-- 8-screen onboarding personality quiz (travel style, budget, interests, pace, accommodation, dining)
+- Onboarding personality flow (travel style, budget, interests, pace, accommodation, dining)
 - AI-generated travel persona (e.g., "The Curious Culture Seeker")
 - Per-trip behavioral profiles stored in PostgreSQL
 - Profile-aware itinerary personalization
@@ -87,7 +87,7 @@ Instead of browsing generic travel guides, users simply **chat** with TourMate �
 ```
 ┌──────────────────────────────────────────────────────────────┐
 │                    Flutter Mobile App                         │
-│      (Chat UI · Quiz · Itinerary View · Trips · Auth)       │
+│      (Chat UI · Itinerary View · Trips · Auth)       │
 └───────────────────┬──────────────────┬───────────────────────┘
                     │ REST API         │ WebSocket
                     ▼                  ▼
@@ -280,9 +280,8 @@ TourMate-AI/
         ├── app/                      # App config + routing
         ├── core/                     # Network, errors, layout
         └── features/
-            ├── auth/                 # Sign in/up, profile, quiz
+            ├── auth/                 # Sign in/up, profile
             ├── chat/                 # WebSocket chat + cubit
-            ├── quiz/                 # 8-screen onboarding flow
             ├── trips/                # Trip management
             └── splash/               # Splash screen
 ```
@@ -302,8 +301,6 @@ TourMate-AI/
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| `POST` | `/api/v1/users/quiz` | Submit onboarding quiz |
-| `POST` | `/api/v1/users/quiz/skip` | Skip quiz (default persona) |
 | `GET` | `/api/v1/users/profile` | Get user persona |
 | `GET` | `/api/v1/users/profile/full` | Get complete profile |
 

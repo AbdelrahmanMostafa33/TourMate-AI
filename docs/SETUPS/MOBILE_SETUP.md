@@ -394,7 +394,6 @@ mobile/
 │       │       │   ├── signin_screen.dart
 │       │       │   ├── signup_screen.dart
 │       │       │   ├── profile_screen.dart
-│       │       │   └── quiz_decision_screen.dart
 │       │       └── widgets/
 │       │           └── custom_textfield.dart
 │       │
@@ -414,35 +413,6 @@ mobile/
 │       │       │   └── chat_screen.dart
 │       │       └── widgets/
 │       │           └── message_bubble.dart
-│       │
-│       ├── quiz/                         # Onboarding personality quiz (8 screens)
-│       │   ├── data/
-│       │   │   ├── models/
-│       │   │   │   ├── quiz_answers.dart
-│       │   │   │   ├── quiz_submit_request.dart
-│       │   │   │   └── persona_response.dart
-│       │   │   └── repository/
-│       │   │       └── quiz_repository.dart
-│       │   ├── logic/
-│       │   │   ├── quiz_cubit.dart
-│       │   │   └── quiz_state.dart (+freezed)
-│       │   └── presentation/
-│       │       ├── screens/
-│       │       │   ├── onboarding_flow.dart
-│       │       │   ├── screen1_basics.dart
-│       │       │   ├── screen2_vacation.dart
-│       │       │   ├── screen3_accommodation.dart
-│       │       │   ├── screen4_activities.dart
-│       │       │   ├── screen5_dining.dart
-│       │       │   ├── screen6_interests.dart
-│       │       │   ├── screen7_traveler_type.dart
-│       │       │   └── screen8_summary.dart
-│       │       └── widgets/
-│       │           ├── choice_chip2.dart
-│       │           ├── nav_buttons.dart
-│       │           ├── quiz_scaffold.dart
-│       │           ├── radio_option.dart
-│       │           └── slider_toggle.dart
 │       │
 │       ├── trips/                        # Trip management
 │       │   ├── data/

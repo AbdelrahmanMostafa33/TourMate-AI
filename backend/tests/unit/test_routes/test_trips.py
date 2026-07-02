@@ -97,7 +97,6 @@ def make_mock_user(user_id="user_001"):
     user.phone_number = "+1234567890"
     user.home_city = "New York"
     user.registration_date = datetime.utcnow()
-    user.quiz_completed = True
     user.profile_id = None
     return user
 
@@ -238,9 +237,9 @@ async def test_get_trip_success(mock_auth):
     db.execute.return_value = result
 
     response = await get_trip(trip_id="trip_001", current_user=make_current_user(), db=db)
-    assert response.trip_id == "trip_001"
-    assert response.destination == "Cairo, Egypt"
-    assert len(response.itineraries) == 1
+    assert response["trip_id"] == "trip_001"
+    assert response["destination"] == "Cairo, Egypt"
+    assert len(response["itineraries"]) == 1
 
 
 @pytest.mark.asyncio
