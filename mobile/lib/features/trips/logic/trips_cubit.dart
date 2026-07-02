@@ -26,4 +26,18 @@ class TripsCubit extends Cubit<TripsState> {
       failure: (msg) => emit(TripsState.error(msg)),
     );
   }
+
+  /// Optimistically remove a trip from the local loaded state after deletion.
+  /// This provides instant UI feedback without waiting for a full re-fetch.
+  void removeTripFromState(String tripId) {
+    if (isClosed) return;
+    final current = state;
+    current.maybeWhen(
+      loaded: (trips) {
+        final updated = trips.where((t) => t.tripId != tripId).toList();
+        emit(TripsState.loaded(updated));
+      },
+      orElse: () {},
+    );
+  }
 }

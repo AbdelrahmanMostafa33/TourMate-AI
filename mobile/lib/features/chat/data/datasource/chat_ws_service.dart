@@ -70,6 +70,22 @@ class ChatWebSocketService {
   /// Optional factory for creating WebSocket channels (injectable for testing).
   final StreamChannel<dynamic> Function(String url)? _channelFactory;
 
+  // ── Heartbeat / Stale Connection Detection ─────────────────────────────
+
+  /// Periodic timer that sends `{"type": "ping"}` to the server.
+  Timer? _heartbeatTimer;
+
+  /// Timer that triggers reconnection if no data (including pong) is received
+  /// within the stale threshold.
+  Timer? _staleTimer;
+
+  /// Interval between heartbeat ping messages.
+  static const Duration _heartbeatInterval = Duration(seconds: 30);
+
+  /// Maximum idle time before the connection is considered stale.
+  /// Set to 1.5x the heartbeat interval to tolerate a missed response.
+  static const Duration _staleThreshold = Duration(seconds: 45);
+
   ChatWebSocketService(
     this._authService, {
     StreamChannel<dynamic> Function(String url)? channelFactory,
@@ -121,6 +137,7 @@ class ChatWebSocketService {
   void disconnect() {
     _userDisconnected = true;
     _cancelReconnect();
+    _cancelHeartbeat();
     _cleanup();
     _setState(WsConnectionState.disconnected);
   }
@@ -129,6 +146,7 @@ class ChatWebSocketService {
   void dispose() {
     _userDisconnected = true;
     _cancelReconnect();
+    _cancelHeartbeat();
     _cleanup();
     if (!_stateController.isClosed) {
       _stateController.add(WsConnectionState.disconnected);
@@ -171,9 +189,12 @@ class ChatWebSocketService {
 
       // Listen for connection close to trigger reconnection,
       // and relay data messages through the broadcast controller.
+      // Also track the last received message timestamp for stale detection.
       _wsSubscription?.cancel();
       _wsSubscription = _channel!.stream.listen(
         (data) {
+          // Reset stale timer on any received data (including pong)
+          _resetStaleTimer();
           // Relay all messages to the broadcast controller for the cubit.
           if (!_messageController.isClosed) {
             _messageController.add(data);
@@ -191,6 +212,7 @@ class ChatWebSocketService {
 
       _reconnectAttempt = 0;
       _setState(WsConnectionState.connected);
+      _startHeartbeat();
       debugPrint('[WS] _connect: connected OK');
     } catch (e) {
       debugPrint('[WS] _connect: exception: $e');
@@ -216,6 +238,7 @@ class ChatWebSocketService {
     // If the user explicitly disconnected, don't auto-reconnect.
     if (_userDisconnected) return;
 
+    _cancelHeartbeat();
     _cleanup();
     _scheduleReconnect();
   }
@@ -248,10 +271,61 @@ class ChatWebSocketService {
   }
 
   void _cleanup() {
+    _cancelHeartbeat();
     _wsSubscription?.cancel();
     _wsSubscription = null;
     _channel?.sink.close();
     _channel = null;
+  }
+
+  // ── Heartbeat ────────────────────────────────────────────────────────
+
+  /// Start the heartbeat ping timer and the stale connection watcher.
+  void _startHeartbeat() {
+    _cancelHeartbeat();
+
+    // Send a ping every 30 seconds to keep the connection alive and
+    // detect silent drops (NAT timeouts, proxy disconnects, etc.).
+    _heartbeatTimer = Timer.periodic(_heartbeatInterval, (_) {
+      if (_state != WsConnectionState.connected) {
+        _cancelHeartbeat();
+        return;
+      }
+      _sendHeartbeatPing();
+    });
+
+    // Start the stale timer with the initial threshold.
+    _resetStaleTimer();
+  }
+
+  /// Send a heartbeat ping to the server.
+  void _sendHeartbeatPing() {
+    try {
+      _channel?.sink.add(jsonEncode({'type': 'ping'}));
+      debugPrint('[WS] Heartbeat ping sent');
+    } catch (e) {
+      debugPrint('[WS] Heartbeat ping failed: $e');
+    }
+  }
+
+  /// Reset the stale connection timer. Called on every received message.
+  /// If no message arrives within [_staleThreshold], the connection is
+  /// considered dead and we trigger reconnection.
+  void _resetStaleTimer() {
+    _staleTimer?.cancel();
+    _staleTimer = Timer(_staleThreshold, () {
+      debugPrint('[WS] No data received for ${_staleThreshold.inSeconds}s — connection may be stale, triggering reconnect');
+      if (_userDisconnected) return;
+      _onConnectionLost();
+    });
+  }
+
+  /// Cancel both heartbeat and stale timers.
+  void _cancelHeartbeat() {
+    _heartbeatTimer?.cancel();
+    _heartbeatTimer = null;
+    _staleTimer?.cancel();
+    _staleTimer = null;
   }
 
   void _setState(WsConnectionState newState) {

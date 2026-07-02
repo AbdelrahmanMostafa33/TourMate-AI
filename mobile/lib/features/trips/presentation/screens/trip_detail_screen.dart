@@ -109,7 +109,7 @@ class _TripDetailScreenState extends State<TripDetailScreen> {
       ),
       child: Row(
         children: [
-          // Back button with gold accent on press
+          // Back button with sapphire accent on press
           IconButton(
             icon: Container(
               padding: const EdgeInsets.all(6),
@@ -140,7 +140,7 @@ class _TripDetailScreenState extends State<TripDetailScreen> {
                 ),
                 Row(
                   children: [
-                    Icon(Icons.location_on_outlined, size: 12, color: tm.gold),
+                    Icon(Icons.location_on_outlined, size: 12, color: tm.sapphire),
                     const SizedBox(width: 3),
                     Text(
                       trip.destination,
@@ -151,7 +151,7 @@ class _TripDetailScreenState extends State<TripDetailScreen> {
               ],
             ),
           ),
-          // Continue Chat button — gold accent
+          // Continue Chat button — sapphire accent
           Material(
             color: Colors.transparent,
             child: InkWell(
@@ -160,10 +160,10 @@ class _TripDetailScreenState extends State<TripDetailScreen> {
               child: Container(
                 padding: const EdgeInsets.all(8),
                 decoration: BoxDecoration(
-                  color: tm.gold.withValues(alpha: 0.08),
+                  color: tm.sapphire.withValues(alpha: 0.08),
                   borderRadius: BorderRadius.circular(10),
                 ),
-                child: Icon(Icons.chat_bubble_outline, color: tm.gold, size: 18),
+                child: Icon(Icons.chat_bubble_outline, color: tm.deepRoyalBlue, size: 18),
               ),
             ),
           ),
@@ -212,7 +212,7 @@ class _TripDetailScreenState extends State<TripDetailScreen> {
         ),
         child: Column(
           children: [
-            // First row: dates & duration + gold-accented status
+            // First row: dates & duration + sapphire-accented status
             Row(
               children: [
                 _headerInfoChip(
@@ -230,7 +230,7 @@ class _TripDetailScreenState extends State<TripDetailScreen> {
               const SizedBox(height: Spacing.sm),
               Row(
                 children: [
-                  Icon(Icons.date_range_outlined, size: 14, color: tm.goldLight),
+                  Icon(Icons.date_range_outlined, size: 14, color: tm.sapphireLight),
                   const SizedBox(width: 6),
                   Text(
                     _formatDateRange(trip),
@@ -244,7 +244,7 @@ class _TripDetailScreenState extends State<TripDetailScreen> {
               const SizedBox(height: Spacing.sm),
               Row(
                 children: [
-                  Icon(Icons.people_outline, size: 14, color: tm.goldLight),
+                  Icon(Icons.people_outline, size: 14, color: tm.sapphireLight),
                   const SizedBox(width: 6),
                   Text(
                     '${trip.numberOfTravelers} travelers',
@@ -328,7 +328,7 @@ class _TripDetailScreenState extends State<TripDetailScreen> {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, size: 13, color: tm.goldLight),
+          Icon(icon, size: 13, color: tm.sapphireLight),
           const SizedBox(width: 5),
           Text(
             label,
@@ -347,13 +347,13 @@ class _TripDetailScreenState extends State<TripDetailScreen> {
             padding: const EdgeInsets.all(8),
             decoration: BoxDecoration(
               gradient: const LinearGradient(
-                colors: [Color(0xFF0A0A0A), Color(0xFF1A1A1A)],
+                colors: [Color(0xFF0F172A), Color(0xFF1E3A8A)],
                 begin: Alignment.topLeft,
                 end: Alignment.bottomRight,
               ),
               borderRadius: BorderRadius.circular(10),
             ),
-            child: Icon(icon, size: 16, color: tm.goldLight),
+            child: Icon(icon, size: 16, color: tm.sapphireLight),
           ),
           const SizedBox(height: 8),
           Text(
@@ -400,7 +400,7 @@ class _TripDetailScreenState extends State<TripDetailScreen> {
     }
   }
 
-  // ── Trip Preferences — Gold-Accented Premium Chips ─────────────────────────
+  // ── Trip Preferences — sapphire-accented Premium Chips ─────────────────────────
 
   Widget _buildTripPreferences(TripProfileData? profile) {
     final chips = <Widget>[];
@@ -410,7 +410,7 @@ class _TripDetailScreenState extends State<TripDetailScreen> {
         chips.add(_prefChip(
           Icons.monetization_on_outlined,
           _capitalize(profile.budgetLevel!),
-          tm.gold,
+          tm.sapphire,
         ));
       }
 
@@ -418,7 +418,7 @@ class _TripDetailScreenState extends State<TripDetailScreen> {
         chips.add(_prefChip(
           Icons.map_outlined,
           _capitalize(profile.travelStyle!),
-          tm.gold,
+          tm.sapphire,
         ));
       }
 
@@ -426,7 +426,7 @@ class _TripDetailScreenState extends State<TripDetailScreen> {
         chips.add(_prefChip(
           Icons.speed_outlined,
           _capitalize(profile.pace!),
-          tm.gold,
+          tm.sapphire,
         ));
       }
 
@@ -435,7 +435,7 @@ class _TripDetailScreenState extends State<TripDetailScreen> {
           chips.add(_prefChip(
             Icons.favorite_outline,
             _capitalize(interest),
-            tm.gold,
+            tm.sapphire,
           ));
         }
       }
@@ -445,7 +445,7 @@ class _TripDetailScreenState extends State<TripDetailScreen> {
           chips.add(_prefChip(
             Icons.restaurant_outlined,
             _capitalize(food),
-            tm.gold,
+            tm.sapphire,
           ));
         }
       }
@@ -455,7 +455,7 @@ class _TripDetailScreenState extends State<TripDetailScreen> {
           chips.add(_prefChip(
             Icons.bed_outlined,
             _capitalize(acc),
-            tm.gold,
+            tm.sapphire,
           ));
         }
       }
@@ -489,13 +489,13 @@ class _TripDetailScreenState extends State<TripDetailScreen> {
                   padding: const EdgeInsets.all(6),
                   decoration: BoxDecoration(
                     gradient: const LinearGradient(
-                      colors: [Color(0xFF0A0A0A), Color(0xFF1A1A1A)],
+                      colors: [Color(0xFF0F172A), Color(0xFF1E3A8A)],
                       begin: Alignment.topLeft,
                       end: Alignment.bottomRight,
                     ),
                     borderRadius: BorderRadius.circular(8),
                   ),
-                  child: Icon(Icons.tune_outlined, size: 14, color: tm.goldLight),
+                  child: Icon(Icons.tune_outlined, size: 14, color: tm.sapphireLight),
                 ),
                 const SizedBox(width: 10),
                 Text(
@@ -602,13 +602,13 @@ class _TripDetailScreenState extends State<TripDetailScreen> {
         child: TabBar(
           indicator: BoxDecoration(
             gradient: const LinearGradient(
-              colors: [Color(0xFF0A0A0A), Color(0xFF1A1A1A)],
+              colors: [Color(0xFF0F172A), Color(0xFF1E3A8A)],
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
             ),
             borderRadius: BorderRadius.circular(RadiusTokens.sm),
           ),
-          labelColor: tm.goldLight,
+          labelColor: tm.sapphireLight,
           unselectedLabelColor: tm.textSecondary,
           labelStyle: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.w600, letterSpacing: -0.2),
           unselectedLabelStyle: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.w500),
@@ -751,7 +751,7 @@ class _TripDetailScreenState extends State<TripDetailScreen> {
           ),
         ),
 
-        // Premium legend / stop list with gold accent on selected
+        // Premium legend / stop list with sapphire accent on selected
         Container(
           height: 100,
           width: double.infinity,
@@ -773,12 +773,12 @@ class _TripDetailScreenState extends State<TripDetailScreen> {
                     color: isSelected ? tm.pureBlack : tm.pureWhite,
                     borderRadius: BorderRadius.circular(RadiusTokens.md),
                     border: Border.all(
-                      color: isSelected ? tm.gold.withValues(alpha: 0.5) : tm.borderLight,
+                      color: isSelected ? tm.sapphire.withValues(alpha: 0.5) : tm.borderLight,
                       width: isSelected ? 1.5 : 1,
                     ),
                     boxShadow: isSelected ? [
                       BoxShadow(
-                        color: tm.gold.withValues(alpha: 0.15),
+                        color: tm.sapphire.withValues(alpha: 0.15),
                         blurRadius: 8,
                         offset: const Offset(0, 2),
                       ),
@@ -793,7 +793,7 @@ class _TripDetailScreenState extends State<TripDetailScreen> {
                         decoration: BoxDecoration(
                           gradient: LinearGradient(
                             colors: isSelected
-                                ? [tm.goldLight, tm.gold]
+                                ? [tm.sapphireLight, tm.sapphire]
                                 : [const Color(0xFF0A0A0A), const Color(0xFF1A1A1A)],
                             begin: Alignment.topLeft,
                             end: Alignment.bottomRight,
@@ -833,7 +833,7 @@ class _TripDetailScreenState extends State<TripDetailScreen> {
                                 _categoryLabel(stop.category!),
                                 style: GoogleFonts.inter(
                                   fontSize: 10,
-                                  color: isSelected ? tm.goldLight : tm.textTertiary,
+                                  color: isSelected ? tm.sapphireLight : tm.textTertiary,
                                 ),
                               ),
                             ],
@@ -884,21 +884,21 @@ class _TripDetailScreenState extends State<TripDetailScreen> {
             ),
             child: Row(
               children: [
-                // Premium stop number badge with gold gradient
+                // Premium stop number badge with sapphire gradient
                 Container(
                   width: 40,
                   height: 40,
                   decoration: BoxDecoration(
                     gradient: const LinearGradient(
-                      colors: [Color(0xFF0A0A0A), Color(0xFF1A1A1A)],
+                      colors: [Color(0xFF0F172A), Color(0xFF1E3A8A)],
                       begin: Alignment.topLeft,
                       end: Alignment.bottomRight,
                     ),
                     shape: BoxShape.circle,
-                    border: Border.all(color: tm.gold.withValues(alpha: 0.4), width: 1.5),
+                    border: Border.all(color: tm.sapphire.withValues(alpha: 0.4), width: 1.5),
                     boxShadow: [
                       BoxShadow(
-                        color: tm.gold.withValues(alpha: 0.2),
+                        color: tm.sapphire.withValues(alpha: 0.2),
                         blurRadius: 6,
                         offset: const Offset(0, 1),
                       ),
@@ -908,7 +908,7 @@ class _TripDetailScreenState extends State<TripDetailScreen> {
                   child: Text(
                     '${index + 1}',
                     style: GoogleFonts.inter(
-                      color: tm.goldLight,
+                      color: tm.sapphireLight,
                       fontSize: 14,
                       fontWeight: FontWeight.w800,
                     ),
@@ -936,7 +936,7 @@ class _TripDetailScreenState extends State<TripDetailScreen> {
                       Row(
                         children: [
                           if (stop.category != null) ...[
-                            Icon(Icons.explore_outlined, size: 11, color: tm.goldLight),
+                            Icon(Icons.explore_outlined, size: 11, color: tm.sapphireLight),
                             const SizedBox(width: 3),
                             Text(
                               _categoryLabel(stop.category!),
@@ -945,13 +945,13 @@ class _TripDetailScreenState extends State<TripDetailScreen> {
                             const SizedBox(width: 8),
                           ],
                           if (stop.rating != null) ...[
-                            Icon(Icons.star_rounded, size: 12, color: tm.gold),
+                            Icon(Icons.star_rounded, size: 12, color: tm.sapphire),
                             const SizedBox(width: 2),
                             Text(
                               stop.rating!.toStringAsFixed(1),
                               style: GoogleFonts.inter(
                                 fontSize: 11,
-                                color: tm.gold,
+                                color: tm.sapphire,
                                 fontWeight: FontWeight.w600,
                               ),
                             ),
@@ -974,10 +974,10 @@ class _TripDetailScreenState extends State<TripDetailScreen> {
                 Container(
                   padding: const EdgeInsets.all(4),
                   decoration: BoxDecoration(
-                    color: tm.gold.withValues(alpha: 0.08),
+                    color: tm.sapphire.withValues(alpha: 0.08),
                     borderRadius: BorderRadius.circular(8),
                   ),
-                  child: Icon(Icons.chevron_right_rounded, size: 18, color: tm.gold),
+                  child: Icon(Icons.chevron_right_rounded, size: 18, color: tm.deepRoyalBlue),
                 ),
               ],
             ),
@@ -1118,8 +1118,9 @@ class _TripDetailScreenState extends State<TripDetailScreen> {
     if (error != null) {
       AppSnackbar.error(context, error);
     } else {
-      AppSnackbar.info(context, 'Trip deleted');
-      Navigator.pop(context);
+      AppSnackbar.success(context, 'Trip deleted successfully');
+      // Pop with 'deleted' result so TripsScreen can react accordingly
+      Navigator.pop(context, 'deleted');
     }
   }
 }
@@ -1146,20 +1147,20 @@ class _ItineraryTimeline extends StatelessWidget {
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
               decoration: BoxDecoration(
-                color: tm.gold.withValues(alpha: 0.08),
+                color: tm.sapphire.withValues(alpha: 0.08),
                 borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: tm.gold.withValues(alpha: 0.2)),
+                border: Border.all(color: tm.sapphire.withValues(alpha: 0.2)),
               ),
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Icon(Icons.auto_awesome, size: 12, color: tm.gold),
+                  Icon(Icons.auto_awesome, size: 12, color: tm.sapphire),
                   const SizedBox(width: 6),
                   Text(
                     'v${itinerary.versionNumber}: ${itinerary.description}',
                     style: GoogleFonts.inter(
                       fontSize: 12,
-                      color: tm.gold,
+                      color: tm.sapphire,
                       fontWeight: FontWeight.w600,
                       letterSpacing: 0.1,
                     ),
@@ -1198,7 +1199,7 @@ class _DayTimeline extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Premium day header with gold accent
+          // Premium day header with sapphire accent
           Row(
             children: [
               Container(
@@ -1206,18 +1207,18 @@ class _DayTimeline extends StatelessWidget {
                 height: 42,
                 decoration: BoxDecoration(
                   gradient: const LinearGradient(
-                    colors: [Color(0xFF0A0A0A), Color(0xFF1A1A1A)],
+                    colors: [Color(0xFF0F172A), Color(0xFF1E3A8A)],
                     begin: Alignment.topLeft,
                     end: Alignment.bottomRight,
                   ),
                   borderRadius: BorderRadius.circular(RadiusTokens.md),
-                  border: Border.all(color: tm.gold.withValues(alpha: 0.3), width: 0.5),
+                  border: Border.all(color: tm.sapphire.withValues(alpha: 0.3), width: 0.5),
                 ),
                 alignment: Alignment.center,
                 child: Text(
                   '${day.dayNumber}',
                   style: GoogleFonts.inter(
-                    color: tm.goldLight,
+                    color: tm.sapphireLight,
                     fontSize: 16,
                     fontWeight: FontWeight.w800,
                     letterSpacing: -0.5,
@@ -1254,7 +1255,7 @@ class _DayTimeline extends StatelessWidget {
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                   decoration: BoxDecoration(
-                    color: tm.gold.withValues(alpha: 0.08),
+                    color: tm.sapphire.withValues(alpha: 0.08),
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: Text(
@@ -1263,7 +1264,7 @@ class _DayTimeline extends StatelessWidget {
                         : day.date!,
                     style: GoogleFonts.inter(
                       fontSize: 11,
-                      color: tm.gold,
+                      color: tm.sapphire,
                       fontWeight: FontWeight.w600,
                     ),
                   ),
@@ -1306,7 +1307,7 @@ class _DayTimeline extends StatelessWidget {
               padding: const EdgeInsets.only(left: 52, top: Spacing.sm),
               child: Row(
                 children: [
-                  Icon(Icons.access_time, size: 14, color: tm.goldLight),
+                  Icon(Icons.access_time, size: 14, color: tm.sapphireLight),
                   const SizedBox(width: 4),
                   Text(
                     'Total: ${day.stops.fold(0, (int sum, s) => sum + (s.minutesFromPrevStop ?? 0))} min travel',
@@ -1356,7 +1357,7 @@ class _StopTimelineCard extends StatelessWidget {
                   gradient: LinearGradient(
                     begin: Alignment.topCenter,
                     end: Alignment.bottomCenter,
-                    colors: [tm.gold.withValues(alpha: 0.4), tm.gold.withValues(alpha: 0.1)],
+                    colors: [tm.sapphire.withValues(alpha: 0.4), tm.sapphire.withValues(alpha: 0.1)],
                   ),
                 ),
               ),
@@ -1437,7 +1438,7 @@ class _StopTimelineCard extends StatelessWidget {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            // Title row with gold accent time badge
+                            // Title row with sapphire accent time badge
                             Row(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
@@ -1477,7 +1478,7 @@ class _StopTimelineCard extends StatelessWidget {
 
                             const SizedBox(height: Spacing.sm),
 
-                            // Gold-accented metadata chips
+                            // sapphire-accented metadata chips
                             Wrap(
                               spacing: 6,
                               runSpacing: 4,
@@ -1487,26 +1488,26 @@ class _StopTimelineCard extends StatelessWidget {
                                   _metaChip(
                                     '${stop.durationMinutes} min',
                                     Icons.timer_outlined,
-                                    tm.gold,
+                                    tm.sapphire,
                                   ),
                                 if (stop.category != null)
                                   _metaChip(
                                     _categoryLabel(stop.category!),
                                     Icons.category_outlined,
-                                    tm.gold,
+                                    tm.sapphire,
                                   ),
                                 if (stop.rating != null)
                                   _metaChip(
                                     stop.rating!.toStringAsFixed(1),
                                     Icons.star_rounded,
-                                    tm.gold,
+                                    tm.sapphire,
                                   ),
                                 if (stop.estimatedCost != null &&
                                     stop.estimatedCost! > 0)
                                   _metaChip(
                                     '\$${stop.estimatedCost!.toStringAsFixed(0)}',
                                     Icons.attach_money,
-                                    tm.gold,
+                                    tm.sapphire,
                                   ),
                               ],
                             ),
@@ -1536,13 +1537,13 @@ class _StopTimelineCard extends StatelessWidget {
                                   Container(
                                     padding: const EdgeInsets.all(3),
                                     decoration: BoxDecoration(
-                                      color: tm.gold.withValues(alpha: 0.08),
+                                      color: tm.sapphire.withValues(alpha: 0.08),
                                       borderRadius: BorderRadius.circular(6),
                                     ),
                                     child: Icon(
                                       _travelModeIcon(stop.travelMode!),
                                       size: 12,
-                                      color: tm.gold,
+                                      color: tm.sapphire,
                                     ),
                                   ),
                                   const SizedBox(width: 6),
@@ -1563,7 +1564,7 @@ class _StopTimelineCard extends StatelessWidget {
                               Row(
                                 children: [
                                   Icon(Icons.location_on_outlined,
-                                      size: 12, color: tm.goldLight),
+                                      size: 12, color: tm.sapphireLight),
                                   const SizedBox(width: 3),
                                   Expanded(
                                     child: Text(
@@ -1617,19 +1618,19 @@ class _StopTimelineCard extends StatelessWidget {
   }
 
   Color _timeColor(String? tod) {
-    const goldColor = Color(0xFFC8A84E);
-    if (tod == null) return goldColor;
+    const sapphireColor = Color(0xFF2563EB);
+    if (tod == null) return sapphireColor;
     switch (tod.toLowerCase()) {
       case 'morning':
-        return const Color(0xFFD4A853);
+        return const Color(0xFF3B82F6);
       case 'afternoon':
-        return const Color(0xFFB8860B);
+        return const Color(0xFF2563EB);
       case 'evening':
-        return const Color(0xFF8B7355);
+        return const Color(0xFF1D4ED8);
       case 'night':
-        return const Color(0xFF5C4033);
+        return const Color(0xFF1E3A8A);
       default:
-        return goldColor;
+        return sapphireColor;
     }
   }
 
@@ -1736,7 +1737,7 @@ class _MapMarker extends StatelessWidget {
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        // Premium marker circle with gold accent when selected
+        // Premium marker circle with sapphire accent when selected
         AnimatedContainer(
           duration: const Duration(milliseconds: 250),
           curve: Curves.easeOutCubic,
@@ -1746,12 +1747,12 @@ class _MapMarker extends StatelessWidget {
             color: color,
             shape: BoxShape.circle,
             border: Border.all(
-              color: isSelected ? tm.gold : tm.pureWhite,
-              width: isSelected ? 3 : 2,
-            ),
-            boxShadow: [
-              BoxShadow(
-                color: (isSelected ? tm.gold.withValues(alpha: 0.4) : tm.pureBlack.withValues(alpha: 0.2)),
+          color: isSelected ? tm.deepRoyalBlue : tm.pureWhite,
+          width: isSelected ? 3 : 2,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: (isSelected ? tm.deepRoyalBlue.withValues(alpha: 0.4) : tm.pureBlack.withValues(alpha: 0.2)),
                 blurRadius: isSelected ? 10 : 6,
                 offset: const Offset(0, 2),
               ),
@@ -1775,7 +1776,7 @@ class _MapMarker extends StatelessWidget {
           decoration: BoxDecoration(
             border: Border(
               top: BorderSide(
-                color: isSelected ? tm.gold : color,
+                color: isSelected ? tm.deepRoyalBlue : color,
                 width: isSelected ? 8 : 6,
               ),
               left: const BorderSide(color: Colors.transparent, width: 5),

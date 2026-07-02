@@ -118,7 +118,7 @@ class _PlaceDetailView extends StatelessWidget {
                       icon: Icons.map_outlined,
                       title: '${place.lat!.toStringAsFixed(4)}, ${place.lng!.toStringAsFixed(4)}',
                       subtitle: 'Open in Google Maps',
-                      trailing: Icon(Icons.open_in_new, size: 16, color: tm.gold),
+                      trailing: Icon(Icons.open_in_new, size: 16, color: tm.sapphire),
                       isClickable: true,
                     ),
                   ),
@@ -170,13 +170,13 @@ class _PlaceDetailView extends StatelessWidget {
             padding: const EdgeInsets.all(8),
             decoration: BoxDecoration(
               gradient: const LinearGradient(
-                colors: [Color(0xFF0A0A0A), Color(0xFF1A1A1A)],
+                colors: [Color(0xFF0F172A), Color(0xFF1E3A8A)],
                 begin: Alignment.topLeft,
                 end: Alignment.bottomRight,
               ),
               borderRadius: BorderRadius.circular(10),
             ),
-            child: Icon(icon, size: 18, color: tm.goldLight),
+            child: Icon(icon, size: 18, color: tm.sapphireLight),
           ),
           const SizedBox(width: Spacing.md),
           Expanded(
@@ -197,7 +197,7 @@ class _PlaceDetailView extends StatelessWidget {
                     subtitle,
                     style: GoogleFonts.inter(
                       fontSize: 11,
-                      color: isClickable ? tm.gold : tm.textTertiary,
+                      color: isClickable ? tm.sapphire : tm.textTertiary,
                       fontWeight: isClickable ? FontWeight.w600 : FontWeight.w400,
                     ),
                   ),
@@ -242,20 +242,20 @@ class _PlaceDetailView extends StatelessWidget {
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
           decoration: BoxDecoration(
-            color: tm.gold.withValues(alpha: 0.08),
+            color: tm.sapphire.withValues(alpha: 0.08),
             borderRadius: BorderRadius.circular(20),
-            border: Border.all(color: tm.gold.withValues(alpha: 0.2)),
+            border: Border.all(color: tm.sapphire.withValues(alpha: 0.2)),
           ),
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(Icons.category_outlined, size: 12, color: tm.gold),
+              Icon(Icons.category_outlined, size: 12, color: tm.sapphire),
               const SizedBox(width: 5),
               Text(
                 place.category,
                 style: GoogleFonts.inter(
                   fontSize: 12,
-                  color: tm.gold,
+                  color: tm.sapphire,
                   fontWeight: FontWeight.w600,
                   letterSpacing: 0.5,
                 ),
@@ -282,14 +282,14 @@ class _PlaceDetailView extends StatelessWidget {
         // Premium rating row
         Row(
           children: [
-            Icon(Icons.star_rounded, size: 20, color: tm.gold),
+            Icon(Icons.star_rounded, size: 20, color: tm.sapphire),
             const SizedBox(width: 4),
             Text(
               place.rating.toStringAsFixed(1),
               style: GoogleFonts.inter(
                 fontSize: 16,
                 fontWeight: FontWeight.w700,
-                color: tm.gold,
+                color: tm.sapphire,
                 letterSpacing: -0.3,
               ),
             ),
@@ -305,16 +305,16 @@ class _PlaceDetailView extends StatelessWidget {
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                 decoration: BoxDecoration(
-                  color: tm.gold.withValues(alpha: 0.08),
+                  color: tm.sapphire.withValues(alpha: 0.08),
                   borderRadius: BorderRadius.circular(6),
                 ),
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Icon(Icons.attach_money, size: 13, color: tm.gold),
+                    Icon(Icons.attach_money, size: 13, color: tm.sapphire),
                     Text(
                       '\$' * place.priceLevel!,
-                      style: GoogleFonts.inter(fontSize: 12, color: tm.gold, fontWeight: FontWeight.w600),
+                      style: GoogleFonts.inter(fontSize: 12, color: tm.sapphire, fontWeight: FontWeight.w600),
                     ),
                   ],
                 ),
@@ -323,12 +323,12 @@ class _PlaceDetailView extends StatelessWidget {
           ],
         ),
 
-        // City / country with gold location icon
+        // City / country with location icon
         if (place.city != null || place.country != null) ...[
           const SizedBox(height: 4),
           Row(
             children: [
-              Icon(Icons.location_on_outlined, size: 14, color: tm.goldLight),
+              Icon(Icons.location_on_outlined, size: 14, color: tm.sapphireLight),
               const SizedBox(width: 4),
               Text(
                 [
@@ -354,7 +354,7 @@ class _PlaceDetailView extends StatelessWidget {
               width: 3,
               height: 18,
               decoration: BoxDecoration(
-                color: tm.gold,
+                color: tm.sapphire,
                 borderRadius: BorderRadius.circular(2),
               ),
             ),
@@ -418,13 +418,13 @@ class _PlaceDetailView extends StatelessWidget {
     final details = <Widget>[];
 
     if (place.starClass != null && place.starClass! > 0) {
-      details.add(_buildGoldChip(tm.gold, Icons.star_outline, '${place.starClass}-star hotel'));
+      details.add(_buildAccentChip(tm.sapphire, Icons.star_outline, '${place.starClass}-star hotel'));
     }
     if (place.nightlyRate != null && place.nightlyRate! > 0) {
-      details.add(_buildGoldChip(tm.gold, Icons.bed_outlined, '\$${place.nightlyRate!.toStringAsFixed(0)} / night'));
+      details.add(_buildAccentChip(tm.sapphire, Icons.bed_outlined, '\$${place.nightlyRate!.toStringAsFixed(0)} / night'));
     }
     if (place.accommodationType != null && place.accommodationType!.isNotEmpty) {
-      details.add(_buildGoldChip(tm.gold, Icons.home_outlined, place.accommodationType!));
+      details.add(_buildAccentChip(tm.sapphire, Icons.home_outlined, place.accommodationType!));
     }
 
     if (details.isEmpty) return const SizedBox.shrink();
@@ -436,7 +436,7 @@ class _PlaceDetailView extends StatelessWidget {
           children: [
             Container(
               width: 3, height: 18,
-              decoration: BoxDecoration(color: tm.gold, borderRadius: BorderRadius.circular(2)),
+              decoration: BoxDecoration(color: tm.sapphire, borderRadius: BorderRadius.circular(2)),
             ),
             const SizedBox(width: 8),
             Text(
@@ -459,7 +459,7 @@ class _PlaceDetailView extends StatelessWidget {
     final details = <Widget>[];
 
     if (place.cuisineType != null && place.cuisineType!.isNotEmpty) {
-      details.add(_buildGoldChip(tm.gold, Icons.restaurant_outlined, place.cuisineType!));
+      details.add(_buildAccentChip(tm.sapphire, Icons.restaurant_outlined, place.cuisineType!));
     }
 
     if (details.isEmpty) return const SizedBox.shrink();
@@ -471,7 +471,7 @@ class _PlaceDetailView extends StatelessWidget {
           children: [
             Container(
               width: 3, height: 18,
-              decoration: BoxDecoration(color: tm.gold, borderRadius: BorderRadius.circular(2)),
+              decoration: BoxDecoration(color: tm.sapphire, borderRadius: BorderRadius.circular(2)),
             ),
             const SizedBox(width: 8),
             Text(
@@ -500,7 +500,7 @@ class _PlaceDetailView extends StatelessWidget {
           children: [
             Container(
               width: 3, height: 18,
-              decoration: BoxDecoration(color: tm.gold, borderRadius: BorderRadius.circular(2)),
+              decoration: BoxDecoration(color: tm.sapphire, borderRadius: BorderRadius.circular(2)),
             ),
             const SizedBox(width: 8),
             Text(
@@ -510,29 +510,29 @@ class _PlaceDetailView extends StatelessWidget {
           ],
         ),
         const SizedBox(height: Spacing.sm),
-        _buildGoldChip(tm.gold, Icons.monetization_on_outlined, 'Entry fee: \$${place.entryFee!.toStringAsFixed(0)}'),
+        _buildAccentChip(tm.sapphire, Icons.monetization_on_outlined, 'Entry fee: \$${place.entryFee!.toStringAsFixed(0)}'),
       ],
     );
   }
 
-  Widget _buildGoldChip(Color goldColor, IconData icon, String label) {
+  Widget _buildAccentChip(Color accentColor, IconData icon, String label) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       decoration: BoxDecoration(
-        color: goldColor.withValues(alpha: 0.08),
+        color: accentColor.withValues(alpha: 0.08),
         borderRadius: BorderRadius.circular(RadiusTokens.md),
-        border: Border.all(color: goldColor.withValues(alpha: 0.2)),
+        border: Border.all(color: accentColor.withValues(alpha: 0.2)),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, size: 15, color: goldColor),
+          Icon(icon, size: 15, color: accentColor),
           const SizedBox(width: 6),
           Text(
             label,
             style: GoogleFonts.inter(
               fontSize: 13,
-              color: goldColor,
+              color: accentColor,
               fontWeight: FontWeight.w600,
             ),
           ),
@@ -610,7 +610,7 @@ class _ReviewsSection extends StatelessWidget {
               children: [
                 Container(
                   width: 3, height: 20,
-                  decoration: BoxDecoration(color: tm.gold, borderRadius: BorderRadius.circular(2)),
+                  decoration: BoxDecoration(color: tm.sapphire, borderRadius: BorderRadius.circular(2)),
                 ),
                 const SizedBox(width: 8),
                 Text(
@@ -625,7 +625,7 @@ class _ReviewsSection extends StatelessWidget {
               ],
             ),
             const Spacer(),
-            // Premium gold-accented write button
+            // Premium sapphire-accented write button
             Material(
               color: Colors.transparent,
               child: InkWell(
@@ -635,17 +635,17 @@ class _ReviewsSection extends StatelessWidget {
                   padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
                   decoration: BoxDecoration(
                     gradient: const LinearGradient(
-                      colors: [Color(0xFF0A0A0A), Color(0xFF1A1A1A)],
+                      colors: [Color(0xFF0F172A), Color(0xFF1E3A8A)],
                       begin: Alignment.topLeft,
                       end: Alignment.bottomRight,
                     ),
                     borderRadius: BorderRadius.circular(10),
-                    border: Border.all(color: tm.gold.withValues(alpha: 0.3), width: 0.5),
+                    border: Border.all(color: tm.sapphire.withValues(alpha: 0.3), width: 0.5),
                   ),
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Icon(Icons.edit_outlined, color: tm.goldLight, size: 14),
+                      Icon(Icons.edit_outlined, color: tm.sapphireLight, size: 14),
                       const SizedBox(width: 6),
                       Text(
                         'Write',
@@ -747,7 +747,7 @@ class _ReviewsSection extends StatelessWidget {
     );
   }
 
-  /// Premium sort/filter toolbar with gold-accented rating chips
+  /// Premium sort/filter toolbar with sapphire-accented rating chips
   Widget _buildSortFilterToolbar(
     BuildContext context,
     TourMateColors tm,
@@ -773,7 +773,7 @@ class _ReviewsSection extends StatelessWidget {
                 child: DropdownButton<ReviewSort>(
                   value: sortBy,
                   isDense: true,
-                  icon: Icon(Icons.swap_vert, size: 16, color: tm.gold),
+                  icon: Icon(Icons.swap_vert, size: 16, color: tm.sapphire),
                   style: GoogleFonts.inter(
                     fontSize: 12,
                     color: tm.textSecondary,
@@ -806,17 +806,17 @@ class _ReviewsSection extends StatelessWidget {
                 child: Container(
                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                   decoration: BoxDecoration(
-                    color: tm.gold.withValues(alpha: 0.08),
+                    color: tm.sapphire.withValues(alpha: 0.08),
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Icon(Icons.close, size: 11, color: tm.gold),
+                      Icon(Icons.close, size: 11, color: tm.sapphire),
                       const SizedBox(width: 4),
                       Text(
                         'Clear',
-                        style: GoogleFonts.inter(fontSize: 11, color: tm.gold, fontWeight: FontWeight.w600),
+                        style: GoogleFonts.inter(fontSize: 11, color: tm.sapphire, fontWeight: FontWeight.w600),
                       ),
                     ],
                   ),
@@ -825,7 +825,7 @@ class _ReviewsSection extends StatelessWidget {
           ],
         ),
         const SizedBox(height: Spacing.sm),
-        // Gold-accented rating filter chips
+        // sapphire-accented rating filter chips
         SizedBox(
           height: 34,
           child: ListView.separated(
@@ -847,7 +847,7 @@ class _ReviewsSection extends StatelessWidget {
                   decoration: BoxDecoration(
                     gradient: selected
                         ? const LinearGradient(
-                            colors: [Color(0xFF0A0A0A), Color(0xFF1A1A1A)],
+                            colors: [Color(0xFF0F172A), Color(0xFF1E3A8A)],
                             begin: Alignment.topLeft,
                             end: Alignment.bottomRight,
                           )
@@ -855,12 +855,12 @@ class _ReviewsSection extends StatelessWidget {
                     color: selected ? null : tm.surface,
                     borderRadius: BorderRadius.circular(20),
                     border: Border.all(
-                      color: selected ? tm.gold.withValues(alpha: 0.5) : tm.borderLight,
+                      color: selected ? tm.sapphire.withValues(alpha: 0.5) : tm.borderLight,
                       width: selected ? 1.5 : 1,
                     ),
                     boxShadow: selected ? [
                       BoxShadow(
-                        color: tm.gold.withValues(alpha: 0.15),
+                        color: tm.sapphire.withValues(alpha: 0.15),
                         blurRadius: 6,
                         offset: const Offset(0, 1),
                       ),
@@ -873,7 +873,7 @@ class _ReviewsSection extends StatelessWidget {
                         Icon(
                           Icons.star_rounded,
                           size: 13,
-                          color: selected ? tm.goldLight : tm.gold,
+                          color: selected ? tm.sapphireLight : tm.sapphire,
                         ),
                         const SizedBox(width: 3),
                       ],
@@ -882,7 +882,7 @@ class _ReviewsSection extends StatelessWidget {
                         style: GoogleFonts.inter(
                           fontSize: 12,
                           fontWeight: FontWeight.w600,
-                          color: selected ? tm.goldLight : tm.textSecondary,
+                          color: selected ? tm.sapphireLight : tm.textSecondary,
                         ),
                       ),
                       if (!isAll) ...[
@@ -891,7 +891,7 @@ class _ReviewsSection extends StatelessWidget {
                           '(${_countRating(allReviews, rating)})',
                           style: GoogleFonts.inter(
                             fontSize: 10,
-                            color: selected ? tm.gold.withValues(alpha: 0.6) : tm.textTertiary,
+                            color: selected ? tm.sapphire.withValues(alpha: 0.6) : tm.textTertiary,
                           ),
                         ),
                       ],
@@ -911,9 +911,9 @@ class _ReviewsSection extends StatelessWidget {
       width: double.infinity,
       padding: const EdgeInsets.all(Spacing.xl3),
       decoration: BoxDecoration(
-        color: tm.gold.withValues(alpha: 0.06),
+        color: tm.sapphire.withValues(alpha: 0.06),
         borderRadius: BorderRadius.circular(RadiusTokens.xl3),
-        border: Border.all(color: tm.gold.withValues(alpha: 0.2)),
+        border: Border.all(color: tm.sapphire.withValues(alpha: 0.2)),
       ),
       child: Row(
         children: [
@@ -925,7 +925,7 @@ class _ReviewsSection extends StatelessWidget {
                 style: GoogleFonts.inter(
                   fontSize: 34,
                   fontWeight: FontWeight.w800,
-                  color: tm.gold,
+                  color: tm.sapphire,
                   letterSpacing: -0.5,
                 ),
               ),
@@ -937,7 +937,7 @@ class _ReviewsSection extends StatelessWidget {
                   return Icon(
                     filled ? Icons.star_rounded : Icons.star_border_rounded,
                     size: 14,
-                    color: tm.gold,
+                    color: tm.sapphire,
                   );
                 }),
               ),
@@ -980,8 +980,8 @@ class _ReviewsSection extends StatelessWidget {
                           child: LinearProgressIndicator(
                             value: pct,
                             minHeight: 6,
-                            backgroundColor: tm.gold.withValues(alpha: 0.2),
-                            valueColor: AlwaysStoppedAnimation(tm.gold),
+                            backgroundColor: tm.sapphire.withValues(alpha: 0.2),
+                            valueColor: AlwaysStoppedAnimation(tm.sapphire),
                           ),
                         ),
                       ),
@@ -1212,7 +1212,7 @@ class _ReviewCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Header: gold stars + date + popup menu
+          // Header: sapphire stars + date + popup menu
           Row(
             children: [
               Row(
@@ -1223,26 +1223,26 @@ class _ReviewCard extends StatelessWidget {
                         ? Icons.star_rounded
                         : Icons.star_border_rounded,
                     size: 16,
-                    color: tm.gold,
+                    color: tm.sapphire,
                   );
                 }),
               ),
               const SizedBox(width: 6),
               Text(
                 review.rating.toString(),
-                style: GoogleFonts.inter(fontSize: 11, color: tm.gold, fontWeight: FontWeight.w700),
+                style: GoogleFonts.inter(fontSize: 11, color: tm.sapphire, fontWeight: FontWeight.w700),
               ),
               const Spacer(),
               if (review.reviewDate != null)
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                   decoration: BoxDecoration(
-                    color: tm.gold.withValues(alpha: 0.08),
+                    color: tm.sapphire.withValues(alpha: 0.08),
                     borderRadius: BorderRadius.circular(6),
                   ),
                   child: Text(
                     _formatDate(review.reviewDate!),
-                    style: GoogleFonts.inter(fontSize: 10, color: tm.gold, fontWeight: FontWeight.w600),
+                    style: GoogleFonts.inter(fontSize: 10, color: tm.sapphire, fontWeight: FontWeight.w600),
                   ),
                 ),
               const SizedBox(width: 4),
@@ -1318,7 +1318,7 @@ class _ReviewCard extends StatelessWidget {
           // Footer with like button + user avatar + name
           Row(
             children: [
-              // Gold-accented like button
+              // sapphire-accented like button
               GestureDetector(
                 onTap: onLike,
                 behavior: HitTestBehavior.opaque,
@@ -1327,12 +1327,12 @@ class _ReviewCard extends StatelessWidget {
                   decoration: BoxDecoration(
                     color: review.likedByUser
                         ? tm.error.withValues(alpha: 0.08)
-                        : tm.gold.withValues(alpha: 0.08),
+                        : tm.sapphire.withValues(alpha: 0.08),
                     borderRadius: BorderRadius.circular(8),
                     border: Border.all(
                       color: review.likedByUser
                           ? tm.error.withValues(alpha: 0.2)
-                          : tm.gold.withValues(alpha: 0.15),
+                          : tm.sapphire.withValues(alpha: 0.15),
                     ),
                   ),
                   child: Row(
@@ -1352,7 +1352,7 @@ class _ReviewCard extends StatelessWidget {
                           size: 13,
                           color: review.likedByUser
                               ? tm.error
-                              : tm.gold,
+                              : tm.sapphire,
                         ),
                       ),
                       const SizedBox(width: 4),
@@ -1360,7 +1360,7 @@ class _ReviewCard extends StatelessWidget {
                         '${review.likesCount}',
                         style: GoogleFonts.inter(
                           fontSize: 11,
-                          color: review.likedByUser ? tm.error : tm.gold,
+                          color: review.likedByUser ? tm.error : tm.sapphire,
                           fontWeight: FontWeight.w600,
                         ),
                       ),
@@ -1369,18 +1369,18 @@ class _ReviewCard extends StatelessWidget {
                 ),
               ),
               const SizedBox(width: 12),
-              // User avatar with black/gold gradient
+              // User avatar with black/sapphire gradient
               Container(
                 width: 24,
                 height: 24,
                 decoration: BoxDecoration(
                   gradient: const LinearGradient(
-                    colors: [Color(0xFF0A0A0A), Color(0xFF1A1A1A)],
+                    colors: [Color(0xFF0F172A), Color(0xFF1E3A8A)],
                     begin: Alignment.topLeft,
                     end: Alignment.bottomRight,
                   ),
                   shape: BoxShape.circle,
-                  border: Border.all(color: tm.gold.withValues(alpha: 0.3), width: 1),
+                  border: Border.all(color: tm.sapphire.withValues(alpha: 0.3), width: 1),
                 ),
                 alignment: Alignment.center,
                 child: Text(
@@ -1388,7 +1388,7 @@ class _ReviewCard extends StatelessWidget {
                   style: GoogleFonts.inter(
                     fontSize: 8,
                     fontWeight: FontWeight.w700,
-                    color: tm.goldLight,
+                    color: tm.sapphireLight,
                   ),
                 ),
               ),
@@ -1476,7 +1476,7 @@ class _PhotoCarouselState extends State<_PhotoCarousel> {
             ),
           ),
         ),
-        // Gold page indicator dots
+        // page indicator dots
         if (widget.photoUrls.length > 1)
           Positioned(
             bottom: 20,
@@ -1487,7 +1487,7 @@ class _PhotoCarouselState extends State<_PhotoCarousel> {
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: List.generate(
                   widget.photoUrls.length,
-                  (i) => _GoldPageDot(isActive: i == _currentPage),
+                  (i) => _PageDot(isActive: i == _currentPage),
                 ),
               ),
             ),
@@ -1497,10 +1497,10 @@ class _PhotoCarouselState extends State<_PhotoCarousel> {
   }
 }
 
-class _GoldPageDot extends StatelessWidget {
+class _PageDot extends StatelessWidget {
   final bool isActive;
 
-  const _GoldPageDot({required this.isActive});
+  const _PageDot({required this.isActive});
 
   @override
   Widget build(BuildContext context) {
@@ -1512,11 +1512,11 @@ class _GoldPageDot extends StatelessWidget {
       width: isActive ? 20 : 7,
       height: 7,
       decoration: BoxDecoration(
-        color: isActive ? tm.gold : tm.pureWhite.withValues(alpha: 0.35),
+        color: isActive ? tm.sapphire : tm.pureWhite.withValues(alpha: 0.35),
         borderRadius: BorderRadius.circular(4),
         boxShadow: isActive ? [
           BoxShadow(
-            color: tm.gold.withValues(alpha: 0.4),
+            color: tm.sapphire.withValues(alpha: 0.4),
             blurRadius: 6,
             offset: const Offset(0, 1),
           ),

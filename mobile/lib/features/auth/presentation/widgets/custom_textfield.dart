@@ -50,13 +50,13 @@ class _CustomTextFieldState extends State<CustomTextField> {
         color: tm.pureWhite.withValues(alpha: 0.95),
         borderRadius: BorderRadius.circular(14),
         border: Border.all(
-          color: _isFocused ? tm.gold.withValues(alpha: 0.6) : tm.pureWhite.withValues(alpha: 0.2),
+          color: _isFocused ? tm.sapphire.withValues(alpha: 0.6) : tm.pureWhite.withValues(alpha: 0.2),
           width: _isFocused ? 1.5 : 1.0,
         ),
         boxShadow: _isFocused
             ? [
                 BoxShadow(
-                  color: tm.gold.withValues(alpha: 0.08),
+                  color: tm.sapphire.withValues(alpha: 0.08),
                   blurRadius: 12,
                   offset: const Offset(0, 4),
                 ),
@@ -88,7 +88,7 @@ class _CustomTextFieldState extends State<CustomTextField> {
                   child: Icon(
                     widget.prefixIcon,
                     size: 20,
-                    color: _isFocused ? tm.gold : tm.textTertiary,
+                    color: _isFocused ? tm.sapphire : tm.textTertiary,
                   ),
                 )
               : null,

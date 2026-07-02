@@ -62,14 +62,14 @@ class ItineraryCard extends StatelessWidget {
             padding: const EdgeInsets.all(8),
             decoration: BoxDecoration(
               gradient: const LinearGradient(
-                colors: [Color(0xFF0A0A0A), Color(0xFF1A1A1A)],
+                colors: [Color(0xFF0F172A), Color(0xFF1E3A8A)],
                 begin: Alignment.topLeft,
                 end: Alignment.bottomRight,
               ),
               borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: tm.gold.withValues(alpha: 0.3), width: 0.5),
+              border: Border.all(color: tm.sapphire.withValues(alpha: 0.3), width: 0.5),
             ),
-            child: Icon(Icons.map_rounded, color: tm.goldLight, size: 20),
+            child: Icon(Icons.map_rounded, color: tm.sapphireLight, size: 20),
           ),
           const SizedBox(width: 14),
           Expanded(
@@ -91,18 +91,18 @@ class ItineraryCard extends StatelessWidget {
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
             decoration: BoxDecoration(
-              color: tm.gold.withValues(alpha: 0.08),
+              color: tm.sapphire.withValues(alpha: 0.08),
               borderRadius: BorderRadius.circular(20),
-              border: Border.all(color: tm.gold.withValues(alpha: 0.2)),
+              border: Border.all(color: tm.sapphire.withValues(alpha: 0.2)),
             ),
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Icon(Icons.auto_awesome, size: 12, color: tm.gold),
+                Icon(Icons.auto_awesome, size: 12, color: tm.sapphire),
                 const SizedBox(width: 4),
                 Text(
                   'AI Planned',
-                  style: GoogleFonts.inter(fontSize: 11, color: tm.gold, fontWeight: FontWeight.w600),
+                  style: GoogleFonts.inter(fontSize: 11, color: tm.sapphire, fontWeight: FontWeight.w600),
                 ),
               ],
             ),
@@ -130,7 +130,7 @@ class _DaySection extends StatelessWidget {
         children: [
           const SizedBox(height: Spacing.xl3),
 
-          // Gold-accented day header
+          // sapphire-accented day header
           Row(
             children: [
               Container(
@@ -138,17 +138,17 @@ class _DaySection extends StatelessWidget {
                 height: 32,
                 decoration: BoxDecoration(
                   gradient: const LinearGradient(
-                    colors: [Color(0xFF0A0A0A), Color(0xFF1A1A1A)],
+                    colors: [Color(0xFF0F172A), Color(0xFF1E3A8A)],
                     begin: Alignment.topLeft,
                     end: Alignment.bottomRight,
                   ),
                   borderRadius: BorderRadius.circular(10),
-                  border: Border.all(color: tm.gold.withValues(alpha: 0.3), width: 0.5),
+                  border: Border.all(color: tm.sapphire.withValues(alpha: 0.3), width: 0.5),
                 ),
                 alignment: Alignment.center,
                 child: Text(
                   '${day.dayNumber}',
-                  style: GoogleFonts.inter(color: tm.goldLight, fontSize: 14, fontWeight: FontWeight.w800),
+                  style: GoogleFonts.inter(color: tm.sapphireLight, fontSize: 14, fontWeight: FontWeight.w800),
                 ),
               ),
               const SizedBox(width: 10),
@@ -172,18 +172,18 @@ class _DaySection extends StatelessWidget {
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                   decoration: BoxDecoration(
-                    color: tm.gold.withValues(alpha: 0.08),
+                    color: tm.sapphire.withValues(alpha: 0.08),
                     borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: tm.gold.withValues(alpha: 0.2)),
+                    border: Border.all(color: tm.sapphire.withValues(alpha: 0.2)),
                   ),
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Icon(Icons.access_time, size: 11, color: tm.gold),
+                      Icon(Icons.access_time, size: 11, color: tm.sapphire),
                       const SizedBox(width: 3),
                       Text(
                         '${day.totalTravelTimeMinutes!.toInt()} min',
-                        style: GoogleFonts.inter(fontSize: 11, color: tm.gold, fontWeight: FontWeight.w600),
+                        style: GoogleFonts.inter(fontSize: 11, color: tm.sapphire, fontWeight: FontWeight.w600),
                       ),
                     ],
                   ),
@@ -237,13 +237,13 @@ class _StopTimelineItem extends StatelessWidget {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // ── Gold timeline column ────────────────────
+          // ── timeline column ────────────────────
           SizedBox(
             width: 28,
             child: Column(
               children: [
                 const SizedBox(height: 4),
-                // Gold-accented dot
+                // sapphire-accented dot
                 Container(
                   width: 12,
                   height: 12,
@@ -273,7 +273,7 @@ class _StopTimelineItem extends StatelessWidget {
                         gradient: LinearGradient(
                           begin: Alignment.topCenter,
                           end: Alignment.bottomCenter,
-                          colors: [tm.gold.withValues(alpha: 0.4), tm.gold.withValues(alpha: 0.1)],
+                          colors: [tm.sapphire.withValues(alpha: 0.4), tm.sapphire.withValues(alpha: 0.1)],
                         ),
                       ),
                     ),
@@ -306,7 +306,7 @@ class _StopTimelineItem extends StatelessWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      // Name + gold time badge
+                      // Name + time badge
                       Row(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
@@ -340,22 +340,22 @@ class _StopTimelineItem extends StatelessWidget {
                         runSpacing: 4,
                         children: [
                           if (stop.estimatedDurationMinutes > 0)
-                            _goldChip(
+                            _accentChip(
                               '${stop.estimatedDurationMinutes} min',
                               Icons.timer_outlined,
-                              tm.gold,
+                              tm.sapphire,
                             ),
                           if (stop.category.isNotEmpty)
-                            _goldChip(
+                            _accentChip(
                               stop.category,
                               Icons.category_outlined,
-                              tm.gold,
+                              tm.sapphire,
                             ),
                           if (stop.rating != null)
-                            _goldChip(
+                            _accentChip(
                               stop.rating!.toStringAsFixed(1),
                               Icons.star_rounded,
-                              tm.gold,
+                              tm.sapphire,
                             ),
                         ],
                       ),
@@ -376,7 +376,7 @@ class _StopTimelineItem extends StatelessWidget {
                         const SizedBox(height: 4),
                         Row(
                           children: [
-                            Icon(Icons.location_on_outlined, size: 12, color: tm.goldLight),
+                            Icon(Icons.location_on_outlined, size: 12, color: tm.sapphireLight),
                             const SizedBox(width: 3),
                             Expanded(
                               child: Text(
@@ -400,7 +400,7 @@ class _StopTimelineItem extends StatelessWidget {
     );
   }
 
-  Widget _goldChip(String label, IconData icon, Color accent) {
+  Widget _accentChip(String label, IconData icon, Color accent) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
       decoration: BoxDecoration(
@@ -425,13 +425,13 @@ class _StopTimelineItem extends StatelessWidget {
   Color _timeColor(String tod) {
     switch (tod.toLowerCase()) {
       case 'morning':
-        return const Color(0xFFD4A853);
+        return const Color(0xFF3B82F6);
       case 'afternoon':
-        return const Color(0xFFB8860B);
+        return const Color(0xFF2563EB);
       case 'evening':
-        return const Color(0xFF8B7355);
+        return const Color(0xFF1D4ED8);
       default:
-        return const Color(0xFFC8A84E);
+        return const Color(0xFF2563EB);
     }
   }
 
@@ -465,7 +465,7 @@ class _ApproveButton extends StatelessWidget {
         width: double.infinity,
         child: ElevatedButton.icon(
           onPressed: onApprove,
-          icon: Icon(Icons.check_circle_rounded, size: 20, color: tm.goldLight),
+          icon: Icon(Icons.check_circle_rounded, size: 20, color: tm.sapphireLight),
           label: Text(
             'Approve Itinerary',
             style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.w700),
@@ -476,7 +476,7 @@ class _ApproveButton extends StatelessWidget {
             padding: const EdgeInsets.symmetric(vertical: 16),
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(RadiusTokens.xl3),
-              side: BorderSide(color: tm.gold.withValues(alpha: 0.3), width: 0.5),
+              side: BorderSide(color: tm.sapphire.withValues(alpha: 0.3), width: 0.5),
             ),
             elevation: 0,
           ),

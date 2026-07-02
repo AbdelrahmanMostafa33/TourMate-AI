@@ -20,7 +20,7 @@ class _SplashScreenState extends State<SplashScreen>
   late AnimationController _floatController;
   late Animation<double> _fadeIn;
   late Animation<double> _scaleIn;
-  late Animation<double> _goldSlide;
+  late Animation<double> _accentSlide;
   late Animation<double> _subtitleFade;
 
   @override
@@ -44,14 +44,14 @@ class _SplashScreenState extends State<SplashScreen>
       ),
     );
 
-    _scaleIn = Tween<double>(begin: 0.85, end: 1.0).animate(
+    _scaleIn = Tween<double>(begin: 0.88, end: 1.0).animate(
       CurvedAnimation(
         parent: _controller,
-        curve: const Interval(0.0, 0.6, curve: Curves.easeOutBack),
+        curve: const Interval(0.0, 0.6, curve: Curves.easeOutCubic),
       ),
     );
 
-    _goldSlide = Tween<double>(begin: -60, end: 0).animate(
+    _accentSlide = Tween<double>(begin: -60, end: 0).animate(
       CurvedAnimation(
         parent: _controller,
         curve: const Interval(0.2, 0.7, curve: Curves.easeOutCubic),
@@ -92,9 +92,9 @@ class _SplashScreenState extends State<SplashScreen>
           begin: Alignment.topCenter,
           end: Alignment.bottomCenter,
           colors: [
-            Color(0xFF0A0A0A),
-            Color(0xFF111111),
-            Color(0xFF0A0A0A),
+            Color(0xFF0F172A),
+            Color(0xFF1E3A8A),
+            Color(0xFF0F172A),
           ],
           stops: [0.0, 0.5, 1.0],
         ),
@@ -108,10 +108,10 @@ class _SplashScreenState extends State<SplashScreen>
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   AnimatedBuilder(
-                    animation: _goldSlide,
+                    animation: _accentSlide,
                     builder: (context, _) {
                       return Transform.translate(
-                        offset: Offset(0, _goldSlide.value),
+                        offset: Offset(0, _accentSlide.value),
                         child: Opacity(
                           opacity: _fadeIn.value,
                           child: Container(
@@ -121,7 +121,7 @@ class _SplashScreenState extends State<SplashScreen>
                               gradient: LinearGradient(
                                 colors: [
                                   Colors.transparent,
-                                  tm.gold,
+                                  tm.sapphire,
                                   Colors.transparent,
                                 ],
                               ),
@@ -150,15 +150,15 @@ class _SplashScreenState extends State<SplashScreen>
                           width: 104,
                           height: 104,
                           decoration: BoxDecoration(
-                            color: tm.gold.withValues(alpha: 0.08),
+                            color: tm.sapphire.withValues(alpha: 0.08),
                             borderRadius: BorderRadius.circular(RadiusTokens.xl6),
                             border: Border.all(
-                              color: tm.gold.withValues(alpha: 0.3),
+                              color: tm.sapphire.withValues(alpha: 0.3),
                               width: 1.5,
                             ),
                             boxShadow: [
                               BoxShadow(
-                                color: tm.gold.withValues(alpha: 0.15),
+                                color: tm.sapphire.withValues(alpha: 0.15),
                                 blurRadius: 30,
                                 offset: const Offset(0, 8),
                               ),
@@ -170,7 +170,7 @@ class _SplashScreenState extends State<SplashScreen>
                               Icon(
                                 Icons.travel_explore_rounded,
                                 size: 48,
-                                color: tm.gold,
+                                color: tm.sapphire,
                               ),
                               Positioned(
                                 bottom: 16,
@@ -178,7 +178,7 @@ class _SplashScreenState extends State<SplashScreen>
                                   width: 32,
                                   height: 2,
                                   decoration: BoxDecoration(
-                                    color: tm.gold.withValues(alpha: 0.3),
+                                    color: tm.sapphire.withValues(alpha: 0.3),
                                     borderRadius: BorderRadius.circular(1),
                                   ),
                                 ),
@@ -214,7 +214,7 @@ class _SplashScreenState extends State<SplashScreen>
                               gradient: LinearGradient(
                                 colors: [
                                   Colors.transparent,
-                                  tm.gold,
+                                  tm.sapphire,
                                   Colors.transparent,
                                 ],
                               ),
@@ -247,7 +247,7 @@ class _SplashScreenState extends State<SplashScreen>
                       child: CircularProgressIndicator(
                         strokeWidth: 2,
                         valueColor: AlwaysStoppedAnimation<Color>(
-                          tm.gold.withValues(alpha: 0.7),
+                          tm.sapphire.withValues(alpha: 0.7),
                         ),
                       ),
                     ),

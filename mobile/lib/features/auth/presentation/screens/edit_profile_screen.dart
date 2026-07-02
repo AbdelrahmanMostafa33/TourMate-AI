@@ -119,7 +119,7 @@ class _EditProfileViewState extends State<_EditProfileView> {
                       width: 18,
                       height: 18,
                       child: CircularProgressIndicator(
-                        color: tm.goldLight,
+                        color: tm.sapphireLight,
                         strokeWidth: 2.5,
                       ),
                     )
@@ -152,13 +152,13 @@ class _EditProfileViewState extends State<_EditProfileView> {
                       decoration: BoxDecoration(
                         shape: BoxShape.circle,
                         gradient: const LinearGradient(
-                          colors: [Color(0xFFC8A84E), Color(0xFFF5ECCE)],
+                          colors: [Color(0xFF2563EB), Color(0xFFDBEAFE)],
                           begin: Alignment.topLeft,
                           end: Alignment.bottomRight,
                         ),
                         boxShadow: [
                           BoxShadow(
-                            color: const Color(0xFFC8A84E).withValues(alpha: 0.3),
+                            color: const Color(0xFF2563EB).withValues(alpha: 0.3),
                             blurRadius: 10,
                             offset: const Offset(0, 3),
                           ),
@@ -172,7 +172,7 @@ class _EditProfileViewState extends State<_EditProfileView> {
                               ? (widget.profile.fullName ?? 'U')[0]
                               : 'U',
                           style: GoogleFonts.inter(
-                            color: tm.goldLight,
+                            color: tm.sapphireLight,
                             fontSize: 32,
                             fontWeight: FontWeight.w600,
                           ),
@@ -201,7 +201,7 @@ class _EditProfileViewState extends State<_EditProfileView> {
                     height: 14,
                     decoration: BoxDecoration(
                       gradient: const LinearGradient(
-                        colors: [Color(0xFFC8A84E), Color(0xFFF5ECCE)],
+                        colors: [Color(0xFF2563EB), Color(0xFFDBEAFE)],
                         begin: Alignment.topCenter,
                         end: Alignment.bottomCenter,
                       ),
@@ -263,9 +263,9 @@ class _EditProfileViewState extends State<_EditProfileView> {
               Container(
                 padding: const EdgeInsets.all(14),
                 decoration: BoxDecoration(
-                  color: tm.gold.withValues(alpha: 0.06),
+                  color: tm.sapphire.withValues(alpha: 0.06),
                   borderRadius: BorderRadius.circular(RadiusTokens.xl),
-                  border: Border.all(color: tm.gold.withValues(alpha: 0.15)),
+                  border: Border.all(color: tm.sapphire.withValues(alpha: 0.15)),
                 ),
                 child: Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -274,13 +274,13 @@ class _EditProfileViewState extends State<_EditProfileView> {
                       padding: const EdgeInsets.all(4),
                       decoration: BoxDecoration(
                         gradient: const LinearGradient(
-                          colors: [Color(0xFF0A0A0A), Color(0xFF1A1A1A)],
+                          colors: [Color(0xFF0F172A), Color(0xFF1E3A8A)],
                           begin: Alignment.topLeft,
                           end: Alignment.bottomRight,
                         ),
                         borderRadius: BorderRadius.circular(6),
                       ),
-                      child: Icon(Icons.info_outline, size: 14, color: tm.goldLight),
+                      child: Icon(Icons.info_outline, size: 14, color: tm.sapphireLight),
                     ),
                     const SizedBox(width: 10),
                     Expanded(
@@ -337,10 +337,10 @@ class _EditProfileViewState extends State<_EditProfileView> {
                 margin: const EdgeInsets.only(left: 12, right: 8),
                 padding: const EdgeInsets.all(6),
                 decoration: BoxDecoration(
-                  color: tm.gold.withValues(alpha: 0.06),
+                  color: tm.sapphire.withValues(alpha: 0.06),
                   borderRadius: BorderRadius.circular(8),
                 ),
-                child: Icon(icon, size: 18, color: tm.gold),
+                child: Icon(icon, size: 18, color: tm.deepRoyalBlue),
               ),
               border: InputBorder.none,
               contentPadding: Insets.input,

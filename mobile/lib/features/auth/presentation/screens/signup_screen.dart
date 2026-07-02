@@ -110,7 +110,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
         height: double.infinity,
         decoration: const BoxDecoration(
           gradient: LinearGradient(
-            colors: [Color(0xFF0A0A0A), Color(0xFF141414)],
+            colors: [Color(0xFF0F172A), Color(0xFF1E3A8A)],
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
           ),
@@ -126,15 +126,15 @@ class _SignUpScreenState extends State<SignUpScreen> {
                   Container(
                     padding: const EdgeInsets.all(Spacing.xl5),
                     decoration: BoxDecoration(
-                      color: tm.gold.withValues(alpha: 0.08),
+                      color: tm.sapphire.withValues(alpha: 0.08),
                       borderRadius: BorderRadius.circular(RadiusTokens.xl5),
                       border: Border.all(
-                        color: tm.gold.withValues(alpha: 0.3),
+                        color: tm.sapphire.withValues(alpha: 0.3),
                         width: 1.5,
                       ),
                       boxShadow: [
                         BoxShadow(
-                          color: tm.gold.withValues(alpha: 0.12),
+                          color: tm.sapphire.withValues(alpha: 0.12),
                           blurRadius: 24,
                           offset: const Offset(0, 6),
                         ),
@@ -143,7 +143,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
                     child: Icon(
                       Icons.travel_explore_rounded,
                       size: 40,
-                      color: tm.gold,
+                      color: tm.sapphire,
                     ),
                   ),
                   const SizedBox(height: Spacing.xl5),
@@ -211,14 +211,14 @@ class _SignUpScreenState extends State<SignUpScreen> {
                     prefixIcon: Icons.lock_outline,
                   ),
                   const SizedBox(height: Spacing.xl7),
-                  // ── Gold CTA Button ──────────────────────────
+                  // ── CTA Button ──────────────────────────
                   SizedBox(
                     width: double.infinity,
                     height: 54,
                     child: ElevatedButton(
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: tm.gold,
-                        foregroundColor: tm.pureBlack,
+                        backgroundColor: tm.deepRoyalBlue,
+                        foregroundColor: tm.pureWhite,
                         elevation: 0,
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(RadiusTokens.xl2),
@@ -231,7 +231,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
                               width: 22,
                               height: 22,
                               child:                              CircularProgressIndicator(
-                                color: tm.pureBlack,
+                                color: tm.pureWhite,
                                 strokeWidth: 2.5,
                               ),
                             )
@@ -259,7 +259,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
                           text: "Sign In",
                           style: GoogleFonts.inter(
                             fontWeight: FontWeight.w700,
-                            color: tm.goldLight,
+                            color: tm.sapphireLight,
                             decoration: TextDecoration.underline,
                           ),
                           recognizer: TapGestureRecognizer()

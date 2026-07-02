@@ -13,8 +13,6 @@ import '../../app/app_theme.dart';
 class AppSnackbar {
   AppSnackbar._();
 
-  static const _tm = TourMateColors();
-
   /// Shows a green success snackbar with a checkmark icon.
   static void success(
     BuildContext context,
@@ -25,8 +23,8 @@ class AppSnackbar {
       context,
       message: message,
       icon: Icons.check_circle_rounded,
-      backgroundColor: const TourMateColors().success,
-      textStyle: TMTextStyles.bodyMedium.copyWith(color: _tm.textOnDark),
+      backgroundColor: const Color(0xFF059669),
+      textStyle: TMTextStyles.bodyMedium.copyWith(color: Colors.white),
       duration: duration,
     );
   }
@@ -41,8 +39,8 @@ class AppSnackbar {
       context,
       message: message,
       icon: Icons.error_rounded,
-      backgroundColor: const TourMateColors().error,
-      textStyle: TMTextStyles.bodyMedium.copyWith(color: _tm.textOnDark),
+      backgroundColor: const Color(0xFFDC2626),
+      textStyle: TMTextStyles.bodyMedium.copyWith(color: Colors.white),
       duration: duration,
     );
   }
@@ -57,8 +55,8 @@ class AppSnackbar {
       context,
       message: message,
       icon: Icons.info_rounded,
-      backgroundColor: const TourMateColors().info,
-      textStyle: TMTextStyles.bodyMedium.copyWith(color: _tm.textOnDark),
+      backgroundColor: const Color(0xFF2563EB),
+      textStyle: TMTextStyles.bodyMedium.copyWith(color: Colors.white),
       duration: duration,
     );
   }
@@ -73,8 +71,8 @@ class AppSnackbar {
       context,
       message: message,
       icon: Icons.warning_rounded,
-      backgroundColor: const TourMateColors().warning,
-      textStyle: TMTextStyles.bodyMedium.copyWith(color: _tm.textOnDark),
+      backgroundColor: const Color(0xFFD97706),
+      textStyle: TMTextStyles.bodyMedium.copyWith(color: Colors.white),
       duration: duration,
     );
   }
@@ -93,7 +91,7 @@ class AppSnackbar {
         SnackBar(
           content: Row(
             children: [
-              Icon(icon, color: _tm.textOnDark, size: 22),
+              Icon(icon, color: Colors.white, size: 22),
               const SizedBox(width: 12),
               Expanded(
                 child: Text(
@@ -102,7 +100,7 @@ class AppSnackbar {
                       TextStyle(
                         fontSize: 14,
                         fontWeight: FontWeight.w500,
-                        color: _tm.textOnDark,
+                        color: Colors.white,
                         height: 1.3,
                       ),
                 ),

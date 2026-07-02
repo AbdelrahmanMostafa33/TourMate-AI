@@ -6,7 +6,7 @@ import '../../../../core/theme/design_tokens.dart';
 /// A row of premium suggestion chips that let users quickly start a
 /// conversation with TourMate by tapping a pre-written prompt.
 ///
-/// Each chip shows an icon + label in a gold-accented container.
+/// Each chip shows an icon + label in a sapphire-accented container.
 /// Chips stagger-in with a subtle fade + slide-up animation on first render.
 /// Place below the welcome message in the empty state.
 class SuggestionChips extends StatefulWidget {
@@ -23,10 +23,12 @@ class _SuggestionChipsState extends State<SuggestionChips>
   late AnimationController _controller;
 
   static const _suggestions = [
-    _ChipData(Icons.flight_takeoff_outlined, 'Plan a trip to Paris'),
-    _ChipData(Icons.hotel_outlined, 'Find hotels in Cairo'),
-    _ChipData(Icons.restaurant_outlined, 'Restaurants in Luxor'),
-    _ChipData(Icons.explore_outlined, 'Suggest an adventure'),
+    _ChipData(Icons.flight_takeoff_outlined, 'Plan a 3-day Cairo itinerary'),
+    _ChipData(Icons.explore_outlined, 'Top historical sites in Luxor'),
+    _ChipData(Icons.restaurant_outlined, 'Best local food in Alexandria'),
+    _ChipData(Icons.directions_boat_outlined, 'Aswan & Abu Simbel day trip'),
+    _ChipData(Icons.map_outlined, 'Cairo, Luxor & Aswan multi-city trip'),
+    _ChipData(Icons.shopping_bag_outlined, 'Khan El Khalili & local markets'),
   ];
 
   @override
@@ -77,7 +79,7 @@ class _SuggestionChipsState extends State<SuggestionChips>
                     Icon(
                       Icons.auto_awesome,
                       size: 14,
-                      color: tm.gold.withValues(alpha: 0.6),
+                      color: tm.sapphire.withValues(alpha: 0.6),
                     ),
                     const SizedBox(width: 6),
                     Text(
@@ -137,7 +139,7 @@ class _SuggestionChipsState extends State<SuggestionChips>
   }
 }
 
-/// Individual gold-accented suggestion chip with icon.
+/// Individual sapphire-accented suggestion chip with icon.
 class _SuggestionChip extends StatelessWidget {
   final IconData icon;
   final String label;
@@ -158,20 +160,20 @@ class _SuggestionChip extends StatelessWidget {
       child: InkWell(
         borderRadius: BorderRadius.circular(RadiusTokens.full),
         onTap: onTap,
-        splashColor: tm.gold.withValues(alpha: 0.08),
-        highlightColor: tm.gold.withValues(alpha: 0.05),
+        splashColor: tm.sapphire.withValues(alpha: 0.08),
+        highlightColor: tm.sapphire.withValues(alpha: 0.05),
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
           decoration: BoxDecoration(
             color: tm.pureWhite,
             borderRadius: BorderRadius.circular(RadiusTokens.full),
             border: Border.all(
-              color: tm.gold.withValues(alpha: 0.25),
+              color: tm.sapphire.withValues(alpha: 0.25),
               width: 0.5,
             ),
             boxShadow: [
               BoxShadow(
-                color: tm.gold.withValues(alpha: 0.06),
+                color: tm.sapphire.withValues(alpha: 0.06),
                 blurRadius: 6,
                 offset: const Offset(0, 2),
               ),
@@ -180,7 +182,7 @@ class _SuggestionChip extends StatelessWidget {
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(icon, size: 14, color: tm.gold),
+              Icon(icon, size: 14, color: tm.sapphire),
               const SizedBox(width: 6),
               Text(
                 label,

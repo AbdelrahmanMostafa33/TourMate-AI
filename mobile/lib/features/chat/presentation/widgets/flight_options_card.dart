@@ -70,14 +70,14 @@ class FlightOptionsCard extends StatelessWidget {
             padding: const EdgeInsets.all(8),
             decoration: BoxDecoration(
               gradient: const LinearGradient(
-                colors: [Color(0xFF0A0A0A), Color(0xFF1A1A1A)],
+                colors: [Color(0xFF0F172A), Color(0xFF1E3A8A)],
                 begin: Alignment.topLeft,
                 end: Alignment.bottomRight,
               ),
               borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: tm.gold.withValues(alpha: 0.3), width: 0.5),
+              border: Border.all(color: tm.sapphire.withValues(alpha: 0.3), width: 0.5),
             ),
-            child: Icon(Icons.flight_takeoff_rounded, color: tm.goldLight, size: 22),
+            child: Icon(Icons.flight_takeoff_rounded, color: tm.sapphireLight, size: 22),
           ),
           const SizedBox(width: 14),
           Expanded(
@@ -137,7 +137,7 @@ class _FlightOfferCard extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // ── Top row: gold badge + airline + price ──
+                  // ── Top row: badge + airline + price ──
                   Row(
                     children: [
                       // Gold number badge
@@ -146,17 +146,17 @@ class _FlightOfferCard extends StatelessWidget {
                         height: 28,
                         decoration: BoxDecoration(
                           gradient: const LinearGradient(
-                            colors: [Color(0xFF0A0A0A), Color(0xFF1A1A1A)],
+                            colors: [Color(0xFF0F172A), Color(0xFF1E3A8A)],
                             begin: Alignment.topLeft,
                             end: Alignment.bottomRight,
                           ),
                           borderRadius: BorderRadius.circular(8),
-                          border: Border.all(color: tm.gold.withValues(alpha: 0.3), width: 0.5),
+                          border: Border.all(color: tm.sapphire.withValues(alpha: 0.3), width: 0.5),
                         ),
                         alignment: Alignment.center,
                         child: Text(
                           '$number',
-                          style: GoogleFonts.inter(color: tm.goldLight, fontSize: 13, fontWeight: FontWeight.w800),
+                          style: GoogleFonts.inter(color: tm.sapphireLight, fontSize: 13, fontWeight: FontWeight.w800),
                         ),
                       ),
                       const SizedBox(width: 10),
@@ -181,13 +181,13 @@ class _FlightOfferCard extends StatelessWidget {
                       Container(
                         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                         decoration: BoxDecoration(
-                          color: tm.gold.withValues(alpha: 0.08),
+                          color: tm.sapphire.withValues(alpha: 0.08),
                           borderRadius: BorderRadius.circular(20),
-                          border: Border.all(color: tm.gold.withValues(alpha: 0.2)),
+                          border: Border.all(color: tm.sapphire.withValues(alpha: 0.2)),
                         ),
                         child: Text(
                           offer.priceFormatted,
-                          style: GoogleFonts.inter(fontSize: 15, fontWeight: FontWeight.w700, color: tm.gold),
+                          style: GoogleFonts.inter(fontSize: 15, fontWeight: FontWeight.w700, color: tm.sapphire),
                         ),
                       ),
                     ],
@@ -213,7 +213,7 @@ class _FlightOfferCard extends StatelessWidget {
                         padding: const EdgeInsets.symmetric(horizontal: 8),
                         child: Column(
                           children: [
-                            Icon(Icons.flight_rounded, size: 16, color: tm.gold),
+                            Icon(Icons.flight_rounded, size: 16, color: tm.sapphire),
                             if (offer.duration != null)
                               Text(
                                 offer.duration!,
@@ -235,7 +235,7 @@ class _FlightOfferCard extends StatelessWidget {
                     ],
                   ),
 
-                  // ── Gold-accented stops / cabin info ────────
+                  // ── sapphire-accented stops / cabin info ────────
                   if (offer.stops != null || offer.cabin != null) ...[
                     const SizedBox(height: Spacing.sm),
                     Row(
@@ -244,7 +244,7 @@ class _FlightOfferCard extends StatelessWidget {
                           _infoChip(
                             offer.stops == 0 ? 'Non-stop' : '${offer.stops} stop${offer.stops! > 1 ? 's' : ''}',
                             Icons.flight,
-                            tm.gold,
+                            tm.sapphire,
                           ),
                         if (offer.cabin != null && offer.cabin!.isNotEmpty)
                           Padding(
@@ -252,7 +252,7 @@ class _FlightOfferCard extends StatelessWidget {
                             child: _infoChip(
                               offer.cabin!,
                               Icons.airline_seat_recline_normal,
-                              tm.gold,
+                              tm.sapphire,
                             ),
                           ),
                       ],
@@ -272,7 +272,7 @@ class _FlightOfferCard extends StatelessWidget {
                           padding: const EdgeInsets.symmetric(vertical: 12),
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(RadiusTokens.md),
-                            side: BorderSide(color: tm.gold.withValues(alpha: 0.3), width: 0.5),
+                            side: BorderSide(color: tm.sapphire.withValues(alpha: 0.3), width: 0.5),
                           ),
                           elevation: 0,
                         ),

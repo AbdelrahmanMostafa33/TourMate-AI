@@ -44,7 +44,7 @@ class _MainShellState extends State<MainShell> {
             /// (and their Cubits/WebSockets) are disposed.
             body: _buildActivePage(context),
 
-            /// NAVBAR — Premium gold-accented bottom bar
+            /// NAVBAR — Premium sapphire-accented bottom bar
             bottomNavigationBar: Container(
               decoration: BoxDecoration(
                 color: tm.pureWhite,
@@ -149,7 +149,7 @@ class _MainShellState extends State<MainShell> {
               color: isActive ? tm.pureBlack : Colors.transparent,
               borderRadius: BorderRadius.circular(RadiusTokens.xl3),
               border: isActive
-                  ? Border.all(color: tm.gold.withValues(alpha: 0.3), width: 0.5)
+                  ? Border.all(color: tm.sapphire.withValues(alpha: 0.3), width: 0.5)
                   : null,
             ),
             child: Row(
@@ -158,7 +158,7 @@ class _MainShellState extends State<MainShell> {
                 Icon(
                   icon,
                   size: 20,
-                  color: isActive ? tm.gold : tm.navInactive,
+                  color: isActive ? tm.deepRoyalBlue : tm.navInactive,
                 ),
                 if (isActive) ...[
                   const SizedBox(width: 6),

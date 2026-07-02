@@ -34,12 +34,12 @@ class BookingCard extends StatelessWidget {
         color: tm.pureWhite,
         borderRadius: BorderRadius.circular(RadiusTokens.xl4),
         border: Border.all(
-          color: isConfirmed ? tm.gold.withValues(alpha: 0.4) : tm.borderLight,
+          color: isConfirmed ? tm.sapphire.withValues(alpha: 0.4) : tm.borderLight,
         ),
         boxShadow: [
           BoxShadow(
             color: isConfirmed
-                ? tm.gold.withValues(alpha: 0.08)
+                ? tm.sapphire.withValues(alpha: 0.08)
                 : tm.pureBlack.withValues(alpha: 0.06),
             blurRadius: 16,
             offset: const Offset(0, 4),
@@ -82,14 +82,14 @@ class BookingCard extends StatelessWidget {
               padding: const EdgeInsets.all(8),
               decoration: BoxDecoration(
                 gradient: const LinearGradient(
-                  colors: [Color(0xFF0A0A0A), Color(0xFF1A1A1A)],
+                  colors: [Color(0xFF0F172A), Color(0xFF1E3A8A)],
                   begin: Alignment.topLeft,
                   end: Alignment.bottomRight,
                 ),
                 borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: tm.gold.withValues(alpha: 0.3), width: 0.5),
+                border: Border.all(color: tm.sapphire.withValues(alpha: 0.3), width: 0.5),
               ),
-              child: Icon(Icons.check_circle_rounded, color: tm.goldLight, size: 22),
+              child: Icon(Icons.check_circle_rounded, color: tm.sapphireLight, size: 22),
             ),
             const SizedBox(width: 14),
             Expanded(
@@ -117,13 +117,13 @@ class BookingCard extends StatelessWidget {
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                 decoration: BoxDecoration(
-                  color: tm.gold.withValues(alpha: 0.08),
+                  color: tm.sapphire.withValues(alpha: 0.08),
                   borderRadius: BorderRadius.circular(20),
-                  border: Border.all(color: tm.gold.withValues(alpha: 0.2)),
+                  border: Border.all(color: tm.sapphire.withValues(alpha: 0.2)),
                 ),
                 child: Text(
                   _formatPrice(booking.pricing!.totalEstimated, booking.pricing!.currency),
-                  style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.w700, color: tm.gold),
+                  style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.w700, color: tm.sapphire),
                 ),
               ),
           ],
@@ -206,13 +206,13 @@ class BookingCard extends StatelessWidget {
           padding: const EdgeInsets.all(8),
           decoration: BoxDecoration(
             gradient: const LinearGradient(
-              colors: [Color(0xFF0A0A0A), Color(0xFF1A1A1A)],
+              colors: [Color(0xFF0F172A), Color(0xFF1E3A8A)],
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
             ),
             borderRadius: BorderRadius.circular(10),
           ),
-          child: Icon(icon, size: 18, color: tm.goldLight),
+          child: Icon(icon, size: 18, color: tm.sapphireLight),
         ),
         const SizedBox(width: 12),
         Expanded(
@@ -318,7 +318,7 @@ class BookingCard extends StatelessWidget {
             style: GoogleFonts.inter(
               fontSize: bold ? 15 : 13,
               fontWeight: bold ? FontWeight.w700 : FontWeight.w600,
-              color: bold ? tm.gold : tm.textPrimary,
+              color: bold ? tm.sapphire : tm.textPrimary,
               letterSpacing: bold ? -0.2 : 0,
             ),
           ),
@@ -338,7 +338,7 @@ class BookingCard extends StatelessWidget {
             width: double.infinity,
             child: ElevatedButton.icon(
               onPressed: onPayNow,
-              icon: Icon(Icons.lock_rounded, size: 18, color: tm.goldLight),
+              icon: Icon(Icons.lock_rounded, size: 18, color: tm.sapphireLight),
               label: Text(
                 'Pay Now',
                 style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.w700),
@@ -349,7 +349,7 @@ class BookingCard extends StatelessWidget {
                 padding: const EdgeInsets.symmetric(vertical: 16),
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(RadiusTokens.xl3),
-                  side: BorderSide(color: tm.gold.withValues(alpha: 0.3), width: 0.5),
+                  side: BorderSide(color: tm.sapphire.withValues(alpha: 0.3), width: 0.5),
                 ),
                 elevation: 0,
               ),
@@ -370,14 +370,14 @@ class BookingCard extends StatelessWidget {
             width: double.infinity,
             child: OutlinedButton.icon(
               onPressed: onLater,
-              icon: Icon(Icons.access_time_rounded, size: 18, color: tm.gold),
+              icon: Icon(Icons.access_time_rounded, size: 18, color: tm.sapphire),
               label: Text(
                 'Book Later',
                 style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.w600),
               ),
               style: OutlinedButton.styleFrom(
                 foregroundColor: tm.textSecondary,
-                side: BorderSide(color: tm.gold.withValues(alpha: 0.3)),
+                side: BorderSide(color: tm.sapphire.withValues(alpha: 0.3)),
                 padding: const EdgeInsets.symmetric(vertical: 14),
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(RadiusTokens.xl3),
@@ -399,13 +399,13 @@ class BookingCard extends StatelessWidget {
             padding: const EdgeInsets.all(6),
             decoration: BoxDecoration(
               gradient: const LinearGradient(
-                colors: [Color(0xFF0A0A0A), Color(0xFF1A1A1A)],
+                colors: [Color(0xFF0F172A), Color(0xFF1E3A8A)],
                 begin: Alignment.topLeft,
                 end: Alignment.bottomRight,
               ),
               borderRadius: BorderRadius.circular(8),
             ),
-            child: Icon(Icons.check_circle, color: tm.goldLight, size: 20),
+            child: Icon(Icons.check_circle, color: tm.sapphireLight, size: 20),
           ),
           const SizedBox(width: 12),
           Expanded(

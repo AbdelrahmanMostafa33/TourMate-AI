@@ -106,25 +106,6 @@ class ShadowTokens {
           offset: const Offset(0, 12),
         ),
       ];
-
-  /// Premium gold-tinted shadow for VIP elements.
-  static List<BoxShadow> premium(Color goldColor, Color shadowColor) => [
-        BoxShadow(
-          color: goldColor.withValues(alpha: 0.12),
-          blurRadius: 8,
-          offset: const Offset(0, 2),
-        ),
-        BoxShadow(
-          color: goldColor.withValues(alpha: 0.06),
-          blurRadius: 20,
-          offset: const Offset(0, 8),
-        ),
-        BoxShadow(
-          color: shadowColor.withValues(alpha: 0.04),
-          blurRadius: 32,
-          offset: const Offset(0, 16),
-        ),
-      ];
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -141,12 +122,11 @@ class MotionTokens {
   static const Duration slow = Duration(milliseconds: 500);
   static const Duration deliberate = Duration(milliseconds: 800);
 
-  // Curves
+  // Curves — refined, no elastic or overshooting effects
   static const Curve defaultCurve = Curves.easeInOut;
   static const Curve emphasis = Curves.easeOutCubic;
   static const Curve decelerate = Curves.easeOutQuint;
   static const Curve accelerate = Curves.easeInQuint;
-  static const Curve spring = Curves.elasticOut;
   static const Curve swift = Curves.fastOutSlowIn;
 }
 
@@ -157,45 +137,45 @@ class MotionTokens {
 class GradientTokens {
   GradientTokens._();
 
-  /// Dark, sophisticated background gradient (black → dark gray).
+  /// Dark, sophisticated background gradient (Midnight Navy → Deep Blue).
   static const LinearGradient darkBackground = LinearGradient(
     begin: Alignment.topCenter,
     end: Alignment.bottomCenter,
     colors: [
-      Color(0xFF0A0A0A),
-      Color(0xFF141414),
+      Color(0xFF0F172A),
+      Color(0xFF1E3A8A),
     ],
   );
 
-  /// Gold accent gradient for premium buttons and highlights.
-  static const LinearGradient goldAccent = LinearGradient(
+  /// Sapphire accent gradient for premium buttons and highlights.
+  static const LinearGradient sapphireAccent = LinearGradient(
     begin: Alignment.topLeft,
     end: Alignment.bottomRight,
     colors: [
-      Color(0xFFD4AF37),
-      Color(0xFFC8A84E),
-      Color(0xFFB8942E),
+      Color(0xFF3B82F6),
+      Color(0xFF2563EB),
+      Color(0xFF1D4ED8),
     ],
   );
 
-  /// Gold-to-black for dramatic premium moments.
-  static const LinearGradient goldToBlack = LinearGradient(
+  /// Blue-to-midnight for dramatic premium moments.
+  static const LinearGradient sapphireToMidnight = LinearGradient(
     begin: Alignment.topLeft,
     end: Alignment.bottomRight,
     colors: [
-      Color(0xFFC8A84E),
-      Color(0xFF0A0A0A),
+      Color(0xFF2563EB),
+      Color(0xFF0F172A),
     ],
   );
 
-  /// Subtle gold shimmer for loading states.
-  static const LinearGradient goldShimmer = LinearGradient(
+  /// Subtle blue shimmer for loading states.
+  static const LinearGradient sapphireShimmer = LinearGradient(
     begin: Alignment.topLeft,
     end: Alignment.bottomRight,
     colors: [
-      Color(0xFFFFF9EC),
-      Color(0xFFF5ECCE),
-      Color(0xFFFFF9EC),
+      Color(0xFFEFF6FF),
+      Color(0xFFDBEAFE),
+      Color(0xFFEFF6FF),
     ],
   );
 }

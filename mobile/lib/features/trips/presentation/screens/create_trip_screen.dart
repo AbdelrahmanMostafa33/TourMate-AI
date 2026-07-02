@@ -178,7 +178,7 @@ class _CreateTripViewState extends State<_CreateTripView> {
               height: 38,
               child: ElevatedButton.icon(
                 onPressed: _submit,
-                icon: Icon(Icons.auto_awesome, size: 14, color: _tm.goldLight),
+                icon: Icon(Icons.auto_awesome, size: 14, color: _tm.sapphireLight),
                 label: Text(
                   'Create Trip',
                   style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w600, color: _tm.pureWhite),
@@ -190,7 +190,7 @@ class _CreateTripViewState extends State<_CreateTripView> {
                   padding: const EdgeInsets.symmetric(horizontal: 14),
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(10),
-                    side: BorderSide(color: _tm.gold.withValues(alpha: 0.3), width: 0.5),
+                    side: BorderSide(color: _tm.sapphire.withValues(alpha: 0.3), width: 0.5),
                   ),
                   shadowColor: Colors.transparent,
                 ),
@@ -278,7 +278,7 @@ class _CreateTripViewState extends State<_CreateTripView> {
                     height: 52,
                     child: ElevatedButton.icon(
                       onPressed: _submit,
-                      icon: Icon(Icons.auto_awesome, size: 18, color: _tm.goldLight),
+                      icon: Icon(Icons.auto_awesome, size: 18, color: _tm.sapphireLight),
                       label: Text(
                         'Start Planning',
                         style: GoogleFonts.inter(fontSize: 15, fontWeight: FontWeight.w600, color: _tm.pureWhite),
@@ -289,7 +289,7 @@ class _CreateTripViewState extends State<_CreateTripView> {
                         elevation: 0,
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(RadiusTokens.xl2),
-                          side: BorderSide(color: _tm.gold.withValues(alpha: 0.3), width: 0.5),
+                          side: BorderSide(color: _tm.sapphire.withValues(alpha: 0.3), width: 0.5),
                         ),
                         shadowColor: Colors.transparent,
                       ),
@@ -331,7 +331,7 @@ class _CreateTripViewState extends State<_CreateTripView> {
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(RadiusTokens.full),
                 side: BorderSide(
-                  color: selected ? _tm.gold.withValues(alpha: 0.3) : _tm.border,
+                  color: selected ? _tm.sapphire.withValues(alpha: 0.3) : _tm.border,
                   width: selected ? 1.5 : 1.0,
                 ),
               ),
@@ -359,7 +359,7 @@ class _CreateTripViewState extends State<_CreateTripView> {
           height: 14,
           decoration: BoxDecoration(
             gradient: const LinearGradient(
-              colors: [Color(0xFFC8A84E), Color(0xFFF5ECCE)],
+              colors: [Color(0xFF2563EB), Color(0xFFDBEAFE)],
               begin: Alignment.topCenter,
               end: Alignment.bottomCenter,
             ),
@@ -398,10 +398,10 @@ class _CreateTripViewState extends State<_CreateTripView> {
                 margin: const EdgeInsets.only(left: 12, right: 8),
                 padding: const EdgeInsets.all(6),
                 decoration: BoxDecoration(
-                  color: _tm.gold.withValues(alpha: 0.06),
+                  color: _tm.sapphire.withValues(alpha: 0.06),
                   borderRadius: BorderRadius.circular(8),
                 ),
-                child: Icon(prefixIcon, size: 18, color: _tm.gold),
+                child: Icon(prefixIcon, size: 18, color: _tm.sapphire),
               )
             : null,
         filled: true,
@@ -450,10 +450,10 @@ class _CreateTripViewState extends State<_CreateTripView> {
             Container(
               padding: const EdgeInsets.all(6),
               decoration: BoxDecoration(
-                color: _tm.gold.withValues(alpha: 0.06),
+                color: _tm.sapphire.withValues(alpha: 0.06),
                 borderRadius: BorderRadius.circular(8),
               ),
-              child: Icon(Icons.calendar_today_outlined, size: 16, color: _tm.gold),
+              child: Icon(Icons.calendar_today_outlined, size: 16, color: _tm.sapphire),
             ),
             const SizedBox(width: Spacing.md),
             Expanded(

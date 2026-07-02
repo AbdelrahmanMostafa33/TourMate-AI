@@ -661,6 +661,12 @@ async def websocket_new_chat(
 
         while True:
             data      = await websocket.receive_json()
+            
+            # ── Heartbeat ping/pong ────────────────────────────────────────
+            if data.get("type") == "ping":
+                await websocket.send_json({"type": "pong"})
+                continue
+            
             user_text = data.get("message", "").strip()
             
             # Extract image data if present
@@ -1011,6 +1017,12 @@ async def websocket_chat(
 
         while True:
             data      = await websocket.receive_json()
+            
+            # ── Heartbeat ping/pong ────────────────────────────────────────
+            if data.get("type") == "ping":
+                await websocket.send_json({"type": "pong"})
+                continue
+            
             user_text = data.get("message", "").strip()
             
             # Extract image data if present

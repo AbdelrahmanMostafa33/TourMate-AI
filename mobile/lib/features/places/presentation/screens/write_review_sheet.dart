@@ -98,7 +98,7 @@ class _WriteReviewSheetState extends State<WriteReviewSheet> {
                             : Icons.star_border_rounded,
                         size: 40,
                         color: starNum <= _rating
-                            ? tm.gold
+                            ? tm.sapphire
                             : tm.border,
                       ),
                     ),

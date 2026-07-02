@@ -48,7 +48,7 @@ class PersonaCard extends StatelessWidget {
             Row(
               crossAxisAlignment: CrossAxisAlignment.center,
               children: [
-                // Icon with gold border accent
+                // Icon with accent border accent
                 Container(
                   padding: const EdgeInsets.all(10),
                   decoration: BoxDecoration(
@@ -301,9 +301,9 @@ class PersonaCard extends StatelessWidget {
     if (lower.contains('luxury') || lower.contains('premium') || lower.contains('comfort')) {
       return _PersonaStyle(
         icon: Icons.star_rounded,
-        accentColor: const Color(0xFFC8A84E),
+        accentColor: const Color(0xFF2563EB),
         gradient: const LinearGradient(
-          colors: [Color(0x66F5ECCE), Color(0xFFFFF9EC)],
+          colors: [Color(0x66DBEAFE), Color(0xFFEFF6FF)],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
@@ -355,9 +355,9 @@ class PersonaCard extends StatelessWidget {
     }
     return _PersonaStyle(
       icon: Icons.public_rounded,
-      accentColor: const Color(0xFFC8A84E),
+      accentColor: const Color(0xFF2563EB),
       gradient: const LinearGradient(
-        colors: [Color(0x66F5ECCE), Color(0xFFFFF9EC)],
+        colors: [Color(0x66DBEAFE), Color(0xFFEFF6FF)],
         begin: Alignment.topLeft,
         end: Alignment.bottomRight,
       ),
@@ -370,9 +370,9 @@ class PersonaCard extends StatelessWidget {
         'You\'re ready for your next adventure. Start chatting with TourMate '
         'and we\'ll discover your travel personality!',
     icon: Icons.public_rounded,
-    accentColor: Color(0xFFC8A84E),
+    accentColor: Color(0xFF2563EB),
     gradient: LinearGradient(
-      colors: [Color(0x66F5ECCE), Color(0xFFFFF9EC)],
+      colors: [Color(0x66DBEAFE), Color(0xFFEFF6FF)],
       begin: Alignment.topLeft,
       end: Alignment.bottomRight,
     ),
@@ -436,7 +436,7 @@ class _KnowledgeProgress extends StatelessWidget {
       children: [
         Row(
           children: [
-            Icon(Icons.auto_awesome, size: 12, color: tm.gold.withValues(alpha: 0.6)),
+            Icon(Icons.auto_awesome, size: 12, color: tm.sapphire.withValues(alpha: 0.6)),
             const SizedBox(width: 6),
             Text(
               'Getting to know you',
@@ -456,7 +456,7 @@ class _KnowledgeProgress extends StatelessWidget {
             child: LinearProgressIndicator(
               value: 0.15,
               backgroundColor: tm.pureBlack.withValues(alpha: 0.06),
-              valueColor: AlwaysStoppedAnimation<Color>(tm.gold),
+              valueColor: AlwaysStoppedAnimation<Color>(tm.deepRoyalBlue),
             ),
           ),
         ),

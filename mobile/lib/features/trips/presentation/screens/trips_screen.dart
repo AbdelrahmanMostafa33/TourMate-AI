@@ -53,7 +53,7 @@ class _TripsScreenState extends State<TripsScreen> {
                     cubit.getTrips();
                   }
                 },
-                icon: Icon(Icons.add_rounded, size: 16, color: tm.goldLight),
+                icon: Icon(Icons.add_rounded, size: 16, color: tm.sapphireLight),
                 label: Text('New Trip', style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w600, color: tm.pureWhite)),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: tm.pureBlack,
@@ -62,7 +62,7 @@ class _TripsScreenState extends State<TripsScreen> {
                   padding: const EdgeInsets.symmetric(horizontal: 14),
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(10),
-                    side: BorderSide(color: tm.gold.withValues(alpha: 0.3), width: 0.5),
+                    side: BorderSide(color: tm.sapphire.withValues(alpha: 0.3), width: 0.5),
                   ),
                   shadowColor: Colors.transparent,
                 ),
@@ -90,7 +90,7 @@ class _TripsScreenState extends State<TripsScreen> {
                       height: 20,
                       decoration: BoxDecoration(
                         gradient: const LinearGradient(
-                          colors: [Color(0xFFC8A84E), Color(0xFFF5ECCE)],
+                          colors: [Color(0xFF2563EB), Color(0xFFDBEAFE)],
                           begin: Alignment.topCenter,
                           end: Alignment.bottomCenter,
                         ),
@@ -115,7 +115,7 @@ class _TripsScreenState extends State<TripsScreen> {
                   height: 20,
                   decoration: BoxDecoration(
                     gradient: const LinearGradient(
-                      colors: [Color(0xFFC8A84E), Color(0xFFF5ECCE)],
+                      colors: [Color(0xFF2563EB), Color(0xFFDBEAFE)],
                       begin: Alignment.topCenter,
                       end: Alignment.bottomCenter,
                     ),
@@ -155,7 +155,7 @@ class _TripsScreenState extends State<TripsScreen> {
                     }
 
                     return RefreshIndicator(
-                      color: tm.gold,
+                      color: tm.deepRoyalBlue,
                       onRefresh: () async {
                         context.read<TripsCubit>().getTrips();
                       },
@@ -223,8 +223,14 @@ class _TripsScreenState extends State<TripsScreen> {
           borderRadius: BorderRadius.circular(RadiusTokens.xl3),
           onTap: () async {
             final cubit = context.read<TripsCubit>();
-            await Navigator.pushNamed(context, '/trip-detail', arguments: trip.tripId);
-            if (mounted) cubit.getTrips();
+            final result = await Navigator.pushNamed(context, '/trip-detail', arguments: trip.tripId);
+            if (!mounted) return;
+            if (result == 'deleted') {
+              // Optimistically remove from local state for instant UI update
+              cubit.removeTripFromState(trip.tripId);
+            } else {
+              cubit.getTrips();
+            }
           },
           child: Container(
             padding: const EdgeInsets.all(Spacing.xl3),
@@ -242,18 +248,18 @@ class _TripsScreenState extends State<TripsScreen> {
             ),
             child: Row(
               children: [
-                // Icon with gold accent
+                // Icon with sapphire accent
                 Container(
                   padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
                     gradient: const LinearGradient(
-                      colors: [Color(0xFF0A0A0A), Color(0xFF1A1A1A)],
+                      colors: [Color(0xFF0F172A), Color(0xFF1E3A8A)],
                       begin: Alignment.topLeft,
                       end: Alignment.bottomRight,
                     ),
                     shape: BoxShape.circle,
                   ),
-                  child: Icon(Icons.flight_rounded, color: tm.goldLight, size: 20),
+                  child: Icon(Icons.flight_rounded, color: tm.sapphireLight, size: 20),
                 ),
                 const SizedBox(width: 16),
                 // Content

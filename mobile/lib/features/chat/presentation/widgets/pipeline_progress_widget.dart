@@ -73,7 +73,7 @@ class _PipelineProgressWidgetState extends State<PipelineProgressWidget>
                   height: 18,
                   child: CircularProgressIndicator(
                     strokeWidth: 2,
-                    valueColor: AlwaysStoppedAnimation<Color>(tm.gold),
+                    valueColor: AlwaysStoppedAnimation<Color>(tm.deepRoyalBlue),
                   ),
                 ),
                 const SizedBox(width: 10),
@@ -105,7 +105,7 @@ class _PipelineProgressWidgetState extends State<PipelineProgressWidget>
       padding: const EdgeInsets.only(bottom: Spacing.sm),
       child: Row(
         children: [
-          /// ── Gold-accented status icon ────────────────────────────
+          /// ── sapphire-accented status icon ────────────────────────────
           SizedBox(
             width: 20,
             height: 20,
@@ -117,17 +117,17 @@ class _PipelineProgressWidgetState extends State<PipelineProgressWidget>
                       height: 16,
                       child: CircularProgressIndicator(
                         strokeWidth: 2,
-                        valueColor: AlwaysStoppedAnimation<Color>(tm.gold),
+                        valueColor: AlwaysStoppedAnimation<Color>(tm.deepRoyalBlue),
                       ),
                     ),
                   )
                 : isDone
-                    ? Icon(Icons.check_circle_rounded, size: 18, color: tm.gold)
+                    ? Icon(Icons.check_circle_rounded, size: 18, color: tm.deepRoyalBlue)
                     : Icon(Icons.error_rounded, size: 18, color: tm.error),
           ),
           const SizedBox(width: 10),
 
-          /// ── Gold-accented text ───────────────────────────────────
+          /// ── sapphire-accented text ───────────────────────────────────
           Expanded(
             child: Text(
               step.message.isNotEmpty ? step.message : step.agent,

@@ -47,14 +47,14 @@ class HotelOptionsList extends StatelessWidget {
                   padding: const EdgeInsets.all(8),
                   decoration: BoxDecoration(
                     gradient: const LinearGradient(
-                      colors: [Color(0xFF0A0A0A), Color(0xFF1A1A1A)],
+                      colors: [Color(0xFF0F172A), Color(0xFF1E3A8A)],
                       begin: Alignment.topLeft,
                       end: Alignment.bottomRight,
                     ),
                     borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: tm.gold.withValues(alpha: 0.3), width: 0.5),
+                    border: Border.all(color: tm.sapphire.withValues(alpha: 0.3), width: 0.5),
                   ),
-                  child: Icon(Icons.hotel_rounded, color: tm.goldLight, size: 22),
+                  child: Icon(Icons.hotel_rounded, color: tm.sapphireLight, size: 22),
                 ),
                 const SizedBox(width: 14),
                 Expanded(
@@ -122,7 +122,7 @@ class _HotelOptionCard extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // ── Top row: gold badge + name + rating ──
+              // ── Top row: badge + name + rating ──
               Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -132,17 +132,17 @@ class _HotelOptionCard extends StatelessWidget {
                     height: 28,
                     decoration: BoxDecoration(
                       gradient: const LinearGradient(
-                        colors: [Color(0xFF0A0A0A), Color(0xFF1A1A1A)],
+                        colors: [Color(0xFF0F172A), Color(0xFF1E3A8A)],
                         begin: Alignment.topLeft,
                         end: Alignment.bottomRight,
                       ),
                       borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: tm.gold.withValues(alpha: 0.3), width: 0.5),
+                      border: Border.all(color: tm.sapphire.withValues(alpha: 0.3), width: 0.5),
                     ),
                     alignment: Alignment.center,
                     child: Text(
                       '$number',
-                      style: GoogleFonts.inter(color: tm.goldLight, fontSize: 13, fontWeight: FontWeight.w800),
+                      style: GoogleFonts.inter(color: tm.sapphireLight, fontSize: 13, fontWeight: FontWeight.w800),
                     ),
                   ),
                   const SizedBox(width: 10),
@@ -155,23 +155,23 @@ class _HotelOptionCard extends StatelessWidget {
                       overflow: TextOverflow.ellipsis,
                     ),
                   ),
-                  // Gold rating
+                  // rating
                   if (hotel.rating != null)
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                       decoration: BoxDecoration(
-                        color: tm.gold.withValues(alpha: 0.08),
+                        color: tm.sapphire.withValues(alpha: 0.08),
                         borderRadius: BorderRadius.circular(20),
-                        border: Border.all(color: tm.gold.withValues(alpha: 0.2)),
+                        border: Border.all(color: tm.sapphire.withValues(alpha: 0.2)),
                       ),
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          Icon(Icons.star_rounded, size: 14, color: tm.gold),
+                          Icon(Icons.star_rounded, size: 14, color: tm.sapphire),
                           const SizedBox(width: 2),
                           Text(
                             hotel.rating!.toStringAsFixed(1),
-                            style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w700, color: tm.gold),
+                            style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w700, color: tm.sapphire),
                           ),
                         ],
                       ),
@@ -181,14 +181,14 @@ class _HotelOptionCard extends StatelessWidget {
 
               const SizedBox(height: Spacing.sm),
 
-              // ── Gold-accented Type + Price + Distance ────
+              // ── sapphire-accented Type + Price + Distance ────
               Row(
                 children: [
                   if (hotel.accommodationType.isNotEmpty)
-                    _goldChip(tm, hotel.accommodationType, Icons.home_outlined),
+                    _accentChip(tm, hotel.accommodationType, Icons.home_outlined),
                   if (hotel.pricePerNight != null) ...[
                     const SizedBox(width: 6),
-                    _goldChip(
+                    _accentChip(
                       tm,
                       '${_formatPrice(hotel.pricePerNight!)}${hotel.currency != null ? ' ${hotel.currency}' : ''}/night',
                       Icons.attach_money,
@@ -196,7 +196,7 @@ class _HotelOptionCard extends StatelessWidget {
                   ],
                   if (hotel.distanceFromCenter != null) ...[
                     const SizedBox(width: 6),
-                    _goldChip(
+                    _accentChip(
                       tm,
                       '${hotel.distanceFromCenter!.toStringAsFixed(1)} km',
                       Icons.location_on_outlined,
@@ -216,7 +216,7 @@ class _HotelOptionCard extends StatelessWidget {
                 ),
               ],
 
-              // ── Gold-accented Amenities ───────────────────
+              // ── sapphire-accented Amenities ───────────────────
               if (hotel.amenities.isNotEmpty) ...[
                 const SizedBox(height: Spacing.sm),
                 Wrap(
@@ -226,13 +226,13 @@ class _HotelOptionCard extends StatelessWidget {
                     return Container(
                       padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
                       decoration: BoxDecoration(
-                        color: tm.gold.withValues(alpha: 0.06),
+                        color: tm.sapphire.withValues(alpha: 0.06),
                         borderRadius: BorderRadius.circular(6),
-                        border: Border.all(color: tm.gold.withValues(alpha: 0.12)),
+                        border: Border.all(color: tm.sapphire.withValues(alpha: 0.12)),
                       ),
                       child: Text(
                         amenity,
-                        style: GoogleFonts.inter(fontSize: 10, color: tm.gold, fontWeight: FontWeight.w500),
+                        style: GoogleFonts.inter(fontSize: 10, color: tm.sapphire, fontWeight: FontWeight.w500),
                       ),
                     );
                   }).toList(),
@@ -246,7 +246,7 @@ class _HotelOptionCard extends StatelessWidget {
                   width: double.infinity,
                   child: ElevatedButton.icon(
                     onPressed: onSelect,
-                    icon: Icon(Icons.check_circle_outline, size: 18, color: tm.goldLight),
+                    icon: Icon(Icons.check_circle_outline, size: 18, color: tm.sapphireLight),
                     label: Text(
                       'Select Hotel $number',
                       style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.w700),
@@ -257,7 +257,7 @@ class _HotelOptionCard extends StatelessWidget {
                       padding: const EdgeInsets.symmetric(vertical: 12),
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(RadiusTokens.md),
-                        side: BorderSide(color: tm.gold.withValues(alpha: 0.3), width: 0.5),
+                        side: BorderSide(color: tm.sapphire.withValues(alpha: 0.3), width: 0.5),
                       ),
                       elevation: 0,
                     ),
@@ -271,22 +271,22 @@ class _HotelOptionCard extends StatelessWidget {
     );
   }
 
-  Widget _goldChip(TourMateColors tm, String label, IconData icon) {
+  Widget _accentChip(TourMateColors tm, String label, IconData icon) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
-        color: tm.gold.withValues(alpha: 0.08),
+        color: tm.sapphire.withValues(alpha: 0.08),
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: tm.gold.withValues(alpha: 0.2)),
+        border: Border.all(color: tm.sapphire.withValues(alpha: 0.2)),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, size: 11, color: tm.gold),
+          Icon(icon, size: 11, color: tm.sapphire),
           const SizedBox(width: 4),
           Text(
             label,
-            style: GoogleFonts.inter(fontSize: 11, color: tm.gold, fontWeight: FontWeight.w600),
+            style: GoogleFonts.inter(fontSize: 11, color: tm.sapphire, fontWeight: FontWeight.w600),
           ),
         ],
       ),

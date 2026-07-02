@@ -111,7 +111,7 @@ class _BookingPaymentViewState extends State<_BookingPaymentView> {
               height: 20,
               decoration: BoxDecoration(
                 gradient: const LinearGradient(
-                  colors: [Color(0xFFC8A84E), Color(0xFFF5ECCE)],
+                  colors: [Color(0xFF2563EB), Color(0xFFDBEAFE)],
                   begin: Alignment.topCenter,
                   end: Alignment.bottomCenter,
                 ),
@@ -187,7 +187,7 @@ class _BookingPaymentViewState extends State<_BookingPaymentView> {
                               style: GoogleFonts.inter(
                                 fontSize: 24,
                                 fontWeight: FontWeight.w600,
-                                color: const Color(0xFFC8A84E),
+                                color: const Color(0xFF2563EB),
                               ),
                             ),
                             Text(
@@ -205,7 +205,7 @@ class _BookingPaymentViewState extends State<_BookingPaymentView> {
                                 style: GoogleFonts.inter(
                                   fontSize: 24,
                                   fontWeight: FontWeight.w600,
-                                  color: const Color(0xFFC8A84E),
+                                  color: const Color(0xFF2563EB),
                                   letterSpacing: -2,
                                 ),
                               ),
@@ -216,7 +216,7 @@ class _BookingPaymentViewState extends State<_BookingPaymentView> {
                         Container(
                           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
                           decoration: BoxDecoration(
-                            color: const Color(0xFFC8A84E).withValues(alpha: 0.06),
+                            color: const Color(0xFF2563EB).withValues(alpha: 0.06),
                             borderRadius: BorderRadius.circular(6),
                           ),
                           child: Text(
@@ -224,7 +224,7 @@ class _BookingPaymentViewState extends State<_BookingPaymentView> {
                             style: GoogleFonts.inter(
                               fontSize: 11,
                               fontWeight: FontWeight.w600,
-                              color: const Color(0xFFC8A84E),
+                              color: const Color(0xFF2563EB),
                               letterSpacing: 0.5,
                             ),
                           ),
@@ -270,15 +270,15 @@ class _BookingPaymentViewState extends State<_BookingPaymentView> {
         padding: const EdgeInsets.symmetric(horizontal: 48, vertical: 16),
         decoration: BoxDecoration(
           gradient: const LinearGradient(
-            colors: [Color(0xFF0A0A0A), Color(0xFF1A1A1A)],
+            colors: [Color(0xFF0F172A), Color(0xFF1E3A8A)],
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
           ),
           borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: const Color(0xFFC8A84E).withValues(alpha: 0.3), width: 1),
+          border: Border.all(color: const Color(0xFF2563EB).withValues(alpha: 0.3), width: 1),
           boxShadow: [
             BoxShadow(
-              color: const Color(0xFFC8A84E).withValues(alpha: 0.08),
+              color: const Color(0xFF2563EB).withValues(alpha: 0.08),
               blurRadius: 12,
               offset: const Offset(0, 4),
             ),
@@ -287,7 +287,7 @@ class _BookingPaymentViewState extends State<_BookingPaymentView> {
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.lock, size: 16, color: tm.goldLight),
+            Icon(Icons.lock, size: 16, color: tm.sapphireLight),
             const SizedBox(width: 10),
             Text(
               'Pay Now',
@@ -312,14 +312,14 @@ class _BookingPaymentViewState extends State<_BookingPaymentView> {
           height: 48,
           child: CircularProgressIndicator(
             strokeWidth: 3,
-            color: Color(0xFFC8A84E),
+            color: Color(0xFF2563EB),
           ),
         ),
         const SizedBox(height: 20),
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
           decoration: BoxDecoration(
-            color: const Color(0xFFC8A84E).withValues(alpha: 0.06),
+            color: const Color(0xFF2563EB).withValues(alpha: 0.06),
             borderRadius: BorderRadius.circular(10),
           ),
           child: Row(
@@ -329,7 +329,7 @@ class _BookingPaymentViewState extends State<_BookingPaymentView> {
                 width: 6,
                 height: 6,
                 decoration: BoxDecoration(
-                  color: const Color(0xFFC8A84E),
+                  color: const Color(0xFF2563EB),
                   shape: BoxShape.circle,
                 ),
               ),
@@ -339,7 +339,7 @@ class _BookingPaymentViewState extends State<_BookingPaymentView> {
                 style: GoogleFonts.inter(
                   fontSize: 14,
                   fontWeight: FontWeight.w500,
-                  color: const Color(0xFFC8A84E),
+                  color: const Color(0xFF2563EB),
                 ),
               ),
             ],
@@ -357,14 +357,14 @@ class _BookingPaymentViewState extends State<_BookingPaymentView> {
           height: 72,
           decoration: BoxDecoration(
             gradient: const LinearGradient(
-              colors: [Color(0xFFC8A84E), Color(0xFFF5ECCE)],
+              colors: [Color(0xFF2563EB), Color(0xFFDBEAFE)],
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
             ),
             shape: BoxShape.circle,
             boxShadow: [
               BoxShadow(
-                color: const Color(0xFFC8A84E).withValues(alpha: 0.3),
+                color: const Color(0xFF2563EB).withValues(alpha: 0.3),
                 blurRadius: 12,
                 offset: const Offset(0, 4),
               ),
@@ -387,21 +387,21 @@ class _BookingPaymentViewState extends State<_BookingPaymentView> {
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
             decoration: BoxDecoration(
-              color: const Color(0xFFC8A84E).withValues(alpha: 0.06),
+              color: const Color(0xFF2563EB).withValues(alpha: 0.06),
               borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: const Color(0xFFC8A84E).withValues(alpha: 0.12)),
+              border: Border.all(color: const Color(0xFF2563EB).withValues(alpha: 0.12)),
             ),
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Icon(Icons.science_outlined, size: 14, color: const Color(0xFFC8A84E)),
+                Icon(Icons.science_outlined, size: 14, color: const Color(0xFF2563EB)),
                 const SizedBox(width: 6),
                 Text(
                   'Sandbox mode',
                   style: GoogleFonts.inter(
                     fontSize: 12,
                     fontWeight: FontWeight.w600,
-                    color: const Color(0xFFC8A84E),
+                    color: const Color(0xFF2563EB),
                   ),
                 ),
               ],

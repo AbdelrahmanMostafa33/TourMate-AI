@@ -625,14 +625,14 @@ class _ChatViewState extends State<_ChatView>
                         padding: const EdgeInsets.all(8),
                         decoration: BoxDecoration(
                           gradient: const LinearGradient(
-                            colors: [Color(0xFF0A0A0A), Color(0xFF1A1A1A)],
+                            colors: [Color(0xFF0F172A), Color(0xFF1E3A8A)],
                             begin: Alignment.topLeft,
                             end: Alignment.bottomRight,
                           ),
                           borderRadius: BorderRadius.circular(10),
-                          border: Border.all(color: tm.gold.withValues(alpha: 0.3), width: 0.5),
+                          border: Border.all(color: tm.sapphire.withValues(alpha: 0.3), width: 0.5),
                         ),
-                        child: Icon(Icons.chat_bubble_outline, color: tm.goldLight, size: 18),
+                        child: Icon(Icons.chat_bubble_outline, color: tm.deepRoyalBlue, size: 18),
                       ),
                       const SizedBox(width: 12),
                       Text(
@@ -659,7 +659,7 @@ class _ChatViewState extends State<_ChatView>
                         Navigator.pop(context);
                         _startNewChat();
                       },
-                      icon: Icon(Icons.add_rounded, size: 18, color: tm.goldLight),
+                      icon: Icon(Icons.add_rounded, size: 18, color: tm.deepRoyalBlue),
                       label: Text(
                         'New Chat',
                         style: GoogleFonts.inter(fontWeight: FontWeight.w600),
@@ -669,7 +669,7 @@ class _ChatViewState extends State<_ChatView>
                         foregroundColor: tm.pureWhite,
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(12),
-                          side: BorderSide(color: tm.gold.withValues(alpha: 0.3), width: 0.5),
+                          side: BorderSide(color: tm.sapphire.withValues(alpha: 0.3), width: 0.5),
                         ),
                         padding: const EdgeInsets.symmetric(vertical: 12),
                         elevation: 0,
@@ -727,7 +727,7 @@ class _ChatViewState extends State<_ChatView>
               padding: const EdgeInsets.all(10),
               decoration: BoxDecoration(
                 gradient: const LinearGradient(
-                  colors: [Color(0xFF0A0A0A), Color(0xFF1A1A1A)],
+                  colors: [Color(0xFF0F172A), Color(0xFF1E3A8A)],
                   begin: Alignment.topLeft,
                   end: Alignment.bottomRight,
                 ),
@@ -736,7 +736,7 @@ class _ChatViewState extends State<_ChatView>
               child: Icon(
                 tripInfo != null ? Icons.card_travel : Icons.chat_bubble_outline,
                 size: 16,
-                color: tm.goldLight,
+                color: tm.sapphireLight,
               ),
             ),
             const SizedBox(width: 14),
@@ -892,18 +892,18 @@ class _ChatViewState extends State<_ChatView>
                       startAngle: 0,
                       endAngle: 3.14159 * 2,
                       colors: [
-                        Color(0xFFC8A84E),
-                        Color(0x33C8A84E),
-                        Color(0xFFC8A84E),
-                        Color(0x66C8A84E),
-                        Color(0xFFC8A84E),
+                        Color(0xFF2563EB),
+                        Color(0x332563EB),
+                        Color(0xFF2563EB),
+                        Color(0x662563EB),
+                        Color(0xFF2563EB),
                       ],
                       stops: [0.0, 0.25, 0.5, 0.75, 1.0],
                     ),
                     shape: BoxShape.circle,
                     boxShadow: [
                       BoxShadow(
-                        color: tm.gold.withValues(alpha: 0.2),
+                        color: tm.sapphire.withValues(alpha: 0.2),
                         blurRadius: 24,
                         offset: const Offset(0, 4),
                       ),
@@ -913,7 +913,7 @@ class _ChatViewState extends State<_ChatView>
                   child: Container(
                     decoration: BoxDecoration(
                       gradient: const LinearGradient(
-                        colors: [Color(0xFF0A0A0A), Color(0xFF1A1A1A)],
+                        colors: [Color(0xFF0F172A), Color(0xFF1E3A8A)],
                         begin: Alignment.topLeft,
                         end: Alignment.bottomRight,
                       ),
@@ -923,7 +923,7 @@ class _ChatViewState extends State<_ChatView>
                     child: Icon(
                       Icons.explore_outlined,
                       size: 48,
-                      color: tm.goldLight,
+                      color: tm.sapphireLight,
                     ),
                   ),
                 ),
@@ -1010,7 +1010,7 @@ class _ChatViewState extends State<_ChatView>
             ),
           ),
           const SizedBox(height: 32),
-          // Gold accent line — staggered entrance
+          // accent line — staggered entrance
           FadeTransition(
             opacity: Tween<double>(begin: 0.0, end: 1.0).animate(
               CurvedAnimation(
@@ -1029,20 +1029,18 @@ class _ChatViewState extends State<_ChatView>
                   curve: const Interval(0.24, 0.49, curve: Curves.easeOutCubic),
                 ),
               ),
-              child: _SparkleEffect(
-                child: Container(
-                  width: 48,
-                  height: 2,
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      colors: [
-                        Colors.transparent,
-                        tm.gold.withValues(alpha: 0.6),
-                        Colors.transparent,
-                      ],
-                    ),
-                    borderRadius: BorderRadius.circular(1),
+              child: Container(
+                width: 48,
+                height: 2,
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: [
+                      Colors.transparent,
+                      tm.sapphire.withValues(alpha: 0.6),
+                      Colors.transparent,
+                    ],
                   ),
+                  borderRadius: BorderRadius.circular(1),
                 ),
               ),
             ),
@@ -1054,13 +1052,11 @@ class _ChatViewState extends State<_ChatView>
               final cubit = context.read<ChatCubit>();
               cubit.sendMessage(message);
             },
-          ),
-          const SizedBox(height: 40),
+          ),            const SizedBox(height: 40),
         ],
       ),
     );
   }
-
   Widget _buildInputBar(ChatCubit cubit) {
     return Container(
       padding: EdgeInsets.fromLTRB(Spacing.xl3, Spacing.sm, Spacing.xl3, Spacing.xl3),
@@ -1158,7 +1154,7 @@ class _ChatViewState extends State<_ChatView>
                   child: IconButton(
                     padding: EdgeInsets.zero,
                     constraints: const BoxConstraints(),
-                    icon: Icon(Icons.send_rounded, size: 18, color: tm.goldLight),
+                    icon: Icon(Icons.send_rounded, size: 18, color: tm.deepRoyalBlue),
                     onPressed: () => _sendMessage(cubit),
                   ),
                 ),
@@ -1166,121 +1162,6 @@ class _ChatViewState extends State<_ChatView>
             ),
           ),
         ],
-      ),
-    );
-  }
-}
-
-/// ================= SPARKLE EFFECT FOR GOLD ACCENT LINE =================
-/// Data for a single sparkle particle — positions are relative to a
-/// 100x40px canvas, with a seeded random so sparkles are deterministic.
-class _SparkleData {
-  final double x;
-  final double y;
-  final double radius;
-  final double phase;
-  final double baseAlpha;
-
-  const _SparkleData({
-    required this.x,
-    required this.y,
-    required this.radius,
-    required this.phase,
-    required this.baseAlpha,
-  });
-}
-
-/// Custom painter that renders tiny gold sparkles that twinkle at
-/// different rates around the gold accent line.
-class _SparklePainter extends CustomPainter {
-  final List<_SparkleData> sparkles;
-  final double animationValue;
-  final Color goldColor;
-
-  _SparklePainter({
-    required this.sparkles,
-    required this.animationValue,
-    required this.goldColor,
-  });
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    for (final s in sparkles) {
-      // Sine-wave twinkle with phase offset
-      final twinkle =
-          (math.sin((animationValue + s.phase) * 2 * math.pi)) * 0.5 + 0.5;
-      final alpha = (twinkle * s.baseAlpha).clamp(0.0, 0.7);
-      if (alpha < 0.01) continue;
-
-      final paint = Paint()
-        ..color = goldColor.withValues(alpha: alpha)
-        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 2);
-
-      canvas.drawCircle(Offset(s.x, s.y), s.radius, paint);
-    }
-  }
-
-  @override
-  bool shouldRepaint(_SparklePainter oldDelegate) =>
-      oldDelegate.animationValue != animationValue;
-}
-
-/// Wraps the gold accent line with a twinkling sparkle particle effect.
-/// Renders 8 tiny gold dots that fade in/out at staggered rates.
-class _SparkleEffect extends StatefulWidget {
-  final Widget child;
-
-  const _SparkleEffect({required this.child});
-
-  @override
-  State<_SparkleEffect> createState() => _SparkleEffectState();
-}
-
-class _SparkleEffectState extends State<_SparkleEffect>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _controller;
-  late final List<_SparkleData> _sparkles;
-
-  @override
-  void initState() {
-    super.initState();
-    _controller = AnimationController(
-      vsync: this,
-      duration: const Duration(seconds: 4),
-    )..repeat();
-
-    // Seeded random for deterministic sparkle positions
-    final random = math.Random(42);
-    _sparkles = List.generate(8, (_) {
-      return _SparkleData(
-        x: random.nextDouble() * 80 + 10, // 10–90
-        y: random.nextDouble() * 24 + 8, // 8–32
-        radius: random.nextDouble() * 1.2 + 1.0, // 1.0–2.2
-        phase: random.nextDouble(),
-        baseAlpha: random.nextDouble() * 0.35 + 0.15, // 0.15–0.5
-      );
-    });
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final tm = context.tm;
-    return SizedBox(
-      width: 100,
-      height: 36,
-      child: CustomPaint(
-        painter: _SparklePainter(
-          sparkles: _sparkles,
-          animationValue: _controller.value,
-          goldColor: tm.gold,
-        ),
-        child: Center(child: widget.child),
       ),
     );
   }
@@ -1297,8 +1178,8 @@ class _ReconnectingBanner extends StatelessWidget {
       width: double.infinity,
       padding: const EdgeInsets.symmetric(horizontal: Spacing.xl3, vertical: Spacing.sm),
       decoration: BoxDecoration(
-        color: tm.gold.withValues(alpha: 0.06),
-        border: Border(bottom: BorderSide(color: tm.gold.withValues(alpha: 0.15))),
+        color: tm.deepRoyalBlue.withValues(alpha: 0.06),
+        border: Border(bottom: BorderSide(color: tm.deepRoyalBlue.withValues(alpha: 0.15))),
       ),
       child: Row(
         children: [
@@ -1307,13 +1188,13 @@ class _ReconnectingBanner extends StatelessWidget {
             height: 14,
             child: CircularProgressIndicator(
               strokeWidth: 2,
-              color: tm.gold,
+              color: tm.deepRoyalBlue,
             ),
           ),
           const SizedBox(width: 10),
           Text(
             'Reconnecting...',
-            style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w600, color: tm.gold),
+            style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w600, color: tm.deepRoyalBlue),
           ),
         ],
       ),
@@ -1376,11 +1257,10 @@ class _TypingIndicatorState extends State<_TypingIndicator>
                   return Row(
                     mainAxisSize: MainAxisSize.min,
                     children: List.generate(3, (i) {
-                      final delay = i * 0.2;
-                      final value = ((_controller.value - delay) % 1.0);
-                      final opacity = (value < 0.5)
-                          ? (value * 2).clamp(0.3, 1.0)
-                          : (1.0 - (value - 0.5) * 2).clamp(0.3, 1.0);
+                  final delay = i * 0.25;
+                  final raw = (_controller.value - delay);
+                  final sine = (math.sin(raw * 2 * math.pi) + 1) / 2;
+                  final opacity = 0.3 + sine * 0.7;
                       return Padding(
                         padding: EdgeInsets.only(left: i > 0 ? 5 : 0),
                         child: Opacity(
@@ -1389,7 +1269,7 @@ class _TypingIndicatorState extends State<_TypingIndicator>
                             width: 7,
                             height: 7,
                             decoration: BoxDecoration(
-                              color: tm.gold,
+                              color: tm.deepRoyalBlue,
                               shape: BoxShape.circle,
                             ),
                           ),

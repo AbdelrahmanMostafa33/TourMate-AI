@@ -45,7 +45,7 @@ class _SavedView extends StatelessWidget {
               height: 20,
               decoration: BoxDecoration(
                 gradient: LinearGradient(
-                  colors: [tm.gold, tm.goldSurface],
+                  colors: [tm.sapphire, tm.sapphireSurface],
                   begin: Alignment.topCenter,
                   end: Alignment.bottomCenter,
                 ),
@@ -163,10 +163,10 @@ class _SavedView extends StatelessWidget {
             Container(
               padding: const EdgeInsets.all(Spacing.md),
               decoration: BoxDecoration(
-                color: tm.gold.withValues(alpha: 0.08),
+                color: tm.sapphire.withValues(alpha: 0.08),
                 borderRadius: BorderRadius.circular(10),
               ),
-              child: Icon(Icons.favorite_border, size: 18, color: tm.gold),
+              child: Icon(Icons.favorite_border, size: 18, color: tm.sapphire),
             ),
             const SizedBox(width: Spacing.lg),
             Text(
@@ -304,7 +304,7 @@ class _SavedPlaceCard extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // ── Photo with gold save button ════════════
+              // ── Photo with save button ════════════
               if (place.hasPhoto)
                 Hero(
                   tag: 'place-photo-${place.placeId}',
@@ -357,7 +357,7 @@ class _SavedPlaceCard extends StatelessWidget {
                             ),
                           ),
                         ),
-                        // Gold save button
+                        // save button
                         Positioned(
                           top: 10,
                           right: 10,
@@ -372,15 +372,14 @@ class _SavedPlaceCard extends StatelessWidget {
                                   color: tm.pureWhite.withValues(alpha: 0.9),
                                   shape: BoxShape.circle,
                                   border: Border.all(
-                                    color: tm.gold.withValues(alpha: 0.5),
+                                    color: tm.sapphire.withValues(alpha: 0.5),
                                     width: 1.5,
                                   ),
-                                ),
-                                child: Icon(
-                                  Icons.favorite,
-                                  size: 20,
-                                  color: tm.gold,
-                                ),
+                                ),                child: Icon(
+                  Icons.favorite,
+                  size: 20,
+                  color: tm.deepRoyalBlue,
+                ),
                               ),
                             ),
                           ),
@@ -444,14 +443,14 @@ class _SavedPlaceCard extends StatelessWidget {
                                   color: tm.pureWhite.withValues(alpha: 0.9),
                                   shape: BoxShape.circle,
                                   border: Border.all(
-                                    color: tm.gold.withValues(alpha: 0.5),
+                                    color: tm.sapphire.withValues(alpha: 0.5),
                                     width: 1.5,
                                   ),
                                 ),
                                 child: Icon(
                                   Icons.favorite,
                                   size: 20,
-                                  color: tm.gold,
+                                  color: tm.deepRoyalBlue,
                                 ),
                               ),
                             ),

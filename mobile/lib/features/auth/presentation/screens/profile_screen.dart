@@ -72,13 +72,13 @@ class _ProfileView extends StatelessWidget {
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
                 gradient: const LinearGradient(
-                  colors: [Color(0xFFC8A84E), Color(0xFFF5ECCE)],
+                  colors: [Color(0xFF2563EB), Color(0xFFDBEAFE)],
                   begin: Alignment.topLeft,
                   end: Alignment.bottomRight,
                 ),
                 boxShadow: [
                   BoxShadow(
-                    color: const Color(0xFFC8A84E).withValues(alpha: 0.3),
+                    color: const Color(0xFF2563EB).withValues(alpha: 0.3),
                     blurRadius: 8,
                     offset: const Offset(0, 2),
                   ),
@@ -91,7 +91,7 @@ class _ProfileView extends StatelessWidget {
                   (data.fullName ?? "U").isNotEmpty
                       ? (data.fullName ?? "U")[0]
                       : "U",
-                  style: GoogleFonts.inter(color: tm.goldLight, fontSize: 24, fontWeight: FontWeight.w600),
+                  style: GoogleFonts.inter(color: tm.sapphireLight, fontSize: 24, fontWeight: FontWeight.w600),
                 ),
               ),
             ),
@@ -201,13 +201,13 @@ class _ProfileView extends StatelessWidget {
               padding: const EdgeInsets.all(8),
               decoration: BoxDecoration(
                 gradient: const LinearGradient(
-                  colors: [Color(0xFF0A0A0A), Color(0xFF1A1A1A)],
+                  colors: [Color(0xFF0F172A), Color(0xFF1E3A8A)],
                   begin: Alignment.topLeft,
                   end: Alignment.bottomRight,
                 ),
                 borderRadius: BorderRadius.circular(10),
               ),
-              child: Icon(icon, size: 18, color: tm.goldLight),
+              child: Icon(icon, size: 18, color: tm.sapphireLight),
             ),
             const SizedBox(width: 12),
             Text(
@@ -229,7 +229,7 @@ class _ProfileView extends StatelessWidget {
     Color? iconColor,
     Color? titleColor,
   }) {
-    final effectiveColor = iconColor ?? tm.gold;
+    final effectiveColor = iconColor ?? tm.deepRoyalBlue;
     return Material(
       color: tm.pureWhite,
       borderRadius: BorderRadius.circular(RadiusTokens.xl3),
@@ -306,7 +306,7 @@ class _ProfileView extends StatelessWidget {
             height: 16,
             decoration: BoxDecoration(
               gradient: const LinearGradient(
-                colors: [Color(0xFFC8A84E), Color(0xFFF5ECCE)],
+                colors: [Color(0xFF2563EB), Color(0xFFDBEAFE)],
                 begin: Alignment.topCenter,
                 end: Alignment.bottomCenter,
               ),

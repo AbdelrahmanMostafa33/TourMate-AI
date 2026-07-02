@@ -3,13 +3,13 @@ import 'package:google_fonts/google_fonts.dart';
 import '../core/theme/design_tokens.dart';
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// TOURMATE DESIGN SYSTEM — Black · White · Gold
+// TOURMATE DESIGN SYSTEM — Deep Royal Blue · Midnight Navy · Sapphire
 // ═══════════════════════════════════════════════════════════════════════════════
 //
 // A sophisticated, luxury design language built around:
-//   • Deep matte black    — authority, depth, premium feel
-//   • Pure white          — clarity, minimalism, space
-//   • Warm metallic gold  — prestige, warmth, distinction
+//   • Deep Royal Blue #1E3A8A — authority, depth, premium feel
+//   • Midnight Navy   #0F172A — rich darkness, elegance
+//   • Sapphire Blue   #2563EB — refined accent, sparingly used
 //
 // Usage:  Theme.of(context).extension<TourMateColors>()!
 //         context.tm (shortcut)
@@ -26,12 +26,12 @@ class TourMateColors extends ThemeExtension<TourMateColors> {
   final Color pureWhite;
   final Color nearWhite;
 
-  // ――― Gold accents — elegant, warm, not too yellow ―――
-  final Color gold;
-  final Color goldLight;
-  final Color goldDark;
-  final Color goldSurface;
-  final Color goldBorder;
+  // ――― Sapphire Blue accents — refined, elegant, restrained ―――
+  final Color sapphire;        // Sapphire Blue accent
+  final Color sapphireLight;   // Lighter sapphire
+  final Color sapphireDark;    // Deeper sapphire
+  final Color sapphireSurface; // Light blue surface
+  final Color sapphireBorder;  // Blue-tinted border
 
   // ――― Surfaces ―――
   final Color surface;
@@ -46,7 +46,7 @@ class TourMateColors extends ThemeExtension<TourMateColors> {
   final Color textSecondary;
   final Color textTertiary;
   final Color textOnDark;
-  final Color textOnGold;
+  final Color textOnAccent;
 
   // ――― Functional ―――
   final Color success;
@@ -60,51 +60,57 @@ class TourMateColors extends ThemeExtension<TourMateColors> {
   final Color navBackground;
 
   // ――― Premium overlays ―――
-  final Color goldOverlay;
+  final Color sapphireOverlay;
   final Color blackOverlay;
+
+  // ――― Deep Royal Blue for primary brand moments ―――
+  final Color deepRoyalBlue;
 
   const TourMateColors({
     // Core
-    this.pureBlack = const Color(0xFF0A0A0A),
+    this.pureBlack = const Color(0xFF1E3A8A),      // Deep Royal Blue
     this.pureWhite = const Color(0xFFFFFFFF),
-    this.nearWhite = const Color(0xFFF7F7F5),
+    this.nearWhite = const Color(0xFFF8FAFC),
 
-    // Gold accents — refined, warm metallic
-    this.gold = const Color(0xFFC8A84E),
-    this.goldLight = const Color(0xFFE8D5A3),
-    this.goldDark = const Color(0xFF9E8236),
-    this.goldSurface = const Color(0xFFFFF9EC),
-    this.goldBorder = const Color(0x4DD4AF37),
+    // Sapphire Blue accents — refined, not bright
+    this.sapphire = const Color(0xFF2563EB),            // Sapphire Blue
+    this.sapphireLight = const Color(0xFF60A5FA),        // Lighter sapphire
+    this.sapphireDark = const Color(0xFF1D4ED8),         // Deeper sapphire
+    this.sapphireSurface = const Color(0xFFEFF6FF),      // Very light blue
+    this.sapphireBorder = const Color(0x4D2563EB),       // Blue border with alpha
 
     // Surfaces
-    this.surface = const Color(0xFFF5F5F3),
+    this.surface = const Color(0xFFF8FAFC),
     this.surfaceElevated = const Color(0xFFFFFFFF),
-    this.surfaceDark = const Color(0xFF141414),
-    this.border = const Color(0xFFE5E5E0),
-    this.borderLight = const Color(0xFFF0F0ED),
-    this.divider = const Color(0xFFEEEEEA),
+    this.surfaceDark = const Color(0xFF0F172A),      // Midnight Navy
+    this.border = const Color(0xFFE2E8F0),
+    this.borderLight = const Color(0xFFF1F5F9),
+    this.divider = const Color(0xFFE2E8F0),
 
     // Text — rich contrast hierarchy
-    this.textPrimary = const Color(0xFF0A0A0A),
-    this.textSecondary = const Color(0xFF6B6B6B),
-    this.textTertiary = const Color(0xFF9E9E9E),
+    this.textPrimary = const Color(0xFF0F172A),       // Midnight Navy
+    this.textSecondary = const Color(0xFF64748B),      // Slate Gray
+    this.textTertiary = const Color(0xFF94A3B8),       // Light Slate
     this.textOnDark = const Color(0xFFFFFFFF),
-    this.textOnGold = const Color(0xFF0A0A0A),
+    this.textOnAccent = const Color(0xFFFFFFFF),
 
-    // Functional — muted for sophistication
-    this.success = const Color(0xFF2E7D32),
-    this.error = const Color(0xFFC62828),
-    this.warning = const Color(0xFFE65100),
-    this.info = const Color(0xFF1565C0),
+    // Functional — refined for sophistication
+    this.success = const Color(0xFF059669),
+    this.error = const Color(0xFFDC2626),
+    this.warning = const Color(0xFFD97706),
+    this.info = const Color(0xFF2563EB),
 
     // Navigation
-    this.navActive = const Color(0xFFC8A84E),
-    this.navInactive = const Color(0xFF9E9E9E),
+    this.navActive = const Color(0xFF1E3A8A),
+    this.navInactive = const Color(0xFF94A3B8),
     this.navBackground = const Color(0xFFFFFFFF),
 
     // Premium overlays
-    this.goldOverlay = const Color(0x14C8A84E),
-    this.blackOverlay = const Color(0x0A0A0A0A),
+    this.sapphireOverlay = const Color(0x142563EB),
+    this.blackOverlay = const Color(0x0A0F172A),
+
+    // Deep Royal Blue for primary brand moments
+    this.deepRoyalBlue = const Color(0xFF1E3A8A),
   });
 
   @override
@@ -112,11 +118,11 @@ class TourMateColors extends ThemeExtension<TourMateColors> {
     Color? pureBlack,
     Color? pureWhite,
     Color? nearWhite,
-    Color? gold,
-    Color? goldLight,
-    Color? goldDark,
-    Color? goldSurface,
-    Color? goldBorder,
+    Color? sapphire,
+    Color? sapphireLight,
+    Color? sapphireDark,
+    Color? sapphireSurface,
+    Color? sapphireBorder,
     Color? surface,
     Color? surfaceElevated,
     Color? surfaceDark,
@@ -127,7 +133,7 @@ class TourMateColors extends ThemeExtension<TourMateColors> {
     Color? textSecondary,
     Color? textTertiary,
     Color? textOnDark,
-    Color? textOnGold,
+    Color? textOnAccent,
     Color? success,
     Color? error,
     Color? warning,
@@ -135,18 +141,19 @@ class TourMateColors extends ThemeExtension<TourMateColors> {
     Color? navActive,
     Color? navInactive,
     Color? navBackground,
-    Color? goldOverlay,
+    Color? sapphireOverlay,
     Color? blackOverlay,
+    Color? deepRoyalBlue,
   }) {
     return TourMateColors(
       pureBlack: pureBlack ?? this.pureBlack,
       pureWhite: pureWhite ?? this.pureWhite,
       nearWhite: nearWhite ?? this.nearWhite,
-      gold: gold ?? this.gold,
-      goldLight: goldLight ?? this.goldLight,
-      goldDark: goldDark ?? this.goldDark,
-      goldSurface: goldSurface ?? this.goldSurface,
-      goldBorder: goldBorder ?? this.goldBorder,
+      sapphire: sapphire ?? this.sapphire,
+      sapphireLight: sapphireLight ?? this.sapphireLight,
+      sapphireDark: sapphireDark ?? this.sapphireDark,
+      sapphireSurface: sapphireSurface ?? this.sapphireSurface,
+      sapphireBorder: sapphireBorder ?? this.sapphireBorder,
       surface: surface ?? this.surface,
       surfaceElevated: surfaceElevated ?? this.surfaceElevated,
       surfaceDark: surfaceDark ?? this.surfaceDark,
@@ -157,7 +164,7 @@ class TourMateColors extends ThemeExtension<TourMateColors> {
       textSecondary: textSecondary ?? this.textSecondary,
       textTertiary: textTertiary ?? this.textTertiary,
       textOnDark: textOnDark ?? this.textOnDark,
-      textOnGold: textOnGold ?? this.textOnGold,
+      textOnAccent: textOnAccent ?? this.textOnAccent,
       success: success ?? this.success,
       error: error ?? this.error,
       warning: warning ?? this.warning,
@@ -165,8 +172,9 @@ class TourMateColors extends ThemeExtension<TourMateColors> {
       navActive: navActive ?? this.navActive,
       navInactive: navInactive ?? this.navInactive,
       navBackground: navBackground ?? this.navBackground,
-      goldOverlay: goldOverlay ?? this.goldOverlay,
+      sapphireOverlay: sapphireOverlay ?? this.sapphireOverlay,
       blackOverlay: blackOverlay ?? this.blackOverlay,
+      deepRoyalBlue: deepRoyalBlue ?? this.deepRoyalBlue,
     );
   }
 
@@ -180,11 +188,11 @@ class TourMateColors extends ThemeExtension<TourMateColors> {
       pureBlack: Color.lerp(pureBlack, other.pureBlack, t)!,
       pureWhite: Color.lerp(pureWhite, other.pureWhite, t)!,
       nearWhite: Color.lerp(nearWhite, other.nearWhite, t)!,
-      gold: Color.lerp(gold, other.gold, t)!,
-      goldLight: Color.lerp(goldLight, other.goldLight, t)!,
-      goldDark: Color.lerp(goldDark, other.goldDark, t)!,
-      goldSurface: Color.lerp(goldSurface, other.goldSurface, t)!,
-      goldBorder: Color.lerp(goldBorder, other.goldBorder, t)!,
+      sapphire: Color.lerp(sapphire, other.sapphire, t)!,
+      sapphireLight: Color.lerp(sapphireLight, other.sapphireLight, t)!,
+      sapphireDark: Color.lerp(sapphireDark, other.sapphireDark, t)!,
+      sapphireSurface: Color.lerp(sapphireSurface, other.sapphireSurface, t)!,
+      sapphireBorder: Color.lerp(sapphireBorder, other.sapphireBorder, t)!,
       surface: Color.lerp(surface, other.surface, t)!,
       surfaceElevated: Color.lerp(surfaceElevated, other.surfaceElevated, t)!,
       surfaceDark: Color.lerp(surfaceDark, other.surfaceDark, t)!,
@@ -195,7 +203,7 @@ class TourMateColors extends ThemeExtension<TourMateColors> {
       textSecondary: Color.lerp(textSecondary, other.textSecondary, t)!,
       textTertiary: Color.lerp(textTertiary, other.textTertiary, t)!,
       textOnDark: Color.lerp(textOnDark, other.textOnDark, t)!,
-      textOnGold: Color.lerp(textOnGold, other.textOnGold, t)!,
+      textOnAccent: Color.lerp(textOnAccent, other.textOnAccent, t)!,
       success: Color.lerp(success, other.success, t)!,
       error: Color.lerp(error, other.error, t)!,
       warning: Color.lerp(warning, other.warning, t)!,
@@ -203,8 +211,9 @@ class TourMateColors extends ThemeExtension<TourMateColors> {
       navActive: Color.lerp(navActive, other.navActive, t)!,
       navInactive: Color.lerp(navInactive, other.navInactive, t)!,
       navBackground: Color.lerp(navBackground, other.navBackground, t)!,
-      goldOverlay: Color.lerp(goldOverlay, other.goldOverlay, t)!,
+      sapphireOverlay: Color.lerp(sapphireOverlay, other.sapphireOverlay, t)!,
       blackOverlay: Color.lerp(blackOverlay, other.blackOverlay, t)!,
+      deepRoyalBlue: Color.lerp(deepRoyalBlue, other.deepRoyalBlue, t)!,
     );
   }
 }
@@ -344,13 +353,13 @@ class TMTextStyles {
 // CUSTOM WIDGET HELPERS
 // ─────────────────────────────────────────────────────────────────────────────
 
-/// Gold-tinted divider line for premium section separation.
-class GoldDivider extends StatelessWidget {
+/// Sapphire-tinted divider line for premium section separation.
+class BrandDivider extends StatelessWidget {
   final double thickness;
   final double indent;
   final double endIndent;
 
-  const GoldDivider({
+  const BrandDivider({
     super.key,
     this.thickness = 0.5,
     this.indent = 0,
@@ -366,9 +375,9 @@ class GoldDivider extends StatelessWidget {
       decoration: BoxDecoration(
         gradient: LinearGradient(
           colors: [
-            tm.gold.withValues(alpha: 0.0),
-            tm.gold.withValues(alpha: 0.5),
-            tm.gold.withValues(alpha: 0.0),
+            tm.sapphire.withValues(alpha: 0.0),
+            tm.sapphire.withValues(alpha: 0.4),
+            tm.sapphire.withValues(alpha: 0.0),
           ],
         ),
       ),
@@ -376,11 +385,11 @@ class GoldDivider extends StatelessWidget {
   }
 }
 
-/// A thin gold underline accent for active states.
-class GoldUnderline extends StatelessWidget {
+/// A thin sapphire underline accent for active states.
+class BrandUnderline extends StatelessWidget {
   final double width;
 
-  const GoldUnderline({super.key, this.width = 24});
+  const BrandUnderline({super.key, this.width = 24});
 
   @override
   Widget build(BuildContext context) {
@@ -389,20 +398,20 @@ class GoldUnderline extends StatelessWidget {
       width: width,
       height: 2,
       decoration: BoxDecoration(
-        color: tm.gold,
+        color: tm.sapphire,
         borderRadius: BorderRadius.circular(1),
       ),
     );
   }
 }
 
-/// Premium loading shimmer widget using gold tones.
-class GoldShimmer extends StatefulWidget {
+/// Premium loading shimmer widget using sapphire tones.
+class BrandShimmer extends StatefulWidget {
   final double width;
   final double height;
   final double borderRadius;
 
-  const GoldShimmer({
+  const BrandShimmer({
     super.key,
     this.width = double.infinity,
     this.height = 16,
@@ -410,10 +419,10 @@ class GoldShimmer extends StatefulWidget {
   });
 
   @override
-  State<GoldShimmer> createState() => _GoldShimmerState();
+  State<BrandShimmer> createState() => _BrandShimmerState();
 }
 
-class _GoldShimmerState extends State<GoldShimmer>
+class _BrandShimmerState extends State<BrandShimmer>
     with SingleTickerProviderStateMixin {
   late AnimationController _controller;
 
@@ -446,11 +455,11 @@ class _GoldShimmerState extends State<GoldShimmer>
               begin: Alignment(-1.0 + _controller.value * 2, 0),
               end: Alignment(1.0 + _controller.value * 2, 0),
               colors: const [
-                Color(0xFFF0F0ED),
-                Color(0xFFFFF9EC),
-                Color(0xFFF5ECCE),
-                Color(0xFFFFF9EC),
-                Color(0xFFF0F0ED),
+                Color(0xFFF1F5F9),
+                Color(0xFFEFF6FF),
+                Color(0xFFDBEAFE),
+                Color(0xFFEFF6FF),
+                Color(0xFFF1F5F9),
               ],
               stops: const [0.0, 0.3, 0.5, 0.7, 1.0],
             ),
@@ -472,14 +481,14 @@ ThemeData buildTourMateTheme() {
     useMaterial3: true,
     brightness: Brightness.light,
     colorScheme: ColorScheme.light(
-      primary: tm.pureBlack,
+      primary: tm.deepRoyalBlue,
       onPrimary: tm.pureWhite,
-      primaryContainer: tm.goldSurface,
-      onPrimaryContainer: tm.goldDark,
-      secondary: tm.gold,
-      onSecondary: tm.pureBlack,
-      secondaryContainer: tm.goldLight,
-      onSecondaryContainer: tm.goldDark,
+      primaryContainer: tm.sapphireSurface,
+      onPrimaryContainer: tm.sapphireDark,
+      secondary: tm.deepRoyalBlue,
+      onSecondary: tm.pureWhite,
+      secondaryContainer: tm.sapphireLight,
+      onSecondaryContainer: tm.sapphireDark,
       tertiary: tm.surfaceDark,
       onTertiary: tm.pureWhite,
       surface: tm.nearWhite,
@@ -548,7 +557,7 @@ ThemeData buildTourMateTheme() {
     // ──── Bottom Navigation ──────────────────────────────
     bottomNavigationBarTheme: BottomNavigationBarThemeData(
       backgroundColor: tm.pureWhite,
-      selectedItemColor: tm.gold,
+      selectedItemColor: tm.deepRoyalBlue,
       unselectedItemColor: tm.navInactive,
       type: BottomNavigationBarType.fixed,
       elevation: 0,
@@ -595,7 +604,7 @@ ThemeData buildTourMateTheme() {
       ),
     ),
 
-    // ──── Gold-toned Filter Chips ──────────────────────
+    // ──── Sapphire-toned Filter Chips ──────────────────
     chipTheme: ChipThemeData(
       backgroundColor: tm.surface,
       selectedColor: tm.pureBlack,
@@ -724,7 +733,7 @@ ThemeData buildTourMateTheme() {
 
     // ──── Progress Indicator ────────────────────────────
     progressIndicatorTheme: ProgressIndicatorThemeData(
-      color: tm.gold,
+      color: tm.deepRoyalBlue,
       linearTrackColor: tm.borderLight,
       circularTrackColor: tm.borderLight,
     ),
@@ -738,7 +747,7 @@ ThemeData buildTourMateTheme() {
       labelStyle: TMTextStyles.labelLarge,
       unselectedLabelStyle: TMTextStyles.labelMedium,
       indicator: BoxDecoration(
-        color: tm.pureBlack,
+        color: tm.deepRoyalBlue,
         borderRadius: BorderRadius.circular(RadiusTokens.md),
       ),
     ),

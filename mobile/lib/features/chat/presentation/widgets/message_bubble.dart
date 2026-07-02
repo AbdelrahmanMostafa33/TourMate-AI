@@ -98,7 +98,7 @@ class MessageBubble extends StatelessWidget {
               child: Container(
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(RadiusTokens.xl),
-                border: Border.all(color: tm.gold.withValues(alpha: 0.2), width: 1),
+                border: Border.all(color: tm.sapphire.withValues(alpha: 0.2), width: 1),
                 boxShadow: [
                   BoxShadow(
                     color: tm.pureBlack.withValues(alpha: 0.06),
@@ -196,7 +196,7 @@ class MessageBubble extends StatelessWidget {
                     width: 8,
                     height: 8,
                     decoration: BoxDecoration(
-                      color: tm.gold,
+                      color: tm.deepRoyalBlue,
                       shape: BoxShape.circle,
                     ),
                   ),
@@ -205,7 +205,7 @@ class MessageBubble extends StatelessWidget {
                     'Thinking',
                     style: GoogleFonts.inter(
                       fontSize: 12,
-                      color: tm.gold,
+                      color: tm.deepRoyalBlue,
                       fontWeight: FontWeight.w500,
                     ),
                   ),

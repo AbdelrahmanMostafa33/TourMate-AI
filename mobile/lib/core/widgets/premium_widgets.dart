@@ -16,7 +16,7 @@ import '../theme/design_tokens.dart';
 // PREMIUM BUTTONS
 // ─────────────────────────────────────────────────────────────────────────────
 
-/// Primary black button with gold shimmer loading state.
+/// Primary black button with sapphire shimmer loading state.
 class TMPrimaryButton extends StatelessWidget {
   final String label;
   final VoidCallback? onPressed;
@@ -87,15 +87,15 @@ class TMPrimaryButton extends StatelessWidget {
   }
 }
 
-/// Gold accent premium button — for VIP actions.
-class TMGoldButton extends StatelessWidget {
+/// Sapphire accent premium button — for VIP actions.
+class TMAccentButton extends StatelessWidget {
   final String label;
   final VoidCallback? onPressed;
   final bool isLoading;
   final IconData? icon;
   final double? width;
 
-  const TMGoldButton({
+  const TMAccentButton({
     super.key,
     required this.label,
     this.onPressed,
@@ -113,14 +113,14 @@ class TMGoldButton extends StatelessWidget {
       child: DecoratedBox(
         decoration: BoxDecoration(
           gradient: const LinearGradient(
-            colors: [Color(0xFFD4AF37), Color(0xFFC8A84E), Color(0xFFB8942E)],
+            colors: [Color(0xFF3B82F6), Color(0xFF2563EB), Color(0xFF1D4ED8)],
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
           ),
           borderRadius: BorderRadius.circular(RadiusTokens.xl2),
           boxShadow: [
             BoxShadow(
-              color: tm.gold.withValues(alpha: 0.3),
+              color: tm.sapphire.withValues(alpha: 0.3),
               blurRadius: 12,
               offset: const Offset(0, 4),
             ),
@@ -130,9 +130,9 @@ class TMGoldButton extends StatelessWidget {
           onPressed: isLoading ? null : onPressed,
           style: ElevatedButton.styleFrom(
             backgroundColor: Colors.transparent,
-            foregroundColor: tm.pureBlack,
+            foregroundColor: tm.pureWhite,
             disabledBackgroundColor: Colors.transparent,
-            disabledForegroundColor: tm.pureBlack.withValues(alpha: 0.5),
+            disabledForegroundColor: tm.pureWhite.withValues(alpha: 0.5),
             elevation: 0,
             shadowColor: Colors.transparent,
             padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
@@ -146,7 +146,7 @@ class TMGoldButton extends StatelessWidget {
                   height: 22,
                   child: CircularProgressIndicator(
                     strokeWidth: 2.5,
-                    valueColor: AlwaysStoppedAnimation<Color>(tm.pureBlack),
+                    valueColor: AlwaysStoppedAnimation<Color>(tm.pureWhite),
                   ),
                 )
               : Row(
@@ -173,14 +173,14 @@ class TMGoldButton extends StatelessWidget {
   }
 }
 
-/// Outlined gold button for secondary premium actions.
-class TMOutlinedGoldButton extends StatelessWidget {
+/// Outlined sapphire button for secondary premium actions.
+class TMOutlinedSapphireButton extends StatelessWidget {
   final String label;
   final VoidCallback? onPressed;
   final IconData? icon;
   final double? width;
 
-  const TMOutlinedGoldButton({
+  const TMOutlinedSapphireButton({
     super.key,
     required this.label,
     this.onPressed,
@@ -197,8 +197,8 @@ class TMOutlinedGoldButton extends StatelessWidget {
       child: OutlinedButton(
         onPressed: onPressed,
         style: OutlinedButton.styleFrom(
-          foregroundColor: tm.gold,
-          side: BorderSide(color: tm.gold.withValues(alpha: 0.5)),
+          foregroundColor: tm.sapphire,
+          side: BorderSide(color: tm.sapphire.withValues(alpha: 0.5)),
           padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(RadiusTokens.xl2),
@@ -277,12 +277,12 @@ class TMTextButton extends StatelessWidget {
 // PREMIUM CARDS
 // ─────────────────────────────────────────────────────────────────────────────
 
-/// A premium card container with gold border option.
+/// A premium card container with accent border option.
 class TMPremiumCard extends StatelessWidget {
   final Widget child;
   final EdgeInsetsGeometry? padding;
   final EdgeInsetsGeometry? margin;
-  final bool goldBorder;
+  final bool accentBorder;
   final VoidCallback? onTap;
   final double borderRadius;
 
@@ -291,7 +291,7 @@ class TMPremiumCard extends StatelessWidget {
     required this.child,
     this.padding,
     this.margin,
-    this.goldBorder = false,
+    this.accentBorder = false,
     this.onTap,
     this.borderRadius = RadiusTokens.xl3,
   });
@@ -306,14 +306,14 @@ class TMPremiumCard extends StatelessWidget {
         color: tm.pureWhite,
         borderRadius: BorderRadius.circular(borderRadius),
         border: Border.all(
-          color: goldBorder ? tm.gold.withValues(alpha: 0.4) : tm.borderLight,
-          width: goldBorder ? 1.0 : 0.5,
+          color: accentBorder ? tm.sapphire.withValues(alpha: 0.4) : tm.borderLight,
+          width: accentBorder ? 1.0 : 0.5,
         ),
         boxShadow: [
           ...ShadowTokens.medium(tm.pureBlack),
-          if (goldBorder)
+          if (accentBorder)
             BoxShadow(
-              color: tm.gold.withValues(alpha: 0.06),
+              color: tm.sapphire.withValues(alpha: 0.06),
               blurRadius: 12,
               offset: const Offset(0, 4),
             ),
@@ -345,7 +345,7 @@ class TMPremiumHeaderCard extends StatelessWidget {
   final String? subtitle;
   final Widget? trailing;
   final VoidCallback? onTap;
-  final bool goldAccent;
+  final bool accentMode;
 
   const TMPremiumHeaderCard({
     super.key,
@@ -354,14 +354,14 @@ class TMPremiumHeaderCard extends StatelessWidget {
     this.subtitle,
     this.trailing,
     this.onTap,
-    this.goldAccent = false,
+    this.accentMode = false,
   });
 
   @override
   Widget build(BuildContext context) {
     final tm = context.tm;
     return TMPremiumCard(
-      goldBorder: goldAccent,
+      accentBorder: accentMode,
       onTap: onTap,
       padding: const EdgeInsets.all(Spacing.xl3),
       child: Row(
@@ -370,16 +370,16 @@ class TMPremiumHeaderCard extends StatelessWidget {
           Container(
             padding: const EdgeInsets.all(Spacing.md),
             decoration: BoxDecoration(
-              color: goldAccent ? tm.goldSurface : tm.surface,
+              color: accentMode ? tm.sapphireSurface : tm.surface,
               borderRadius: BorderRadius.circular(RadiusTokens.xl),
-              border: goldAccent
-                  ? Border.all(color: tm.gold.withValues(alpha: 0.3))
+              border: accentMode
+                  ? Border.all(color: tm.sapphire.withValues(alpha: 0.3))
                   : null,
             ),
             child: Icon(
               icon,
               size: IconSizes.lg,
-              color: goldAccent ? tm.gold : tm.textSecondary,
+              color: accentMode ? tm.sapphire : tm.textSecondary,
             ),
           ),
           const SizedBox(width: Spacing.xl3),
@@ -417,11 +417,11 @@ class TMPremiumHeaderCard extends StatelessWidget {
 // PREMIUM BADGES & CHIPS
 // ─────────────────────────────────────────────────────────────────────────────
 
-/// A gold-accented premium badge for VIP/pricing/category labels.
+/// A sapphire-accented premium badge for VIP/pricing/category labels.
 class TMBadge extends StatelessWidget {
   final String label;
   final IconData? icon;
-  final bool gold;
+  final bool isAccented;
   final Color? backgroundColor;
   final Color? textColor;
   final double fontSize;
@@ -430,7 +430,7 @@ class TMBadge extends StatelessWidget {
     super.key,
     required this.label,
     this.icon,
-    this.gold = false,
+    this.isAccented = false,
     this.backgroundColor,
     this.textColor,
     this.fontSize = 11,
@@ -439,16 +439,16 @@ class TMBadge extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final tm = context.tm;
-    final bg = backgroundColor ?? (gold ? tm.goldSurface : tm.surface);
-    final fg = textColor ?? (gold ? tm.goldDark : tm.textSecondary);
+    final bg = backgroundColor ?? (isAccented ? tm.sapphireSurface : tm.surface);
+    final fg = textColor ?? (isAccented ? tm.sapphireDark : tm.textSecondary);
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
       decoration: BoxDecoration(
         color: bg,
         borderRadius: BorderRadius.circular(RadiusTokens.full),
-        border: gold
-            ? Border.all(color: tm.gold.withValues(alpha: 0.3))
+        border: isAccented
+            ? Border.all(color: tm.sapphire.withValues(alpha: 0.3))
             : Border.all(color: tm.borderLight),
       ),
       child: Row(
@@ -473,7 +473,7 @@ class TMBadge extends StatelessWidget {
   }
 }
 
-/// Premium rating badge — gold star + score.
+/// Premium rating badge — sapphire star + score.
 class TMRatingBadge extends StatelessWidget {
   final double rating;
   final int? reviewCount;
@@ -492,20 +492,20 @@ class TMRatingBadge extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
       decoration: BoxDecoration(
-        color: tm.goldSurface,
+        color: tm.sapphireSurface,
         borderRadius: BorderRadius.circular(RadiusTokens.full),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(Icons.star_rounded, size: size, color: tm.gold),
+          Icon(Icons.star_rounded, size: size, color: tm.sapphire),
           const SizedBox(width: 3),
           Text(
             rating.toStringAsFixed(1),
             style: GoogleFonts.inter(
               fontSize: size * 0.9,
               fontWeight: FontWeight.w700,
-              color: tm.goldDark,
+              color: tm.sapphireDark,
             ),
           ),
           if (reviewCount != null && reviewCount! > 0) ...[
@@ -514,7 +514,7 @@ class TMRatingBadge extends StatelessWidget {
               '(${_formatCount(reviewCount!)})',
               style: GoogleFonts.inter(
                 fontSize: size * 0.75,
-                color: tm.gold.withValues(alpha: 0.7),
+                color: tm.sapphire.withValues(alpha: 0.7),
               ),
             ),
           ],
@@ -529,7 +529,7 @@ class TMRatingBadge extends StatelessWidget {
   }
 }
 
-/// A premium gold-accented status chip.
+/// A premium sapphire-accented status chip.
 class TMStatusBadge extends StatelessWidget {
   final String label;
   final Color? color;
@@ -545,8 +545,8 @@ class TMStatusBadge extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final tm = context.tm;
-    final fg = color ?? tm.goldDark;
-    final bg = (color ?? tm.gold).withValues(alpha: 0.1);
+    final fg = color ?? tm.sapphireDark;
+    final bg = (color ?? tm.sapphire).withValues(alpha: 0.1);
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
@@ -585,14 +585,14 @@ class TMSectionHeader extends StatelessWidget {
   final String title;
   final String? actionLabel;
   final VoidCallback? onAction;
-  final bool goldAccent;
+  final bool accentMode;
 
   const TMSectionHeader({
     super.key,
     required this.title,
     this.actionLabel,
     this.onAction,
-    this.goldAccent = false,
+    this.accentMode = false,
   });
 
   @override
@@ -603,8 +603,8 @@ class TMSectionHeader extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          if (goldAccent) ...[
-            const GoldDivider(indent: 0, endIndent: 0, thickness: 0.5),
+          if (accentMode) ...[
+            const BrandDivider(indent: 0, endIndent: 0, thickness: 0.5),
             const SizedBox(height: Spacing.xl3),
           ],
           Row(
@@ -664,19 +664,19 @@ class TMSectionLabel extends StatelessWidget {
 // PREMIUM PRICE DISPLAY
 // ─────────────────────────────────────────────────────────────────────────────
 
-/// Premium price display with gold color for emphasis.
+/// Premium price display with sapphire accent for emphasis.
 class TMPriceDisplay extends StatelessWidget {
   final double amount;
   final String currency;
   final bool large;
-  final bool goldColor;
+  final bool useAccentColor;
 
   const TMPriceDisplay({
     super.key,
     required this.amount,
     this.currency = 'USD',
     this.large = false,
-    this.goldColor = true,
+    this.useAccentColor = true,
   });
 
   @override
@@ -696,7 +696,7 @@ class TMPriceDisplay extends StatelessWidget {
       style: GoogleFonts.inter(
         fontSize: large ? 22 : 16,
         fontWeight: FontWeight.w700,
-        color: goldColor ? tm.gold : tm.textPrimary,
+        color: useAccentColor ? tm.sapphire : tm.textPrimary,
         letterSpacing: large ? -0.5 : -0.2,
       ),
     );
@@ -732,7 +732,7 @@ class TMPricePerUnit extends StatelessWidget {
           style: GoogleFonts.inter(
             fontSize: 14,
             fontWeight: FontWeight.w700,
-            color: tm.goldDark,
+            color: tm.sapphireDark,
           ),
         ),
         const SizedBox(width: 2),
@@ -752,7 +752,7 @@ class TMPricePerUnit extends StatelessWidget {
 // PREMIUM LOADING / EMPTY / ERROR STATES
 // ─────────────────────────────────────────────────────────────────────────────
 
-/// Elegant loading placeholder with the TM gold spinner.
+/// Elegant loading placeholder with the TM blue spinner.
 class TMLoadingIndicator extends StatelessWidget {
   final double size;
   final String? message;
@@ -775,7 +775,7 @@ class TMLoadingIndicator extends StatelessWidget {
             height: size,
             child: CircularProgressIndicator(
               strokeWidth: 2.5,
-              valueColor: AlwaysStoppedAnimation<Color>(tm.gold),
+              valueColor: AlwaysStoppedAnimation<Color>(tm.deepRoyalBlue),
             ),
           ),
           if (message != null) ...[
@@ -825,17 +825,17 @@ class TMEmptyState extends StatelessWidget {
               width: 80,
               height: 80,
               decoration: BoxDecoration(
-                color: tm.goldOverlay,
+                color: tm.sapphireOverlay,
                 shape: BoxShape.circle,
                 border: Border.all(
-                  color: tm.gold.withValues(alpha: 0.2),
+                  color: tm.sapphire.withValues(alpha: 0.2),
                   width: 1,
                 ),
               ),
               child: Icon(
                 icon,
                 size: 34,
-                color: tm.gold.withValues(alpha: 0.6),
+                color: tm.sapphire.withValues(alpha: 0.6),
               ),
             ),
             const SizedBox(height: Spacing.xl5),

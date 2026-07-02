@@ -150,7 +150,7 @@ class _ExploreScreenState extends State<ExploreScreen> {
                                     TMBadge(
                                       label: 'AI Search',
                                       icon: Icons.auto_awesome,
-                                      gold: true,
+                                      isAccented: true,
                                       fontSize: 10,
                                     ),
                                   ],
@@ -252,14 +252,14 @@ class _ExploreScreenState extends State<ExploreScreen> {
           borderRadius: BorderRadius.circular(RadiusTokens.xl2),
           border: Border.all(
             color: _isSearchFocused
-                ? tm.gold.withValues(alpha: 0.5)
+                ? tm.deepRoyalBlue.withValues(alpha: 0.5)
                 : tm.borderLight,
             width: _isSearchFocused ? 1.5 : 1.0,
           ),
           boxShadow: _isSearchFocused
               ? [
                   BoxShadow(
-                    color: tm.gold.withValues(alpha: 0.06),
+                    color: tm.deepRoyalBlue.withValues(alpha: 0.06),
                     blurRadius: 12,
                     offset: const Offset(0, 4),
                   ),
@@ -278,7 +278,7 @@ class _ExploreScreenState extends State<ExploreScreen> {
             Icon(
               Icons.auto_awesome_outlined,
               size: 18,
-              color: _isSearchFocused ? tm.gold : tm.textTertiary,
+              color: _isSearchFocused ? tm.deepRoyalBlue : tm.textTertiary,
             ),
             const SizedBox(width: Spacing.lg),
             Expanded(
@@ -367,7 +367,7 @@ class _FilterBar extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // ── City dropdown — gold-accented ─────────────────
+          // ── City dropdown — sapphire-accented ─────────────────
           Container(
             padding: const EdgeInsets.symmetric(horizontal: Spacing.xl2),
             decoration: BoxDecoration(
@@ -390,7 +390,7 @@ class _FilterBar extends StatelessWidget {
                     value: null,
                     child: Row(
                       children: [
-                        Icon(Icons.explore_outlined, size: 16, color: tm.gold),
+                        Icon(Icons.explore_outlined, size: 16, color: tm.sapphire),
                         const SizedBox(width: Spacing.md),
                         Text('All cities', style: GoogleFonts.inter(color: tm.textTertiary, fontSize: 14)),
                       ],
@@ -414,7 +414,7 @@ class _FilterBar extends StatelessWidget {
 
           const SizedBox(height: Spacing.xl2),
 
-          // ── Category chips — gold accent when selected ────
+          // ── Category chips — sapphire accent when selected ────
           SizedBox(
             height: 38,
             child: ListView(
@@ -434,7 +434,7 @@ class _FilterBar extends StatelessWidget {
                         color: isSelected ? tm.pureBlack : tm.surface,
                         borderRadius: BorderRadius.circular(RadiusTokens.full),
                         border: isSelected
-                            ? Border.all(color: tm.gold.withValues(alpha: 0.3), width: 1)
+                            ? Border.all(color: tm.sapphire.withValues(alpha: 0.3), width: 1)
                             : Border.all(color: tm.borderLight),
                       ),
                       alignment: Alignment.center,
@@ -444,7 +444,7 @@ class _FilterBar extends StatelessWidget {
                           if (isSelected)
                             Padding(
                               padding: const EdgeInsets.only(right: Spacing.sm),
-                              child: Icon(Icons.auto_awesome, size: 12, color: tm.goldLight),
+                              child: Icon(Icons.auto_awesome, size: 12, color: tm.sapphireLight),
                             ),
                           Text(
                             label,
@@ -541,7 +541,7 @@ class _PlaceCard extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // ── Photo with gold-accented save button ──────
+                // ── Photo with sapphire-accented save button ──────
                 if (place.hasPhoto)
                   Hero(
                     tag: 'place-photo-${place.placeId}',
@@ -582,7 +582,7 @@ class _PlaceCard extends StatelessWidget {
                               ),
                             ),
                           ),
-                          // Save button with gold accent
+                          // Save button with sapphire accent
                           Positioned(
                             top: Spacing.lg,
                             right: Spacing.lg,
@@ -599,13 +599,13 @@ class _PlaceCard extends StatelessWidget {
                                     color: tm.pureWhite.withValues(alpha: 0.9),
                                     shape: BoxShape.circle,
                                     border: isSaved
-                                        ? Border.all(color: tm.gold.withValues(alpha: 0.5), width: 1.5)
+                                        ? Border.all(color: tm.deepRoyalBlue.withValues(alpha: 0.5), width: 1.5)
                                         : null,
                                   ),
                                   child: Icon(
                                     isSaved ? Icons.favorite : Icons.favorite_border,
                                     size: 20,
-                                    color: isSaved ? tm.gold : tm.textSecondary,
+                                    color: isSaved ? tm.deepRoyalBlue : tm.textSecondary,
                                   ),
                                 ),
                               ),
@@ -658,7 +658,7 @@ class _PlaceCard extends StatelessWidget {
                                 child: Icon(
                                   isSaved ? Icons.favorite : Icons.favorite_border,
                                   size: 20,
-                                  color: isSaved ? tm.gold : tm.textSecondary,
+                                  color: isSaved ? tm.deepRoyalBlue : tm.textSecondary,
                                 ),
                               ),
                             ),
@@ -798,26 +798,26 @@ class _EmptyState extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            // Icon with gold gradient
+            // Icon with sapphire gradient
             Container(
               width: 80,
               height: 80,
               decoration: BoxDecoration(
                 gradient: LinearGradient(
                   colors: [
-                    tm.gold.withValues(alpha: 0.08),
-                    tm.gold.withValues(alpha: 0.02),
+                    tm.sapphire.withValues(alpha: 0.08),
+                    tm.sapphire.withValues(alpha: 0.02),
                   ],
                   begin: Alignment.topLeft,
                   end: Alignment.bottomRight,
                 ),
                 shape: BoxShape.circle,
-                border: Border.all(color: tm.gold.withValues(alpha: 0.12)),
+                border: Border.all(color: tm.sapphire.withValues(alpha: 0.12)),
               ),
               child: Icon(
                 isSearch ? Icons.search_off_rounded : Icons.filter_list_off_rounded,
                 size: 36,
-                color: tm.gold.withValues(alpha: 0.6),
+                color: tm.sapphire.withValues(alpha: 0.6),
               ),
             ),
             const SizedBox(height: Spacing.xl4),
@@ -931,7 +931,7 @@ class _EmptyState extends StatelessWidget {
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(icon, size: 14,            color: isPrimary ? tm.pureWhite : tm.gold),
+            Icon(icon, size: 14,            color: isPrimary ? tm.pureWhite : tm.sapphire),
             const SizedBox(width: Spacing.sm),
             Text(
               label,
@@ -1000,10 +1000,10 @@ class _RecentSearchOverlay extends StatelessWidget {
               Container(
                 padding: const EdgeInsets.all(Spacing.sm),
                 decoration: BoxDecoration(
-                  color: tm.gold.withValues(alpha: 0.06),
+                  color: tm.sapphire.withValues(alpha: 0.06),
                   borderRadius: BorderRadius.circular(RadiusTokens.sm),
                 ),
-                child: Icon(Icons.history, size: 13, color: tm.gold),
+                child: Icon(Icons.history, size: 13, color: tm.sapphire),
               ),
               const SizedBox(width: Spacing.md),
               Text(
@@ -1020,14 +1020,14 @@ class _RecentSearchOverlay extends StatelessWidget {
                 child: Container(
                   padding: const EdgeInsets.symmetric(horizontal: Spacing.lg, vertical: Spacing.xs),
                   decoration: BoxDecoration(
-                    color: tm.gold.withValues(alpha: 0.06),
+                    color: tm.sapphire.withValues(alpha: 0.06),
                     borderRadius: BorderRadius.circular(RadiusTokens.md),
                   ),
                   child: Text(
                     'Clear all',
                     style: GoogleFonts.inter(
                       fontSize: 11,
-                      color: tm.gold,
+                      color: tm.sapphire,
                       fontWeight: FontWeight.w600,
                     ),
                   ),
@@ -1036,7 +1036,7 @@ class _RecentSearchOverlay extends StatelessWidget {
             ],
           ),
           const SizedBox(height: Spacing.sm),
-          // Search chips with gold accent
+          // Search chips with sapphire accent
           Wrap(
             spacing: 8,
             runSpacing: 8,
@@ -1060,7 +1060,7 @@ class _RecentSearchOverlay extends StatelessWidget {
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Icon(Icons.access_time, size: 12, color: tm.gold.withValues(alpha: 0.6)),
+                      Icon(Icons.access_time, size: 12, color: tm.sapphire.withValues(alpha: 0.6)),
                       const SizedBox(width: Spacing.sm),
                       ConstrainedBox(
                         constraints: BoxConstraints(
@@ -1083,10 +1083,10 @@ class _RecentSearchOverlay extends StatelessWidget {
                         child: Container(
                           padding: const EdgeInsets.all(Spacing.xxs),
                           decoration: BoxDecoration(
-                            color: tm.gold.withValues(alpha: 0.06),
+                            color: tm.sapphire.withValues(alpha: 0.06),
                             borderRadius: BorderRadius.circular(RadiusTokens.xs),
                           ),
-                          child: Icon(Icons.close, size: 11, color: tm.gold.withValues(alpha: 0.6)),
+                          child: Icon(Icons.close, size: 11, color: tm.sapphire.withValues(alpha: 0.6)),
                         ),
                       ),
                     ],
@@ -1111,7 +1111,7 @@ class _ShimmerPlaceCard extends StatelessWidget {
     final tm = context.tm;
     return Shimmer.fromColors(
       baseColor: tm.border,
-      highlightColor: tm.goldSurface,
+      highlightColor: tm.sapphireSurface,
       period: const Duration(milliseconds: 1500),
       child: Padding(
         padding: const EdgeInsets.only(bottom: Spacing.xl3),
