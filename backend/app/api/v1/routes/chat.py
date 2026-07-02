@@ -249,9 +249,69 @@ async def process_message_stream(
 ) -> Optional[str]:
     """Process a message with streaming token-by-token response.
 
-    Returns the AI engine session_id for subsequent calls.
+    Uses ``conversation.conversation_id`` as the AI engine's session_id so
+    that conversation continuity is maintained across WebSocket reconnects.
+    If the Redis ``ConversationState`` has expired (TTL), it is transparently
+    rebuilt from DB records (messages, trip, profile).
+
+    Returns the conversation_id (used as session_id) for subsequent calls.
     """
     svc = ChatService(db)
+
+    # ── Use conversation_id as the stable AI engine session_id ────────────
+    # This is the key fix for conversation continuity: the AI engine
+    # identifies conversation state by session_id.  By using the stable
+    # conversation_id (which never changes), we ensure that reopening a
+    # conversation always finds (or rebuilds) the correct state.
+    effective_session_id = conversation.conversation_id
+
+    # ── Ensure Redis has valid ConversationState for this session ──────
+    # If the state expired from Redis (TTL), rebuild it from DB records.
+    # This must happen BEFORE handle_chat_stream so the AI engine sees
+    # the full conversation history on the very first message after reopen.
+    try:
+        from ai_engine.conversation.redis_memory import get_session_manager
+        redis_mgr = await get_session_manager()
+        existing = await redis_mgr.load(effective_session_id)
+        if existing is None:
+            # State not in Redis — rebuild from DB
+            rebuilt_dict = await svc.rebuild_conversation_state_from_db(
+                conversation.conversation_id, user_id,
+            )
+            if rebuilt_dict is not None:
+                from ai_engine.conversation.conversation_state import ConversationState
+                rebuilt_state = ConversationState.from_dict(rebuilt_dict)
+                await redis_mgr.save(rebuilt_state)
+                logger.info(
+                    "[ChatRoutes] Rebuilt Redis ConversationState for session %s "
+                    "from DB records (%d msgs, phase=%s)",
+                    effective_session_id,
+                    len(rebuilt_state.history),
+                    rebuilt_state.phase.value,
+                )
+            else:
+                # No DB history yet — will create fresh state in handle_chat_stream
+                logger.info(
+                    "[ChatRoutes] No DB history to rebuild for session %s — "
+                    "will create fresh ConversationState",
+                    effective_session_id,
+                )
+        else:
+            # State exists in Redis — extend TTL so it doesn't expire during
+            # a long planning conversation.
+            await redis_mgr.extend_ttl(effective_session_id)
+            logger.debug(
+                "[ChatRoutes] Found existing Redis state for session %s "
+                "(phase=%s, history=%d msgs)",
+                effective_session_id,
+                existing.phase.value,
+                len(existing.history),
+            )
+    except Exception as rebuild_err:
+        logger.warning(
+            "[ChatRoutes] Redis rebuild check failed (non-fatal): %s",
+            rebuild_err,
+        )
 
     # ── Save user message (with image if provided) ────────────────────────
     await svc.save_user_message(conversation.conversation_id, user_text, image_data=image_data)
@@ -263,7 +323,7 @@ async def process_message_stream(
     # ── Stream AI response ───────────────────────────────────────────────
     full_response = ""
     actions       = []
-    ai_session_id = None
+    ai_session_id = effective_session_id  # always the conversation_id
     approve_action = None
     profile_from_ai = None
     pool_state_from_ai = None
@@ -282,7 +342,7 @@ async def process_message_stream(
             user_message=user_text,
             image_bytes=image_bytes,
             token=token,
-            session_id=session_id,
+            session_id=effective_session_id,
             initial_pool_state=initial_pool_state,
         ):
             event_type = chunk.get("type")
@@ -331,16 +391,19 @@ async def process_message_stream(
 
                 if result.get("itinerary"):
                     actions = [{"type": "CREATE_TRIP", "data": result["itinerary"]}]
-                    # Send structured itinerary data to Flutter for card rendering
-                    await manager.send(ws_key, {
-                        "type": "itinerary_data",
-                        "data": result["itinerary"],
-                    })
-                    # Persist itinerary data — only render as card if this is the
-                    # first itinerary for this conversation (avoid rendering cards
-                    # for follow-up text messages that carry itinerary as context).
+                    # Persist itinerary data for chat history reconstruction
                     response_metadata["itinerary_data"] = result["itinerary"]
+                    # Only send itinerary_data to Flutter and render as card if this is
+                    # the first itinerary for this conversation.  For follow-up messages
+                    # that merely carry the itinerary as AI context, persist the data
+                    # but skip the card event — Flutter's _attachItinerary replaces
+                    # the assistant message text with an empty string, erasing the
+                    # plain-text response.
                     if conversation.conversation_id not in _conversations_with_itinerary_card:
+                        await manager.send(ws_key, {
+                            "type": "itinerary_data",
+                            "data": result["itinerary"],
+                        })
                         rendered_cards.append("itinerary")
                         _conversations_with_itinerary_card.add(conversation.conversation_id)
                     # Also forward accommodation_suggestions as hotel_options for card rendering
@@ -999,6 +1062,34 @@ async def websocket_chat(
         conversation = await get_or_create_conversation(trip, user_id, db)
         await db.commit()
 
+        # ── Initialize ai_session_id from the stable conversation_id ────
+        # This ensures that every subsequent call to process_message_stream
+        # uses the same session_id, allowing the AI engine to find (or
+        # rebuild) the correct ConversationState from Redis/DB.
+        ai_session_id = conversation.conversation_id
+
+        # ── Initialize itinerary card tracking for reopened conversations ──
+        # ``_conversations_with_itinerary_card`` is an in-memory set that
+        # prevents duplicate itinerary cards from being rendered.  When a
+        # conversation with an existing itinerary is reopened, we must pre-
+        # populate this set so the first follow-up message doesn't re-render
+        # the itinerary card (see Flutter's ``_attachItinerary`` which
+        # replaces assistant text with an itinerary card).
+        if trip.status in (
+            TripStatus.itinerary_draft,
+            TripStatus.awaiting_booking,
+            TripStatus.booking_pending,
+            TripStatus.booking_confirmed,
+            TripStatus.active,
+            TripStatus.completed,
+        ):
+            _conversations_with_itinerary_card.add(conversation.conversation_id)
+            logger.info(
+                "[ChatRoutes] Initialized card tracking for reopened conversation %s "
+                "(trip status=%s)",
+                conversation.conversation_id, trip.status.value,
+            )
+
         profile_data = await get_profile_data(user_id, trip.trip_id, db)
 
         if auto_msg and auto_msg.strip():
@@ -1089,6 +1180,23 @@ async def get_history(
     await db.refresh(conversation, ["messages"])
 
     messages = sorted(conversation.messages, key=lambda m: m.timestamp)
+    # ── Deduplication (safety net) ────────────────────────────────────────
+    # Skip duplicate user messages that were created by an earlier bug in
+    # ``rebuild_conversation_state_from_db`` (mapped "agent" DB → "user"
+    # ChatMessage role, causing sync_redis_to_db to insert duplicates).
+    seen_content: set = set()
+    deduped = []
+    for m in messages:
+        key = (m.sender, m.content)
+        if m.sender == "user":
+            if ("agent", m.content) not in seen_content:
+                seen_content.add(key)
+                deduped.append(m)
+        else:
+            if key not in seen_content:
+                seen_content.add(key)
+                deduped.append(m)
+
     return [
         {
             "message_id":      m.message_id,
@@ -1099,7 +1207,7 @@ async def get_history(
             "card_data":       m.card_data,
             "timestamp":       m.timestamp,
         }
-        for m in messages
+        for m in deduped
     ]
 
 

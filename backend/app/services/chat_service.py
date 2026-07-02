@@ -559,6 +559,27 @@ class ChatService:
         )
         messages = result.scalars().all()
 
+        # ── Deduplication ────────────────────────────────────────────────
+        # Safety net: if a user message and an agent message have the same
+        # content in the same conversation, keep only the agent message.
+        # This handles lingering duplicates from an earlier bug where
+        # ``rebuild_conversation_state_from_db`` incorrectly mapped
+        # "agent" (DB) → "user" (ChatMessage role), causing
+        # ``sync_redis_to_db`` to insert duplicate user messages.
+        seen_content: set[tuple] = set()
+        deduped = []
+        for m in messages:
+            key = (m.sender, m.content)
+            if m.sender == "user":
+                # Skip user message if the same content exists as agent message
+                if ("agent", m.content) not in seen_content:
+                    seen_content.add(key)
+                    deduped.append(m)
+            else:
+                if key not in seen_content:
+                    seen_content.add(key)
+                    deduped.append(m)
+
         return [
             {
                 "message_id": m.message_id,
@@ -568,7 +589,7 @@ class ChatService:
                 "image_data": m.image_data,
                 "timestamp": m.timestamp.isoformat() if m.timestamp else None,
             }
-            for m in messages
+            for m in deduped
         ]
 
     # ── Conversation Listing ────────────────────────────────────────────
@@ -655,6 +676,188 @@ class ChatService:
             })
 
         return out
+
+    # ── Conversation State Rebuild (Redis ← DB) ──────────────────────────
+
+    async def rebuild_conversation_state_from_db(
+        self,
+        conversation_id: str,
+        user_id: str,
+    ) -> Optional[dict]:
+        """Rebuild a ``ConversationState``-compatible dict from DB records.
+
+        When a user reopens an existing conversation, the Redis
+        ``ConversationState`` may have expired (TTL).  This method loads
+        the canonical data from PostgreSQL and returns a dict that can be
+        used to re-hydrate a ``ConversationState`` in Redis.
+
+        Returns a dict with keys matching ``ConversationState.to_dict()``,
+        or ``None`` if the conversation has no meaningful history yet.
+
+        The caller is responsible for saving the returned dict to Redis
+        under the correct session key.
+        """
+        # 1. Load messages from DB (oldest first)
+        result = await self.db.execute(
+            select(Message)
+            .where(Message.conversation_id == conversation_id)
+            .order_by(Message.timestamp.asc())
+        )
+        db_messages = result.scalars().all()
+
+        if not db_messages:
+            return None  # nothing to rebuild
+
+        # 2. Load the conversation record + linked trip (with eager loading
+        #    of itineraries → days → stops to avoid N+1 lazy loads)
+        conv_result = await self.db.execute(
+            select(Conversation)
+            .options(
+                selectinload(Conversation.trips)
+                .selectinload(Trip.trip_profiles),
+                selectinload(Conversation.trips)
+                .selectinload(Trip.itineraries)
+                .selectinload(Itinerary.days)
+                .selectinload(Day.stops),
+            )
+            .where(Conversation.conversation_id == conversation_id)
+        )
+        conversation = conv_result.scalar_one_or_none()
+        trip = conversation.trips[0] if conversation and conversation.trips else None
+
+        # 3. Build history list from DB messages
+        # IMPORTANT: Map DB sender correctly:
+        #   "user"  (DB) → "user"     (ChatMessage role)
+        #   "agent" (DB) → "assistant" (ChatMessage role)
+        # The OLD mapping (``msg.sender if msg.sender in ("user", "assistant")
+        # else "user"``) was WRONG — it left "agent" → "user", which:
+        #   1. Confused the AI interpreter (all msgs appeared as user role)
+        #   2. Caused ``sync_redis_to_db`` to create DUPLICATE messages (its
+        #      ``(sender, content)`` fingerprint saw ("user", "...") from the
+        #      rebuilt state, which didn't match ("agent", "...") in the DB).
+        from ai_engine.conversation.conversation_state import ChatMessage
+        history = []
+        for msg in db_messages:
+            role = "user" if msg.sender == "user" else "assistant"
+            history.append(ChatMessage(
+                role=role,
+                content=msg.content,
+                timestamp=msg.timestamp.isoformat() if msg.timestamp else "",
+            ))
+
+        # 4. Determine phase & slots from trip state
+        phase = "greeting"
+        slots_data = {}
+        itinerary_data = None
+
+        if trip:
+            # Destination from trip
+            if trip.destination:
+                city = trip.destination.split(",")[0].strip()
+                slots_data["destination_city"] = city
+            # Duration from start/end dates
+            if trip.start_date and trip.end_date:
+                slots_data["duration_days"] = (trip.end_date - trip.start_date).days + 1
+            # Group size
+            if trip.number_of_travelers:
+                slots_data["group_size"] = trip.number_of_travelers
+
+            # Load itinerary data from first itinerary
+            if trip.itineraries:
+                itinerary = trip.itineraries[0]
+                if itinerary.days:
+                    from datetime import timedelta
+                    days_list = []
+                    for day_obj in sorted(itinerary.days, key=lambda d: d.day_number):
+                        entry = {
+                            "day_number": day_obj.day_number,
+                            "theme": day_obj.theme or "",
+                            "stops": [],
+                        }
+                        if day_obj.stops:
+                            for stop in sorted(day_obj.stops, key=lambda s: s.order_in_day or 0):
+                                snapshot = stop.place_snapshot or {}
+                                entry["stops"].append({
+                                    "id": stop.stop_id,
+                                    "name": snapshot.get("name", ""),
+                                    "category": snapshot.get("category", ""),
+                                    "suggested_time_of_day": snapshot.get("suggested_time_of_day", ""),
+                                    "estimated_duration_minutes": stop.duration_minutes or 60,
+                                    "why_recommended": snapshot.get("why_recommended", ""),
+                                    "rating": snapshot.get("rating"),
+                                    "address": snapshot.get("address", ""),
+                                })
+                        days_list.append(entry)
+
+                    # Load stops from ItineraryStop relationships
+                    itinerary_data = {
+                        "destination": trip.destination or "",
+                        "days": days_list,
+                        "duration_days": slots_data.get("duration_days", len(days_list)),
+                        "accommodation_suggestions": itinerary.accommodation_suggestions or [],
+                    }
+
+            # TripProfile data
+            if trip.trip_profiles:
+                profile = trip.trip_profiles[0]
+                if profile.budget_level:
+                    slots_data["budget_level"] = profile.budget_level
+                if profile.travel_style:
+                    slots_data["travel_style"] = profile.travel_style
+                if profile.pace:
+                    slots_data["pace"] = profile.pace
+                if profile.interests:
+                    slots_data["interests"] = profile.interests
+                if profile.food_preferences:
+                    slots_data["food_preferences"] = profile.food_preferences
+                if profile.accommodation_preferences:
+                    slots_data["accommodation_preferences"] = profile.accommodation_preferences
+
+            # Determine phase based on trip status
+            if trip.status == "planning":
+                phase = "slot_filling"
+            elif trip.status in ("itinerary_draft",):
+                phase = "itinerary_review"
+            elif trip.status in ("awaiting_booking", "booking_pending", "payment_processing"):
+                phase = "booking"
+            elif trip.status in ("booking_confirmed", "active", "completed"):
+                phase = "completed"
+            else:
+                phase = "itinerary_review" if itinerary_data else "slot_filling"
+
+        # 5. Build the complete state dict
+        from datetime import datetime, timezone
+        now = datetime.now(timezone.utc).isoformat()
+
+        state_dict = {
+            "session_id": conversation_id,
+            "user_id": user_id,
+            "phase": phase,
+            "slots": slots_data,
+            "history": [m.to_dict() for m in history],
+            "itinerary": itinerary_data,
+            "itinerary_id": None,
+            "filtered_places": None,
+            "candidate_places": None,
+            "pool_metadata": None,
+            "trip_id": trip.trip_id if trip else None,
+            "created_at": now,
+            "updated_at": now,
+            "turn_count": len([m for m in history if m.role == "user"]),
+            "max_history": 20,
+            "last_question_field": None,
+            "plan_started_at": None,
+        }
+
+        logger.info(
+            "[ChatService] Rebuilt ConversationState from DB for conversation %s — "
+            "phase=%s, slots=%s, history=%d msgs, trip=%s",
+            conversation_id, phase,
+            list(slots_data.keys()),
+            len(history),
+            trip.trip_id if trip else "none",
+        )
+        return state_dict
 
     # ── Error Handling ────────────────────────────────────────────────────
 
