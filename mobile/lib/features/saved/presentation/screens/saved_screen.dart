@@ -34,8 +34,8 @@ class _SavedView extends StatelessWidget {
     return Scaffold(
       backgroundColor: tm.nearWhite,
       appBar: AppBar(
-        backgroundColor: tm.pureWhite,
-        surfaceTintColor: tm.pureWhite,
+        backgroundColor: tm.brandWhite,
+        surfaceTintColor: tm.brandWhite,
         elevation: 0,
         scrolledUnderElevation: 0.5,
         title: Row(
@@ -139,7 +139,7 @@ class _SavedView extends StatelessWidget {
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(RadiusTokens.xl3),
         ),
-        backgroundColor: tm.pureWhite,
+        backgroundColor: tm.brandWhite,
         titlePadding: const EdgeInsets.fromLTRB(
           Spacing.xl3,
           Spacing.xl3,
@@ -283,7 +283,7 @@ class _SavedPlaceCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final tm = context.tm;
     return Material(
-      color: tm.pureWhite,
+      color: tm.brandWhite,
       borderRadius: BorderRadius.circular(RadiusTokens.xl3),
       child: InkWell(
         borderRadius: BorderRadius.circular(RadiusTokens.xl3),
@@ -294,7 +294,7 @@ class _SavedPlaceCard extends StatelessWidget {
             border: Border.all(color: tm.borderLight),
             boxShadow: [
               BoxShadow(
-                color: tm.pureBlack.withValues(alpha: 0.04),
+                color: tm.deepNavy.withValues(alpha: 0.04),
                 blurRadius: 8,
                 offset: const Offset(0, 2),
               ),
@@ -350,7 +350,7 @@ class _SavedPlaceCard extends StatelessWidget {
                                 begin: Alignment.bottomCenter,
                                 end: Alignment.topCenter,
                                 colors: [
-                                  tm.pureBlack.withValues(alpha: 0.4),
+                                  tm.deepNavy.withValues(alpha: 0.4),
                                   Colors.transparent,
                                 ],
                               ),
@@ -369,7 +369,7 @@ class _SavedPlaceCard extends StatelessWidget {
                               child: Container(
                                 padding: const EdgeInsets.all(Spacing.lg),
                                 decoration: BoxDecoration(
-                                  color: tm.pureWhite.withValues(alpha: 0.9),
+                                  color: tm.brandWhite.withValues(alpha: 0.9),
                                   shape: BoxShape.circle,
                                   border: Border.all(
                                     color: tm.sapphire.withValues(alpha: 0.5),
@@ -440,7 +440,7 @@ class _SavedPlaceCard extends StatelessWidget {
                               child: Container(
                                 padding: const EdgeInsets.all(Spacing.lg),
                                 decoration: BoxDecoration(
-                                  color: tm.pureWhite.withValues(alpha: 0.9),
+                                  color: tm.brandWhite.withValues(alpha: 0.9),
                                   shape: BoxShape.circle,
                                   border: Border.all(
                                     color: tm.sapphire.withValues(alpha: 0.5),

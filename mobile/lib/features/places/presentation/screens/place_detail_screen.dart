@@ -45,7 +45,7 @@ class _PlaceDetailView extends StatelessWidget {
     final tm = context.tm;
 
     return Scaffold(
-      backgroundColor: tm.pureWhite,
+      backgroundColor: tm.brandWhite,
       body: BlocBuilder<PlaceDetailCubit, PlaceDetailState>(
         builder: (context, state) {
           return state.when(
@@ -66,15 +66,15 @@ class _PlaceDetailView extends StatelessWidget {
         SliverAppBar(
           expandedHeight: 320,
           pinned: true,
-          backgroundColor: tm.pureBlack,
+          backgroundColor: tm.deepNavy,
           systemOverlayStyle: SystemUiOverlayStyle.light,
           leading: Padding(
             padding: const EdgeInsets.all(8),
             child: Container(
               decoration: BoxDecoration(
-                color: tm.pureBlack.withValues(alpha: 0.3),
+                color: tm.deepNavy.withValues(alpha: 0.3),
                 borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: tm.pureWhite.withValues(alpha: 0.15)),
+                border: Border.all(color: tm.brandWhite.withValues(alpha: 0.15)),
               ),
               child: IconButton(
                 icon: Icon(Icons.arrow_back_rounded, color: tm.textOnDark, size: 20),
@@ -153,12 +153,12 @@ class _PlaceDetailView extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(Spacing.xl3),
       decoration: BoxDecoration(
-        color: tm.pureWhite,
+        color: tm.brandWhite,
         borderRadius: BorderRadius.circular(RadiusTokens.xl3),
         border: Border.all(color: tm.borderLight),
         boxShadow: [
           BoxShadow(
-            color: tm.pureBlack.withValues(alpha: 0.03),
+            color: tm.deepNavy.withValues(alpha: 0.03),
             blurRadius: 8,
             offset: const Offset(0, 2),
           ),
@@ -215,7 +215,7 @@ class _PlaceDetailView extends StatelessWidget {
     Widget photoWidget;
     if (place.photoUrls.isEmpty) {
       photoWidget = Container(
-        color: tm.pureBlack,
+        color: tm.deepNavy,
         child: Center(
           child: Icon(
             Icons.image_outlined,
@@ -651,7 +651,7 @@ class _ReviewsSection extends StatelessWidget {
                         'Write',
                         style: GoogleFonts.inter(
                           fontSize: 12,
-                          color: tm.pureWhite,
+                          color: tm.brandWhite,
                           fontWeight: FontWeight.w600,
                         ),
                       ),
@@ -679,7 +679,7 @@ class _ReviewsSection extends StatelessWidget {
                     height: 20,
                     child: CircularProgressIndicator(
                       strokeWidth: 2,
-                      color: tm.pureBlack,
+                      color: tm.deepNavy,
                     ),
                   ),
                 ),
@@ -1116,7 +1116,7 @@ class _ReviewsSection extends StatelessWidget {
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(RadiusTokens.xl3),
         ),
-        backgroundColor: tm.pureWhite,
+        backgroundColor: tm.brandWhite,
         titlePadding: const EdgeInsets.fromLTRB(Spacing.xl3, Spacing.xl3, Spacing.xl3, 0),
         contentPadding: const EdgeInsets.fromLTRB(Spacing.xl3, Spacing.md, Spacing.xl3, 0),
         actionsPadding: const EdgeInsets.fromLTRB(Spacing.sm, Spacing.sm, Spacing.sm, Spacing.sm),
@@ -1198,12 +1198,12 @@ class _ReviewCard extends StatelessWidget {
       width: double.infinity,
       padding: const EdgeInsets.all(Spacing.xl3),
       decoration: BoxDecoration(
-        color: tm.pureWhite,
+        color: tm.brandWhite,
         borderRadius: BorderRadius.circular(RadiusTokens.xl3),
         border: Border.all(color: tm.borderLight),
         boxShadow: [
           BoxShadow(
-            color: tm.pureBlack.withValues(alpha: 0.03),
+            color: tm.deepNavy.withValues(alpha: 0.03),
             blurRadius: 8,
             offset: const Offset(0, 2),
           ),
@@ -1458,9 +1458,9 @@ class _PhotoCarouselState extends State<_PhotoCarousel> {
             fit: BoxFit.cover,
             loadingBuilder: (_, child, progress) {
               if (progress == null) return child;
-              return Container(color: tm.pureBlack);
+              return Container(color: tm.deepNavy);
             },
-            errorBuilder: (_, _, _) => Container(color: tm.pureBlack),
+            errorBuilder: (_, _, _) => Container(color: tm.deepNavy),
           ),
         ),
         // Premium gradient overlay
@@ -1512,7 +1512,7 @@ class _PageDot extends StatelessWidget {
       width: isActive ? 20 : 7,
       height: 7,
       decoration: BoxDecoration(
-        color: isActive ? tm.sapphire : tm.pureWhite.withValues(alpha: 0.35),
+        color: isActive ? tm.sapphire : tm.brandWhite.withValues(alpha: 0.35),
         borderRadius: BorderRadius.circular(4),
         boxShadow: isActive ? [
           BoxShadow(

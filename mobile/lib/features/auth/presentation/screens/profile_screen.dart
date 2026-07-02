@@ -86,7 +86,7 @@ class _ProfileView extends StatelessWidget {
               ),
               child: CircleAvatar(
                 radius: 30,
-                backgroundColor: tm.pureBlack,
+                backgroundColor: tm.deepNavy,
                 child: Text(
                   (data.fullName ?? "U").isNotEmpty
                       ? (data.fullName ?? "U")[0]
@@ -184,12 +184,12 @@ class _ProfileView extends StatelessWidget {
       child: Container(
         padding: const EdgeInsets.all(Spacing.xl3),
         decoration: BoxDecoration(
-          color: tm.pureWhite,
+          color: tm.brandWhite,
           borderRadius: BorderRadius.circular(RadiusTokens.xl3),
           border: Border.all(color: tm.borderLight),
           boxShadow: [
             BoxShadow(
-              color: tm.pureBlack.withValues(alpha: 0.03),
+              color: tm.deepNavy.withValues(alpha: 0.03),
               blurRadius: 8,
               offset: const Offset(0, 2),
             ),
@@ -231,7 +231,7 @@ class _ProfileView extends StatelessWidget {
   }) {
     final effectiveColor = iconColor ?? tm.deepRoyalBlue;
     return Material(
-      color: tm.pureWhite,
+      color: tm.brandWhite,
       borderRadius: BorderRadius.circular(RadiusTokens.xl3),
       child: InkWell(
         borderRadius: BorderRadius.circular(RadiusTokens.xl3),
@@ -243,7 +243,7 @@ class _ProfileView extends StatelessWidget {
             border: Border.all(color: tm.borderLight),
             boxShadow: [
               BoxShadow(
-                color: tm.pureBlack.withValues(alpha: 0.03),
+                color: tm.deepNavy.withValues(alpha: 0.03),
                 blurRadius: 8,
                 offset: const Offset(0, 2),
               ),
@@ -336,7 +336,7 @@ class _ProfileView extends StatelessWidget {
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(RadiusTokens.xl3),
         ),
-        backgroundColor: tm.pureWhite,
+        backgroundColor: tm.brandWhite,
         titlePadding: const EdgeInsets.fromLTRB(Spacing.xl3, Spacing.xl3, Spacing.xl3, 0),
         contentPadding: const EdgeInsets.fromLTRB(Spacing.xl3, Spacing.md, Spacing.xl3, 0),
         actionsPadding: const EdgeInsets.fromLTRB(Spacing.sm, Spacing.sm, Spacing.sm, Spacing.sm),

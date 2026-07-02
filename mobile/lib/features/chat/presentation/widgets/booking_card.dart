@@ -31,7 +31,7 @@ class BookingCard extends StatelessWidget {
       width: double.infinity,
       margin: const EdgeInsets.symmetric(vertical: Spacing.sm),
       decoration: BoxDecoration(
-        color: tm.pureWhite,
+        color: tm.brandWhite,
         borderRadius: BorderRadius.circular(RadiusTokens.xl4),
         border: Border.all(
           color: isConfirmed ? tm.sapphire.withValues(alpha: 0.4) : tm.borderLight,
@@ -40,7 +40,7 @@ class BookingCard extends StatelessWidget {
           BoxShadow(
             color: isConfirmed
                 ? tm.sapphire.withValues(alpha: 0.08)
-                : tm.pureBlack.withValues(alpha: 0.06),
+                : tm.deepNavy.withValues(alpha: 0.06),
             blurRadius: 16,
             offset: const Offset(0, 4),
           ),
@@ -344,8 +344,8 @@ class BookingCard extends StatelessWidget {
                 style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.w700),
               ),
               style: ElevatedButton.styleFrom(
-                backgroundColor: tm.pureBlack,
-                foregroundColor: tm.pureWhite,
+                backgroundColor: tm.deepNavy,
+                foregroundColor: tm.brandWhite,
                 padding: const EdgeInsets.symmetric(vertical: 16),
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(RadiusTokens.xl3),

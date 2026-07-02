@@ -153,7 +153,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
                     style: GoogleFonts.inter(
                       fontSize: 30,
                       fontWeight: FontWeight.w700,
-                      color: tm.pureWhite,
+                      color: tm.brandWhite,
                       letterSpacing: -0.8,
                       height: 1.1,
                     ),
@@ -163,7 +163,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
                     "Start your travel journey",
                     style: GoogleFonts.inter(
                       fontSize: 14,
-                      color: tm.pureWhite.withValues(alpha: 0.6),
+                      color: tm.brandWhite.withValues(alpha: 0.6),
                       letterSpacing: 0.5,
                       fontWeight: FontWeight.w400,
                     ),
@@ -218,7 +218,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
                     child: ElevatedButton(
                       style: ElevatedButton.styleFrom(
                         backgroundColor: tm.deepRoyalBlue,
-                        foregroundColor: tm.pureWhite,
+                        foregroundColor: tm.brandWhite,
                         elevation: 0,
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(RadiusTokens.xl2),
@@ -231,7 +231,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
                               width: 22,
                               height: 22,
                               child:                              CircularProgressIndicator(
-                                color: tm.pureWhite,
+                                color: tm.brandWhite,
                                 strokeWidth: 2.5,
                               ),
                             )
@@ -250,7 +250,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
                   RichText(
                     text: TextSpan(
                       style: GoogleFonts.inter(
-                        color: tm.pureWhite.withValues(alpha: 0.7),
+                        color: tm.brandWhite.withValues(alpha: 0.7),
                         fontSize: 14,
                       ),
                       children: [
@@ -288,7 +288,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
         style: GoogleFonts.inter(
           fontSize: 13,
           fontWeight: FontWeight.w600,
-          color: tm.pureWhite,
+          color: tm.brandWhite,
           letterSpacing: 0.3,
         ),
       ),

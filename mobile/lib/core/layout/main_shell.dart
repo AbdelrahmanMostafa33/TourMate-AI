@@ -33,36 +33,36 @@ class _MainShellState extends State<MainShell> {
       /// (and their Cubits/WebSockets) are disposed.
       body: _buildActivePage(context),
 
-      /// NAVBAR — Premium sapphire-accented bottom bar
-      bottomNavigationBar: Container(
-        decoration: BoxDecoration(
-          color: tm.pureWhite,
-          border: Border(
-            top: BorderSide(color: tm.borderLight, width: 0.5),
-          ),
-          boxShadow: [
-            BoxShadow(
-              color: tm.pureBlack.withValues(alpha: 0.03),
-              blurRadius: 8,
-              offset: const Offset(0, -2),
+            /// NAVBAR — Premium sapphire-accented bottom bar
+            bottomNavigationBar: Container(
+              decoration: BoxDecoration(
+                color: tm.brandWhite,
+                border: Border(
+                  top: BorderSide(color: tm.borderLight, width: 0.5),
+                ),
+                boxShadow: [
+                  BoxShadow(
+                    color: tm.deepNavy.withValues(alpha: 0.03),
+                    blurRadius: 8,
+                    offset: const Offset(0, -2),
+                  ),
+                ],
+              ),
+              padding: EdgeInsets.only(
+                bottom: MediaQuery.of(context).padding.bottom + 6,
+                top: 6,
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceAround,
+                children: [
+                  _navItem(tm, Icons.chat_bubble_outline, "Chat", 0),
+                  _navItem(tm, Icons.card_travel_outlined, "Trips", 1),
+                  _navItem(tm, Icons.search, "Explore", 2),
+                  _navItem(tm, Icons.favorite_border, "Saved", 3),
+                  _navItem(tm, Icons.person_outline, "You", 4),
+                ],
+              ),
             ),
-          ],
-        ),
-        padding: EdgeInsets.only(
-          bottom: MediaQuery.of(context).padding.bottom + 6,
-          top: 6,
-        ),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceAround,
-          children: [
-            _navItem(tm, Icons.chat_bubble_outline, "Chat", 0),
-            _navItem(tm, Icons.card_travel_outlined, "Trips", 1),
-            _navItem(tm, Icons.search, "Explore", 2),
-            _navItem(tm, Icons.favorite_border, "Saved", 3),
-            _navItem(tm, Icons.person_outline, "You", 4),
-          ],
-        ),
-      ),
     );
   }
 
@@ -129,7 +129,7 @@ class _MainShellState extends State<MainShell> {
             curve: Curves.easeOutCubic,
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
             decoration: BoxDecoration(
-              color: isActive ? tm.pureBlack : Colors.transparent,
+              color: isActive ? tm.deepNavy : Colors.transparent,
               borderRadius: BorderRadius.circular(RadiusTokens.xl3),
               border: isActive
                   ? Border.all(color: tm.sapphire.withValues(alpha: 0.3), width: 0.5)
@@ -141,7 +141,7 @@ class _MainShellState extends State<MainShell> {
                 Icon(
                   icon,
                   size: 20,
-                  color: isActive ? tm.pureWhite : tm.navInactive,
+                  color: isActive ? tm.brandWhite : tm.navInactive,
                 ),
                 if (isActive) ...[
                   const SizedBox(width: 6),
@@ -150,7 +150,7 @@ class _MainShellState extends State<MainShell> {
                     style: GoogleFonts.inter(
                       fontSize: 12,
                       fontWeight: FontWeight.w600,
-                      color: tm.pureWhite,
+                      color: tm.brandWhite,
                       letterSpacing: 0.3,
                     ),
                   ),

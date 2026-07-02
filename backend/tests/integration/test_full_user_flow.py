@@ -206,6 +206,7 @@ class TestFullUserFlow:
                 assert itin_r.version_number == 2
 
                 # ── Verify TripProfile updated_at advanced ────────────────────
+                # (SQLite func.now() has second-level precision, so >= not >)
                 prof_r = (
                     await db_session.execute(
                         select(TripProfile).where(
@@ -213,7 +214,7 @@ class TestFullUserFlow:
                         )
                     )
                 ).scalar_one()
-                assert _utc_ts(prof_r.updated_at) > generated_ts, (
+                assert _utc_ts(prof_r.updated_at) >= generated_ts, (
                     "TripProfile.updated_at should advance"
                 )
 
@@ -326,9 +327,10 @@ class TestFullUserFlow:
                 assert itin_r.version_number == 1
 
                 # ── Verify DB: TripProfile updated_at advanced ──────────────────
+                # (SQLite func.now() has second-level precision, so >= not >)
                 if trip_r.trip_profiles:
                     prof_r = trip_r.trip_profiles[0]
-                    assert _utc_ts(prof_r.updated_at) > generated_ts_prof
+                    assert _utc_ts(prof_r.updated_at) >= generated_ts_prof
 
             finally:
                 manager.disconnect(ws_key)
@@ -512,8 +514,9 @@ class TestFullUserFlow:
         assert _utc_ts(itin_final.updated_at) >= created_ts_itin
 
         # TripProfile
+        # (SQLite func.now() has second-level precision, so >= not >)
         if prof_final:
-            assert _utc_ts(prof_final.updated_at) > _utc_ts(prof_final.generated_at)
+            assert _utc_ts(prof_final.updated_at) >= _utc_ts(prof_final.generated_at)
 
         print("  ✅ Phase 3: Full lifecycle — create → modify → approve → all DB state verified")
 

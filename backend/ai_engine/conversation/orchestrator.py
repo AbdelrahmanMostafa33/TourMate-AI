@@ -227,6 +227,13 @@ async def _process_message_inner(
 
     action = router_result.action
 
+    logger.info(
+        "[DIAG][action_routing] user=%s phase=%s action=%s dest=%s turn=%d message=%.80s",
+        user_id, state.phase.value, action,
+        state.slots.destination_city, state.turn_count,
+        effective_message,
+    )
+
     # ── HANDLE COMPLETED STATE — terminal (one conversation = one trip) ──
     if state.phase == ConversationPhase.COMPLETED:
         if action == "answer_question":
@@ -562,11 +569,12 @@ async def handle_chat(
     image_bytes: Optional[bytes] = None,
     token: Optional[str] = None,
     session_id: Optional[str] = None,
+    recovery_state: Optional[dict] = None,
 ) -> dict:
     lock = _get_user_lock(user_id)
     async with lock:
         manager = await get_session_manager()
-        state = await manager.resume_or_create(user_id, session_id)
+        state = await manager.resume_or_create(user_id, session_id, recovery_state=recovery_state)
         image_features = await _parse_image(image_bytes)
         effective_message = _prepare_message(user_message, image_features)
         response = await _process_message(user_id, state, effective_message, image_features, token)
@@ -579,12 +587,20 @@ async def handle_chat(
 
         return response
 
-async def handle_chat_stream(user_id, user_message, image_bytes=None, token=None, session_id=None, initial_pool_state=None):
+async def handle_chat_stream(user_id, user_message, image_bytes=None, token=None, session_id=None, initial_pool_state=None, recovery_state=None):
     lock = _get_user_lock(user_id)
 
     async with lock:
         manager = await get_session_manager()
-        state = await manager.resume_or_create(user_id, session_id)
+        state = await manager.resume_or_create(user_id, session_id, recovery_state=recovery_state)
+
+        logger.info(
+            "[DIAG][handle_chat_stream] ENTRY user=%s provided_session=%s recovery=%s -> "
+            "restored_phase=%s dest=%s turn=%d hist_len=%d",
+            user_id, session_id, (recovery_state is not None),
+            state.phase.value, state.slots.destination_city,
+            state.turn_count, len(state.history),
+        )
 
         if initial_pool_state and not state.candidate_places:
             state.hydrate_pool(initial_pool_state)
@@ -2424,6 +2440,22 @@ async def _handle_plan_trip(user_id, user_message, extracted, image_features, to
             profile = fuse_image_with_profile(profile, image_features)
 
         s = state.slots if state else None
+
+        # ── Checkpoint: persist PLAN_GENERATION phase before pipeline starts ──
+        #    Save the state to Redis so that if the server crashes during the
+        #    long-running trip_graph.ainvoke() call, the plan_started_at and
+        #    PLAN_GENERATION phase are not lost.  On reconnect, the timeout
+        #    detection in _process_message_inner can reset SLOT_FILLING and
+        #    inform the user, instead of rolling back to an older state.
+        try:
+            _checkpoint_mgr = await get_session_manager()
+            if _checkpoint_mgr.is_connected:
+                await _checkpoint_mgr.save(state)
+        except Exception as _checkpoint_err:
+            logger.warning(
+                "[ConversationAgent] Failed to save pipeline checkpoint (non-fatal): %s",
+                _checkpoint_err,
+            )
 
         # Trip context is NOT appended to the user_message here because the
         # graph pipeline already receives `profile` (all preference data) and

@@ -88,7 +88,7 @@ class _CityPickerState extends State<CityPicker> {
   Widget _buildCountryDropdown() {
     return Container(
       decoration: BoxDecoration(
-        color: tm.pureWhite,
+        color: tm.brandWhite,
         borderRadius: BorderRadius.circular(12),
         border: Border.all(color: tm.borderLight),
       ),
@@ -129,7 +129,7 @@ class _CityPickerState extends State<CityPicker> {
     final cities = CountriesCities.citiesFor(_selectedCountry!);
     return Container(
       decoration: BoxDecoration(
-        color: tm.pureWhite,
+        color: tm.brandWhite,
         borderRadius: BorderRadius.circular(12),
         border: Border.all(color: tm.borderLight),
       ),

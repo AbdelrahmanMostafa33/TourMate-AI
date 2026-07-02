@@ -148,8 +148,8 @@ class _CreateTripViewState extends State<_CreateTripView> {
     return Scaffold(
       backgroundColor: _tm.nearWhite,
       appBar: AppBar(
-        backgroundColor: _tm.pureWhite,
-        surfaceTintColor: _tm.pureWhite,
+        backgroundColor: _tm.brandWhite,
+        surfaceTintColor: _tm.brandWhite,
         leading: IconButton(
           icon: Container(
             padding: const EdgeInsets.all(6),
@@ -181,11 +181,11 @@ class _CreateTripViewState extends State<_CreateTripView> {
                 icon: Icon(Icons.auto_awesome, size: 14, color: _tm.sapphireLight),
                 label: Text(
                   'Create Trip',
-                  style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w600, color: _tm.pureWhite),
+                  style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w600, color: _tm.brandWhite),
                 ),
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: _tm.pureBlack,
-                  foregroundColor: _tm.pureWhite,
+                  backgroundColor: _tm.deepNavy,
+                  foregroundColor: _tm.brandWhite,
                   elevation: 0,
                   padding: const EdgeInsets.symmetric(horizontal: 14),
                   shape: RoundedRectangleBorder(
@@ -281,11 +281,11 @@ class _CreateTripViewState extends State<_CreateTripView> {
                       icon: Icon(Icons.auto_awesome, size: 18, color: _tm.sapphireLight),
                       label: Text(
                         'Start Planning',
-                        style: GoogleFonts.inter(fontSize: 15, fontWeight: FontWeight.w600, color: _tm.pureWhite),
+                        style: GoogleFonts.inter(fontSize: 15, fontWeight: FontWeight.w600, color: _tm.brandWhite),
                       ),
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: _tm.pureBlack,
-                        foregroundColor: _tm.pureWhite,
+                        backgroundColor: _tm.deepNavy,
+                        foregroundColor: _tm.brandWhite,
                         elevation: 0,
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(RadiusTokens.xl2),
@@ -320,13 +320,13 @@ class _CreateTripViewState extends State<_CreateTripView> {
                 interest,
                 style: TextStyle(
                   fontSize: 13,
-                  color: selected ? _tm.pureWhite : _tm.textPrimary,
+                  color: selected ? _tm.brandWhite : _tm.textPrimary,
                   fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
                 ),
               ),
               selected: selected,
-              selectedColor: _tm.pureBlack,
-              checkmarkColor: _tm.pureWhite,
+              selectedColor: _tm.deepNavy,
+              checkmarkColor: _tm.brandWhite,
               backgroundColor: _tm.surface,
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(RadiusTokens.full),
@@ -405,7 +405,7 @@ class _CreateTripViewState extends State<_CreateTripView> {
               )
             : null,
         filled: true,
-        fillColor: _tm.pureWhite,
+        fillColor: _tm.brandWhite,
         contentPadding: const EdgeInsets.symmetric(horizontal: Spacing.xl3, vertical: Spacing.xl2),
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(RadiusTokens.xl),
@@ -417,7 +417,7 @@ class _CreateTripViewState extends State<_CreateTripView> {
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(RadiusTokens.xl),
-          borderSide: BorderSide(color: _tm.pureBlack, width: 1.5),
+          borderSide: BorderSide(color: _tm.deepNavy, width: 1.5),
         ),
       ),
       style: GoogleFonts.inter(fontSize: 15, color: _tm.textPrimary),
@@ -434,12 +434,12 @@ class _CreateTripViewState extends State<_CreateTripView> {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: Spacing.xl3, vertical: Spacing.xl2),
         decoration: BoxDecoration(
-          color: _tm.pureWhite,
+          color: _tm.brandWhite,
           borderRadius: BorderRadius.circular(RadiusTokens.xl),
           border: Border.all(color: _tm.borderLight),
           boxShadow: [
             BoxShadow(
-              color: _tm.pureBlack.withValues(alpha: 0.03),
+              color: _tm.deepNavy.withValues(alpha: 0.03),
               blurRadius: 4,
               offset: const Offset(0, 2),
             ),

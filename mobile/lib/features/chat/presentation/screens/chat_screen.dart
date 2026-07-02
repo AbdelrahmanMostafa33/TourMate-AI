@@ -605,7 +605,7 @@ class _ChatViewState extends State<_ChatView>
 
   Widget _buildSidebar(BuildContext context) {
     return Drawer(
-      backgroundColor: tm.pureWhite,
+      backgroundColor: tm.brandWhite,
       child: SafeArea(
         child: Column(
           children: [
@@ -632,7 +632,7 @@ class _ChatViewState extends State<_ChatView>
                           borderRadius: BorderRadius.circular(10),
                           border: Border.all(color: tm.sapphire.withValues(alpha: 0.3), width: 0.5),
                         ),
-                        child: Icon(Icons.chat_bubble_outline, color: tm.deepRoyalBlue, size: 18),
+                        child: Icon(Icons.chat_bubble_outline, color: tm.sapphireLight, size: 18),
                       ),
                       const SizedBox(width: 12),
                       Text(
@@ -659,14 +659,14 @@ class _ChatViewState extends State<_ChatView>
                         Navigator.pop(context);
                         _startNewChat();
                       },
-                      icon: Icon(Icons.add_rounded, size: 18, color: tm.deepRoyalBlue),
+                      icon: Icon(Icons.add_rounded, size: 18, color: tm.brandWhite),
                       label: Text(
                         'New Chat',
                         style: GoogleFonts.inter(fontWeight: FontWeight.w600),
                       ),
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: tm.pureBlack,
-                        foregroundColor: tm.pureWhite,
+                        backgroundColor: tm.deepNavy,
+                        foregroundColor: tm.brandWhite,
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(12),
                           side: BorderSide(color: tm.sapphire.withValues(alpha: 0.3), width: 0.5),
@@ -784,7 +784,7 @@ class _ChatViewState extends State<_ChatView>
         bottom: 4,
       ),
       decoration: BoxDecoration(
-        color: tm.pureWhite,
+        color: tm.brandWhite,
         border: Border(bottom: BorderSide(color: tm.divider, width: 0.5)),
       ),
       child: Row(
@@ -1061,7 +1061,7 @@ class _ChatViewState extends State<_ChatView>
     return Container(
       padding: EdgeInsets.fromLTRB(Spacing.xl3, Spacing.sm, Spacing.xl3, Spacing.xl3),
       decoration: BoxDecoration(
-        color: tm.pureWhite,
+        color: tm.brandWhite,
         border: Border(top: BorderSide(color: tm.divider, width: 0.5)),
       ),
       child: Column(
@@ -1096,10 +1096,10 @@ class _ChatViewState extends State<_ChatView>
                       child: Container(
                         padding: const EdgeInsets.all(4),
                         decoration: BoxDecoration(
-                          color: tm.pureBlack.withValues(alpha: 0.6),
+                          color: tm.deepNavy.withValues(alpha: 0.6),
                           shape: BoxShape.circle,
                         ),
-                        child: Icon(Icons.close, color: tm.pureWhite, size: 14),
+                        child: Icon(Icons.close, color: tm.brandWhite, size: 14),
                       ),
                     ),
                   ),
@@ -1148,13 +1148,13 @@ class _ChatViewState extends State<_ChatView>
                   width: 36,
                   height: 36,
                   decoration: BoxDecoration(
-                    color: tm.pureBlack,
+                    color: tm.deepNavy,
                     borderRadius: BorderRadius.circular(RadiusTokens.full),
                   ),
                   child: IconButton(
                     padding: EdgeInsets.zero,
                     constraints: const BoxConstraints(),
-                    icon: Icon(Icons.send_rounded, size: 18, color: tm.deepRoyalBlue),
+                    icon: Icon(Icons.send_rounded, size: 18, color: tm.brandWhite),
                     onPressed: () => _sendMessage(cubit),
                   ),
                 ),
@@ -1238,7 +1238,7 @@ class _TypingIndicatorState extends State<_TypingIndicator>
         margin: const EdgeInsets.symmetric(vertical: 4),
         padding: const EdgeInsets.symmetric(horizontal: Spacing.xl3, vertical: Spacing.md),
         decoration: BoxDecoration(
-          color: tm.pureWhite,
+          color: tm.brandWhite,
           borderRadius: BorderRadius.circular(20).copyWith(
             bottomLeft: const Radius.circular(4),
           ),

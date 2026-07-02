@@ -22,8 +22,8 @@ import '../core/theme/design_tokens.dart';
 
 class TourMateColors extends ThemeExtension<TourMateColors> {
   // ――― Core ―――
-  final Color pureBlack;
-  final Color pureWhite;
+  final Color deepNavy;
+  final Color brandWhite;
   final Color nearWhite;
 
   // ――― Sapphire Blue accents — refined, elegant, restrained ―――
@@ -68,8 +68,8 @@ class TourMateColors extends ThemeExtension<TourMateColors> {
 
   const TourMateColors({
     // Core
-    this.pureBlack = const Color(0xFF1E3A8A),      // Deep Royal Blue
-    this.pureWhite = const Color(0xFFFFFFFF),
+    this.deepNavy = const Color(0xFF1E3A8A),      // Deep Royal Blue (formerly deepNavy)
+    this.brandWhite = const Color(0xFFFFFFFF),
     this.nearWhite = const Color(0xFFF8FAFC),
 
     // Sapphire Blue accents — refined, not bright
@@ -115,8 +115,8 @@ class TourMateColors extends ThemeExtension<TourMateColors> {
 
   @override
   ThemeExtension<TourMateColors> copyWith({
-    Color? pureBlack,
-    Color? pureWhite,
+    Color? deepNavy,
+    Color? brandWhite,
     Color? nearWhite,
     Color? sapphire,
     Color? sapphireLight,
@@ -146,8 +146,8 @@ class TourMateColors extends ThemeExtension<TourMateColors> {
     Color? deepRoyalBlue,
   }) {
     return TourMateColors(
-      pureBlack: pureBlack ?? this.pureBlack,
-      pureWhite: pureWhite ?? this.pureWhite,
+      deepNavy: deepNavy ?? this.deepNavy,
+      brandWhite: brandWhite ?? this.brandWhite,
       nearWhite: nearWhite ?? this.nearWhite,
       sapphire: sapphire ?? this.sapphire,
       sapphireLight: sapphireLight ?? this.sapphireLight,
@@ -185,8 +185,8 @@ class TourMateColors extends ThemeExtension<TourMateColors> {
   ) {
     if (other is! TourMateColors) return this;
     return TourMateColors(
-      pureBlack: Color.lerp(pureBlack, other.pureBlack, t)!,
-      pureWhite: Color.lerp(pureWhite, other.pureWhite, t)!,
+      deepNavy: Color.lerp(deepNavy, other.deepNavy, t)!,
+      brandWhite: Color.lerp(brandWhite, other.brandWhite, t)!,
       nearWhite: Color.lerp(nearWhite, other.nearWhite, t)!,
       sapphire: Color.lerp(sapphire, other.sapphire, t)!,
       sapphireLight: Color.lerp(sapphireLight, other.sapphireLight, t)!,
@@ -482,15 +482,15 @@ ThemeData buildTourMateTheme() {
     brightness: Brightness.light,
     colorScheme: ColorScheme.light(
       primary: tm.deepRoyalBlue,
-      onPrimary: tm.pureWhite,
+      onPrimary: tm.brandWhite,
       primaryContainer: tm.sapphireSurface,
       onPrimaryContainer: tm.sapphireDark,
       secondary: tm.deepRoyalBlue,
-      onSecondary: tm.pureWhite,
+      onSecondary: tm.brandWhite,
       secondaryContainer: tm.sapphireLight,
       onSecondaryContainer: tm.sapphireDark,
       tertiary: tm.surfaceDark,
-      onTertiary: tm.pureWhite,
+      onTertiary: tm.brandWhite,
       surface: tm.nearWhite,
       onSurface: tm.textPrimary,
       surfaceContainerHighest: tm.surface,
@@ -498,8 +498,8 @@ ThemeData buildTourMateTheme() {
       outline: tm.border,
       outlineVariant: tm.borderLight,
       error: tm.error,
-      onError: tm.pureWhite,
-      shadow: tm.pureBlack.withValues(alpha: 0.08),
+      onError: tm.brandWhite,
+      shadow: tm.deepNavy.withValues(alpha: 0.08),
     ),
     scaffoldBackgroundColor: tm.nearWhite,
     extensions: [tm],
@@ -532,7 +532,7 @@ ThemeData buildTourMateTheme() {
 
     // ──── AppBar ─────────────────────────────────────────
     appBarTheme: AppBarTheme(
-      backgroundColor: tm.pureWhite,
+      backgroundColor: tm.brandWhite,
       foregroundColor: tm.textPrimary,
       elevation: 0,
       scrolledUnderElevation: 0.5,
@@ -556,7 +556,7 @@ ThemeData buildTourMateTheme() {
 
     // ──── Bottom Navigation ──────────────────────────────
     bottomNavigationBarTheme: BottomNavigationBarThemeData(
-      backgroundColor: tm.pureWhite,
+      backgroundColor: tm.brandWhite,
       selectedItemColor: tm.deepRoyalBlue,
       unselectedItemColor: tm.navInactive,
       type: BottomNavigationBarType.fixed,
@@ -572,8 +572,8 @@ ThemeData buildTourMateTheme() {
     // ──── Elevated Button ───────────────────────────────
     elevatedButtonTheme: ElevatedButtonThemeData(
       style: ElevatedButton.styleFrom(
-        backgroundColor: tm.pureBlack,
-        foregroundColor: tm.pureWhite,
+        backgroundColor: tm.deepNavy,
+        foregroundColor: tm.brandWhite,
         elevation: 0,
         padding: Insets.button,
         shape: RoundedRectangleBorder(
@@ -607,7 +607,7 @@ ThemeData buildTourMateTheme() {
     // ──── Sapphire-toned Filter Chips ──────────────────
     chipTheme: ChipThemeData(
       backgroundColor: tm.surface,
-      selectedColor: tm.pureBlack,
+      selectedColor: tm.deepNavy,
       labelStyle: GoogleFonts.inter(
         fontSize: 13,
         fontWeight: FontWeight.w500,
@@ -616,20 +616,20 @@ ThemeData buildTourMateTheme() {
       secondaryLabelStyle: GoogleFonts.inter(
         fontSize: 13,
         fontWeight: FontWeight.w600,
-        color: tm.pureWhite,
+        color: tm.brandWhite,
       ),
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(RadiusTokens.full),
         side: BorderSide(color: tm.border),
       ),
       padding: Insets.chip,
-      checkmarkColor: tm.pureWhite,
+      checkmarkColor: tm.brandWhite,
     ),
 
     // ──── Input Decoration ──────────────────────────────
     inputDecorationTheme: InputDecorationTheme(
       filled: true,
-      fillColor: tm.pureWhite,
+      fillColor: tm.brandWhite,
       contentPadding: Insets.input,
       isDense: true,
       border: OutlineInputBorder(
@@ -642,7 +642,7 @@ ThemeData buildTourMateTheme() {
       ),
       focusedBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(RadiusTokens.xl),
-        borderSide: BorderSide(color: tm.pureBlack, width: 1.5),
+        borderSide: BorderSide(color: tm.deepNavy, width: 1.5),
       ),
       errorBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(RadiusTokens.xl),
@@ -672,9 +672,9 @@ ThemeData buildTourMateTheme() {
 
     // ──── Card Theme ─────────────────────────────────────
     cardTheme: CardThemeData(
-      color: tm.pureWhite,
+      color: tm.brandWhite,
       elevation: 0,
-      shadowColor: tm.pureBlack.withValues(alpha: 0.06),
+      shadowColor: tm.deepNavy.withValues(alpha: 0.06),
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(RadiusTokens.xl3),
         side: BorderSide(color: tm.borderLight),
@@ -685,7 +685,7 @@ ThemeData buildTourMateTheme() {
 
     // ──── Dialog ─────────────────────────────────────────
     dialogTheme: DialogThemeData(
-      backgroundColor: tm.pureWhite,
+      backgroundColor: tm.brandWhite,
       elevation: 0,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(RadiusTokens.xl5),
@@ -705,24 +705,24 @@ ThemeData buildTourMateTheme() {
 
     // ──── Bottom Sheet ──────────────────────────────────
     bottomSheetTheme: BottomSheetThemeData(
-      backgroundColor: tm.pureWhite,
+      backgroundColor: tm.brandWhite,
       elevation: 0,
       showDragHandle: false,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(RadiusTokens.xl5)),
       ),
-      modalBackgroundColor: tm.pureWhite,
+      modalBackgroundColor: tm.brandWhite,
       modalElevation: 0,
     ),
 
     // ──── Snackbar ───────────────────────────────────────
     snackBarTheme: SnackBarThemeData(
       behavior: SnackBarBehavior.floating,
-      backgroundColor: tm.pureBlack,
+      backgroundColor: tm.deepNavy,
       contentTextStyle: GoogleFonts.inter(
         fontSize: 14,
         fontWeight: FontWeight.w500,
-        color: tm.pureWhite,
+        color: tm.brandWhite,
       ),
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(RadiusTokens.xl2),
@@ -740,7 +740,7 @@ ThemeData buildTourMateTheme() {
 
     // ──── Tab Bar ─────────────────────────────────────────
     tabBarTheme: TabBarThemeData(
-      labelColor: tm.pureWhite,
+      labelColor: tm.brandWhite,
       unselectedLabelColor: tm.textSecondary,
       indicatorSize: TabBarIndicatorSize.tab,
       dividerColor: Colors.transparent,
@@ -754,13 +754,13 @@ ThemeData buildTourMateTheme() {
 
     // ──── Drawer ─────────────────────────────────────────
     drawerTheme: DrawerThemeData(
-      backgroundColor: tm.pureWhite,
+      backgroundColor: tm.brandWhite,
       elevation: 0,
     ),
 
     // ──── Popup Menu ─────────────────────────────────────
     popupMenuTheme: PopupMenuThemeData(
-      color: tm.pureWhite,
+      color: tm.brandWhite,
       elevation: 8,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(RadiusTokens.xl),
@@ -770,8 +770,8 @@ ThemeData buildTourMateTheme() {
 
     // ──── Floating Action Button ─────────────────────────
     floatingActionButtonTheme: FloatingActionButtonThemeData(
-      backgroundColor: tm.pureBlack,
-      foregroundColor: tm.pureWhite,
+      backgroundColor: tm.deepNavy,
+      foregroundColor: tm.brandWhite,
       elevation: 4,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(RadiusTokens.xl3),
@@ -781,10 +781,10 @@ ThemeData buildTourMateTheme() {
     // ──── Checkbox / Radio ────────────────────────────────
     checkboxTheme: CheckboxThemeData(
       fillColor: WidgetStateProperty.resolveWith((states) {
-        if (states.contains(WidgetState.selected)) return tm.pureBlack;
+        if (states.contains(WidgetState.selected)) return tm.deepNavy;
         return Colors.transparent;
       }),
-      checkColor: WidgetStateProperty.all(tm.pureWhite),
+      checkColor: WidgetStateProperty.all(tm.brandWhite),
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(RadiusTokens.xs),
       ),
@@ -802,7 +802,7 @@ ThemeData buildTourMateTheme() {
     dropdownMenuTheme: DropdownMenuThemeData(
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
-        fillColor: tm.pureWhite,
+        fillColor: tm.brandWhite,
         contentPadding: Insets.input,
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(RadiusTokens.xl),
@@ -813,7 +813,7 @@ ThemeData buildTourMateTheme() {
 
     // ──── Time Picker ─────────────────────────────────────
     timePickerTheme: TimePickerThemeData(
-      backgroundColor: tm.pureWhite,
+      backgroundColor: tm.brandWhite,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(RadiusTokens.xl4),
       ),
@@ -821,7 +821,7 @@ ThemeData buildTourMateTheme() {
 
     // ──── Banner ──────────────────────────────────────────
     bannerTheme: MaterialBannerThemeData(
-      backgroundColor: tm.pureWhite,
+      backgroundColor: tm.brandWhite,
       padding: const EdgeInsets.all(Spacing.xl3),
     ),
   );

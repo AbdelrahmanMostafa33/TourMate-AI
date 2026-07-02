@@ -39,7 +39,7 @@ class _TripDetailScreenState extends State<TripDetailScreen> {
     return BlocProvider(
       create: (_) => TripDetailCubit(locator<ApiServices>())..fetchTripDetail(widget.tripId),
       child: Scaffold(
-        backgroundColor: tm.pureWhite,
+        backgroundColor: tm.brandWhite,
         body: BlocBuilder<TripDetailCubit, TripDetailState>(
           builder: (context, state) {
             return state.when(
@@ -104,7 +104,7 @@ class _TripDetailScreenState extends State<TripDetailScreen> {
         bottom: 4,
       ),
       decoration: BoxDecoration(
-        color: tm.pureWhite,
+        color: tm.brandWhite,
         border: Border(bottom: BorderSide(color: tm.divider, width: 0.5)),
       ),
       child: Row(
@@ -199,12 +199,12 @@ class _TripDetailScreenState extends State<TripDetailScreen> {
       child: Container(
         padding: const EdgeInsets.all(Spacing.xl3),
         decoration: BoxDecoration(
-          color: tm.pureWhite,
+          color: tm.brandWhite,
           borderRadius: BorderRadius.circular(RadiusTokens.xl3),
           border: Border.all(color: tm.borderLight),
           boxShadow: [
             BoxShadow(
-              color: tm.pureBlack.withValues(alpha: 0.04),
+              color: tm.deepNavy.withValues(alpha: 0.04),
               blurRadius: 10,
               offset: const Offset(0, 2),
             ),
@@ -321,7 +321,7 @@ class _TripDetailScreenState extends State<TripDetailScreen> {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       decoration: BoxDecoration(
-        color: tm.pureWhite,
+        color: tm.brandWhite,
         borderRadius: BorderRadius.circular(10),
         border: Border.all(color: tm.borderLight),
       ),
@@ -469,12 +469,12 @@ class _TripDetailScreenState extends State<TripDetailScreen> {
         width: double.infinity,
         padding: const EdgeInsets.all(Spacing.xl3),
         decoration: BoxDecoration(
-          color: tm.pureWhite,
+          color: tm.brandWhite,
           borderRadius: BorderRadius.circular(RadiusTokens.xl3),
           border: Border.all(color: tm.borderLight),
           boxShadow: [
             BoxShadow(
-              color: tm.pureBlack.withValues(alpha: 0.04),
+              color: tm.deepNavy.withValues(alpha: 0.04),
               blurRadius: 10,
               offset: const Offset(0, 2),
             ),
@@ -770,7 +770,7 @@ class _TripDetailScreenState extends State<TripDetailScreen> {
                   margin: const EdgeInsets.only(right: Spacing.sm),
                   padding: const EdgeInsets.all(Spacing.md),
                   decoration: BoxDecoration(
-                    color: isSelected ? tm.pureBlack : tm.pureWhite,
+                    color: isSelected ? tm.deepNavy : tm.brandWhite,
                     borderRadius: BorderRadius.circular(RadiusTokens.md),
                     border: Border.all(
                       color: isSelected ? tm.sapphire.withValues(alpha: 0.5) : tm.borderLight,
@@ -804,7 +804,7 @@ class _TripDetailScreenState extends State<TripDetailScreen> {
                         child: Text(
                           '${index + 1}',
                           style: GoogleFonts.inter(
-                            color: isSelected ? tm.pureBlack : tm.pureWhite,
+                            color: isSelected ? tm.deepNavy : tm.brandWhite,
                             fontSize: 10,
                             fontWeight: FontWeight.w800,
                           ),
@@ -821,7 +821,7 @@ class _TripDetailScreenState extends State<TripDetailScreen> {
                               style: GoogleFonts.inter(
                                 fontSize: 12,
                                 fontWeight: FontWeight.w600,
-                                color: isSelected ? tm.pureWhite : tm.textPrimary,
+                                color: isSelected ? tm.brandWhite : tm.textPrimary,
                                 letterSpacing: -0.1,
                               ),
                               maxLines: 1,
@@ -871,12 +871,12 @@ class _TripDetailScreenState extends State<TripDetailScreen> {
           child: Container(
             padding: const EdgeInsets.all(Spacing.md),
             decoration: BoxDecoration(
-              color: tm.pureWhite,
+              color: tm.brandWhite,
               borderRadius: BorderRadius.circular(RadiusTokens.xl3),
               border: Border.all(color: tm.borderLight),
               boxShadow: [
                 BoxShadow(
-                  color: tm.pureBlack.withValues(alpha: 0.12),
+                  color: tm.deepNavy.withValues(alpha: 0.12),
                   blurRadius: 16,
                   offset: const Offset(0, 6),
                 ),
@@ -1032,7 +1032,7 @@ class _TripDetailScreenState extends State<TripDetailScreen> {
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(RadiusTokens.xl3),
         ),
-        backgroundColor: tm.pureWhite,
+        backgroundColor: tm.brandWhite,
         titlePadding: const EdgeInsets.fromLTRB(Spacing.xl3, Spacing.xl3, Spacing.xl3, 0),
         contentPadding: const EdgeInsets.fromLTRB(Spacing.xl3, Spacing.md, Spacing.xl3, 0),
         actionsPadding: const EdgeInsets.fromLTRB(Spacing.sm, Spacing.sm, Spacing.sm, Spacing.sm),
@@ -1383,7 +1383,7 @@ class _StopTimelineCard extends StatelessWidget {
                           end: Alignment.bottomRight,
                         ),
                         shape: BoxShape.circle,
-                        border: Border.all(color: tm.pureWhite, width: 2.5),
+                        border: Border.all(color: tm.brandWhite, width: 2.5),
                         boxShadow: [
                           BoxShadow(
                             color: timeColor.withValues(alpha: 0.35),
@@ -1410,7 +1410,7 @@ class _StopTimelineCard extends StatelessWidget {
                 child: Container(
                   margin: const EdgeInsets.only(left: 8),
                   child: Material(
-                    color: tm.pureWhite,
+                    color: tm.brandWhite,
                     borderRadius: BorderRadius.circular(RadiusTokens.xl3),
                     child: InkWell(
                       borderRadius: BorderRadius.circular(RadiusTokens.xl3),
@@ -1428,7 +1428,7 @@ class _StopTimelineCard extends StatelessWidget {
                           border: Border.all(color: tm.borderLight),
                           boxShadow: [
                             BoxShadow(
-                              color: tm.pureBlack.withValues(alpha: 0.03),
+                              color: tm.deepNavy.withValues(alpha: 0.03),
                               blurRadius: 8,
                               offset: const Offset(0, 2),
                             ),
@@ -1747,12 +1747,12 @@ class _MapMarker extends StatelessWidget {
             color: color,
             shape: BoxShape.circle,
             border: Border.all(
-          color: isSelected ? tm.deepRoyalBlue : tm.pureWhite,
+          color: isSelected ? tm.deepRoyalBlue : tm.brandWhite,
           width: isSelected ? 3 : 2,
         ),
         boxShadow: [
           BoxShadow(
-            color: (isSelected ? tm.deepRoyalBlue.withValues(alpha: 0.4) : tm.pureBlack.withValues(alpha: 0.2)),
+            color: (isSelected ? tm.deepRoyalBlue.withValues(alpha: 0.4) : tm.deepNavy.withValues(alpha: 0.2)),
                 blurRadius: isSelected ? 10 : 6,
                 offset: const Offset(0, 2),
               ),

@@ -303,6 +303,7 @@ class ConversationState:
     updated_at:   str = ""
     turn_count:   int = 0
     max_history:  int = 20
+    version:      int = 0
     last_question_field: Optional[str] = None
     plan_started_at: Optional[str] = None
 
@@ -330,6 +331,7 @@ class ConversationState:
             "updated_at":   self.updated_at,
             "turn_count":   self.turn_count,
             "max_history":  self.max_history,
+            "version":      self.version,
             "last_question_field": self.last_question_field,
             "plan_started_at": self.plan_started_at,
         }
@@ -352,6 +354,7 @@ class ConversationState:
             updated_at   = data.get("updated_at", ""),
             turn_count   = data.get("turn_count", 0),
             max_history  = data.get("max_history", 20),
+            version      = data.get("version", 0),
             last_question_field = data.get("last_question_field"),
             plan_started_at = data.get("plan_started_at"),
         )
@@ -491,4 +494,5 @@ class ConversationState:
             self.history = self.history[-self.max_history:]
 
     def _touch(self) -> None:
+        self.version += 1
         self.updated_at = datetime.now(timezone.utc).isoformat()

@@ -96,12 +96,12 @@ class _BookingPaymentViewState extends State<_BookingPaymentView> {
     return Scaffold(
       backgroundColor: tm.nearWhite,
       appBar: AppBar(
-        backgroundColor: tm.pureWhite,
-        surfaceTintColor: tm.pureWhite,
+        backgroundColor: tm.brandWhite,
+        surfaceTintColor: tm.brandWhite,
         elevation: 0,
         scrolledUnderElevation: 0.5,
         leading: IconButton(
-          icon: Icon(Icons.arrow_back_rounded, color: tm.pureBlack),
+          icon: Icon(Icons.arrow_back_rounded, color: tm.deepNavy),
           onPressed: () => Navigator.pop(context),
         ),
         title: Row(
@@ -156,12 +156,12 @@ class _BookingPaymentViewState extends State<_BookingPaymentView> {
                   Container(
                     padding: const EdgeInsets.all(Spacing.xl3),
                     decoration: BoxDecoration(
-                      color: tm.pureWhite,
+                      color: tm.brandWhite,
                       borderRadius: BorderRadius.circular(RadiusTokens.xl3),
                       border: Border.all(color: tm.borderLight),
                       boxShadow: [
                         BoxShadow(
-                          color: tm.pureBlack.withValues(alpha: 0.04),
+                          color: tm.deepNavy.withValues(alpha: 0.04),
                           blurRadius: 8,
                           offset: const Offset(0, 2),
                         ),
@@ -294,7 +294,7 @@ class _BookingPaymentViewState extends State<_BookingPaymentView> {
               style: GoogleFonts.inter(
                 fontSize: 16,
                 fontWeight: FontWeight.w700,
-                color: tm.pureWhite,
+                color: tm.brandWhite,
                 letterSpacing: 0.3,
               ),
             ),
@@ -459,7 +459,7 @@ class _BookingPaymentViewState extends State<_BookingPaymentView> {
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 14),
             decoration: BoxDecoration(
-              color: tm.pureWhite,
+              color: tm.brandWhite,
               borderRadius: BorderRadius.circular(12),
               border: Border.all(color: tm.borderLight),
             ),

@@ -144,7 +144,7 @@ class _WriteReviewSheetState extends State<WriteReviewSheet> {
               ),
               focusedBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(14),
-                borderSide: BorderSide(color: tm.pureBlack, width: 1.5),
+                borderSide: BorderSide(color: tm.deepNavy, width: 1.5),
               ),
               contentPadding: const EdgeInsets.all(16),
             ),
@@ -169,8 +169,8 @@ class _WriteReviewSheetState extends State<WriteReviewSheet> {
                       );
                     },
               style: ElevatedButton.styleFrom(
-                backgroundColor: tm.pureBlack,
-                foregroundColor: tm.pureWhite,
+                backgroundColor: tm.deepNavy,
+                foregroundColor: tm.brandWhite,
                 disabledBackgroundColor: tm.border,
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(RadiusTokens.xl2),
@@ -182,7 +182,7 @@ class _WriteReviewSheetState extends State<WriteReviewSheet> {
                       width: 20,
                       height: 20,
                       child: CircularProgressIndicator(
-                        color: tm.pureWhite,
+                        color: tm.brandWhite,
                         strokeWidth: 2,
                       ),
                     )

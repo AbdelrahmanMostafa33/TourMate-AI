@@ -24,7 +24,34 @@ TEST_DATABASE_URL = "sqlite+aiosqlite:///:memory:"
 
 
 @pytest.fixture
-async def db_session():
+def _fix_sqlite_jsonb():
+    """Rewrite PostgreSQL JSONB columns as JSON for SQLite compatibility.
+
+    SQLite does not support the ``JSONB`` type.  This fixture registers a
+    ``before_create`` DDL event on ``Base.metadata`` that rewrites any
+    JSONB column to ``sqlalchemy.JSON()`` before table creation, then
+    deregisters the listener after the test to avoid
+    ``ListenerAlreadyRegistered`` warnings across test runs.
+    """
+    import sqlalchemy as sa
+    from sqlalchemy import event
+    from sqlalchemy.dialects.postgresql import JSONB
+    from app.core.database import Base
+
+    @event.listens_for(Base.metadata, "before_create")
+    def _jsonb_to_json(metadata, connection, **kw):
+        for table in metadata.tables.values():
+            for col in table.columns:
+                if isinstance(col.type, JSONB):
+                    col.type = sa.JSON()
+
+    yield
+
+    event.remove(Base.metadata, "before_create", _jsonb_to_json)
+
+
+@pytest.fixture
+async def db_session(_fix_sqlite_jsonb):
     """Create a fresh in-memory SQLite async database for each test.
 
     Creates all tables from the SQLAlchemy metadata, then yields an

@@ -25,6 +25,8 @@ class Conversation(Base):
         default=ConversationStatus.active,
         nullable=False,
     )
+    state_snapshot  = Column(JSONB, nullable=True, comment="Snapshot of ConversationState for recovery if Redis data is lost")
+    ai_session_id   = Column(String, nullable=True, comment="Active AI engine session_id for this conversation — allows direct Redis lookup on reconnection")
 
     # Relationships
     user     = relationship("User",    back_populates="conversations")

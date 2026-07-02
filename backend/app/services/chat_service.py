@@ -23,7 +23,7 @@ from datetime import date, timedelta
 from typing import Optional
 
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, func
 from sqlalchemy.orm import selectinload
 
 from app.models.chat import Conversation, Message
@@ -33,6 +33,12 @@ from app.models.profile import TripProfile
 from app.models.enums import ConversationStatus, BudgetLevel, TravelStyle, TripPace
 from app.services.itinerary_service import ItineraryService
 
+# Import ConversationState for type annotations in save_state_snapshot.
+# Using a TYPE_CHECKING guard to avoid circular imports at runtime.
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from ai_engine.conversation.conversation_state import ConversationState
+
 logger = logging.getLogger(__name__)
 
 
@@ -41,6 +47,75 @@ class ChatService:
 
     def __init__(self, db: AsyncSession):
         self.db = db
+
+    # ── State Snapshot Operations ─────────────────────────────────────────
+
+    async def save_state_snapshot(
+        self,
+        conversation_id: str,
+        state: "ConversationState",
+    ) -> bool:
+        """Persist a lightweight snapshot of ConversationState onto the DB Conversation record.
+
+        The snapshot stores enough structured data (phase, slots, turn_count,
+        itinerary_id, trip_id) to recover the AI's session context from
+        PostgreSQL alone if the Redis data is lost or the TTL expires.
+
+        This is NOT a replacement for Redis — it is a fallback recovery path.
+        Redis remains the primary state store for speed and rich object
+        fidelity (pool data, message history objects, etc.).
+
+        Args:
+            conversation_id: The DB ``Conversation.conversation_id`` to update.
+            state:           The in-memory ``ConversationState`` to snapshot.
+
+        Returns:
+            True if the snapshot was saved, False on error.
+        """
+        try:
+            # Build a minimal, serializable snapshot — enough to reconstruct
+            # the session but without duplicating the full pool data or
+            # message history (which is already in the DB).
+            snapshot = {
+                "phase":               state.phase.value,
+                "slots":               state.slots.to_dict(),
+                "turn_count":          state.turn_count,
+                "itinerary_id":        state.itinerary_id,
+                "trip_id":             state.trip_id,
+                "last_question_field": state.last_question_field,
+                "updated_at":          state.updated_at,
+            }
+
+            result = await self.db.execute(
+                select(Conversation).where(
+                    Conversation.conversation_id == conversation_id
+                )
+            )
+            conv = result.scalar_one_or_none()
+            if not conv:
+                logger.warning(
+                    "[ChatService] Cannot save snapshot: conversation %s not found",
+                    conversation_id,
+                )
+                return False
+
+            # Persist the AI engine session_id on the conversation record
+            # so reconnection can attempt a fast Redis lookup before falling
+            # back to the state_snapshot recovery path.
+            conv.ai_session_id = state.session_id
+
+            conv.state_snapshot = snapshot
+            logger.debug(
+                "[ChatService] Saved state snapshot for conversation %s (phase=%s, turn=%d)",
+                conversation_id, snapshot["phase"], snapshot["turn_count"],
+            )
+            return True
+        except Exception as e:
+            logger.warning(
+                "[ChatService] Failed to save state snapshot for conversation %s: %s",
+                conversation_id, e,
+            )
+            return False
 
     # ── Message Operations ────────────────────────────────────────────────
 
@@ -428,23 +503,17 @@ class ChatService:
     ) -> int:
         """Sync Redis ``ConversationState.history`` messages to the DB ``Message`` table.
 
-        Compares the provided Redis message list against existing DB messages
-        for the conversation and inserts any that are not yet persisted.
+        Uses offset-based deduplication instead of content fingerprinting.
+        Both Redis history and DB messages are stored in chronological order
+        (messages are appended to both at the same time during processing).
+        By counting how many DB messages already exist for this conversation,
+        we determine the offset into the Redis history that has already been
+        synced and only process messages beyond that point.
 
-        Deduplication is based on ``(sender, content)`` only — NOT timestamp.
-
-        NOTE: An earlier version of this method fingerprinted on
-        ``(sender, content, minute_precision_timestamp)``. That worked for
-        true "same instant" duplicates, but failed to catch duplicates
-        produced by a full re-processing of the same message minutes apart
-        (e.g. a client reconnecting and replaying ``auto_msg`` after the
-        socket dropped) — the new copy would land in a different minute
-        bucket and look "new". Since ``save_user_message`` /
-        ``save_agent_message`` already persist messages directly during
-        normal processing, this sync is a secondary safety net whose job is
-        to catch anything Redis has that the DB doesn't — and an exact
-        (sender, content) match for that purpose is virtually always a true
-        duplicate, not a coincidence, so we drop timestamp from the key.
+        This is more robust than ``(sender, content)`` fingerprinting, which
+        could lose legitimate duplicate messages (same text from the user in
+        separate turns) or mistakenly skip messages whose content happens to
+        match an earlier message.
 
         Args:
             conversation_id: The DB ``Conversation.conversation_id`` to sync into.
@@ -464,26 +533,23 @@ class ChatService:
         if not redis_history:
             return 0
 
-        # 1. Load existing DB messages for this conversation
+        # 1. Count existing DB messages for this conversation.
+        #    This gives us the offset into the Redis history that has already
+        #    been synced (both are in chronological order).
         result = await self.db.execute(
-            select(Message)
+            select(func.count(Message.message_id))
             .where(Message.conversation_id == conversation_id)
-            .order_by(Message.timestamp.asc())
         )
-        existing = result.scalars().all()
+        db_count = result.scalar() or 0
 
-        # Build a set of fingerprints for fast dedup.
-        # Fingerprint = (sender, content) — see docstring for why timestamp
-        # was dropped from the key.
-        existing_fingerprints: set[tuple] = set()
-        for msg in existing:
-            existing_fingerprints.add((msg.sender, msg.content))
+        if db_count >= len(redis_history):
+            return 0  # All messages already synced
 
-        # 2. Map Redis ChatMessage → DB Message, skipping duplicates
-        #    Redis roles:    "user", "assistant", "system"
-        #    DB senders:     "user", "agent"
+        # 2. Only process messages beyond the DB count
+        new_messages = redis_history[db_count:]
         inserted = 0
-        for redis_msg in redis_history:
+
+        for redis_msg in new_messages:
             role = redis_msg.get("role", "").strip()
             content = redis_msg.get("content", "").strip()
 
@@ -501,12 +567,6 @@ class ChatService:
             if not content:
                 continue
 
-            fingerprint = (sender, content)
-
-            if fingerprint in existing_fingerprints:
-                continue  # Already exists in DB
-
-            # Insert new message
             msg = Message(
                 message_id=str(uuid.uuid4()),
                 conversation_id=conversation_id,
@@ -514,13 +574,13 @@ class ChatService:
                 content=content,
             )
             self.db.add(msg)
-            existing_fingerprints.add(fingerprint)
             inserted += 1
 
         if inserted > 0:
             logger.info(
-                "[ChatService] Synced %d new message(s) to conversation %s",
-                inserted, conversation_id,
+                "[ChatService] Synced %d new message(s) to conversation %s "
+                "(offset=%d/%d)",
+                inserted, conversation_id, db_count, len(redis_history),
             )
 
         return inserted

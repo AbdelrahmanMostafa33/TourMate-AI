@@ -44,8 +44,8 @@ class TMPrimaryButton extends StatelessWidget {
       child: ElevatedButton(
         onPressed: isLoading ? null : onPressed,
         style: ElevatedButton.styleFrom(
-          backgroundColor: tm.pureBlack,
-          foregroundColor: tm.pureWhite,
+          backgroundColor: tm.deepNavy,
+          foregroundColor: tm.brandWhite,
           disabledBackgroundColor: tm.textTertiary.withValues(alpha: 0.3),
           disabledForegroundColor: tm.textOnDark.withValues(alpha: 0.5),
           elevation: 0,
@@ -61,7 +61,7 @@ class TMPrimaryButton extends StatelessWidget {
                 height: 22,
                 child: CircularProgressIndicator(
                   strokeWidth: 2.5,
-                  valueColor: AlwaysStoppedAnimation<Color>(tm.pureWhite),
+                  valueColor: AlwaysStoppedAnimation<Color>(tm.brandWhite),
                 ),
               )
             : Row(
@@ -130,9 +130,9 @@ class TMAccentButton extends StatelessWidget {
           onPressed: isLoading ? null : onPressed,
           style: ElevatedButton.styleFrom(
             backgroundColor: Colors.transparent,
-            foregroundColor: tm.pureWhite,
+            foregroundColor: tm.brandWhite,
             disabledBackgroundColor: Colors.transparent,
-            disabledForegroundColor: tm.pureWhite.withValues(alpha: 0.5),
+            disabledForegroundColor: tm.brandWhite.withValues(alpha: 0.5),
             elevation: 0,
             shadowColor: Colors.transparent,
             padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
@@ -146,7 +146,7 @@ class TMAccentButton extends StatelessWidget {
                   height: 22,
                   child: CircularProgressIndicator(
                     strokeWidth: 2.5,
-                    valueColor: AlwaysStoppedAnimation<Color>(tm.pureWhite),
+                    valueColor: AlwaysStoppedAnimation<Color>(tm.brandWhite),
                   ),
                 )
               : Row(
@@ -303,14 +303,14 @@ class TMPremiumCard extends StatelessWidget {
       padding: padding ?? const EdgeInsets.all(Spacing.xl3),
       margin: margin ?? EdgeInsets.zero,
       decoration: BoxDecoration(
-        color: tm.pureWhite,
+        color: tm.brandWhite,
         borderRadius: BorderRadius.circular(borderRadius),
         border: Border.all(
           color: accentBorder ? tm.sapphire.withValues(alpha: 0.4) : tm.borderLight,
           width: accentBorder ? 1.0 : 0.5,
         ),
         boxShadow: [
-          ...ShadowTokens.medium(tm.pureBlack),
+          ...ShadowTokens.medium(tm.deepNavy),
           if (accentBorder)
             BoxShadow(
               color: tm.sapphire.withValues(alpha: 0.06),
@@ -1014,7 +1014,7 @@ class TMListTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final tm = context.tm;
     return Material(
-      color: tm.pureWhite,
+      color: tm.brandWhite,
       borderRadius: BorderRadius.circular(RadiusTokens.xl2),
       child: InkWell(
         borderRadius: BorderRadius.circular(RadiusTokens.xl2),

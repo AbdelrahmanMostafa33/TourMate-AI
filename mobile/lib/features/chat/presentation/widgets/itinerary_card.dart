@@ -22,12 +22,12 @@ class ItineraryCard extends StatelessWidget {
       width: double.infinity,
       margin: const EdgeInsets.symmetric(vertical: Spacing.sm),
       decoration: BoxDecoration(
-        color: tm.pureWhite,
+        color: tm.brandWhite,
         borderRadius: BorderRadius.circular(RadiusTokens.xl4),
         border: Border.all(color: tm.borderLight),
         boxShadow: [
           BoxShadow(
-            color: tm.pureBlack.withValues(alpha: 0.06),
+            color: tm.deepNavy.withValues(alpha: 0.06),
             blurRadius: 16,
             offset: const Offset(0, 4),
           ),
@@ -254,7 +254,7 @@ class _StopTimelineItem extends StatelessWidget {
                       end: Alignment.bottomRight,
                     ),
                     shape: BoxShape.circle,
-                    border: Border.all(color: tm.pureWhite, width: 2),
+                    border: Border.all(color: tm.brandWhite, width: 2),
                     boxShadow: [
                       BoxShadow(
                         color: timeColor.withValues(alpha: 0.3),
@@ -471,8 +471,8 @@ class _ApproveButton extends StatelessWidget {
             style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.w700),
           ),
           style: ElevatedButton.styleFrom(
-            backgroundColor: tm.pureBlack,
-            foregroundColor: tm.pureWhite,
+            backgroundColor: tm.deepNavy,
+            foregroundColor: tm.brandWhite,
             padding: const EdgeInsets.symmetric(vertical: 16),
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(RadiusTokens.xl3),

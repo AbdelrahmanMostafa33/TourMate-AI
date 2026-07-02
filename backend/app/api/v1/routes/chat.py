@@ -1,5 +1,7 @@
+import asyncio
 import base64
 import logging
+from collections import OrderedDict
 from datetime import datetime
 from typing import Optional
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Depends, HTTPException, Query
@@ -10,11 +12,45 @@ import uuid
 
 logger = logging.getLogger(__name__)
 
+
+class _BoundedSet:
+    """A set-like collection with a fixed maximum size.
+
+    When full, adding a new item evicts the item that was added the longest
+    time ago (FIFO).  This is used for in-memory caches that should not grow
+    unboundedly over the lifetime of the server process.
+    """
+
+    def __init__(self, maxsize: int = 10000):
+        self._maxsize = maxsize
+        self._dict: OrderedDict[str, bool] = OrderedDict()
+
+    def add(self, item: str) -> None:
+        """Add an item.  If the set is at capacity, evict the oldest entry."""
+        if len(self._dict) >= self._maxsize:
+            self._dict.popitem(last=False)
+        self._dict[item] = True
+
+    def __contains__(self, item: str) -> bool:
+        return item in self._dict
+
+    def __len__(self) -> int:
+        return len(self._dict)
+
+    def discard(self, item: str) -> None:
+        """Remove an item if present (no-op if absent)."""
+        self._dict.pop(item, None)
+
+    def clear(self) -> None:
+        """Remove all items."""
+        self._dict.clear()
+
+
 # Track which conversations have already persisted an itinerary card.
-# This is used to avoid rendering duplicate itinerary cards in chat history
-# for follow-up text messages that carry the itinerary as AI context.
-# Key: conversation_id, Value: True if itinerary card was already persisted.
-_conversations_with_itinerary_card: set = set()
+# This bounded set limits memory consumption to at most MAX_CONVERSATIONS entries,
+# preventing unbounded growth in long-running server processes.
+MAX_CONVERSATIONS = 10_000
+_conversations_with_itinerary_card: _BoundedSet = _BoundedSet(maxsize=MAX_CONVERSATIONS)
 
 from app.core.database import get_db
 from app.core.firebase import verify_token
@@ -265,6 +301,14 @@ async def process_message_stream(
     # conversation always finds (or rebuilds) the correct state.
     effective_session_id = conversation.conversation_id
 
+    logger.info(
+        "[DIAG][process_message_stream] ENTRY conv=%s trip=%s user=%s "
+        "session_id=%s recovery_state_has=%s state_snapshot_phase=%s",
+        conversation.conversation_id, trip.trip_id, user_id,
+        session_id, (conversation.state_snapshot is not None),
+        conversation.state_snapshot.get("phase") if conversation.state_snapshot else None,
+    )
+
     # ── Ensure Redis has valid ConversationState for this session ──────
     # If the state expired from Redis (TTL), rebuild it from DB records.
     # This must happen BEFORE handle_chat_stream so the AI engine sees
@@ -337,6 +381,11 @@ async def process_message_stream(
     try:
         from ai_engine.conversation.orchestrator import handle_chat_stream
 
+        # If Redis is down or the session expired, recover structured state
+        # (phase, slots, turn_count) from the DB state_snapshot column so the
+        # user can seamlessly continue their conversation.
+        _recovery_state = conversation.state_snapshot
+
         async for chunk in handle_chat_stream(
             user_id=user_id,
             user_message=user_text,
@@ -344,6 +393,7 @@ async def process_message_stream(
             token=token,
             session_id=effective_session_id,
             initial_pool_state=initial_pool_state,
+            recovery_state=_recovery_state,
         ):
             event_type = chunk.get("type")
 
@@ -654,18 +704,43 @@ async def process_message_stream(
             card_data=card_data_for_db,
         )
 
-    # ── Sync Redis state to DB ────────────────────────────────────────────
+    # ── Sync Redis state to DB + persist state snapshot ───────────────────
     if ai_session_id:
-        try:
-            from ai_engine.conversation.redis_memory import get_session_manager
-            redis_manager = await get_session_manager()
-            if redis_manager.is_connected:
-                redis_state = await redis_manager.load(ai_session_id)
-                if redis_state and redis_state.history:
-                    redis_msgs = [m.to_dict() for m in redis_state.history]
-                    await svc.sync_redis_to_db(conversation.conversation_id, redis_msgs)
-        except Exception as sync_err:
-            logger.warning("[ChatRoutes] Redis sync failed (non-fatal): %s", sync_err)
+        # Retry with exponential backoff: 100ms, 200ms, 400ms
+        for attempt in range(1, 4):
+            try:
+                from ai_engine.conversation.redis_memory import get_session_manager
+                redis_manager = await get_session_manager()
+                if redis_manager.is_connected:
+                    redis_state = await redis_manager.load(ai_session_id)
+                    if redis_state:
+                        # 1. Sync Redis message history to DB
+                        if redis_state.history:
+                            redis_msgs = [m.to_dict() for m in redis_state.history]
+                            await svc.sync_redis_to_db(conversation.conversation_id, redis_msgs)
+                        # 2. Persist lightweight state snapshot on Conversation record
+                        #    This ensures the AI can recover structured state (phase, slots,
+                        #    turn_count) from PostgreSQL alone if Redis is lost.
+                        await svc.save_state_snapshot(
+                            conversation.conversation_id,
+                            redis_state,
+                        )
+                    # Success — exit retry loop
+                    break
+            except Exception as sync_err:
+                if attempt < 3:
+                    delay = 0.1 * (2 ** (attempt - 1))  # 100ms, 200ms, 400ms
+                    logger.warning(
+                        "[ChatRoutes] Redis sync attempt %d/3 failed, retrying in %.0fms: %s",
+                        attempt, delay * 1000, sync_err,
+                    )
+                    await asyncio.sleep(delay)
+                else:
+                    logger.warning(
+                        "[ChatRoutes] Redis sync failed after 3 attempts (non-fatal): %s",
+                        sync_err,
+                    )
+
 
     # ── Persist image features to DB (non-critical) ──────────────────────
     if image_features_from_result and image_features_from_result.has_signal:
@@ -681,6 +756,13 @@ async def process_message_stream(
             await db.rollback()
 
     await db.commit()
+
+    logger.info(
+        "[DIAG][process_message_stream] RETURN conv=%s ai_session_id=%s "
+        "was_approved=%s stops_created=%d",
+        conversation.conversation_id, ai_session_id,
+        was_approved, stops_created,
+    )
 
     # ── Notify Flutter that trip was approved (after commit) ──────────────
     if was_approved:
@@ -951,6 +1033,26 @@ async def websocket_new_chat(
                                     img_err,
                                 )
 
+                        # ── Persist state snapshot right after trip creation ───────
+                        #    This captures the initial phase/slots from the AI
+                        #    engine before any follow-up messages are processed.
+                        if ai_session_id:
+                            try:
+                                from ai_engine.conversation.redis_memory import get_session_manager
+                                _rm = await get_session_manager()
+                                if _rm.is_connected:
+                                    _redis_state = await _rm.load(ai_session_id)
+                                    if _redis_state:
+                                        await svc.save_state_snapshot(
+                                            conversation.conversation_id,
+                                            _redis_state,
+                                        )
+                            except Exception as snap_err:
+                                logger.warning(
+                                    "[ChatRoutes] Failed to save initial state snapshot (non-fatal): %s",
+                                    snap_err,
+                                )
+
                         await db.commit()
 
                         await manager.send(ws_key, {
@@ -1038,8 +1140,6 @@ async def websocket_chat(
     lock = manager.get_lock(trip_id)
 
     try:
-        ai_session_id: Optional[str] = None
-
         result = await db.execute(
             select(Trip)
             .options(
@@ -1063,18 +1163,24 @@ async def websocket_chat(
         conversation = await get_or_create_conversation(trip, user_id, db)
         await db.commit()
 
-        # ── Initialize ai_session_id from the stable conversation_id ────
+        # ── Initialize ai_session_id from the persisted DB value ────
         # This ensures that every subsequent call to process_message_stream
         # uses the same session_id, allowing the AI engine to find (or
         # rebuild) the correct ConversationState from Redis/DB.
-        ai_session_id = conversation.conversation_id
+        # On reconnection from chat history, the first message can attempt a
+        # fast Redis lookup via resume_or_create(session_id=...) instead of
+        # relying solely on the recovery_state fallback path.
+        # The value gets updated after each process_message_stream call with
+        # the live session_id from the AI engine and is re-persisted via
+        # save_state_snapshot in the sync step.
+        ai_session_id: Optional[str] = conversation.ai_session_id
 
         # ── Initialize itinerary card tracking for reopened conversations ──
-        # ``_conversations_with_itinerary_card`` is an in-memory set that
+        # _conversations_with_itinerary_card is an in-memory set that
         # prevents duplicate itinerary cards from being rendered.  When a
         # conversation with an existing itinerary is reopened, we must pre-
         # populate this set so the first follow-up message doesn't re-render
-        # the itinerary card (see Flutter's ``_attachItinerary`` which
+        # the itinerary card (see Flutter's _attachItinerary which
         # replaces assistant text with an itinerary card).
         if trip.status in (
             TripStatus.itinerary_draft,
@@ -1090,6 +1196,15 @@ async def websocket_chat(
                 "(trip status=%s)",
                 conversation.conversation_id, trip.status.value,
             )
+
+        logger.info(
+            "[DIAG][websocket_chat] INIT trip=%s conv=%s state_snapshot_phase=%s "
+            "ai_session_id_from_db=%s trip_status=%s",
+            trip_id, conversation.conversation_id,
+            conversation.state_snapshot.get("phase") if conversation.state_snapshot else None,
+            ai_session_id,
+            trip.status.value if trip.status else None,
+        )
 
         profile_data = await get_profile_data(user_id, trip.trip_id, db)
 

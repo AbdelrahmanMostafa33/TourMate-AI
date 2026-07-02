@@ -201,7 +201,7 @@ class _SplashScreenState extends State<SplashScreen>
                             style: GoogleFonts.inter(
                               fontSize: 34,
                               fontWeight: FontWeight.w700,
-                              color: tm.pureWhite,
+                              color: tm.brandWhite,
                               letterSpacing: -1.0,
                               height: 1.05,
                             ),
@@ -232,7 +232,7 @@ class _SplashScreenState extends State<SplashScreen>
                       'Your AI Travel Companion',
                       style: GoogleFonts.inter(
                         fontSize: 13,
-                        color: tm.pureWhite.withValues(alpha: 0.55),
+                        color: tm.brandWhite.withValues(alpha: 0.55),
                         letterSpacing: 2.0,
                         fontWeight: FontWeight.w400,
                       ),

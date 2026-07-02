@@ -90,10 +90,10 @@ class _EditProfileViewState extends State<_EditProfileView> {
     return Scaffold(
       backgroundColor: tm.surface,
       appBar: AppBar(
-        backgroundColor: tm.pureWhite,
-        surfaceTintColor: tm.pureWhite,
+        backgroundColor: tm.brandWhite,
+        surfaceTintColor: tm.brandWhite,
         leading: IconButton(
-          icon: Icon(Icons.arrow_back_rounded, color: tm.pureBlack),
+          icon: Icon(Icons.arrow_back_rounded, color: tm.deepNavy),
           onPressed: () => Navigator.pop(context),
         ),
         title: Text(
@@ -107,8 +107,8 @@ class _EditProfileViewState extends State<_EditProfileView> {
             child: ElevatedButton(
               onPressed: _loading ? null : _save,
               style: ElevatedButton.styleFrom(
-                backgroundColor: tm.pureBlack,
-                foregroundColor: tm.pureWhite,
+                backgroundColor: tm.deepNavy,
+                foregroundColor: tm.brandWhite,
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(12),
                 ),
@@ -125,7 +125,7 @@ class _EditProfileViewState extends State<_EditProfileView> {
                     )
                   : Text(
                       'Save',
-                      style: GoogleFonts.inter(color: tm.pureWhite, fontWeight: FontWeight.w600, fontSize: 14),
+                      style: GoogleFonts.inter(color: tm.brandWhite, fontWeight: FontWeight.w600, fontSize: 14),
                     ),
             ),
           ),
@@ -166,7 +166,7 @@ class _EditProfileViewState extends State<_EditProfileView> {
                       ),
                       child: CircleAvatar(
                         radius: 37.5,
-                        backgroundColor: tm.pureBlack,
+                        backgroundColor: tm.deepNavy,
                         child: Text(
                           (widget.profile.fullName ?? 'U').isNotEmpty
                               ? (widget.profile.fullName ?? 'U')[0]

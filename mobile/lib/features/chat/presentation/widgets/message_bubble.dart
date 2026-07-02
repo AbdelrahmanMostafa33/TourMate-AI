@@ -101,7 +101,7 @@ class MessageBubble extends StatelessWidget {
                 border: Border.all(color: tm.sapphire.withValues(alpha: 0.2), width: 1),
                 boxShadow: [
                   BoxShadow(
-                    color: tm.pureBlack.withValues(alpha: 0.06),
+                    color: tm.deepNavy.withValues(alpha: 0.06),
                     blurRadius: 8,
                     offset: const Offset(0, 2),
                   ),
@@ -152,7 +152,7 @@ class MessageBubble extends StatelessWidget {
         maxWidth: MediaQuery.of(context).size.width * 0.72,
       ),
       decoration: BoxDecoration(
-        color: isUser ? tm.pureBlack : tm.pureWhite,
+        color: isUser ? tm.deepNavy : tm.brandWhite,
         borderRadius: BorderRadius.circular(20).copyWith(
           bottomRight: isUser ? const Radius.circular(4) : null,
           bottomLeft: !isUser ? const Radius.circular(4) : null,
@@ -161,14 +161,14 @@ class MessageBubble extends StatelessWidget {
         boxShadow: isUser
             ? [
                 BoxShadow(
-                  color: tm.pureBlack.withValues(alpha: 0.12),
+                  color: tm.deepNavy.withValues(alpha: 0.12),
                   blurRadius: 8,
                   offset: const Offset(0, 2),
                 ),
               ]
             : [
                 BoxShadow(
-                  color: tm.pureBlack.withValues(alpha: 0.04),
+                  color: tm.deepNavy.withValues(alpha: 0.04),
                   blurRadius: 8,
                   offset: const Offset(0, 2),
                 ),
@@ -181,7 +181,7 @@ class MessageBubble extends StatelessWidget {
             Text(
               msg.text,
               style: GoogleFonts.inter(
-                color: isUser ? tm.pureWhite : tm.textPrimary,
+                color: isUser ? tm.brandWhite : tm.textPrimary,
                 fontSize: 15,
                 height: 1.4,
               ),

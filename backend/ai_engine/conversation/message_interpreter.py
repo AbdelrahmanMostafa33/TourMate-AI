@@ -522,25 +522,38 @@ async def interpret_message(state: ConversationState, user_message: str) -> Inte
             )
             action = "modify_itinerary"
 
-    if interpreter_output is not None and any([
-        interpreter_output.extracted.destination_city,
-        interpreter_output.extracted.duration_days,
-        interpreter_output.extracted.budget_level,
-        interpreter_output.extracted.travel_style,
-    ]):
-        if extracted.get("destination_city") and extracted.get("duration_days"):
-            # Only force plan_trip if interests are meaningfully provided
-            # (non-empty list). The LLM's structured output may return `[]`
-            # as a default for Optional[List[str]] fields, which should NOT
-            # be treated as "interests provided."
-            extracted_interests = extracted.get("interests")
-            state_interests = state.slots.interests
-            interests_ok = (
-                bool(extracted_interests)              # user actively provided interests this turn
-                or state_interests is not None          # already handled in a previous turn
-            )
-            if interests_ok and action not in ("approve_itinerary", "modify_itinerary"):
-                action = "plan_trip"
+    # Safety guard: do NOT auto-force plan_trip during specialized phases.
+    # In FLIGHT_SELECTION / HOTEL_SELECTION / BOOKING, the user is providing
+    # specific input for those workflows (dates, hotel picks, payment choices).
+    # The LLM may echo existing state fields (destination_city, duration_days)
+    # into its structured output as context, which would incorrectly trigger
+    # plan_trip here and overwrite the specialized phase.
+    _specialized_phases = {
+        ConversationPhase.FLIGHT_SELECTION,
+        ConversationPhase.HOTEL_SELECTION,
+        ConversationPhase.BOOKING,
+        ConversationPhase.COMPLETED,
+    }
+    if state.phase not in _specialized_phases:
+        if interpreter_output is not None and any([
+            interpreter_output.extracted.destination_city,
+            interpreter_output.extracted.duration_days,
+            interpreter_output.extracted.budget_level,
+            interpreter_output.extracted.travel_style,
+        ]):
+            if extracted.get("destination_city") and extracted.get("duration_days"):
+                # Only force plan_trip if interests are meaningfully provided
+                # (non-empty list). The LLM's structured output may return `[]`
+                # as a default for Optional[List[str]] fields, which should NOT
+                # be treated as "interests provided."
+                extracted_interests = extracted.get("interests")
+                state_interests = state.slots.interests
+                interests_ok = (
+                    bool(extracted_interests)              # user actively provided interests this turn
+                    or state_interests is not None          # already handled in a previous turn
+                )
+                if interests_ok and action not in ("approve_itinerary", "modify_itinerary"):
+                    action = "plan_trip"
 
     return InterpretationResult(
         action=action,

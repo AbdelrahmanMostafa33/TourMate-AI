@@ -47,10 +47,10 @@ class _CustomTextFieldState extends State<CustomTextField> {
       duration: const Duration(milliseconds: 200),
       height: 55,
       decoration: BoxDecoration(
-        color: tm.pureWhite.withValues(alpha: 0.95),
+        color: tm.brandWhite.withValues(alpha: 0.95),
         borderRadius: BorderRadius.circular(14),
         border: Border.all(
-          color: _isFocused ? tm.sapphire.withValues(alpha: 0.6) : tm.pureWhite.withValues(alpha: 0.2),
+          color: _isFocused ? tm.sapphire.withValues(alpha: 0.6) : tm.brandWhite.withValues(alpha: 0.2),
           width: _isFocused ? 1.5 : 1.0,
         ),
         boxShadow: _isFocused

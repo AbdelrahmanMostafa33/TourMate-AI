@@ -69,7 +69,7 @@ class _TripsBodyState extends State<_TripsBody> {
     return Scaffold(
       backgroundColor: tm.nearWhite,
       appBar: AppBar(
-        backgroundColor: tm.pureWhite,
+        backgroundColor: tm.brandWhite,
         elevation: 0,
         scrolledUnderElevation: 0.5,
         actions: [
@@ -88,10 +88,10 @@ class _TripsBodyState extends State<_TripsBody> {
                   }
                 },
                 icon: Icon(Icons.add_rounded, size: 16, color: tm.sapphireLight),
-                label: Text('New Trip', style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w600, color: tm.pureWhite)),
+                label: Text('New Trip', style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w600, color: tm.brandWhite)),
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: tm.pureBlack,
-                  foregroundColor: tm.pureWhite,
+                  backgroundColor: tm.deepNavy,
+                  foregroundColor: tm.brandWhite,
                   elevation: 0,
                   padding: const EdgeInsets.symmetric(horizontal: 14),
                   shape: RoundedRectangleBorder(
@@ -250,7 +250,7 @@ class _TripsBodyState extends State<_TripsBody> {
     return Padding(
       padding: const EdgeInsets.only(bottom: Spacing.xl3),
       child: Material(
-        color: tm.pureWhite,
+        color: tm.brandWhite,
         borderRadius: BorderRadius.circular(RadiusTokens.xl3),
         elevation: 0,
         child: InkWell(
@@ -270,12 +270,12 @@ class _TripsBodyState extends State<_TripsBody> {
             padding: const EdgeInsets.all(Spacing.xl3),
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(RadiusTokens.xl3),
-              color: tm.pureWhite,
+              color: tm.brandWhite,
               border: Border.all(color: tm.borderLight),
               boxShadow: [
                 BoxShadow(
                   blurRadius: 10,
-                  color: tm.pureBlack.withValues(alpha: 0.04),
+                  color: tm.deepNavy.withValues(alpha: 0.04),
                   offset: const Offset(0, 2),
                 ),
               ],

@@ -72,7 +72,7 @@ class _ExploreBodyState extends State<_ExploreBody> {
     return Scaffold(
       backgroundColor: tm.nearWhite,
       appBar: AppBar(
-        backgroundColor: tm.pureWhite,
+        backgroundColor: tm.brandWhite,
         elevation: 0,
         scrolledUnderElevation: 0.5,
         title: Text(
@@ -267,7 +267,7 @@ class _ExploreBodyState extends State<_ExploreBody> {
         duration: const Duration(milliseconds: 200),
         height: 50,
         decoration: BoxDecoration(
-          color: tm.pureWhite,
+          color: tm.brandWhite,
           borderRadius: BorderRadius.circular(RadiusTokens.xl2),
           border: Border.all(
             color: _isSearchFocused
@@ -285,7 +285,7 @@ class _ExploreBodyState extends State<_ExploreBody> {
                 ]
               : [
                   BoxShadow(
-                    color: tm.pureBlack.withValues(alpha: 0.03),
+                    color: tm.deepNavy.withValues(alpha: 0.03),
                     blurRadius: 4,
                     offset: const Offset(0, 2),
                   ),
@@ -390,7 +390,7 @@ class _FilterBar extends StatelessWidget {
           Container(
             padding: const EdgeInsets.symmetric(horizontal: Spacing.xl2),
             decoration: BoxDecoration(
-              color: tm.pureWhite,
+              color: tm.brandWhite,
               borderRadius: BorderRadius.circular(RadiusTokens.xl),
               border: Border.all(color: tm.borderLight),
             ),
@@ -450,7 +450,7 @@ class _FilterBar extends StatelessWidget {
                       curve: Curves.easeOutCubic,
                       padding: const EdgeInsets.symmetric(horizontal: Spacing.xl4, vertical: Spacing.md),
                       decoration: BoxDecoration(
-                        color: isSelected ? tm.pureBlack : tm.surface,
+                        color: isSelected ? tm.deepNavy : tm.surface,
                         borderRadius: BorderRadius.circular(RadiusTokens.full),
                         border: isSelected
                             ? Border.all(color: tm.sapphire.withValues(alpha: 0.3), width: 1)
@@ -470,7 +470,7 @@ class _FilterBar extends StatelessWidget {
                             style: GoogleFonts.inter(
                               fontSize: 13,
                               fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
-                              color: isSelected ? tm.pureWhite : tm.textSecondary,
+                              color: isSelected ? tm.brandWhite : tm.textSecondary,
                             ),
                           ),
                         ],
@@ -534,7 +534,7 @@ class _PlaceCard extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.only(bottom: Spacing.xl3),
       child: Material(
-        color: tm.pureWhite,
+        color: tm.brandWhite,
         borderRadius: BorderRadius.circular(RadiusTokens.xl3),
         elevation: 0,
         child: InkWell(
@@ -550,7 +550,7 @@ class _PlaceCard extends StatelessWidget {
               border: Border.all(color: tm.borderLight),
               boxShadow: [
                 BoxShadow(
-                  color: tm.pureBlack.withValues(alpha: 0.04),
+                  color: tm.deepNavy.withValues(alpha: 0.04),
                   blurRadius: 8,
                   offset: const Offset(0, 2),
                 ),
@@ -594,7 +594,7 @@ class _PlaceCard extends StatelessWidget {
                                   begin: Alignment.bottomCenter,
                                   end: Alignment.topCenter,
                                   colors: [
-                                    tm.pureBlack.withValues(alpha: 0.4),
+                                    tm.deepNavy.withValues(alpha: 0.4),
                                     Colors.transparent,
                                   ],
                                 ),
@@ -615,7 +615,7 @@ class _PlaceCard extends StatelessWidget {
                                   curve: Curves.easeOutCubic,
                                   padding: const EdgeInsets.all(Spacing.lg),
                                   decoration: BoxDecoration(
-                                    color: tm.pureWhite.withValues(alpha: 0.9),
+                                    color: tm.brandWhite.withValues(alpha: 0.9),
                                     shape: BoxShape.circle,
                                     border: isSaved
                                         ? Border.all(color: tm.deepRoyalBlue.withValues(alpha: 0.5), width: 1.5)
@@ -671,7 +671,7 @@ class _PlaceCard extends StatelessWidget {
                               child: Container(
                                 padding: const EdgeInsets.all(Spacing.lg),
                                 decoration: BoxDecoration(
-                                  color: tm.pureWhite.withValues(alpha: 0.9),
+                                  color: tm.brandWhite.withValues(alpha: 0.9),
                                   shape: BoxShape.circle,
                                 ),
                                 child: Icon(
@@ -941,23 +941,23 @@ class _EmptyState extends StatelessWidget {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: Spacing.xl2, vertical: Spacing.md),
         decoration: BoxDecoration(
-          color: isPrimary ? tm.pureBlack : tm.pureWhite,
+          color: isPrimary ? tm.deepNavy : tm.brandWhite,
           borderRadius: BorderRadius.circular(RadiusTokens.xl4),
           border: Border.all(
-            color: isPrimary ? tm.pureBlack : tm.borderLight,
+            color: isPrimary ? tm.deepNavy : tm.borderLight,
           ),
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(icon, size: 14,            color: isPrimary ? tm.pureWhite : tm.sapphire),
+            Icon(icon, size: 14,            color: isPrimary ? tm.brandWhite : tm.sapphire),
             const SizedBox(width: Spacing.sm),
             Text(
               label,
               style: GoogleFonts.inter(
                 fontSize: 12,
                 fontWeight: FontWeight.w600,
-                color: isPrimary ? tm.pureWhite : tm.textPrimary,
+                color: isPrimary ? tm.brandWhite : tm.textPrimary,
               ),
             ),
           ],
@@ -1065,12 +1065,12 @@ class _RecentSearchOverlay extends StatelessWidget {
                 child: Container(
                   padding: const EdgeInsets.symmetric(horizontal: Spacing.xl, vertical: Spacing.sm),
                   decoration: BoxDecoration(
-                    color: tm.pureWhite,
+                    color: tm.brandWhite,
                     borderRadius: BorderRadius.circular(RadiusTokens.xl3),
                     border: Border.all(color: tm.borderLight),
                     boxShadow: [
                       BoxShadow(
-                        color: tm.pureBlack.withValues(alpha: 0.03),
+                        color: tm.deepNavy.withValues(alpha: 0.03),
                         blurRadius: 4,
                         offset: const Offset(0, 1),
                       ),

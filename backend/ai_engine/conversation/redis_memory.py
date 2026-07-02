@@ -31,6 +31,7 @@ from datetime import datetime, timezone
 from typing import List, Optional
 
 import redis.asyncio as aioredis
+from redis.exceptions import WatchError
 
 from ai_engine.conversation.conversation_state import ConversationState
 from ai_engine.constants import (
@@ -99,21 +100,41 @@ class SessionManager:
             logger.warning("Redis not connected — cannot save session %s", state.session_id)
             return False
 
+        key = f"{REDIS_SESSION_PREFIX}{state.session_id}"
+        user_key = f"{REDIS_USER_SESSIONS_PREFIX}{state.user_id}"
+        active_key = f"{REDIS_ACTIVE_SESSION_PREFIX}{state.user_id}"
+        timestamp = datetime.now(timezone.utc).timestamp()
+
+        # ── Optimistic concurrency: WATCH the session key ────────────────
+        #    If another concurrent request modifies the key between our WATCH
+        #    and EXEC, the transaction aborts (EXEC returns None / WatchError).
+        #    This prevents lost-update races in the load→modify→save cycle.
         try:
-            key = f"{REDIS_SESSION_PREFIX}{state.session_id}"
+            await self._redis.watch(key)
+            state.version += 1
             data = json.dumps(state.to_dict())
 
             pipe = self._redis.pipeline()
+            pipe.multi()
             pipe.set(key, data, ex=SESSION_TTL_SECONDS)
-            user_key = f"{REDIS_USER_SESSIONS_PREFIX}{state.user_id}"
-            timestamp = datetime.now(timezone.utc).timestamp()
             pipe.zadd(user_key, {state.session_id: timestamp})
-            active_key = f"{REDIS_ACTIVE_SESSION_PREFIX}{state.user_id}"
             pipe.set(active_key, state.session_id, ex=SESSION_TTL_SECONDS)
             await pipe.execute()
 
-            logger.debug("Saved session %s for user %s", state.session_id, state.user_id)
+            logger.debug(
+                "Saved session %s (v%d) for user %s",
+                state.session_id, state.version, state.user_id,
+            )
             return True
+        except WatchError:
+            logger.warning(
+                "[OptimisticLock] Concurrent modification detected for session %s "
+                "(v%d) — save aborted. Caller should reload and retry.",
+                state.session_id, state.version,
+            )
+            # Decrement version since the save didn't go through
+            state.version -= 1
+            return False
         except Exception as e:
             logger.error("Failed to save session %s: %s", state.session_id, e)
             return False
@@ -200,45 +221,93 @@ class SessionManager:
         self,
         user_id: str,
         session_id: Optional[str] = None,
+        recovery_state: Optional[dict] = None,
     ) -> ConversationState:
         # ── Explicit session resume ──────────────────────────────────────
         # When the caller provides a session_id (e.g. reconnecting to an
         # existing chat after a WebSocket drop), try to resume that exact
-        # session.  If the session expired from Redis, fall back to the
-        # user's active session as a best-effort recovery.
+        # session.  If the session expired from Redis, try recovery_state
+        # from the DB state_snapshot, then active session, then fresh.
+        logger.info(
+            "[DIAG][resume_or_create] Entry: user_id=%s session_id=%s recovery_state_has=%s",
+            user_id, session_id, (recovery_state is not None),
+        )
+
         if session_id:
             state = await self.load(session_id)
             if state and state.user_id == user_id:
-                logger.info("Resumed session %s for user %s", session_id, user_id)
+                logger.info(
+                    "[DIAG][resume_or_create] PATH=redis_hit session=%s user=%s phase=%s dest=%s",
+                    session_id, user_id, state.phase.value,
+                    state.slots.destination_city,
+                )
                 return state
+
+            # ── Attempt recovery from DB state_snapshot ────────────────
+            # When Redis data is lost (session expired / Redis restarted),
+            # the caller can provide a recovery_state dict from the
+            # Conversation.state_snapshot column.  This allows reconstructing
+            # the session's phase, slots, and turn_count from PostgreSQL.
+            if recovery_state:
+                logger.info(
+                    "[DIAG][resume_or_create] PATH=redis_miss_recovery session=%s user=%s recovery_phase=%s",
+                    session_id, user_id, recovery_state.get("phase"),
+                )
+                recovery_state["user_id"] = user_id
+                recovered = ConversationState.from_dict(recovery_state)
+                await self.save(recovered)
+                return recovered
 
             # session_id provided but not found — try active session as
             # fallback, then create fresh.
             state = await self.get_active_session(user_id)
             if state:
                 logger.info(
-                    "Session %s not found, resumed active session %s for user %s",
-                    session_id, state.session_id, user_id,
+                    "[DIAG][resume_or_create] PATH=active_session session=%s user=%s active=%s phase=%s",
+                    session_id, user_id, state.session_id, state.phase.value,
                 )
                 return state
 
             logger.info(
-                "Session %s not found and no active session — creating fresh for user %s",
+                "[DIAG][resume_or_create] PATH=fresh_with_session session=%s user=%s — no active session",
                 session_id, user_id,
             )
             new_state = ConversationState(user_id=user_id)
             await self.save(new_state)
             return new_state
 
-        # ── No session_id — always create fresh state ────────────────────
-        # When the caller does NOT provide a session_id (e.g. connecting to
-        # /ws/chat/new for the very first time), we MUST create a brand-new
-        # ConversationState.  Previously we fell back to get_active_session(),
-        # which leaked stale session data (destination, interests, etc.) from
-        # an OLD trip-planning conversation into a brand-new chat — causing
-        # "hello" to immediately trigger the full planning pipeline.
+        # ── No session_id — use recovery_state if available, else fresh ────
+        # When the caller does NOT provide a session_id but DOES provide a
+        # recovery_state (e.g. reconnecting to an existing chat from history),
+        # we reconstruct the ConversationState from the DB state_snapshot.
+        #
+        # This handles the critical reconnection scenario: the user opens
+        # a chat from history, the Flutter app reconnects to /ws/chat/{trip_id},
+        # but ai_session_id is None (in-memory, lost on disconnect).  Without
+        # this path, the AI engine would start with a fresh GREETING state,
+        # losing all previously collected phase, slots, and context.
+        #
+        # Previously we fell back to get_active_session(), which leaked stale
+        # session data (destination, interests, etc.) from an OLD trip-planning
+        # conversation into a brand-new chat — causing "hello" to immediately
+        # trigger the full planning pipeline.
+        if recovery_state:
+            recovered = ConversationState.from_dict(recovery_state)
+            logger.info(
+                "[DIAG][resume_or_create] PATH=recovery_no_session user=%s "
+                "recovery_phase=%s dest=%s turn_count=%s -> restored_session=%s",
+                user_id, recovery_state.get("phase"),
+                recovery_state.get("slots", {}).get("destination_city"),
+                recovery_state.get("turn_count"),
+                recovered.session_id,
+            )
+            recovery_state["user_id"] = user_id
+            recovered = ConversationState.from_dict(recovery_state)
+            await self.save(recovered)
+            return recovered
+
         logger.info(
-            "No session_id provided — creating fresh session for user %s",
+            "[DIAG][resume_or_create] PATH=fresh_no_session user=%s — no recovery_state",
             user_id,
         )
         new_state = ConversationState(user_id=user_id)

@@ -22,12 +22,12 @@ class PersonaCard extends StatelessWidget {
     return Container(
       width: double.infinity,
       decoration: BoxDecoration(
-        color: tm.pureWhite,
+        color: tm.brandWhite,
         borderRadius: BorderRadius.circular(RadiusTokens.xl4),
         border: Border.all(color: tm.borderLight),
         boxShadow: [
           BoxShadow(
-            color: tm.pureBlack.withValues(alpha: 0.04),
+            color: tm.deepNavy.withValues(alpha: 0.04),
             blurRadius: 12,
             offset: const Offset(0, 4),
           ),
@@ -442,19 +442,19 @@ class _HeaderSection extends StatelessWidget {
               shape: BoxShape.circle,
               gradient: LinearGradient(
                 colors: [
-                  tm.pureWhite.withValues(alpha: 0.25),
-                  tm.pureWhite.withValues(alpha: 0.08),
+                  tm.brandWhite.withValues(alpha: 0.25),
+                  tm.brandWhite.withValues(alpha: 0.08),
                 ],
                 begin: Alignment.topLeft,
                 end: Alignment.bottomRight,
               ),
               border: Border.all(
-                color: tm.pureWhite.withValues(alpha: 0.25),
+                color: tm.brandWhite.withValues(alpha: 0.25),
                 width: 1.5,
               ),
               boxShadow: [
                 BoxShadow(
-                  color: tm.pureWhite.withValues(alpha: 0.1),
+                  color: tm.brandWhite.withValues(alpha: 0.1),
                   blurRadius: 16,
                   offset: const Offset(0, 4),
                 ),
@@ -463,7 +463,7 @@ class _HeaderSection extends StatelessWidget {
             child: Icon(
               persona.icon,
               size: 28,
-              color: tm.pureWhite,
+              color: tm.brandWhite,
             ),
           ),
           const SizedBox(width: 16),
@@ -478,7 +478,7 @@ class _HeaderSection extends StatelessWidget {
                     fontSize: 10,
                     fontWeight: FontWeight.w700,
                     letterSpacing: 1.8,
-                    color: tm.pureWhite.withValues(alpha: 0.6),
+                    color: tm.brandWhite.withValues(alpha: 0.6),
                   ),
                 ),
                 const SizedBox(height: 2),
@@ -487,7 +487,7 @@ class _HeaderSection extends StatelessWidget {
                   style: GoogleFonts.inter(
                     fontSize: 20,
                     fontWeight: FontWeight.w700,
-                    color: tm.pureWhite,
+                    color: tm.brandWhite,
                     letterSpacing: -0.3,
                     height: 1.1,
                   ),
@@ -599,7 +599,7 @@ class _DefaultStatsRow extends StatelessWidget {
             child: LinearProgressIndicator(
               value: 0.15,
               minHeight: 4,
-              backgroundColor: tm.pureBlack.withValues(alpha: 0.06),
+              backgroundColor: tm.deepNavy.withValues(alpha: 0.06),
               valueColor: AlwaysStoppedAnimation<Color>(persona.accentColor),
             ),
           ),
