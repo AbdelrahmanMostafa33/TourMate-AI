@@ -174,17 +174,17 @@
 
 **Pre-Condition:** The traveler is logged in, has a trip planned, and the itinerary is approved.
 
-**Post-Condition:** A flight is booked and paid for, with a confirmed reservation.
+**Post-Condition:** A flight booking is created via Amadeus and awaits payment confirmation.
 
 **Main Flow (Search, Select, Book, Pay)**
 1. After the itinerary is approved, the AI presents available flight options within the chat conversation, with the destination and dates already pre-filled from the trip.
 2. The traveler tells the AI their departure city.
-3. The system automatically resolves city names to airports and searches for available flights.
+3. The system searches for real-time flight availability and pricing through the Amadeus service.
 4. Available flight options are presented in the chat with prices, times, and airlines.
 5. The traveler selects a flight by chatting their choice.
-6. The system prepares a payment and presents a secure checkout within the conversation.
+6. The system prepares a payment through the secure checkout presented within the conversation.
 7. The traveler completes payment through their preferred method.
-8. The system confirms the booking and shows the traveler a confirmation in the chat.
+8. The system verifies the payment and books the flight through Amadeus, then shows the traveler a confirmation in the chat.
 
 **Alternative Flow A (City Autocomplete)**
 1. The traveler starts typing a city name in the chat.
@@ -192,7 +192,7 @@
 
 **Alternative Flow B (Cancel a Booking)**
 1. The traveler requests to cancel a booked flight through the chat.
-2. The system cancels the reservation and processes any applicable refunds.
+2. The system cancels the reservation.
 
 **Alternative Flow C (Round-Trip by Default)**
 1. If the traveler doesn't specify a return date, the system automatically uses the trip's end date.
@@ -200,62 +200,97 @@
 
 **Exceptions**
 - If no flights are available for the chosen route, the system informs the traveler in the chat and suggests alternatives.
-- If payment succeeds but the airline booking fails, the traveler is guided through the refund process within the conversation.
+- If payment succeeds but the Amadeus booking fails, the traveler is guided through the refund process within the conversation.
 
 **Notes**
 - Flight booking is handled entirely within the chat conversation — no separate booking page.
 - City names are resolved to airport codes automatically behind the scenes for a smooth experience.
+- Flight search and booking use the Amadeus test environment with real airline data.
+- Payment is processed through a secure checkout in test mode — no real financial transactions take place.
 - The booking flow uses a two-step process (initiate payment → confirm) to handle mobile payments reliably.
 
 ---
 
-## UC#6 — Book Hotels & Manage Payments
+## UC#6 — Book Hotels
 
 **Actors:** Traveler
 
-**Pre-Condition:** The traveler is logged in, the itinerary is approved, and accommodation options have been suggested.
+**Pre-Condition:** The traveler is logged in, the itinerary is approved, and accommodation options have been suggested by the AI.
 
-**Post-Condition:** Hotels are booked and paid for, with confirmed reservations.
+**Post-Condition:** A simulated hotel booking is created and ready for payment confirmation.
 
-**Main Flow (Select Hotel, Book, Pay)**
+**Main Flow (Select Hotel & Book)**
 1. After the itinerary is approved, the AI presents recommended hotel and accommodation options directly in the chat conversation.
 2. The traveler selects a hotel by chatting their choice, along with preferred check-in and check-out dates.
-3. The system creates a booking and prepares a payment.
-4. The traveler completes payment through the secure checkout presented within the conversation.
-5. The system confirms the booking and updates the trip status.
+3. The system creates a simulated booking with a confirmation number and provider details, then records it under the trip.
+4. The booking is now ready for the traveler to proceed with payment.
 
-**Alternative Flow A (Simulated Payment)**
-1. If the payment service is in test mode or unavailable, the system simulates a successful payment.
-2. The booking is marked as confirmed with a simulated flag for testing purposes.
-
-**Alternative Flow B (Book All Accommodations at Once)**
+**Alternative Flow A (Book All Accommodations at Once)**
 1. The traveler requests to book accommodation for every stop in their itinerary in one go through the chat.
-2. The system creates bookings for all stops and transitions the trip to booking pending.
+2. The system creates simulated bookings for all stops and transitions the trip to booking pending.
 
-**Alternative Flow C (Pay All Pending Bookings Together)**
-1. The traveler requests to pay for all their pending bookings at once through the chat.
-2. The system processes payments for everything together and updates the trip to confirmed.
-
-**Alternative Flow D (Cancel a Booking)**
+**Alternative Flow B (Cancel a Booking)**
 1. The traveler cancels a hotel booking by requesting it in the chat.
-2. The system cancels the reservation and initiates a refund if a payment was already made.
+2. The system cancels the reservation without proceeding to payment.
 
-**Alternative Flow E (Mark Booking as Completed)**
+**Alternative Flow C (Mark Booking as Completed)**
 1. After the trip visit, the traveler (or the system) marks confirmed bookings as completed.
 
 **Exceptions**
-- If a payment fails, the trip enters a recoverable state and the traveler can retry through the chat.
-- If the hotel provider is unreachable, the system falls back to locally matched accommodation suggestions without real booking.
+- If the hotel provider is unreachable, the system falls back to locally matched accommodation suggestions without creating a real booking.
 
 **Notes**
 - Hotel booking is handled entirely within the chat conversation — no separate booking page.
-- All bookings must be paid for the trip to reach confirmed status.
-- A testing mode is available that simulates payments without real financial transactions.
-- The system uses a webhook to confirm payments asynchronously.
+- The booking must be paid before it is confirmed; payment is a separate step managed after booking.
+- Hotel bookings are simulated — the system generates realistic confirmation numbers and provider details without connecting to a live hotel booking API.
+- The system supports booking accommodation for multiple stops at once to save the traveler time.
 
 ---
 
-## UC#7 — Review Places & Give Feedback
+## UC#7 — Manage Payments
+
+**Actors:** Traveler
+
+**Pre-Condition:** The traveler is logged in and has at least one unpaid booking (flight or hotel) associated with their trip.
+
+**Post-Condition:** The payment is processed and the booking is confirmed (flight via Amadeus, hotel via simulated confirmation), or the payment fails and the traveler can retry.
+
+**Main Flow (Pay for a Single Booking)**
+1. After a booking is created, the system presents a secure checkout option within the chat conversation.
+2. The traveler chooses their payment method and completes the transaction.
+3. The system processes the payment through a secure test environment and verifies it.
+4. The booking is marked as confirmed, and the trip status is updated.
+
+**Alternative Flow A (Pay All Pending Bookings at Once)**
+1. The traveler requests to pay for all their pending bookings together through the chat.
+2. The system processes payments for everything in a single flow.
+3. When all payments succeed, the trip is confirmed.
+
+**Alternative Flow B (Pay for Flights and Hotels in One Go)**
+1. The traveler has both flight and hotel bookings pending and chooses to settle everything together.
+2. The system presents a combined checkout covering all bookings under the trip.
+3. After payment, each booking is confirmed individually — the flight through Amadeus and the hotel through simulated confirmation — and the trip status is updated once all are paid.
+
+**Alternative Flow C (Payment Failure Recovery)**
+1. The traveler's payment attempt fails.
+2. The trip enters a recoverable state — no progress is lost.
+3. The traveler can retry the payment through the chat when ready.
+
+**Exceptions**
+- If the payment service is unavailable, the system falls back to a fully simulated payment — no secure connection needed.
+- If a payment succeeds but the booking confirmation fails (e.g., Amadeus error), the traveler is guided through the refund process.
+
+**Notes**
+- Payment is managed as a separate step after booking — the traveler books first, then pays.
+- All payments run in Stripe sandbox (test mode) — no real financial transactions take place.
+- If Stripe is not configured, the system falls back to a fully simulated payment with no external calls.
+- Payments can be handled individually per booking or batched together for convenience.
+- The system processes payments both synchronously (client confirms after payment sheet) and asynchronously (via webhook).
+- Hotel bookings are simulated; flight bookings are real through the Amadeus test environment.
+
+---
+
+## UC#8 — Review Places & Give Feedback
 
 **Actors:** Traveler
 
@@ -295,7 +330,7 @@
 
 ---
 
-## UC#8 — Save & Manage Places
+## UC#9 — Save & Manage Places
 
 **Actors:** Traveler
 
@@ -327,7 +362,7 @@
 
 ---
 
-## UC#9 — Upload & Analyze Images
+## UC#10 — Upload & Analyze Images
 
 **Actors:** Traveler
 
@@ -360,7 +395,7 @@
 
 ---
 
-## UC#10 — Monitor System Health
+## UC#11 — Monitor System Health
 
 **Actors:** System Administrator
 

@@ -17,16 +17,17 @@ actor "AI Services" as AI
 
 rectangle "TourMate AI System" {
 
-  usecase "UC1: Authenticate &\nManage Account" as UC1
-  usecase "UC2: Manage Trips &\nItineraries" as UC2
-  usecase "UC3: Chat with AI &\nPlan Trip" as UC3
-  usecase "UC4: Explore &\nDiscover Places" as UC4
+  usecase "UC1: Authenticate &\\nManage Account" as UC1
+  usecase "UC2: Manage Trips &\\nItineraries" as UC2
+  usecase "UC3: Chat with AI &\\nPlan Trip" as UC3
+  usecase "UC4: Explore &\\nDiscover Places" as UC4
   usecase "UC5: Book Flights" as UC5
-  usecase "UC6: Book Hotels &\nManage Payments" as UC6
-  usecase "UC7: Review Places &\nGive Feedback" as UC7
-  usecase "UC8: Save &\nManage Places" as UC8
-  usecase "UC9: Upload &\nAnalyze Images" as UC9
-  usecase "UC10: Monitor System\nHealth" as UC10
+  usecase "UC6: Book Hotels" as UC6
+  usecase "UC7: Manage Payments" as UC7
+  usecase "UC8: Review Places &\\nGive Feedback" as UC8
+  usecase "UC9: Save &\\nManage Places" as UC9
+  usecase "UC10: Upload &\\nAnalyze Images" as UC10
+  usecase "UC11: Monitor System\\nHealth" as UC11
 
 }
 
@@ -40,20 +41,20 @@ Traveler --> UC6
 Traveler --> UC7
 Traveler --> UC8
 Traveler --> UC9
+Traveler --> UC10
 
 ' ═══════ ADMIN ═══════
-Admin --> UC10
+Admin --> UC11
 
 ' ═══════ EXTERNAL SYSTEMS ═══════
 Firebase <-- UC1
 AI <-- UC3
 Amadeus <-- UC5
-Stripe <-- UC6
-Expedia <-- UC6
+Stripe <-- UC7
 OSRM <-- UC3
-AI <-- UC9
+AI <-- UC10
 
 ' ═══════ WEBHOOK ═══════
-Stripe --> UC6 : webhook events
+Stripe --> UC7 : webhook events
 
 @enduml

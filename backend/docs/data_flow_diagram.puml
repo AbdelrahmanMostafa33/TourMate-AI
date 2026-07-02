@@ -211,10 +211,9 @@ rectangle "🔗 External / Infrastructure" as ExtLayer #fce4ec {
   ]
 
   rectangle "🗺 External APIs" as ExtAPI [
-    Amadeus  → flights
-    Expedia  → hotels
+    Amadeus  → flights (real test env)
     OSRM     → routing
-    Stripe   → payments
+    Stripe   → payments (sandbox)
   ]
 
   rectangle "🔍 LangSmith" as LangSmith [
@@ -275,7 +274,8 @@ LangGraph -down-> OtherAgents : "⑩ scorer / optimizer / validator"
 
 ' Step 11: External calls
 PlanAgent -down-> LLM : "⑪ generate itinerary → Gemini"
-HotelAgent -down-> ExtAPI : "⑪ Expedia for hotels"
+HotelAgent -down-> DB : "⑪ Match hotels from local DB pool
+(Simulated — no external API)"
 FlightAgent -down-> ExtAPI : "⑪ Amadeus for flights"
 OtherAgents -down-> ExtAPI : "⑪ OSRM for routing"
 

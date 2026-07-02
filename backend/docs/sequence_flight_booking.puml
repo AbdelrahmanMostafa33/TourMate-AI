@@ -1,72 +1,72 @@
 @startuml Flight_Booking_Flow
-title Flight Booking with Amadeus (UC5)
+title Flight Booking (UC#5) — Amadeus Search & Booking
 
 actor Traveler
-participant "FastAPI App" as API
+participant "Chat" as Chat
 participant "Flight\nService" as FltSvc
-participant "Amadeus\nClient" as Amadeus
-participant "Stripe API" as Stripe
+participant "Amadeus\nAPI" as Amadeus
 
-== City Autocomplete ==
+== City Autocomplete (in chat) ==
 
-Traveler -> API: GET /api/v1/flights/autocomplete\n{q: "Paris"}
-activate API
+Traveler -> Chat: "I want to fly from Paris"
+activate Chat
 
-API -> FltSvc: autocomplete_cities("Paris")
+Chat -> FltSvc: search_cities("Paris")
 activate FltSvc
 
 FltSvc -> Amadeus: GET /v1/reference-data/locations\n{subtype: CITY, keyword: "Paris"}
 activate Amadeus
-Amadeus --> FltSvc: {data: [{iataCode: "PAR", name: "Paris"}, ...]}
+Amadeus --> FltSvc: {iataCode: "CDG", city: "Paris"}
 deactivate Amadeus
 
-FltSvc --> API: {cities: [...]}
+FltSvc --> Chat: {cities: ["CDG - Paris"]}
 deactivate FltSvc
 
-API --> Traveler: 200 {cities}
-deactivate API
+Chat --> Traveler: "I found Paris (CDG). Is that correct?"
+deactivate Chat
 
-== Search Flights ==
+== Search Flights (in chat) ==
 
-Traveler -> API: GET /api/v1/flights/search\n{origin, dest, dates}
-activate API
+Traveler -> Chat: "Yes. Search flights CDG → CAI"
+activate Chat
 
-API -> FltSvc: search_flights(origin, dest, dates)
+Chat -> FltSvc: search_flights(CDG, CAI, dates)
 activate FltSvc
 
-FltSvc -> Amadeus: GET /v2/shopping/flight-offers\n{origin, dest, dates}
+FltSvc -> Amadeus: GET /v2/shopping/flight-offers\n{origin: CDG, dest: CAI, dates}
 activate Amadeus
 Amadeus --> FltSvc: {data: flight_offers[]}
 deactivate Amadeus
 
-FltSvc --> API: {flights: [...]}
+FltSvc --> Chat: {offers: [...]}
 deactivate FltSvc
 
-API --> Traveler: 200 {flights}
-deactivate API
+Chat --> Traveler: "Here are available flights..."
+deactivate Chat
 
-== Book & Pay ==
+== Book Flight (pending payment) ==
 
-Traveler -> API: POST /api/v1/flights/book\n{flight_offer_id, passengers}
-activate API
+Traveler -> Chat: "Select the EgyptAir flight at 10:00"
+activate Chat
 
-API -> FltSvc: book_flight(user_id, flight_offer, passengers)
+Chat -> FltSvc: initiate_flight_booking(raw_offer)
 activate FltSvc
 
-FltSvc -> Amadeus: POST /v1/booking/flight-bookings\n{flight_offer, passengers}
+FltSvc -> Amadeus: price_flight(raw_offer)
 activate Amadeus
-Amadeus --> FltSvc: {booking_reference, status}
+Amadeus --> FltSvc: {priced_offer, total_price}
 deactivate Amadeus
 
-FltSvc -> Stripe: create_payment_intent(amount, currency)
-activate Stripe
-Stripe --> FltSvc: {client_secret}
-deactivate Stripe
-
-FltSvc --> API: {booking, client_secret}
+FltSvc --> Chat: {priced_offer, summary}
 deactivate FltSvc
 
-API --> Traveler: 201 {booking, client_secret}
-deactivate API
+Chat --> Traveler: "Flight confirmed at $450.\nProceed to payment?"
+deactivate Chat
+
+Traveler -> Chat: "Yes, proceed"
+activate Chat
+Chat --> Traveler: "Opening secure checkout..."
+note right: Payment handled in UC#7 — Manage Payments
+deactivate Chat
 
 @enduml

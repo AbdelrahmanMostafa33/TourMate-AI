@@ -1,56 +1,74 @@
 @startuml Hotel_Booking_Flow
-title Hotel Booking & Stripe Payment (UC6)
+title Book Hotels (UC#6) — Simulated Booking via Chat
 
 actor Traveler
-participant "FastAPI App" as API
+participant "Chat" as Chat
 participant "Booking\nService" as BkSvc
-participant "Expedia\nClient" as Exp
-participant "Stripe API" as Stripe
-participant "Stripe\nWebhook" as WH
 
-== Create Booking (Hotel) ==
+== AI Presents Hotel Options (in chat) ==
 
-Traveler -> API: POST /api/v1/bookings\n{hotel_id, check_in, check_out}
-activate API
+Traveler -> Chat: "I approve the itinerary.
+What hotels do you recommend?"
+activate Chat
 
-API -> BkSvc: create_booking(user_id, payload)
+Chat --> Traveler: "Here are hotel options...\n1. Hilton Cairo ($120/night)\n2. Marriott Downtown ($95/night)"
+
+== Select Hotel & Book ==
+
+Traveler -> Chat: "Book the Hilton Cairo, 2 nights"
+activate Chat
+
+Chat -> BkSvc: create_booking(trip_id, place_id, dates)
 activate BkSvc
 
-BkSvc -> Exp: book_hotel(hotel_id, dates)
-activate Exp
-Exp --> BkSvc: {confirmation, total_amount}
-deactivate Exp
+BkSvc -> BkSvc: Generate simulated confirmation
+note right: No external hotel API called
+Confirmation number & provider
+details generated locally
 
-BkSvc -> Stripe: create_payment_intent(amount, currency)
-activate Stripe
-Stripe --> BkSvc: {client_secret, payment_intent_id}
-deactivate Stripe
-
-BkSvc --> API: {booking, client_secret}
+BkSvc --> Chat: {booking_id, confirmation: "BK-A3F9C2"}
 deactivate BkSvc
 
-API --> Traveler: 201 {booking, client_secret}
-deactivate API
+Chat --> Traveler: "Hilton Cairo booked!
+Confirmation: BK-A3F9C2\nReady to proceed to payment?"
+deactivate Chat
 
-== Confirm Payment (Client-side) ==
+Traveler -> Chat: "Yes, proceed to payment"
+activate Chat
+Chat --> Traveler: "Opening secure checkout..."
+note right: Payment handled in UC#7 — Manage Payments
+deactivate Chat
 
-Traveler -> Stripe: stripe.confirmCardPayment(client_secret)
-activate Stripe
-Stripe --> Traveler: {paymentIntent: succeeded}
-deactivate Stripe
+== Book All Accommodations at Once ==
 
-== Webhook (Async Confirmation) ==
+Traveler -> Chat: "Book all accommodations for my trip"
+activate Chat
 
-Stripe -> WH: POST /api/v1/webhooks/stripe\n{payment_intent.succeeded}
-activate WH
-
-WH -> BkSvc: handle_payment_success(payment_intent_id)
+Chat -> BkSvc: create_bookings_for_all_stops(trip_id)
 activate BkSvc
-BkSvc -> BkSvc: update_booking_status("confirmed")
-BkSvc --> WH: {booking_updated}
+
+BkSvc -> BkSvc: Generate simulated confirmations
+for each stop
+
+BkSvc --> Chat: {bookings: [BK-A3F9C2, BK-B4G0D3]}
 deactivate BkSvc
 
-WH --> API: acknowledge 200 OK
-deactivate WH
+Chat --> Traveler: "All accommodations booked!
+Trip moved to booking pending."
+deactivate Chat
+
+== Cancel a Booking (before payment) ==
+
+Traveler -> Chat: "Cancel the Hilton booking"
+activate Chat
+
+Chat -> BkSvc: cancel_booking(booking_id)
+activate BkSvc
+BkSvc -> BkSvc: Mark booking as cancelled
+BkSvc --> Chat: {status: cancelled}
+deactivate BkSvc
+
+Chat --> Traveler: "Hilton Cairo booking cancelled."
+deactivate Chat
 
 @enduml
