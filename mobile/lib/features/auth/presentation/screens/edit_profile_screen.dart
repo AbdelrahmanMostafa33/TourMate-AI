@@ -1,12 +1,16 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:google_fonts/google_fonts.dart';
 import '../../../../core/network/service_locator.dart';
 import '../../../../core/widgets/city_picker.dart';
+import '../../../../core/theme/design_tokens.dart';
 import '../../../../core/widgets/app_snackbar.dart';
+import '../../../../app/app_theme.dart';
 import '../../data/models/user_response.dart';
 import '../../data/repository/profile_repository.dart';
 import '../../logic/profile_cubit.dart';
 import '../../logic/profile_state.dart';
+
 class EditProfileScreen extends StatelessWidget {
   final UserResponse profile;
 
@@ -31,6 +35,7 @@ class _EditProfileView extends StatefulWidget {
 }
 
 class _EditProfileViewState extends State<_EditProfileView> {
+  TourMateColors get tm => context.tm;
   late TextEditingController _nameController;
   late TextEditingController _phoneController;
   String _selectedCity = '';
@@ -83,21 +88,17 @@ class _EditProfileViewState extends State<_EditProfileView> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.white,
+      backgroundColor: tm.surface,
       appBar: AppBar(
-        backgroundColor: Colors.white,
-        surfaceTintColor: Colors.white,
+        backgroundColor: tm.pureWhite,
+        surfaceTintColor: tm.pureWhite,
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back_rounded, color: Colors.black),
+          icon: Icon(Icons.arrow_back_rounded, color: tm.pureBlack),
           onPressed: () => Navigator.pop(context),
         ),
-        title: const Text(
+        title: Text(
           'Edit Profile',
-          style: TextStyle(
-            fontSize: 18,
-            fontWeight: FontWeight.w700,
-            color: Colors.black,
-          ),
+          style: GoogleFonts.inter(fontSize: 18, fontWeight: FontWeight.w700, color: tm.textPrimary, letterSpacing: -0.3),
         ),
         centerTitle: true,
         actions: [
@@ -106,31 +107,30 @@ class _EditProfileViewState extends State<_EditProfileView> {
             child: ElevatedButton(
               onPressed: _loading ? null : _save,
               style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.black,
-                foregroundColor: Colors.white,
+                backgroundColor: tm.pureBlack,
+                foregroundColor: tm.pureWhite,
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(12),
                 ),
                 padding: const EdgeInsets.symmetric(horizontal: 16),
               ),
               child: _loading
-                  ? const SizedBox(
-                      width: 16,
-                      height: 16,
+                  ? SizedBox(
+                      width: 18,
+                      height: 18,
                       child: CircularProgressIndicator(
-                        color: Colors.white,
-                        strokeWidth: 2,
+                        color: tm.goldLight,
+                        strokeWidth: 2.5,
                       ),
                     )
-                  : const Text(
+                  : Text(
                       'Save',
-                      style: TextStyle(fontWeight: FontWeight.w600),
+                      style: GoogleFonts.inter(color: tm.pureWhite, fontWeight: FontWeight.w600, fontSize: 14),
                     ),
             ),
           ),
         ],
-      ),
-      body: BlocListener<ProfileCubit, ProfileState>(
+      ),        body: BlocListener<ProfileCubit, ProfileState>(
         listener: (context, state) {
           state.whenOrNull(
             error: (message) {
@@ -139,7 +139,7 @@ class _EditProfileViewState extends State<_EditProfileView> {
           );
         },
         child: SingleChildScrollView(
-          padding: const EdgeInsets.all(20),
+          padding: const EdgeInsets.all(Spacing.xl4),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -147,26 +147,44 @@ class _EditProfileViewState extends State<_EditProfileView> {
               Center(
                 child: Column(
                   children: [
-                    CircleAvatar(
-                      radius: 40,
-                      backgroundColor: Colors.black,
-                      child: Text(
-                        (widget.profile.fullName ?? 'U').isNotEmpty
-                            ? (widget.profile.fullName ?? 'U')[0]
-                            : 'U',
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 32,
-                          fontWeight: FontWeight.w600,
+                    Container(
+                      padding: const EdgeInsets.all(2.5),
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        gradient: const LinearGradient(
+                          colors: [Color(0xFFC8A84E), Color(0xFFF5ECCE)],
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                        ),
+                        boxShadow: [
+                          BoxShadow(
+                            color: const Color(0xFFC8A84E).withValues(alpha: 0.3),
+                            blurRadius: 10,
+                            offset: const Offset(0, 3),
+                          ),
+                        ],
+                      ),
+                      child: CircleAvatar(
+                        radius: 37.5,
+                        backgroundColor: tm.pureBlack,
+                        child: Text(
+                          (widget.profile.fullName ?? 'U').isNotEmpty
+                              ? (widget.profile.fullName ?? 'U')[0]
+                              : 'U',
+                          style: GoogleFonts.inter(
+                            color: tm.goldLight,
+                            fontSize: 32,
+                            fontWeight: FontWeight.w600,
+                          ),
                         ),
                       ),
                     ),
                     const SizedBox(height: 8),
                     Text(
                       widget.profile.email,
-                      style: TextStyle(
+                      style: GoogleFonts.inter(
                         fontSize: 14,
-                        color: Colors.grey[500],
+                        color: tm.textSecondary,
                       ),
                     ),
                   ],
@@ -176,14 +194,31 @@ class _EditProfileViewState extends State<_EditProfileView> {
               const SizedBox(height: 32),
 
               // ── Form Fields ──────────────────────────────
-              const Text(
-                'PERSONAL INFORMATION',
-                style: TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w700,
-                  color: Colors.grey,
-                  letterSpacing: 1,
-                ),
+              Row(
+                children: [
+                  Container(
+                    width: 3,
+                    height: 14,
+                    decoration: BoxDecoration(
+                      gradient: const LinearGradient(
+                        colors: [Color(0xFFC8A84E), Color(0xFFF5ECCE)],
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                      ),
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    'PERSONAL INFORMATION',
+                    style: GoogleFonts.inter(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                      color: tm.textTertiary,
+                      letterSpacing: 1,
+                    ),
+                  ),
+                ],
               ),
               const SizedBox(height: 16),
 
@@ -205,12 +240,12 @@ class _EditProfileViewState extends State<_EditProfileView> {
               const SizedBox(height: 16),
 
               // ── Home City (Country + City dropdown) ──────
-              const Text(
+              Text(
                 'HOME CITY',
-                style: TextStyle(
+                style: GoogleFonts.inter(
                   fontSize: 12,
                   fontWeight: FontWeight.w700,
-                  color: Colors.grey,
+                  color: tm.textTertiary,
                   letterSpacing: 1,
                 ),
               ),
@@ -228,23 +263,33 @@ class _EditProfileViewState extends State<_EditProfileView> {
               Container(
                 padding: const EdgeInsets.all(14),
                 decoration: BoxDecoration(
-                  color: Colors.blue.shade50,
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: Colors.blue.shade100),
+                  color: tm.gold.withValues(alpha: 0.06),
+                  borderRadius: BorderRadius.circular(RadiusTokens.xl),
+                  border: Border.all(color: tm.gold.withValues(alpha: 0.15)),
                 ),
                 child: Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Icon(Icons.info_outline,
-                        size: 18, color: Colors.blue[600]),
+                    Container(
+                      padding: const EdgeInsets.all(4),
+                      decoration: BoxDecoration(
+                        gradient: const LinearGradient(
+                          colors: [Color(0xFF0A0A0A), Color(0xFF1A1A1A)],
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                        ),
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                      child: Icon(Icons.info_outline, size: 14, color: tm.goldLight),
+                    ),
                     const SizedBox(width: 10),
                     Expanded(
                       child: Text(
                         'Update your personal details above. Your travel preferences are learned from your chats with TourMate.',
-                        style: TextStyle(
+                        style: GoogleFonts.inter(
                           fontSize: 13,
-                          color: Colors.blue[700],
-                          height: 1.3,
+                          color: tm.textSecondary,
+                          height: 1.4,
                         ),
                       ),
                     ),
@@ -271,31 +316,36 @@ class _EditProfileViewState extends State<_EditProfileView> {
       children: [
         Text(
           label,
-          style: TextStyle(
+          style: GoogleFonts.inter(
             fontSize: 12,
             fontWeight: FontWeight.w600,
-            color: Colors.grey[600],
+            color: tm.textSecondary,
           ),
         ),
         const SizedBox(height: 8),
         Container(
           decoration: BoxDecoration(
-            color: Colors.grey.shade50,
+            color: tm.surface,
             borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: Colors.grey.shade200),
+            border: Border.all(color: tm.borderLight),
           ),
           child: TextField(
             controller: controller,
             keyboardType: keyboardType,
             decoration: InputDecoration(
-              prefixIcon: Icon(icon, size: 20, color: Colors.grey[400]),
-              border: InputBorder.none,
-              contentPadding: const EdgeInsets.symmetric(
-                horizontal: 16,
-                vertical: 14,
+              prefixIcon: Container(
+                margin: const EdgeInsets.only(left: 12, right: 8),
+                padding: const EdgeInsets.all(6),
+                decoration: BoxDecoration(
+                  color: tm.gold.withValues(alpha: 0.06),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Icon(icon, size: 18, color: tm.gold),
               ),
+              border: InputBorder.none,
+              contentPadding: Insets.input,
             ),
-            style: const TextStyle(fontSize: 15),
+            style: GoogleFonts.inter(fontSize: 15, color: tm.textPrimary),
           ),
         ),
       ],

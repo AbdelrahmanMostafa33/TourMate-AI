@@ -1,4 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:google_fonts/google_fonts.dart';
+import '../../../../app/app_theme.dart';
+import '../../../../core/theme/design_tokens.dart';
 
 class CreateTripScreen extends StatelessWidget {
   const CreateTripScreen({super.key});
@@ -17,6 +20,7 @@ class _CreateTripView extends StatefulWidget {
 }
 
 class _CreateTripViewState extends State<_CreateTripView> {
+  TourMateColors get _tm => context.tm;
   final _cityController = TextEditingController();
   final _countryController = TextEditingController();
   final _travelersController = TextEditingController();
@@ -142,117 +146,162 @@ class _CreateTripViewState extends State<_CreateTripView> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: _tm.nearWhite,
       appBar: AppBar(
-          leading: const BackButton(),
-          title: null,
-          actions: [
-            Padding(
-              padding: const EdgeInsets.only(right: 16, top: 8, bottom: 8),
-              child: ElevatedButton(
+        backgroundColor: _tm.pureWhite,
+        surfaceTintColor: _tm.pureWhite,
+        leading: IconButton(
+          icon: Container(
+            padding: const EdgeInsets.all(6),
+            decoration: BoxDecoration(
+              color: _tm.surface,
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: _tm.borderLight),
+            ),
+            child: Icon(Icons.arrow_back_rounded, color: _tm.textPrimary, size: 18),
+          ),
+          onPressed: () => Navigator.pop(context),
+        ),
+        title: Text(
+          'New Trip',
+          style: GoogleFonts.inter(fontSize: 18, fontWeight: FontWeight.w700, color: _tm.textPrimary, letterSpacing: -0.3),
+        ),
+        centerTitle: true,
+        bottom: PreferredSize(
+          preferredSize: const Size.fromHeight(1),
+          child: Container(color: _tm.divider, height: 0.5),
+        ),
+        actions: [
+          Padding(
+            padding: const EdgeInsets.only(right: Spacing.xl3, top: 8, bottom: 8),
+            child: SizedBox(
+              height: 38,
+              child: ElevatedButton.icon(
                 onPressed: _submit,
+                icon: Icon(Icons.auto_awesome, size: 14, color: _tm.goldLight),
+                label: Text(
+                  'Create Trip',
+                  style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w600, color: _tm.pureWhite),
+                ),
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.black,
-                  foregroundColor: Colors.white,
+                  backgroundColor: _tm.pureBlack,
+                  foregroundColor: _tm.pureWhite,
+                  elevation: 0,
+                  padding: const EdgeInsets.symmetric(horizontal: 14),
                   shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
+                    borderRadius: BorderRadius.circular(10),
+                    side: BorderSide(color: _tm.gold.withValues(alpha: 0.3), width: 0.5),
                   ),
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                ),
-                child: const Text(
-                  "Create Trip",
-                  style: TextStyle(fontWeight: FontWeight.w500),
+                  shadowColor: Colors.transparent,
                 ),
               ),
             ),
-          ],
-        ),
-        body: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Padding(
-              padding: EdgeInsets.fromLTRB(16, 4, 16, 16),
-              child: Text(
-                "New Trip",
-                style: TextStyle(
-                  fontSize: 22,
-                  fontWeight: FontWeight.bold,
-                ),
+          ),
+        ],
+      ),
+      body: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Expanded(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.fromLTRB(Spacing.xl3, Spacing.xl3, Spacing.xl3, Spacing.xl5),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  /// ── Destination ──────────────────────────────
+                  _sectionLabel("Destination"),
+                  const SizedBox(height: Spacing.lg),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: _field(
+                          controller: _cityController,
+                          hint: "City",
+                          prefixIcon: Icons.location_city_outlined,
+                        ),
+                      ),
+                      const SizedBox(width: Spacing.xl),
+                      Expanded(
+                        child: _field(
+                          controller: _countryController,
+                          hint: "Country",
+                          prefixIcon: Icons.public_outlined,
+                        ),
+                      ),
+                    ],
+                  ),
+
+                  const SizedBox(height: Spacing.xl5),
+
+                  /// ── Dates ────────────────────────────────────
+                  _sectionLabel("Dates"),
+                  const SizedBox(height: Spacing.lg),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: _dateTile(
+                          label: "Start",
+                          value: _formatDate(_startDate),
+                          onTap: () => _pickDate(isStart: true),
+                        ),
+                      ),
+                      const SizedBox(width: Spacing.xl),
+                      Expanded(
+                        child: _dateTile(
+                          label: "End",
+                          value: _formatDate(_endDate),
+                          onTap: () => _pickDate(isStart: false),
+                        ),
+                      ),
+                    ],
+                  ),
+
+                  const SizedBox(height: Spacing.xl5),
+
+                  /// ── Details ──────────────────────────────────
+                  _sectionLabel("Details"),
+                  const SizedBox(height: Spacing.lg),
+                  _field(
+                    controller: _travelersController,
+                    hint: "Number of travelers",
+                    keyboardType: TextInputType.number,
+                    prefixIcon: Icons.people_outline,
+                  ),
+                  const SizedBox(height: Spacing.xl3),
+                  _interestsSection(),
+
+                  const SizedBox(height: Spacing.xl7),
+
+                  // Submit button
+                  SizedBox(
+                    width: double.infinity,
+                    height: 52,
+                    child: ElevatedButton.icon(
+                      onPressed: _submit,
+                      icon: Icon(Icons.auto_awesome, size: 18, color: _tm.goldLight),
+                      label: Text(
+                        'Start Planning',
+                        style: GoogleFonts.inter(fontSize: 15, fontWeight: FontWeight.w600, color: _tm.pureWhite),
+                      ),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: _tm.pureBlack,
+                        foregroundColor: _tm.pureWhite,
+                        elevation: 0,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(RadiusTokens.xl2),
+                          side: BorderSide(color: _tm.gold.withValues(alpha: 0.3), width: 0.5),
+                        ),
+                        shadowColor: Colors.transparent,
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ),
-            Expanded(
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    /// ── Destination ──────────────────────────────
-                    _sectionLabel("Destination"),
-                    const SizedBox(height: 10),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: _field(
-                            controller: _cityController,
-                            hint: "City",
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: _field(
-                            controller: _countryController,
-                            hint: "Country",
-                          ),
-                        ),
-                      ],
-                    ),
-
-                    const SizedBox(height: 24),
-
-                    /// ── Dates ────────────────────────────────────
-                    _sectionLabel("Dates"),
-                    const SizedBox(height: 10),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: _dateTile(
-                            label: "Start",
-                            value: _formatDate(_startDate),
-                            onTap: () => _pickDate(isStart: true),
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: _dateTile(
-                            label: "End",
-                            value: _formatDate(_endDate),
-                            onTap: () => _pickDate(isStart: false),
-                          ),
-                        ),
-                      ],
-                    ),
-
-                    const SizedBox(height: 24),
-
-                    /// ── Details ──────────────────────────────────
-                    _sectionLabel("Details"),
-                    const SizedBox(height: 10),
-                    _field(
-                      controller: _travelersController,
-                      hint: "#Travelers",
-                      keyboardType: TextInputType.number,
-                      prefixIcon: Icons.people_outline,
-                    ),
-                    const SizedBox(height: 12),
-                    _interestsSection(),
-
-                    const SizedBox(height: 32),
-                  ],
-                ),
-              ),
-            ),
-          ],
-        ),
-      );
+          ),
+        ],
+      ),
+    );
   }
 
   Widget _interestsSection() {
@@ -260,10 +309,10 @@ class _CreateTripViewState extends State<_CreateTripView> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         _sectionLabel("Interests"),
-        const SizedBox(height: 10),
+        const SizedBox(height: Spacing.lg),
         Wrap(
-          spacing: 8,
-          runSpacing: 6,
+          spacing: Spacing.md,
+          runSpacing: Spacing.sm,
           children: _allInterests.map((interest) {
             final selected = _selectedInterests.contains(interest);
             return FilterChip(
@@ -271,18 +320,19 @@ class _CreateTripViewState extends State<_CreateTripView> {
                 interest,
                 style: TextStyle(
                   fontSize: 13,
-                  color: selected ? Colors.white : Colors.black87,
-                  fontWeight: selected ? FontWeight.w600 : FontWeight.normal,
+                  color: selected ? _tm.pureWhite : _tm.textPrimary,
+                  fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
                 ),
               ),
               selected: selected,
-              selectedColor: Colors.black,
-              checkmarkColor: Colors.white,
-              backgroundColor: Colors.grey.shade100,
+              selectedColor: _tm.pureBlack,
+              checkmarkColor: _tm.pureWhite,
+              backgroundColor: _tm.surface,
               shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(20),
+                borderRadius: BorderRadius.circular(RadiusTokens.full),
                 side: BorderSide(
-                  color: selected ? Colors.black : Colors.grey.shade300,
+                  color: selected ? _tm.gold.withValues(alpha: 0.3) : _tm.border,
+                  width: selected ? 1.5 : 1.0,
                 ),
               ),
               onSelected: (value) {
@@ -302,14 +352,31 @@ class _CreateTripViewState extends State<_CreateTripView> {
   }
 
   Widget _sectionLabel(String text) {
-    return Text(
-      text,
-      style: const TextStyle(
-        fontSize: 13,
-        fontWeight: FontWeight.bold,
-        color: Colors.grey,
-        letterSpacing: 0.8,
-      ),
+    return Row(
+      children: [
+        Container(
+          width: 3,
+          height: 14,
+          decoration: BoxDecoration(
+            gradient: const LinearGradient(
+              colors: [Color(0xFFC8A84E), Color(0xFFF5ECCE)],
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+            ),
+            borderRadius: BorderRadius.circular(2),
+          ),
+        ),
+        const SizedBox(width: Spacing.md),
+        Text(
+          text.toUpperCase(),
+          style: GoogleFonts.inter(
+            fontSize: 11,
+            fontWeight: FontWeight.w700,
+            letterSpacing: 1.2,
+            color: _tm.textTertiary,
+          ),
+        ),
+      ],
     );
   }
 
@@ -326,26 +393,34 @@ class _CreateTripViewState extends State<_CreateTripView> {
       maxLines: maxLines,
       decoration: InputDecoration(
         hintText: hint,
-        prefixIcon: prefixIcon != null ? Icon(prefixIcon, size: 20) : null,
+        prefixIcon: prefixIcon != null
+            ? Container(
+                margin: const EdgeInsets.only(left: 12, right: 8),
+                padding: const EdgeInsets.all(6),
+                decoration: BoxDecoration(
+                  color: _tm.gold.withValues(alpha: 0.06),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Icon(prefixIcon, size: 18, color: _tm.gold),
+              )
+            : null,
         filled: true,
-        fillColor: Colors.white,
-        contentPadding: const EdgeInsets.symmetric(
-          horizontal: 16,
-          vertical: 14,
-        ),
+        fillColor: _tm.pureWhite,
+        contentPadding: const EdgeInsets.symmetric(horizontal: Spacing.xl3, vertical: Spacing.xl2),
         border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: BorderSide(color: Colors.grey.shade200),
+          borderRadius: BorderRadius.circular(RadiusTokens.xl),
+          borderSide: BorderSide(color: _tm.borderLight),
         ),
         enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: BorderSide(color: Colors.grey.shade200),
+          borderRadius: BorderRadius.circular(RadiusTokens.xl),
+          borderSide: BorderSide(color: _tm.borderLight),
         ),
         focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: const BorderSide(color: Colors.black, width: 1.5),
+          borderRadius: BorderRadius.circular(RadiusTokens.xl),
+          borderSide: BorderSide(color: _tm.pureBlack, width: 1.5),
         ),
       ),
+      style: GoogleFonts.inter(fontSize: 15, color: _tm.textPrimary),
     );
   }
 
@@ -357,39 +432,54 @@ class _CreateTripViewState extends State<_CreateTripView> {
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        padding: const EdgeInsets.symmetric(horizontal: Spacing.xl3, vertical: Spacing.xl2),
         decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: Colors.grey.shade200),
+          color: _tm.pureWhite,
+          borderRadius: BorderRadius.circular(RadiusTokens.xl),
+          border: Border.all(color: _tm.borderLight),
+          boxShadow: [
+            BoxShadow(
+              color: _tm.pureBlack.withValues(alpha: 0.03),
+              blurRadius: 4,
+              offset: const Offset(0, 2),
+            ),
+          ],
         ),
         child: Row(
           children: [
-            const Icon(Icons.calendar_today_outlined, size: 18),
-            const SizedBox(width: 8),
+            Container(
+              padding: const EdgeInsets.all(6),
+              decoration: BoxDecoration(
+                color: _tm.gold.withValues(alpha: 0.06),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Icon(Icons.calendar_today_outlined, size: 16, color: _tm.gold),
+            ),
+            const SizedBox(width: Spacing.md),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
                     label,
-                    style: const TextStyle(
-                      fontSize: 11,
-                      color: Colors.grey,
-                      fontWeight: FontWeight.bold,
+                    style: GoogleFonts.inter(
+                      fontSize: 10,
+                      color: _tm.textTertiary,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: 0.5,
                     ),
                   ),
                   const SizedBox(height: 2),
                   Text(
                     value,
-                    style: TextStyle(
+                    style: GoogleFonts.inter(
                       fontSize: 14,
                       color: value == "Select date"
-                          ? Colors.grey
-                          : Colors.black,
+                          ? _tm.textTertiary
+                          : _tm.textPrimary,
                       fontWeight: value == "Select date"
-                          ? FontWeight.normal
-                          : FontWeight.w500,
+                          ? FontWeight.w400
+                          : FontWeight.w600,
                     ),
                   ),
                 ],

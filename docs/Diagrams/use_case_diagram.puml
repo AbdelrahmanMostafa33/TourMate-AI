@@ -1,0 +1,60 @@
+@startuml TourMate_AI_High_Level
+left to right direction
+skinparam packageStyle rectangle
+
+' ═══════ ACTORS ═══════
+
+actor "Traveler" as Traveler
+actor "System Admin" as Admin
+actor "Stripe" as Stripe
+actor "Firebase Auth" as Firebase
+actor "Amadeus" as Amadeus
+actor "Expedia" as Expedia
+actor "OSRM" as OSRM
+actor "AI Services" as AI
+
+' ═══════ HIGH-LEVEL USECASES ═══════
+
+rectangle "TourMate AI System" {
+
+  usecase "UC1: Authenticate &\\nManage Account" as UC1
+  usecase "UC2: Manage Trips &\\nItineraries" as UC2
+  usecase "UC3: Chat with AI &\\nPlan Trip" as UC3
+  usecase "UC4: Explore &\\nDiscover Places" as UC4
+  usecase "UC5: Book Flights" as UC5
+  usecase "UC6: Book Hotels" as UC6
+  usecase "UC7: Manage Payments" as UC7
+  usecase "UC8: Review Places &\\nGive Feedback" as UC8
+  usecase "UC9: Save &\\nManage Places" as UC9
+  usecase "UC10: Upload &\\nAnalyze Images" as UC10
+  usecase "UC11: Monitor System\\nHealth" as UC11
+
+}
+
+' ═══════ TRAVELER ═══════
+Traveler --> UC1
+Traveler --> UC2
+Traveler --> UC3
+Traveler --> UC4
+Traveler --> UC5
+Traveler --> UC6
+Traveler --> UC7
+Traveler --> UC8
+Traveler --> UC9
+Traveler --> UC10
+
+' ═══════ ADMIN ═══════
+Admin --> UC11
+
+' ═══════ EXTERNAL SYSTEMS ═══════
+Firebase <-- UC1
+AI <-- UC3
+Amadeus <-- UC5
+Stripe <-- UC7
+OSRM <-- UC3
+AI <-- UC10
+
+' ═══════ WEBHOOK ═══════
+Stripe --> UC7 : webhook events
+
+@enduml

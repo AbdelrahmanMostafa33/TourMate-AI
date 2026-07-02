@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../app/app_theme.dart';
 import '../utils/countries_cities.dart';
 
 /// A two-step dropdown picker that first lets the user select a country,
@@ -23,6 +24,8 @@ class CityPicker extends StatefulWidget {
 }
 
 class _CityPickerState extends State<CityPicker> {
+  TourMateColors get tm => context.tm;
+
   String? _selectedCountry;
   String? _selectedCity;
   final List<String> _countries = CountriesCities.countries;
@@ -36,7 +39,6 @@ class _CityPickerState extends State<CityPicker> {
         _selectedCountry = country;
         _selectedCity = city;
       } else {
-        // Try to use the initial value as a city name
         _selectedCity = widget.initialValue;
       }
     }
@@ -63,13 +65,10 @@ class _CityPickerState extends State<CityPicker> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // ── Country Dropdown ──────────────────────────────
         _buildLabel('Country'),
         const SizedBox(height: 6),
         _buildCountryDropdown(),
         const SizedBox(height: 14),
-
-        // ── City Dropdown (only shows after country is selected) ──
         if (_selectedCountry != null) ...[
           _buildLabel('City'),
           const SizedBox(height: 6),
@@ -82,20 +81,16 @@ class _CityPickerState extends State<CityPicker> {
   Widget _buildLabel(String text) {
     return Text(
       text,
-      style: const TextStyle(
-        fontSize: 13,
-        fontWeight: FontWeight.w600,
-        color: Colors.black87,
-      ),
+      style: TMTextStyles.labelMedium,
     );
   }
 
   Widget _buildCountryDropdown() {
     return Container(
       decoration: BoxDecoration(
-        color: Colors.grey.shade50,
+        color: tm.pureWhite,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.grey.shade300),
+        border: Border.all(color: tm.borderLight),
       ),
       padding: const EdgeInsets.symmetric(horizontal: 16),
       child: DropdownButtonHideUnderline(
@@ -104,12 +99,12 @@ class _CityPickerState extends State<CityPicker> {
           isExpanded: true,
           hint: Text(
             'Select your country',
-            style: TextStyle(color: Colors.grey.shade400, fontSize: 14),
+            style: TextStyle(color: tm.textTertiary, fontSize: 14),
           ),
-          icon: Icon(Icons.expand_more, color: Colors.grey.shade500),
-          style: const TextStyle(
+          icon: Icon(Icons.expand_more, color: tm.textTertiary),
+          style: TextStyle(
             fontSize: 14,
-            color: Colors.black87,
+            color: tm.textPrimary,
             fontWeight: FontWeight.w500,
           ),
           items: _countries.map((country) {
@@ -117,8 +112,7 @@ class _CityPickerState extends State<CityPicker> {
               value: country,
               child: Row(
                 children: [
-                  Icon(Icons.public_outlined,
-                      size: 18, color: Colors.grey.shade500),
+                  Icon(Icons.public_outlined, size: 18, color: tm.textTertiary),
                   const SizedBox(width: 10),
                   Text(country),
                 ],
@@ -135,9 +129,9 @@ class _CityPickerState extends State<CityPicker> {
     final cities = CountriesCities.citiesFor(_selectedCountry!);
     return Container(
       decoration: BoxDecoration(
-        color: Colors.grey.shade50,
+        color: tm.pureWhite,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.grey.shade300),
+        border: Border.all(color: tm.borderLight),
       ),
       padding: const EdgeInsets.symmetric(horizontal: 16),
       child: DropdownButtonHideUnderline(
@@ -146,12 +140,12 @@ class _CityPickerState extends State<CityPicker> {
           isExpanded: true,
           hint: Text(
             'Select your city',
-            style: TextStyle(color: Colors.grey.shade400, fontSize: 14),
+            style: TextStyle(color: tm.textTertiary, fontSize: 14),
           ),
-          icon: Icon(Icons.expand_more, color: Colors.grey.shade500),
-          style: const TextStyle(
+          icon: Icon(Icons.expand_more, color: tm.textTertiary),
+          style: TextStyle(
             fontSize: 14,
-            color: Colors.black87,
+            color: tm.textPrimary,
             fontWeight: FontWeight.w500,
           ),
           items: cities.map((city) {
@@ -159,8 +153,7 @@ class _CityPickerState extends State<CityPicker> {
               value: city,
               child: Row(
                 children: [
-                  Icon(Icons.location_city_outlined,
-                      size: 18, color: Colors.grey.shade500),
+                  Icon(Icons.location_city_outlined, size: 18, color: tm.textTertiary),
                   const SizedBox(width: 10),
                   Text(city),
                 ],

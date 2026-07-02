@@ -1,4 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:google_fonts/google_fonts.dart';
+import '../../../../app/app_theme.dart';
+import '../../../../core/theme/design_tokens.dart';
 import '../../data/models/booking_data.dart';
 
 /// Displays a booking confirmation card after the user selects a hotel
@@ -21,22 +24,23 @@ class BookingCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final tm = context.tm;
     final isConfirmed = booking.isConfirmed;
 
     return Container(
       width: double.infinity,
-      margin: const EdgeInsets.symmetric(vertical: 8),
+      margin: const EdgeInsets.symmetric(vertical: Spacing.sm),
       decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(20),
+        color: tm.pureWhite,
+        borderRadius: BorderRadius.circular(RadiusTokens.xl4),
         border: Border.all(
-          color: isConfirmed ? Colors.green.shade300 : Colors.grey.shade200,
+          color: isConfirmed ? tm.gold.withValues(alpha: 0.4) : tm.borderLight,
         ),
         boxShadow: [
           BoxShadow(
             color: isConfirmed
-                ? Colors.green.withValues(alpha: 0.08)
-                : Colors.black.withValues(alpha: 0.06),
+                ? tm.gold.withValues(alpha: 0.08)
+                : tm.pureBlack.withValues(alpha: 0.06),
             blurRadius: 16,
             offset: const Offset(0, 4),
           ),
@@ -45,21 +49,21 @@ class BookingCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // ── Header ─────────────────────────────────────
-          _buildHeader(isConfirmed),
-          const Divider(height: 1),
+          // ── Premium Header ─────────────────────────────
+          _buildHeader(isConfirmed, tm),
+          Container(height: 1, color: tm.divider),
 
           // ── Trip Summary ───────────────────────────────
-          _buildTripSummary(),
+          _buildTripSummary(tm),
           if (isConfirmed) ...[
-            const Divider(height: 1),
-            _buildConfirmedBanner(),
+            Container(height: 1, color: tm.divider),
+            _buildConfirmedBanner(tm),
           ] else ...[
-            const Divider(height: 1),
+            Container(height: 1, color: tm.divider),
             // ── Pricing Breakdown ────────────────────────
-            _buildPricing(),
-            const Divider(height: 1),
-            // ── Action Buttons ───────────────────────────
+            _buildPricing(tm),
+            Container(height: 1, color: tm.divider),
+            // ── Premium Action Buttons ───────────────────
             _buildActions(context),
           ],
         ],
@@ -67,89 +71,87 @@ class BookingCard extends StatelessWidget {
     );
   }
 
-  Widget _buildHeader(bool isConfirmed) {
-    return Container(
-      padding: const EdgeInsets.fromLTRB(20, 20, 20, 16),
-      child: Row(
-        children: [
-          Container(
-            padding: const EdgeInsets.all(8),
-            decoration: BoxDecoration(
-              gradient: const LinearGradient(
-                colors: [Color(0xFF22C55E), Color(0xFF16A34A)],
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-              ),
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: const Icon(Icons.check_circle_rounded, color: Colors.white, size: 22),
-          ),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  isConfirmed ? '✅ Booking Confirmed!' : 'Trip Confirmed!',
-                  style: TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.w700,
-                    color: Colors.black,
-                  ),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  booking.tripSummary?.destination ?? 'Your trip',
-                  style: TextStyle(
-                    fontSize: 13,
-                    color: Colors.grey[500],
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          if (booking.pricing != null)
+  Widget _buildHeader(bool isConfirmed, TourMateColors tm) {
+    return Hero(
+      tag: 'booking-summary-${booking.tripId ?? "unknown"}',
+      child: Container(
+        padding: const EdgeInsets.fromLTRB(Spacing.xl4, Spacing.xl4, Spacing.xl4, Spacing.xl3),
+        child: Row(
+          children: [
             Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              padding: const EdgeInsets.all(8),
               decoration: BoxDecoration(
-                color: Colors.green.shade50,
-                borderRadius: BorderRadius.circular(20),
-              ),
-              child: Text(
-                _formatPrice(booking.pricing!.totalEstimated, booking.pricing!.currency),
-                style: TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w700,
-                  color: Colors.green[700],
+                gradient: const LinearGradient(
+                  colors: [Color(0xFF0A0A0A), Color(0xFF1A1A1A)],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
                 ),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: tm.gold.withValues(alpha: 0.3), width: 0.5),
+              ),
+              child: Icon(Icons.check_circle_rounded, color: tm.goldLight, size: 22),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    isConfirmed ? 'Booking Confirmed!' : 'Trip Confirmed!',
+                    style: GoogleFonts.inter(
+                      fontSize: 18,
+                      fontWeight: FontWeight.w700,
+                      color: tm.textPrimary,
+                      letterSpacing: -0.3,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    booking.tripSummary?.destination ?? 'Your trip',
+                    style: GoogleFonts.inter(fontSize: 13, color: tm.textTertiary, fontWeight: FontWeight.w500),
+                  ),
+                ],
               ),
             ),
-        ],
+            if (booking.pricing != null)
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                decoration: BoxDecoration(
+                  color: tm.gold.withValues(alpha: 0.08),
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(color: tm.gold.withValues(alpha: 0.2)),
+                ),
+                child: Text(
+                  _formatPrice(booking.pricing!.totalEstimated, booking.pricing!.currency),
+                  style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.w700, color: tm.gold),
+                ),
+              ),
+          ],
+        ),
       ),
     );
   }
 
-  Widget _buildTripSummary() {
+  Widget _buildTripSummary(TourMateColors tm) {
     final summary = booking.tripSummary;
     return Padding(
       padding: const EdgeInsets.all(20),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
+          Text(
             'Trip Summary',
             style: TextStyle(
               fontSize: 14,
               fontWeight: FontWeight.w700,
-              color: Colors.black,
+              color: tm.textPrimary,
             ),
           ),
           const SizedBox(height: 12),
 
-          // Flight info
+          // Premium Flight info
           if (booking.flight != null && booking.hasFlight) ...[
-            _summaryRow(
+            _summaryRow(tm,
               icon: Icons.flight_takeoff_rounded,
               title: 'Flight',
               subtitle: '${booking.flight!.airline ?? ''} ${booking.flight!.flightNumber ?? ''}'
@@ -161,9 +163,9 @@ class BookingCard extends StatelessWidget {
             const SizedBox(height: 10),
           ],
 
-          // Hotel info
+          // Premium Hotel info
           if (booking.hotel != null && booking.hasHotel) ...[
-            _summaryRow(
+            _summaryRow(tm,
               icon: Icons.hotel_rounded,
               title: 'Hotel',
               subtitle: booking.hotel!.name ?? 'Selected hotel',
@@ -178,7 +180,7 @@ class BookingCard extends StatelessWidget {
           ],
 
           // Duration & travelers
-          _summaryRow(
+          _summaryRow(tm,
             icon: Icons.calendar_today_outlined,
             title: 'Duration',
             subtitle: '${summary?.durationDays ?? '?'} day${(summary?.durationDays ?? 0) != 1 ? 's' : ''}',
@@ -191,7 +193,7 @@ class BookingCard extends StatelessWidget {
     );
   }
 
-  Widget _summaryRow({
+  Widget _summaryRow(TourMateColors tm, {
     required IconData icon,
     required String title,
     required String subtitle,
@@ -203,10 +205,14 @@ class BookingCard extends StatelessWidget {
         Container(
           padding: const EdgeInsets.all(8),
           decoration: BoxDecoration(
-            color: Colors.grey.shade100,
+            gradient: const LinearGradient(
+              colors: [Color(0xFF0A0A0A), Color(0xFF1A1A1A)],
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+            ),
             borderRadius: BorderRadius.circular(10),
           ),
-          child: Icon(icon, size: 18, color: Colors.grey[700]),
+          child: Icon(icon, size: 18, color: tm.goldLight),
         ),
         const SizedBox(width: 12),
         Expanded(
@@ -215,17 +221,17 @@ class BookingCard extends StatelessWidget {
             children: [
               Text(
                 title,
-                style: const TextStyle(
+                style: GoogleFonts.inter(
                   fontSize: 13,
                   fontWeight: FontWeight.w600,
-                  color: Colors.black,
+                  color: tm.textPrimary,
                 ),
               ),
               Text(
                 subtitle,
-                style: TextStyle(
+                style: GoogleFonts.inter(
                   fontSize: 12,
-                  color: Colors.grey[600],
+                  color: tm.textSecondary,
                 ),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
@@ -233,9 +239,9 @@ class BookingCard extends StatelessWidget {
               if (subtitle2 != null)
                 Text(
                   subtitle2,
-                  style: TextStyle(
+                  style: GoogleFonts.inter(
                     fontSize: 11,
-                    color: Colors.grey[400],
+                    color: tm.textTertiary,
                   ),
                 ),
             ],
@@ -244,40 +250,45 @@ class BookingCard extends StatelessWidget {
         if (trailing != null)
           Text(
             trailing,
-            style: const TextStyle(
+            style: GoogleFonts.inter(
               fontSize: 14,
               fontWeight: FontWeight.w700,
-              color: Colors.black,
+              color: tm.textPrimary,
+              letterSpacing: -0.2,
             ),
           ),
       ],
     );
   }
 
-  Widget _buildPricing() {
+  Widget _buildPricing(TourMateColors tm) {
     final pricing = booking.pricing;
     if (pricing == null) return const SizedBox.shrink();
 
     return Padding(
-      padding: const EdgeInsets.all(20),
+      padding: const EdgeInsets.all(Spacing.xl4),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
+          Text(
             'Price Breakdown',
-            style: TextStyle(
-              fontSize: 14,
-              fontWeight: FontWeight.w700,
-              color: Colors.black,
+            style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.w700, color: tm.textPrimary),
+          ),
+          const SizedBox(height: Spacing.md),
+          if (pricing.flightCost > 0)
+            _pricingRow(tm, 'Flight', pricing.flightCost, pricing.currency),
+          if (pricing.hotelCost > 0)
+            _pricingRow(tm, 'Hotel (total)', pricing.hotelCost, pricing.currency),
+          Container(
+            height: 1,
+            margin: const EdgeInsets.symmetric(vertical: Spacing.sm),
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: [tm.divider.withValues(alpha: 0), tm.divider, tm.divider.withValues(alpha: 0)],
+              ),
             ),
           ),
-          const SizedBox(height: 12),
-          if (pricing.flightCost > 0)
-            _pricingRow('Flight', pricing.flightCost, pricing.currency),
-          if (pricing.hotelCost > 0)
-            _pricingRow('Hotel (total)', pricing.hotelCost, pricing.currency),
-          const Divider(height: 16),
-          _pricingRow(
+          _pricingRow(tm,
             'Total Estimated',
             pricing.totalEstimated,
             pricing.currency,
@@ -288,7 +299,7 @@ class BookingCard extends StatelessWidget {
     );
   }
 
-  Widget _pricingRow(String label, double amount, String currency, {bool bold = false}) {
+  Widget _pricingRow(TourMateColors tm, String label, double amount, String currency, {bool bold = false}) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 6),
       child: Row(
@@ -296,18 +307,19 @@ class BookingCard extends StatelessWidget {
         children: [
           Text(
             label,
-            style: TextStyle(
+            style: GoogleFonts.inter(
               fontSize: bold ? 14 : 13,
               fontWeight: bold ? FontWeight.w700 : FontWeight.w500,
-              color: bold ? Colors.black : Colors.grey[700],
+              color: bold ? tm.textPrimary : tm.textSecondary,
             ),
           ),
           Text(
             _formatPrice(amount, currency),
-            style: TextStyle(
+            style: GoogleFonts.inter(
               fontSize: bold ? 15 : 13,
               fontWeight: bold ? FontWeight.w700 : FontWeight.w600,
-              color: bold ? Colors.black : Colors.grey[800],
+              color: bold ? tm.gold : tm.textPrimary,
+              letterSpacing: bold ? -0.2 : 0,
             ),
           ),
         ],
@@ -316,29 +328,28 @@ class BookingCard extends StatelessWidget {
   }
 
   Widget _buildActions(BuildContext context) {
+    final tm = context.tm;
     return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 16, 20, 20),
+      padding: const EdgeInsets.fromLTRB(Spacing.xl4, Spacing.xl3, Spacing.xl4, Spacing.xl4),
       child: Column(
         children: [
-          // Pay Now button
+          // Premium Pay Now button
           SizedBox(
             width: double.infinity,
             child: ElevatedButton.icon(
               onPressed: onPayNow,
-              icon: const Icon(Icons.lock_rounded, size: 18),
-              label: const Text(
+              icon: Icon(Icons.lock_rounded, size: 18, color: tm.goldLight),
+              label: Text(
                 'Pay Now',
-                style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w700,
-                ),
+                style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.w700),
               ),
               style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.black,
-                foregroundColor: Colors.white,
+                backgroundColor: tm.pureBlack,
+                foregroundColor: tm.pureWhite,
                 padding: const EdgeInsets.symmetric(vertical: 16),
                 shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(16),
+                  borderRadius: BorderRadius.circular(RadiusTokens.xl3),
+                  side: BorderSide(color: tm.gold.withValues(alpha: 0.3), width: 0.5),
                 ),
                 elevation: 0,
               ),
@@ -350,29 +361,26 @@ class BookingCard extends StatelessWidget {
               padding: const EdgeInsets.only(top: 8),
               child: Text(
                 'DEBUG: onPayNow is null',
-                style: TextStyle(color: Colors.red, fontSize: 10),
+                style: GoogleFonts.inter(color: tm.error, fontSize: 10),
               ),
             ),
           const SizedBox(height: 10),
-          // Do it Later button
+          // Premium Book Later button
           SizedBox(
             width: double.infinity,
             child: OutlinedButton.icon(
               onPressed: onLater,
-              icon: const Icon(Icons.access_time_rounded, size: 18),
-              label: const Text(
+              icon: Icon(Icons.access_time_rounded, size: 18, color: tm.gold),
+              label: Text(
                 'Book Later',
-                style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w600,
-                ),
+                style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.w600),
               ),
               style: OutlinedButton.styleFrom(
-                foregroundColor: Colors.grey[700],
-                side: BorderSide(color: Colors.grey.shade300),
+                foregroundColor: tm.textSecondary,
+                side: BorderSide(color: tm.gold.withValues(alpha: 0.3)),
                 padding: const EdgeInsets.symmetric(vertical: 14),
                 shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(16),
+                  borderRadius: BorderRadius.circular(RadiusTokens.xl3),
                 ),
               ),
             ),
@@ -382,18 +390,22 @@ class BookingCard extends StatelessWidget {
     );
   }
 
-  Widget _buildConfirmedBanner() {
+  Widget _buildConfirmedBanner(TourMateColors tm) {
     return Container(
-      padding: const EdgeInsets.fromLTRB(20, 16, 20, 20),
+      padding: const EdgeInsets.fromLTRB(Spacing.xl4, Spacing.xl3, Spacing.xl4, Spacing.xl4),
       child: Row(
         children: [
           Container(
             padding: const EdgeInsets.all(6),
             decoration: BoxDecoration(
-              color: Colors.green.shade50,
+              gradient: const LinearGradient(
+                colors: [Color(0xFF0A0A0A), Color(0xFF1A1A1A)],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
               borderRadius: BorderRadius.circular(8),
             ),
-            child: Icon(Icons.check_circle, color: Colors.green[600], size: 20),
+            child: Icon(Icons.check_circle, color: tm.goldLight, size: 20),
           ),
           const SizedBox(width: 12),
           Expanded(
@@ -402,19 +414,12 @@ class BookingCard extends StatelessWidget {
               children: [
                 Text(
                   'Booking Confirmed',
-                  style: TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w700,
-                    color: Colors.green[800],
-                  ),
+                  style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.w700, color: tm.textPrimary),
                 ),
-                const SizedBox(height: 1),
+                const SizedBox(height: 2),
                 Text(
                   'Your payment was successful and your trip is all set!',
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: Colors.green[600],
-                  ),
+                  style: GoogleFonts.inter(fontSize: 12, color: tm.textTertiary),
                 ),
               ],
             ),
@@ -427,7 +432,7 @@ class BookingCard extends StatelessWidget {
   String _formatPrice(double amount, String currency) {
     final symbol = currency == 'USD' ? '\$' : (currency == 'EUR' ? '€' : '$currency ');
     if (amount == amount.roundToDouble()) {
-      return '${symbol}${amount.toInt()}';
+      return '$symbol${amount.toInt()}';
     }
     return '$symbol${amount.toStringAsFixed(2)}';
   }

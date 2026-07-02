@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:google_fonts/google_fonts.dart';
 
 import '../../core/network/service_locator.dart';
+import '../../core/theme/design_tokens.dart';
 import '../../features/chat/presentation/screens/chat_screen.dart';
 import '../../features/trips/presentation/screens/trips_screen.dart';
 import '../../features/trips/data/repository/trips_repository.dart';
@@ -11,6 +13,7 @@ import '../../features/explore/data/repository/explore_repository.dart';
 import '../../features/explore/logic/explore_cubit.dart';
 import '../../features/saved/presentation/screens/saved_screen.dart';
 import '../../features/auth/presentation/screens/profile_screen.dart';
+import '../../app/app_theme.dart';
 
 class MainShell extends StatefulWidget {
   const MainShell({super.key});
@@ -25,6 +28,8 @@ class _MainShellState extends State<MainShell> {
 
   @override
   Widget build(BuildContext context) {
+    final tm = context.tm;
+
     return MultiBlocProvider(
       providers: [
         BlocProvider(create: (_) => TripsCubit(locator<TripsRepository>())),
@@ -33,23 +38,39 @@ class _MainShellState extends State<MainShell> {
       child: Builder(
         builder: (context) {
           return Scaffold(
-            backgroundColor: Colors.white,
+            backgroundColor: tm.nearWhite,
 
             /// BODY — only build the active tab so off-screen widgets
             /// (and their Cubits/WebSockets) are disposed.
             body: _buildActivePage(context),
 
-            /// NAVBAR
-            bottomNavigationBar: Padding(
-              padding: const EdgeInsets.only(bottom: 16, top: 5),
+            /// NAVBAR — Premium gold-accented bottom bar
+            bottomNavigationBar: Container(
+              decoration: BoxDecoration(
+                color: tm.pureWhite,
+                border: Border(
+                  top: BorderSide(color: tm.borderLight, width: 0.5),
+                ),
+                boxShadow: [
+                  BoxShadow(
+                    color: tm.pureBlack.withValues(alpha: 0.03),
+                    blurRadius: 8,
+                    offset: const Offset(0, -2),
+                  ),
+                ],
+              ),
+              padding: EdgeInsets.only(
+                bottom: MediaQuery.of(context).padding.bottom + 6,
+                top: 6,
+              ),
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceAround,
                 children: [
-                  _navItem(Icons.chat_bubble_outline, "Chat", 0),
-                  _navItem(Icons.card_travel, "Trips", 1),
-                  _navItem(Icons.search, "Explore", 2),
-                  _navItem(Icons.favorite_border, "Saved", 3),
-                  _navItem(Icons.person, "You", 4),
+                  _navItem(tm, Icons.chat_bubble_outline, "Chat", 0),
+                  _navItem(tm, Icons.card_travel_outlined, "Trips", 1),
+                  _navItem(tm, Icons.search, "Explore", 2),
+                  _navItem(tm, Icons.favorite_border, "Saved", 3),
+                  _navItem(tm, Icons.person_outline, "You", 4),
                 ],
               ),
             ),
@@ -103,7 +124,7 @@ class _MainShellState extends State<MainShell> {
     }
   }
 
-  Widget _navItem(IconData icon, String label, int index) {
+  Widget _navItem(TourMateColors tm, IconData icon, String label, int index) {
     final isActive = currentIndex == index;
 
     return Builder(
@@ -113,38 +134,46 @@ class _MainShellState extends State<MainShell> {
             setState(() {
               currentIndex = index;
             });
-
-            /// 🔥 Refresh trips when opening Trips tab
             if (index == 1) {
               context.read<TripsCubit>().getTrips();
             }
-            /// 🔥 Refresh explore when opening Explore tab
             if (index == 2) {
               context.read<ExploreCubit>().init();
             }
           },
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              CircleAvatar(
-                radius: 16,
-                backgroundColor:
-                isActive ? Colors.black : Colors.transparent,
-                child: Icon(
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 250),
+            curve: Curves.easeOutCubic,
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+            decoration: BoxDecoration(
+              color: isActive ? tm.pureBlack : Colors.transparent,
+              borderRadius: BorderRadius.circular(RadiusTokens.xl3),
+              border: isActive
+                  ? Border.all(color: tm.gold.withValues(alpha: 0.3), width: 0.5)
+                  : null,
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
                   icon,
-                  size: 18,
-                  color: isActive ? Colors.white : Colors.grey,
+                  size: 20,
+                  color: isActive ? tm.gold : tm.navInactive,
                 ),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                label,
-                style: TextStyle(
-                  fontSize: 12,
-                  color: isActive ? Colors.black : Colors.grey,
-                ),
-              ),
-            ],
+                if (isActive) ...[
+                  const SizedBox(width: 6),
+                  Text(
+                    label,
+                    style: GoogleFonts.inter(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: tm.pureWhite,
+                      letterSpacing: 0.3,
+                    ),
+                  ),
+                ],
+              ],
+            ),
           ),
         );
       },

@@ -1,5 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:google_fonts/google_fonts.dart';
+import '../../../../app/app_theme.dart';
+import '../../../../core/theme/design_tokens.dart';
+import '../../../../core/widgets/premium_widgets.dart';
 import '../../../../core/network/service_locator.dart';
 import '../../data/datasource/firebase_auth_service.dart';
 import '../../data/models/user_response.dart';
@@ -28,8 +32,9 @@ class _ProfileView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final tm = context.tm;
     return Scaffold(
-      backgroundColor: const Color(0xFFF4F4F4),
+      backgroundColor: tm.nearWhite,
       body: SafeArea(
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -39,11 +44,11 @@ class _ProfileView extends StatelessWidget {
                 initial: () => const SizedBox(),
 
                 loading: () =>
-                const Center(child: CircularProgressIndicator()),
+                const Center(child: TMLoadingIndicator(message: 'Loading profile...')),
 
-                error: (message) => Center(child: Text(message)),
+                error: (message) => TMErrorState(message: message, onRetry: () => context.read<ProfileCubit>().fetchProfile()),
 
-                success: (data) => _buildProfileContent(context, data),
+                success: (data) => _buildProfileContent(context, tm, data),
               );
             },
           ),
@@ -52,7 +57,7 @@ class _ProfileView extends StatelessWidget {
     );
   }
 
-  Widget _buildProfileContent(BuildContext context, UserResponse data) {
+  Widget _buildProfileContent(BuildContext context, TourMateColors tm, UserResponse data) {
     return SingleChildScrollView(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -62,14 +67,32 @@ class _ProfileView extends StatelessWidget {
         /// ================= HEADER =================
         Row(
           children: [
-            CircleAvatar(
-              radius: 32,
-              backgroundColor: Colors.black,
-              child: Text(
-                (data.fullName ?? "U").isNotEmpty
-                    ? (data.fullName ?? "U")[0]
-                    : "U",
-                style: const TextStyle(color: Colors.white, fontSize: 24),
+            Container(
+              padding: const EdgeInsets.all(2),
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                gradient: const LinearGradient(
+                  colors: [Color(0xFFC8A84E), Color(0xFFF5ECCE)],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
+                boxShadow: [
+                  BoxShadow(
+                    color: const Color(0xFFC8A84E).withValues(alpha: 0.3),
+                    blurRadius: 8,
+                    offset: const Offset(0, 2),
+                  ),
+                ],
+              ),
+              child: CircleAvatar(
+                radius: 30,
+                backgroundColor: tm.pureBlack,
+                child: Text(
+                  (data.fullName ?? "U").isNotEmpty
+                      ? (data.fullName ?? "U")[0]
+                      : "U",
+                  style: GoogleFonts.inter(color: tm.goldLight, fontSize: 24, fontWeight: FontWeight.w600),
+                ),
               ),
             ),
             const SizedBox(width: 14),
@@ -78,16 +101,16 @@ class _ProfileView extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    data.fullName ?? "User",
-                    style: const TextStyle(
+                    data.fullName ?? "User",                        style: TextStyle(
                       fontSize: 22,
                       fontWeight: FontWeight.bold,
+                      color: tm.textPrimary,
                     ),
                   ),
                   const SizedBox(height: 2),
                   Text(
                     data.email,
-                    style: const TextStyle(color: Colors.black54),
+                    style: TextStyle(color: tm.textSecondary),
                   ),
                 ],
               ),
@@ -99,9 +122,9 @@ class _ProfileView extends StatelessWidget {
 
         /// ================= INFO CARDS =================
         if (data.phoneNumber != null && data.phoneNumber!.isNotEmpty)
-          _infoTile(Icons.phone_outlined, data.phoneNumber!),
+          _infoTile(tm, Icons.phone_outlined, data.phoneNumber!),
         if (data.homeCity != null && data.homeCity!.isNotEmpty)
-          _infoTile(Icons.location_city_outlined, data.homeCity!),
+          _infoTile(tm, Icons.location_city_outlined, data.homeCity!),
 
         const SizedBox(height: 20),
 
@@ -113,12 +136,12 @@ class _ProfileView extends StatelessWidget {
         const SizedBox(height: 24),
 
         /// ================= SETTINGS =================
-        _sectionHeader("Settings"),
+        _sectionHeader(tm, "Settings"),
         const SizedBox(height: 12),
 
         // Edit Profile
         _settingsTile(
-          context,
+          context, tm,
           icon: Icons.edit_outlined,
           title: "Edit Profile",
           subtitle: "Update your personal information",
@@ -140,7 +163,7 @@ class _ProfileView extends StatelessWidget {
 
         // Sign Out
         _settingsTile(
-          context,
+          context, tm,
           icon: Icons.logout_rounded,
           title: "Sign Out",
           subtitle: "Log out of your account",
@@ -155,43 +178,50 @@ class _ProfileView extends StatelessWidget {
   );
   }
 
-  Widget _infoTile(IconData icon, String text) {
+  Widget _infoTile(TourMateColors tm, IconData icon, String text) {
     return Padding(
-      padding: const EdgeInsets.only(bottom: 10),
-      child: Row(
-        children: [
-          Container(
-            padding: const EdgeInsets.all(8),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(10),
+      padding: const EdgeInsets.only(bottom: Spacing.sm),
+      child: Container(
+        padding: const EdgeInsets.all(Spacing.xl3),
+        decoration: BoxDecoration(
+          color: tm.pureWhite,
+          borderRadius: BorderRadius.circular(RadiusTokens.xl3),
+          border: Border.all(color: tm.borderLight),
+          boxShadow: [
+            BoxShadow(
+              color: tm.pureBlack.withValues(alpha: 0.03),
+              blurRadius: 8,
+              offset: const Offset(0, 2),
             ),
-            child: Icon(icon, size: 18, color: Colors.grey[600]),
-          ),
-          const SizedBox(width: 12),
-          Text(
-            text,
-            style: const TextStyle(fontSize: 14, color: Colors.black87),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _sectionHeader(String title) {
-    return Text(
-      title.toUpperCase(),
-      style: const TextStyle(
-        fontSize: 12,
-        fontWeight: FontWeight.w700,
-        color: Colors.grey,
-        letterSpacing: 1,
+          ],
+        ),
+        child: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                gradient: const LinearGradient(
+                  colors: [Color(0xFF0A0A0A), Color(0xFF1A1A1A)],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Icon(icon, size: 18, color: tm.goldLight),
+            ),
+            const SizedBox(width: 12),
+            Text(
+              text,
+              style: GoogleFonts.inter(fontSize: 14, color: tm.textPrimary, fontWeight: FontWeight.w500),
+            ),
+          ],
+        ),
       ),
     );
   }
 
   Widget _settingsTile(
-    BuildContext context, {
+    BuildContext context, TourMateColors tm, {
     required IconData icon,
     required String title,
     required String subtitle,
@@ -199,31 +229,36 @@ class _ProfileView extends StatelessWidget {
     Color? iconColor,
     Color? titleColor,
   }) {
+    final effectiveColor = iconColor ?? tm.gold;
     return Material(
-      color: Colors.white,
-      borderRadius: BorderRadius.circular(14),
+      color: tm.pureWhite,
+      borderRadius: BorderRadius.circular(RadiusTokens.xl3),
       child: InkWell(
-        borderRadius: BorderRadius.circular(14),
+        borderRadius: BorderRadius.circular(RadiusTokens.xl3),
         onTap: onTap,
         child: Container(
-          padding: const EdgeInsets.all(16),
+          padding: const EdgeInsets.all(Spacing.xl3),
           decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(14),
-            border: Border.all(color: Colors.grey.shade100),
+            borderRadius: BorderRadius.circular(RadiusTokens.xl3),
+            border: Border.all(color: tm.borderLight),
+            boxShadow: [
+              BoxShadow(
+                color: tm.pureBlack.withValues(alpha: 0.03),
+                blurRadius: 8,
+                offset: const Offset(0, 2),
+              ),
+            ],
           ),
           child: Row(
             children: [
               Container(
                 padding: const EdgeInsets.all(10),
                 decoration: BoxDecoration(
-                  color: (iconColor ?? Colors.grey).withValues(alpha: 0.1),
+                  color: effectiveColor.withValues(alpha: 0.08),
                   borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: effectiveColor.withValues(alpha: 0.15)),
                 ),
-                child: Icon(
-                  icon,
-                  size: 20,
-                  color: iconColor ?? Colors.grey[700],
-                ),
+                child: Icon(icon, size: 20, color: effectiveColor),
               ),
               const SizedBox(width: 14),
               Expanded(
@@ -232,24 +267,28 @@ class _ProfileView extends StatelessWidget {
                   children: [
                     Text(
                       title,
-                      style: TextStyle(
+                      style: GoogleFonts.inter(
                         fontSize: 15,
                         fontWeight: FontWeight.w600,
-                        color: titleColor ?? Colors.black87,
+                        color: titleColor ?? tm.textPrimary,
                       ),
                     ),
                     const SizedBox(height: 2),
                     Text(
                       subtitle,
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: Colors.grey[500],
-                      ),
+                      style: GoogleFonts.inter(fontSize: 12, color: tm.textTertiary),
                     ),
                   ],
                 ),
               ),
-              Icon(Icons.chevron_right, color: Colors.grey[300], size: 20),
+              Container(
+                padding: const EdgeInsets.all(4),
+                decoration: BoxDecoration(
+                  color: effectiveColor.withValues(alpha: 0.06),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Icon(Icons.chevron_right, size: 16, color: effectiveColor),
+              ),
             ],
           ),
         ),
@@ -257,35 +296,91 @@ class _ProfileView extends StatelessWidget {
     );
   }
 
+  Widget _sectionHeader(TourMateColors tm, String title) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: Spacing.xs),
+      child: Row(
+        children: [
+          Container(
+            width: 3,
+            height: 16,
+            decoration: BoxDecoration(
+              gradient: const LinearGradient(
+                colors: [Color(0xFFC8A84E), Color(0xFFF5ECCE)],
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+              ),
+              borderRadius: BorderRadius.circular(2),
+            ),
+          ),
+          const SizedBox(width: 8),
+          Text(
+            title,
+            style: GoogleFonts.inter(
+              fontSize: 13,
+              fontWeight: FontWeight.w700,
+              color: tm.textTertiary,
+              letterSpacing: 0.5,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   void _showLogoutDialog(BuildContext context) {
+    final tm = context.tm;
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(20),
+          borderRadius: BorderRadius.circular(RadiusTokens.xl3),
         ),
-        title: const Text("Sign Out"),
-        content: const Text("Are you sure you want to sign out?"),
+        backgroundColor: tm.pureWhite,
+        titlePadding: const EdgeInsets.fromLTRB(Spacing.xl3, Spacing.xl3, Spacing.xl3, 0),
+        contentPadding: const EdgeInsets.fromLTRB(Spacing.xl3, Spacing.md, Spacing.xl3, 0),
+        actionsPadding: const EdgeInsets.fromLTRB(Spacing.sm, Spacing.sm, Spacing.sm, Spacing.sm),
+        title: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(6),
+              decoration: BoxDecoration(
+                color: tm.error.withValues(alpha: 0.08),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Icon(Icons.logout_rounded, size: 18, color: tm.error),
+            ),
+            const SizedBox(width: 10),
+            Text(
+              'Sign Out',
+              style: GoogleFonts.inter(fontWeight: FontWeight.w700, fontSize: 17, color: tm.textPrimary, letterSpacing: -0.2),
+            ),
+          ],
+        ),
+        content: Text(
+          'Are you sure you want to sign out?',
+          style: GoogleFonts.inter(fontSize: 14, color: tm.textSecondary, height: 1.5),
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
-            child: const Text(
-              "Cancel",
-              style: TextStyle(color: Colors.grey),
+            style: TextButton.styleFrom(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
             ),
+            child: Text('Cancel', style: GoogleFonts.inter(color: tm.textTertiary, fontWeight: FontWeight.w600, fontSize: 14)),
           ),
           TextButton(
             onPressed: () async {
               Navigator.pop(ctx);
               await _performLogout(context);
             },
-            child: const Text(
-              "Sign Out",
-              style: TextStyle(
-                color: Colors.red,
-                fontWeight: FontWeight.w600,
-              ),
+            style: TextButton.styleFrom(
+              backgroundColor: tm.error.withValues(alpha: 0.08),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
             ),
+            child: Text('Sign Out', style: GoogleFonts.inter(color: tm.error, fontWeight: FontWeight.w700, fontSize: 14)),
           ),
         ],
       ),

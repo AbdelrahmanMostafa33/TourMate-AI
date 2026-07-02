@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../app/app_theme.dart';
 
 /// A polished, reusable snackbar utility for consistent app-wide feedback.
 ///
@@ -12,6 +13,8 @@ import 'package:flutter/material.dart';
 class AppSnackbar {
   AppSnackbar._();
 
+  static const _tm = TourMateColors();
+
   /// Shows a green success snackbar with a checkmark icon.
   static void success(
     BuildContext context,
@@ -22,7 +25,8 @@ class AppSnackbar {
       context,
       message: message,
       icon: Icons.check_circle_rounded,
-      backgroundColor: const Color(0xFF2E7D32),
+      backgroundColor: const TourMateColors().success,
+      textStyle: TMTextStyles.bodyMedium.copyWith(color: _tm.textOnDark),
       duration: duration,
     );
   }
@@ -37,7 +41,8 @@ class AppSnackbar {
       context,
       message: message,
       icon: Icons.error_rounded,
-      backgroundColor: const Color(0xFFC62828),
+      backgroundColor: const TourMateColors().error,
+      textStyle: TMTextStyles.bodyMedium.copyWith(color: _tm.textOnDark),
       duration: duration,
     );
   }
@@ -52,7 +57,8 @@ class AppSnackbar {
       context,
       message: message,
       icon: Icons.info_rounded,
-      backgroundColor: const Color(0xFF1565C0),
+      backgroundColor: const TourMateColors().info,
+      textStyle: TMTextStyles.bodyMedium.copyWith(color: _tm.textOnDark),
       duration: duration,
     );
   }
@@ -67,7 +73,8 @@ class AppSnackbar {
       context,
       message: message,
       icon: Icons.warning_rounded,
-      backgroundColor: const Color(0xFFE65100),
+      backgroundColor: const TourMateColors().warning,
+      textStyle: TMTextStyles.bodyMedium.copyWith(color: _tm.textOnDark),
       duration: duration,
     );
   }
@@ -77,6 +84,7 @@ class AppSnackbar {
     required String message,
     required IconData icon,
     required Color backgroundColor,
+    TextStyle? textStyle,
     Duration duration = const Duration(seconds: 3),
   }) {
     ScaffoldMessenger.of(context)
@@ -85,17 +93,18 @@ class AppSnackbar {
         SnackBar(
           content: Row(
             children: [
-              Icon(icon, color: Colors.white, size: 22),
+              Icon(icon, color: _tm.textOnDark, size: 22),
               const SizedBox(width: 12),
               Expanded(
                 child: Text(
                   message,
-                  style: const TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w500,
-                    color: Colors.white,
-                    height: 1.3,
-                  ),
+                  style: textStyle ??
+                      TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w500,
+                        color: _tm.textOnDark,
+                        height: 1.3,
+                      ),
                 ),
               ),
             ],

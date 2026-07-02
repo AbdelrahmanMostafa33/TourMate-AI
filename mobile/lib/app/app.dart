@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'app_router.dart';
+import 'app_theme.dart';
 
 class MyApp extends StatelessWidget {
   const MyApp({super.key});
@@ -7,8 +8,9 @@ class MyApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'My App',
+      title: 'TourMate',
       debugShowCheckedModeBanner: false,
+      theme: buildTourMateTheme(),
       onGenerateRoute: AppRouter.generateRoute,
       initialRoute: '/',
     );

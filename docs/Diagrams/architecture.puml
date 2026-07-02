@@ -1,0 +1,151 @@
+@startuml TourMate AI — Architecture
+!theme plain
+skinparam backgroundColor #FEFEFE
+skinparam packageStyle rectangle
+skinparam defaultTextAlignment center
+
+title TourMate AI — Trip State, Profile & Agent Pipeline
+
+' ── Legend ──────────────────────────────────────────────────────────────────
+
+rectangle "Legend: → reads · ← writes · ⇄ reads & writes" as Legend #FFFFF0
+
+' ── TripProfile ─────────────────────────────────────────────────────────────
+
+rectangle "📋 TripProfile (Per-Trip)" as TripProfile #f3e5f5 [
+  budget_level: budget / moderate / luxury
+  travel_style: romantic / adventure / cultural / ...
+  pace: relaxed / moderate / packed
+  interests: [history, food, art, ...]
+  food_preferences: [local cuisine, ...]
+  accommodation_preferences: [boutique hotel, ...]
+]
+
+' ── TripState ───────────────────────────────────────────────────────────────
+
+rectangle "🧠 TripState (Central Workflow State)" as TripState #e1f5fe {
+
+  rectangle "📥 Input" as Input [
+    user_message
+    conversation_context
+    token
+    trip_id
+    destination_city
+    duration_days
+  ]
+
+  rectangle "👤 Profile" as ProfileBox [
+    profile → TripProfile
+  ]
+
+  rectangle "📊 Pipeline Data" as PipelineBox [
+    filtered_places: SQL-filtered candidates
+    matched_interest_subcats: set[str] (semantic LLM match)
+    candidate_places: ranked + diversity-optimized
+    draft_itinerary: LLM-generated plan
+    optimized_itinerary: route-optimized (+ hotel picks)
+  ]
+
+  rectangle "✅ Validation" as ValidationBox [
+    validation: {score, issue, suggestion, metrics}
+    is_valid: bool
+    planning_attempts: int
+  ]
+
+  rectangle "🎮 Control Flow" as ControlBox [
+    error: str
+    next_agent: str
+    intent_type: plan_trip / clarification / chat
+    missing_fields: [...]
+  ]
+
+  rectangle "🔍 Meta / Debug" as MetaBox [
+    agent_messages: [trace logs]
+    progress_queue_key: Flutter push updates
+  ]
+}
+
+' ── Agents ──────────────────────────────────────────────────────────────────
+
+rectangle "🤖 Pipeline Agents" as Agents #e8f5e9 {
+
+  rectangle "1. Profile Loader\n───\n→ token, trip_id\n← per-trip profile" as A1
+
+  rectangle "2. Place Retriever\n───\n→ destination_city, profile\n← filtered_places\n← matched_interest_subcats\n← agent_messages" as A2
+
+  rectangle "3. Candidate Scorer\n───\n→ filtered_places, profile, duration_days\n→ matched_interest_subcats\n← candidate_places, agent_messages" as A3
+
+  rectangle "4. Planning Agent\n───\n→ candidate_places, profile\n→ destination_city, duration_days\n→ user_message, validation (retry)\n← draft_itinerary, planning_attempts\n← agent_messages" as A4
+
+  rectangle "5. Route Optimizer\n───\n→ draft_itinerary\n← optimized_itinerary, agent_messages" as A5
+
+  rectangle "6. Itinerary Validator\n───\n→ optimized_itinerary, user_message\n→ profile\n← is_valid, validation, agent_messages" as A7
+
+  rectangle "7. Hotel Selector\n(post-approval)\n───\n→ optimized_itinerary\n→ candidate_places, profile\n← accommodation_suggestions (simulated)\n← agent_messages" as A6
+}
+
+' ── Edges ───────────────────────────────────────────────────────────────────
+
+rectangle "🔁 LangGraph Edges" as Edges [
+  should_rank: filtered_places → scorer | empty → end
+  should_plan: candidate_places → planner | none → end
+  should_optimize: always → optimizer
+  should_validate: always → validator
+  should_retry_or_end: is_valid → end | retries → planner | exhausted → end
+]
+
+' ── External ────────────────────────────────────────────────────────────────
+
+rectangle "🌐 External Services" as External {
+  rectangle "PostgreSQL (TripProfile)" as ES1
+  rectangle "PostgreSQL Places DB" as ES2
+  rectangle "(Mock) OSRM Routing" as ES3
+  rectangle "LLM (OpenAI/Groq/Claude)" as ES4
+}
+
+rectangle "⛔ End" as END #f96
+
+' ── Data flow: connections ─────────────────────────────────────────────────
+
+' Profile → State
+TripProfile -down- ProfileBox
+
+' Pipeline execution order
+A1 -down-> A2
+A2 -down-> A3
+A3 -down-> A4
+A4 -down-> A5
+A5 -down-> A7
+A5 -down-> A6
+
+' Retry loop
+A7 .down.> A4 : retry
+
+' Edge routing
+A2 .right.> Edges
+Edges .right.> A3 : filtered_places
+Edges .right.> END : empty
+A3 .right.> Edges
+Edges .right.> A4 : candidate_places
+Edges .right.> END : none
+A4 .right.> Edges
+Edges .right.> A5 : always
+A5 .right.> Edges
+Edges .right.> A7 : always
+A7 .right.> Edges
+Edges .right.> END : valid / exhausted
+Edges .right.> A4 : retries left
+
+' External services
+ES2 -right-> A2
+ES3 -right-> A5
+ES4 -right-> A4
+ES4 -right-> A7
+' ES4 -right-> A6
+A6 -right> A6 : simulated hotel match
+ES1 -right-> A1
+
+' End node
+END -[hidden]- A7
+
+@enduml

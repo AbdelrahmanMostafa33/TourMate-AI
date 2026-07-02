@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-
+import 'package:google_fonts/google_fonts.dart';
+import '../../../../app/app_theme.dart';
+import '../../../../core/theme/design_tokens.dart';
+import '../../../../core/widgets/premium_widgets.dart';
 import '../../data/models/trip_summary_model.dart';
 import '../../logic/trips_cubit.dart';
 import '../../logic/trips_state.dart';
@@ -15,6 +18,7 @@ class TripsScreen extends StatefulWidget {
 }
 
 class _TripsScreenState extends State<TripsScreen> {
+  TourMateColors get tm => context.tm;
 
   @override
   void initState() {
@@ -29,51 +33,96 @@ class _TripsScreenState extends State<TripsScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: tm.nearWhite,
       appBar: AppBar(
-        title: null,
+        backgroundColor: tm.pureWhite,
+        elevation: 0,
+        scrolledUnderElevation: 0.5,
         actions: [
           Padding(
             padding: const EdgeInsets.only(right: 16, top: 8, bottom: 8),
-            child: ElevatedButton(
-              onPressed: () async {
-                final cubit = context.read<TripsCubit>();
-                final result = await Navigator.pushNamed(context, "/create-trip");
-
-                if (result is String && result.isNotEmpty) {
-                  widget.onStartChatWithMessage?.call(result);
-                } else {
-                  /// 🔥 Refresh if a trip was created normally (non-chat flow)
-                  cubit.getTrips();
-                }
-              },
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.black,
-                foregroundColor: Colors.white,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
+            child: SizedBox(
+              height: 38,
+              child: ElevatedButton.icon(
+                onPressed: () async {
+                  final cubit = context.read<TripsCubit>();
+                  final result = await Navigator.pushNamed(context, "/create-trip");
+                  if (result is String && result.isNotEmpty) {
+                    widget.onStartChatWithMessage?.call(result);
+                  } else {
+                    cubit.getTrips();
+                  }
+                },
+                icon: Icon(Icons.add_rounded, size: 16, color: tm.goldLight),
+                label: Text('New Trip', style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w600, color: tm.pureWhite)),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: tm.pureBlack,
+                  foregroundColor: tm.pureWhite,
+                  elevation: 0,
+                  padding: const EdgeInsets.symmetric(horizontal: 14),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(10),
+                    side: BorderSide(color: tm.gold.withValues(alpha: 0.3), width: 0.5),
+                  ),
+                  shadowColor: Colors.transparent,
                 ),
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-              ),
-              child: const Text(
-                "+ New Trip",
-                style: TextStyle(fontWeight: FontWeight.w500),
               ),
             ),
           ),
         ],
+        bottom: PreferredSize(
+          preferredSize: const Size.fromHeight(1),
+          child: Container(color: tm.divider, height: 0.5),
+        ),
       ),
 
       body: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Padding(
-            padding: EdgeInsets.fromLTRB(16, 4, 16, 12),
-            child: Text(
-              "Your Trips",
-              style: TextStyle(
-                fontSize: 22,
-                fontWeight: FontWeight.bold,
-              ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(Spacing.xl3, Spacing.xl, Spacing.xl3, Spacing.xl2),
+            child: Row(
+              children: [
+                Row(
+                  children: [
+                    Container(
+                      width: 3,
+                      height: 20,
+                      decoration: BoxDecoration(
+                        gradient: const LinearGradient(
+                          colors: [Color(0xFFC8A84E), Color(0xFFF5ECCE)],
+                          begin: Alignment.topCenter,
+                          end: Alignment.bottomCenter,
+                        ),
+                        borderRadius: BorderRadius.circular(2),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Text(
+                      "Your Trips",
+                      style: GoogleFonts.inter(
+                        fontSize: 24,
+                        fontWeight: FontWeight.w700,
+                        color: tm.textPrimary,
+                        letterSpacing: -0.4,
+                      ),
+                    ),
+                  ],
+                ),
+                const Spacer(),
+                Container(
+                  width: 3,
+                  height: 20,
+                  decoration: BoxDecoration(
+                    gradient: const LinearGradient(
+                      colors: [Color(0xFFC8A84E), Color(0xFFF5ECCE)],
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                    ),
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+              ],
             ),
           ),
 
@@ -82,28 +131,38 @@ class _TripsScreenState extends State<TripsScreen> {
               builder: (context, state) {
                 return state.when(
                   initial: () => const SizedBox(),
-                  loading: () => const Center(child: CircularProgressIndicator()),
-                  creating: () => const Center(child: CircularProgressIndicator()),
+                  loading: () => const TMLoadingIndicator(message: 'Loading your trips...'),
+                  creating: () => const TMLoadingIndicator(message: 'Creating your trip...'),
                   created: () => const Center(child: Text("Trip Created!")),
-                  error: (message) => Center(child: Text(message)),
-
-                  /// 👇 MAIN LIST WITH PULL-TO-REFRESH
+                  error: (message) => TMErrorState(message: message, onRetry: () => context.read<TripsCubit>().getTrips()),
                   loaded: (trips) {
                     if (trips.isEmpty) {
-                      return const Center(child: Text("No trips yet"));
+                      return TMEmptyState(
+                        icon: Icons.card_travel_outlined,
+                        title: 'No trips yet',
+                        subtitle: 'Start chatting with TourMate to plan your first adventure.',
+                        actionLabel: 'Plan a trip',
+                        onAction: () async {
+                          final cubit = context.read<TripsCubit>();
+                          final result = await Navigator.pushNamed(context, "/create-trip");
+                          if (result is String && result.isNotEmpty) {
+                            widget.onStartChatWithMessage?.call(result);
+                          } else {
+                            cubit.getTrips();
+                          }
+                        },
+                      );
                     }
 
                     return RefreshIndicator(
+                      color: tm.gold,
                       onRefresh: () async {
                         context.read<TripsCubit>().getTrips();
                       },
                       child: ListView.builder(
-                        padding: const EdgeInsets.all(16),
+                        padding: const EdgeInsets.fromLTRB(Spacing.xl3, 0, Spacing.xl3, Spacing.xl5),
                         itemCount: trips.length,
-                        itemBuilder: (context, index) {
-                          final trip = trips[index];
-                          return _tripCard(trip, context);
-                        },
+                        itemBuilder: (context, index) => _tripCard(trips[index], context),
                       ),
                     );
                   },
@@ -150,74 +209,91 @@ class _TripsScreenState extends State<TripsScreen> {
   }
 
   Widget _tripCard(TripSummaryModel trip, BuildContext context) {
-    final card = Container(
-      margin: const EdgeInsets.only(bottom: 16),
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(16),
-        color: Colors.white,
-        boxShadow: [
-          BoxShadow(
-            blurRadius: 10,
-            color: Colors.black.withValues(alpha: 0.05),
-          )
-        ],
-      ),
-      child: Row(
-        children: [
-          Container(
-            padding: const EdgeInsets.all(12),
+    final tm = context.tm;
+    final statusLabel = _statusLabel(trip.status);
+    final statusBadge = TMStatusBadge(label: statusLabel);
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: Spacing.xl3),
+      child: Material(
+        color: tm.pureWhite,
+        borderRadius: BorderRadius.circular(RadiusTokens.xl3),
+        elevation: 0,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(RadiusTokens.xl3),
+          onTap: () async {
+            final cubit = context.read<TripsCubit>();
+            await Navigator.pushNamed(context, '/trip-detail', arguments: trip.tripId);
+            if (mounted) cubit.getTrips();
+          },
+          child: Container(
+            padding: const EdgeInsets.all(Spacing.xl3),
             decoration: BoxDecoration(
-              color: Colors.white,
-              shape: BoxShape.circle,
-              border: Border.all(color: Colors.grey.shade200),
-            ),
-            child: const Icon(Icons.flight, color: Colors.black),
-          ),
-
-          const SizedBox(width: 16),
-
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  trip.destination,
-                  style: const TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                const SizedBox(height: 6),
-                Text(
-                  trip.durationDays > 0 ? "${trip.durationDays} days" : "",
-                  style: TextStyle(color: Colors.grey[600]),
-                ),
-                const SizedBox(height: 6),
-                Text(
-                  _statusLabel(trip.status),
-                  style: const TextStyle(
-                    color: Colors.black,
-                    fontWeight: FontWeight.bold,
-                  ),
+              borderRadius: BorderRadius.circular(RadiusTokens.xl3),
+              color: tm.pureWhite,
+              border: Border.all(color: tm.borderLight),
+              boxShadow: [
+                BoxShadow(
+                  blurRadius: 10,
+                  color: tm.pureBlack.withValues(alpha: 0.04),
+                  offset: const Offset(0, 2),
                 ),
               ],
             ),
+            child: Row(
+              children: [
+                // Icon with gold accent
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    gradient: const LinearGradient(
+                      colors: [Color(0xFF0A0A0A), Color(0xFF1A1A1A)],
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                    ),
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(Icons.flight_rounded, color: tm.goldLight, size: 20),
+                ),
+                const SizedBox(width: 16),
+                // Content
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        trip.destination,
+                        style: GoogleFonts.inter(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w700,
+                          color: tm.textPrimary,
+                          letterSpacing: -0.2,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Row(
+                        children: [
+                          if (trip.durationDays > 0) ...[
+                            Icon(Icons.calendar_today_outlined, size: 12, color: tm.textTertiary),
+                            const SizedBox(width: 4),
+                            Text(
+                              "${trip.durationDays} day${trip.durationDays > 1 ? 's' : ''}",
+                              style: GoogleFonts.inter(color: tm.textSecondary, fontSize: 13),
+                            ),
+                            const SizedBox(width: 10),
+                          ],
+                          statusBadge,
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+                Icon(Icons.chevron_right, color: tm.border, size: 20),
+              ],
+            ),
           ),
-
-          const Icon(Icons.arrow_forward_ios, size: 16),
-        ],
+        ),
       ),
-    );
-
-    return GestureDetector(
-      onTap: () async {
-        final cubit = context.read<TripsCubit>();
-        await Navigator.pushNamed(context, '/trip-detail', arguments: trip.tripId);
-        // Refresh the trip list after returning (e.g., after deleting a trip)
-        if (mounted) cubit.getTrips();
-      },
-      child: card,
     );
   }
 }

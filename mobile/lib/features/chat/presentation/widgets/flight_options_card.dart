@@ -1,4 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:google_fonts/google_fonts.dart';
+import '../../../../app/app_theme.dart';
+import '../../../../core/theme/design_tokens.dart';
 import '../../../flights/data/models/flight_offer.dart';
 import '../../data/models/flight_options_payload.dart';
 
@@ -16,16 +19,18 @@ class FlightOptionsCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final tm = context.tm;
+
     return Container(
       width: double.infinity,
-      margin: const EdgeInsets.symmetric(vertical: 8),
+      margin: const EdgeInsets.symmetric(vertical: Spacing.sm),
       decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: Colors.grey.shade200),
+        color: tm.pureWhite,
+        borderRadius: BorderRadius.circular(RadiusTokens.xl4),
+        border: Border.all(color: tm.borderLight),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.06),
+            color: tm.pureBlack.withValues(alpha: 0.06),
             blurRadius: 16,
             offset: const Offset(0, 4),
           ),
@@ -34,9 +39,9 @@ class FlightOptionsCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // ── Header ──────────────────────────────────
-          _buildHeader(),
-          const Divider(height: 1),
+          // ── Premium Header ──────────────────────────
+          _buildHeader(tm),
+          Container(height: 1, color: tm.divider),
 
           // ── Flight Offers ───────────────────────────
           ...List.generate(payload.offers.length, (i) {
@@ -56,45 +61,37 @@ class FlightOptionsCard extends StatelessWidget {
     );
   }
 
-  Widget _buildHeader() {
+  Widget _buildHeader(TourMateColors tm) {
     return Container(
-      padding: const EdgeInsets.fromLTRB(20, 20, 20, 16),
+      padding: const EdgeInsets.fromLTRB(Spacing.xl4, Spacing.xl4, Spacing.xl4, Spacing.xl3),
       child: Row(
         children: [
           Container(
             padding: const EdgeInsets.all(8),
             decoration: BoxDecoration(
               gradient: const LinearGradient(
-                colors: [Color(0xFF3B82F6), Color(0xFF2563EB)],
+                colors: [Color(0xFF0A0A0A), Color(0xFF1A1A1A)],
                 begin: Alignment.topLeft,
                 end: Alignment.bottomRight,
               ),
               borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: tm.gold.withValues(alpha: 0.3), width: 0.5),
             ),
-            child: const Icon(Icons.flight_takeoff_rounded,
-                color: Colors.white, size: 22),
+            child: Icon(Icons.flight_takeoff_rounded, color: tm.goldLight, size: 22),
           ),
           const SizedBox(width: 14),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text(
+                Text(
                   'Available Flights',
-                  style: TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.w700,
-                    color: Colors.black,
-                  ),
+                  style: GoogleFonts.inter(fontSize: 18, fontWeight: FontWeight.w700, color: tm.textPrimary, letterSpacing: -0.3),
                 ),
                 const SizedBox(height: 2),
                 Text(
                   '${payload.offers.length} option${payload.offers.length > 1 ? 's' : ''} found',
-                  style: TextStyle(
-                    fontSize: 13,
-                    color: Colors.grey[500],
-                    fontWeight: FontWeight.w500,
-                  ),
+                  style: GoogleFonts.inter(fontSize: 13, color: tm.textTertiary, fontWeight: FontWeight.w500),
                 ),
               ],
             ),
@@ -120,48 +117,46 @@ class _FlightOfferCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final tm = context.tm;
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 20),
+      padding: const EdgeInsets.symmetric(horizontal: Spacing.xl4),
       child: Padding(
-        padding: const EdgeInsets.only(bottom: 10),
+        padding: const EdgeInsets.only(bottom: Spacing.sm),
         child: Material(
-          color: Colors.grey.shade50,
-          borderRadius: BorderRadius.circular(14),
+          color: tm.surface,
+          borderRadius: BorderRadius.circular(RadiusTokens.xl3),
           child: InkWell(
-            borderRadius: BorderRadius.circular(14),
+            borderRadius: BorderRadius.circular(RadiusTokens.xl3),
             onTap: onSelect,
             child: Container(
-              padding: const EdgeInsets.all(14),
+              padding: const EdgeInsets.all(Spacing.xl3),
               decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(14),
-                border: Border.all(color: Colors.grey.shade200),
+                borderRadius: BorderRadius.circular(RadiusTokens.xl3),
+                border: Border.all(color: tm.borderLight),
               ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // ── Top row: number badge + airline + price ──
+                  // ── Top row: gold badge + airline + price ──
                   Row(
                     children: [
-                      // Number badge
+                      // Gold number badge
                       Container(
                         width: 28,
                         height: 28,
                         decoration: BoxDecoration(
                           gradient: const LinearGradient(
-                            colors: [Color(0xFF3B82F6), Color(0xFF2563EB)],
+                            colors: [Color(0xFF0A0A0A), Color(0xFF1A1A1A)],
                             begin: Alignment.topLeft,
                             end: Alignment.bottomRight,
                           ),
                           borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: tm.gold.withValues(alpha: 0.3), width: 0.5),
                         ),
                         alignment: Alignment.center,
                         child: Text(
                           '$number',
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 13,
-                            fontWeight: FontWeight.w700,
-                          ),
+                          style: GoogleFonts.inter(color: tm.goldLight, fontSize: 13, fontWeight: FontWeight.w800),
                         ),
                       ),
                       const SizedBox(width: 10),
@@ -172,51 +167,40 @@ class _FlightOfferCard extends StatelessWidget {
                           children: [
                             Text(
                               offer.airline,
-                              style: const TextStyle(
-                                fontSize: 14,
-                                fontWeight: FontWeight.w700,
-                                color: Colors.black,
-                              ),
+                              style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.w700, color: tm.textPrimary),
                             ),
                             if (offer.flightNumber.isNotEmpty)
                               Text(
                                 'Flight ${offer.flightNumber}',
-                                style: TextStyle(
-                                  fontSize: 11,
-                                  color: Colors.grey[500],
-                                ),
+                                style: GoogleFonts.inter(fontSize: 11, color: tm.textTertiary),
                               ),
                           ],
                         ),
                       ),
-                      // Price
+                      // Gold price
                       Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 10, vertical: 5),
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                         decoration: BoxDecoration(
-                          color: Colors.blue.shade50,
+                          color: tm.gold.withValues(alpha: 0.08),
                           borderRadius: BorderRadius.circular(20),
+                          border: Border.all(color: tm.gold.withValues(alpha: 0.2)),
                         ),
                         child: Text(
                           offer.priceFormatted,
-                          style: TextStyle(
-                            fontSize: 15,
-                            fontWeight: FontWeight.w700,
-                            color: Colors.blue[700],
-                          ),
+                          style: GoogleFonts.inter(fontSize: 15, fontWeight: FontWeight.w700, color: tm.gold),
                         ),
                       ),
                     ],
                   ),
 
-                  const SizedBox(height: 12),
+                  const SizedBox(height: Spacing.md),
 
                   // ── Route timeline ──────────────────────────
                   Row(
                     children: [
                       // Departure
                       Expanded(
-                        child: _timeStation(
+                        child: _timeStation(tm,
                           time: offer.departureAtFormatted,
                           iata: offer.originIata,
                           label: 'Departure',
@@ -224,20 +208,16 @@ class _FlightOfferCard extends StatelessWidget {
                         ),
                       ),
 
-                      // Flight line
+                      // Gold flight line
                       Padding(
                         padding: const EdgeInsets.symmetric(horizontal: 8),
                         child: Column(
                           children: [
-                            Icon(Icons.flight_rounded,
-                                size: 16, color: Colors.blue[400]),
+                            Icon(Icons.flight_rounded, size: 16, color: tm.gold),
                             if (offer.duration != null)
                               Text(
                                 offer.duration!,
-                                style: TextStyle(
-                                  fontSize: 10,
-                                  color: Colors.grey[500],
-                                ),
+                                style: GoogleFonts.inter(fontSize: 10, color: tm.textTertiary),
                               ),
                           ],
                         ),
@@ -245,7 +225,7 @@ class _FlightOfferCard extends StatelessWidget {
 
                       // Arrival
                       Expanded(
-                        child: _timeStation(
+                        child: _timeStation(tm,
                           time: offer.arrivalAtFormatted,
                           iata: offer.destinationIata,
                           label: 'Arrival',
@@ -255,55 +235,50 @@ class _FlightOfferCard extends StatelessWidget {
                     ],
                   ),
 
-                  // ── Stops / cabin info ───────────────────────
+                  // ── Gold-accented stops / cabin info ────────
                   if (offer.stops != null || offer.cabin != null) ...[
-                    const SizedBox(height: 8),
+                    const SizedBox(height: Spacing.sm),
                     Row(
                       children: [
                         if (offer.stops != null)
                           _infoChip(
-                            offer.stops == 0
-                                ? '✈️ Non-stop'
-                                : '🔄 ${offer.stops} stop${offer.stops! > 1 ? 's' : ''}',
-                            Colors.green.shade50,
-                            Colors.green.shade700,
+                            offer.stops == 0 ? 'Non-stop' : '${offer.stops} stop${offer.stops! > 1 ? 's' : ''}',
+                            Icons.flight,
+                            tm.gold,
                           ),
                         if (offer.cabin != null && offer.cabin!.isNotEmpty)
                           Padding(
-                            padding:
-                                const EdgeInsets.only(left: 6),
+                            padding: const EdgeInsets.only(left: 6),
                             child: _infoChip(
                               offer.cabin!,
-                              Colors.orange.shade50,
-                              Colors.orange.shade700,
+                              Icons.airline_seat_recline_normal,
+                              tm.gold,
                             ),
                           ),
                       ],
                     ),
                   ],
 
-                  // ── Select button ────────────────────────────
+                  // ── Gold Select button ───────────────────────
                   if (onSelect != null) ...[
-                    const SizedBox(height: 12),
+                    const SizedBox(height: Spacing.md),
                     SizedBox(
                       width: double.infinity,
                       child: ElevatedButton(
                         onPressed: onSelect,
                         style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFF3B82F6),
-                          foregroundColor: Colors.white,
+                          backgroundColor: tm.pureBlack,
+                          foregroundColor: tm.pureWhite,
                           padding: const EdgeInsets.symmetric(vertical: 12),
                           shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12),
+                            borderRadius: BorderRadius.circular(RadiusTokens.md),
+                            side: BorderSide(color: tm.gold.withValues(alpha: 0.3), width: 0.5),
                           ),
                           elevation: 0,
                         ),
                         child: Text(
                           'Select Flight $number',
-                          style: const TextStyle(
-                            fontSize: 14,
-                            fontWeight: FontWeight.w700,
-                          ),
+                          style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.w700),
                         ),
                       ),
                     ),
@@ -317,58 +292,50 @@ class _FlightOfferCard extends StatelessWidget {
     );
   }
 
-  Widget _timeStation({
+  Widget _timeStation(TourMateColors tm, {
     required String time,
     required String iata,
     required String label,
     required bool alignLeft,
   }) {
     return Column(
-      crossAxisAlignment:
-          alignLeft ? CrossAxisAlignment.start : CrossAxisAlignment.end,
+      crossAxisAlignment: alignLeft ? CrossAxisAlignment.start : CrossAxisAlignment.end,
       children: [
         Text(
           time.isNotEmpty ? time : '--:--',
-          style: const TextStyle(
-            fontSize: 14,
-            fontWeight: FontWeight.w700,
-            color: Colors.black,
-          ),
+          style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.w700, color: tm.textPrimary),
         ),
         const SizedBox(height: 2),
         Text(
           iata.isNotEmpty ? iata : '---',
-          style: TextStyle(
-            fontSize: 12,
-            color: Colors.grey[600],
-            fontWeight: FontWeight.w600,
-          ),
+          style: GoogleFonts.inter(fontSize: 12, color: tm.textSecondary, fontWeight: FontWeight.w600),
         ),
         Text(
           label,
-          style: TextStyle(
-            fontSize: 10,
-            color: Colors.grey[400],
-          ),
+          style: GoogleFonts.inter(fontSize: 10, color: tm.textTertiary),
         ),
       ],
     );
   }
 
-  Widget _infoChip(String label, Color bg, Color fg) {
+  Widget _infoChip(String label, IconData icon, Color accent) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
-        color: bg,
+        color: accent.withValues(alpha: 0.08),
         borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: accent.withValues(alpha: 0.2)),
       ),
-      child: Text(
-        label,
-        style: TextStyle(
-          fontSize: 11,
-          color: fg,
-          fontWeight: FontWeight.w600,
-        ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 11, color: accent),
+          const SizedBox(width: 4),
+          Text(
+            label,
+            style: GoogleFonts.inter(fontSize: 11, color: accent, fontWeight: FontWeight.w600),
+          ),
+        ],
       ),
     );
   }

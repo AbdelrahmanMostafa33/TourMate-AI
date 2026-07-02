@@ -1,4 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:google_fonts/google_fonts.dart';
+import '../../../../app/app_theme.dart';
+import '../../../../core/theme/design_tokens.dart';
 import '../../logic/chat_cubit.dart';
 
 /// Animated progress indicator showing the AI pipeline steps during
@@ -20,6 +23,8 @@ class PipelineProgressWidget extends StatefulWidget {
 
 class _PipelineProgressWidgetState extends State<PipelineProgressWidget>
     with SingleTickerProviderStateMixin {
+  TourMateColors get tm => context.tm;
+
   late AnimationController _pulseController;
   late Animation<double> _pulseAnimation;
 
@@ -49,44 +54,42 @@ class _PipelineProgressWidgetState extends State<PipelineProgressWidget>
       duration: const Duration(milliseconds: 300),
       curve: Curves.easeInOut,
       child: Container(
-        margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-        padding: const EdgeInsets.all(14),
+        margin: const EdgeInsets.symmetric(horizontal: Spacing.xl, vertical: Spacing.sm),
+        padding: const EdgeInsets.all(Spacing.xl3),
         decoration: BoxDecoration(
-          color: Colors.grey.shade50,
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: Colors.grey.shade200),
+          color: tm.surface,
+          borderRadius: BorderRadius.circular(RadiusTokens.xl3),
+          border: Border.all(color: tm.borderLight),
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           mainAxisSize: MainAxisSize.min,
           children: [
-            /// ── Header ─────────────────────────────────────────────
+            /// ── Premium Header ──────────────────────────────────────
             Row(
               children: [
                 SizedBox(
-                  width: 16,
-                  height: 16,
+                  width: 18,
+                  height: 18,
                   child: CircularProgressIndicator(
                     strokeWidth: 2,
-                    valueColor: AlwaysStoppedAnimation<Color>(
-                      Colors.blue.shade600,
-                    ),
+                    valueColor: AlwaysStoppedAnimation<Color>(tm.gold),
                   ),
                 ),
                 const SizedBox(width: 10),
-                const Text(
-                  "Generating your itinerary\u2026",
-                  style: TextStyle(
+                Text(
+                  'Generating your itinerary…',
+                  style: GoogleFonts.inter(
                     fontSize: 14,
                     fontWeight: FontWeight.w600,
-                    color: Colors.black87,
+                    color: tm.textPrimary,
                   ),
                 ),
               ],
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: Spacing.md),
 
-            /// ── Steps ──────────────────────────────────────────────
+            /// ── Premium Steps ───────────────────────────────────────
             ...widget.steps.map(_buildStep),
           ],
         ),
@@ -99,47 +102,43 @@ class _PipelineProgressWidgetState extends State<PipelineProgressWidget>
     final isDone = step.status == 'done';
 
     return Padding(
-      padding: const EdgeInsets.only(bottom: 6),
+      padding: const EdgeInsets.only(bottom: Spacing.sm),
       child: Row(
         children: [
-          /// ── Status icon ────────────────────────────────────────
+          /// ── Gold-accented status icon ────────────────────────────
           SizedBox(
-            width: 18,
-            height: 18,
+            width: 20,
+            height: 20,
             child: isRunning
                 ? FadeTransition(
                     opacity: _pulseAnimation,
                     child: SizedBox(
-                      width: 14,
-                      height: 14,
+                      width: 16,
+                      height: 16,
                       child: CircularProgressIndicator(
                         strokeWidth: 2,
-                        valueColor: AlwaysStoppedAnimation<Color>(
-                          Colors.blue.shade500,
-                        ),
+                        valueColor: AlwaysStoppedAnimation<Color>(tm.gold),
                       ),
                     ),
                   )
                 : isDone
-                    ? Icon(Icons.check_circle_rounded,
-                        size: 16, color: Colors.green.shade600)
-                    : Icon(Icons.error_rounded,
-                        size: 16, color: Colors.red.shade500),
+                    ? Icon(Icons.check_circle_rounded, size: 18, color: tm.gold)
+                    : Icon(Icons.error_rounded, size: 18, color: tm.error),
           ),
           const SizedBox(width: 10),
 
-          /// ── Text ──────────────────────────────────────────────
+          /// ── Gold-accented text ───────────────────────────────────
           Expanded(
             child: Text(
               step.message.isNotEmpty ? step.message : step.agent,
-              style: TextStyle(
+              style: GoogleFonts.inter(
                 fontSize: 13,
-                fontWeight: isRunning ? FontWeight.w500 : FontWeight.w400,
+                fontWeight: isRunning ? FontWeight.w600 : FontWeight.w400,
                 color: isRunning
-                    ? Colors.black87
+                    ? tm.textPrimary
                     : isDone
-                        ? Colors.grey.shade600
-                        : Colors.red.shade700,
+                        ? tm.textSecondary
+                        : tm.error,
               ),
               overflow: TextOverflow.ellipsis,
               maxLines: 2,

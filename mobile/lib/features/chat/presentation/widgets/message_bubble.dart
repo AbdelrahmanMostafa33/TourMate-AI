@@ -1,9 +1,14 @@
 import 'package:flutter/material.dart';
+import 'package:google_fonts/google_fonts.dart';
+import '../../../../app/app_theme.dart';
+import '../../../../core/theme/design_tokens.dart';
 import '../../data/models/chat_message.dart';
 import 'itinerary_card.dart';
 import 'hotel_options_list.dart';
 import 'booking_card.dart';
 import 'flight_options_card.dart';
+import 'assistant_avatar.dart';
+import 'animated_card_entry.dart';
 
 class MessageBubble extends StatelessWidget {
   final ChatMessage msg;
@@ -25,14 +30,18 @@ class MessageBubble extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final tm = context.tm;
+
     // ── Booking Card (Pay Now / Do It Later) ─────────────────────
     if (msg.bookingData != null) {
       return Align(
         alignment: Alignment.centerLeft,
-        child: BookingCard(
-          booking: msg.bookingData!,
-          onPayNow: onBookingPayNow,
-          onLater: onBookingLater,
+        child: AnimatedCardEntry(
+          child: BookingCard(
+            booking: msg.bookingData!,
+            onPayNow: onBookingPayNow,
+            onLater: onBookingLater,
+          ),
         ),
       );
     }
@@ -41,9 +50,11 @@ class MessageBubble extends StatelessWidget {
     if (msg.flightOptions != null) {
       return Align(
         alignment: Alignment.centerLeft,
-        child: FlightOptionsCard(
-          payload: msg.flightOptions!,
-          onSelectFlight: onSelectFlight,
+        child: AnimatedCardEntry(
+          child: FlightOptionsCard(
+            payload: msg.flightOptions!,
+            onSelectFlight: onSelectFlight,
+          ),
         ),
       );
     }
@@ -52,9 +63,11 @@ class MessageBubble extends StatelessWidget {
     if (msg.hotelOptions != null) {
       return Align(
         alignment: Alignment.centerLeft,
-        child: HotelOptionsList(
-          payload: msg.hotelOptions!,
-          onSelectHotel: onSelectHotel,
+        child: AnimatedCardEntry(
+          child: HotelOptionsList(
+            payload: msg.hotelOptions!,
+            onSelectHotel: onSelectHotel,
+          ),
         ),
       );
     }
@@ -63,9 +76,11 @@ class MessageBubble extends StatelessWidget {
     if (msg.itinerary != null) {
       return Align(
         alignment: Alignment.centerLeft,
-        child: ItineraryCard(
-          itinerary: msg.itinerary!,
-          onApprove: !msg.isUser ? onApproveItinerary : null,
+        child: AnimatedCardEntry(
+          child: ItineraryCard(
+            itinerary: msg.itinerary!,
+            onApprove: !msg.isUser ? onApproveItinerary : null,
+          ),
         ),
       );
     }
@@ -77,63 +92,128 @@ class MessageBubble extends StatelessWidget {
       children: [
         // Display image above the message bubble
         if (msg.imageBytes != null)
-          Padding(
-            padding: const EdgeInsets.only(bottom: 4),
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(12),
-              child: Image.memory(
-                msg.imageBytes!,
-                width: 200,
-                fit: BoxFit.cover,
+          AnimatedCardEntry(
+            child: Padding(
+              padding: const EdgeInsets.only(bottom: 4),
+              child: Container(
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(RadiusTokens.xl),
+                border: Border.all(color: tm.gold.withValues(alpha: 0.2), width: 1),
+                boxShadow: [
+                  BoxShadow(
+                    color: tm.pureBlack.withValues(alpha: 0.06),
+                    blurRadius: 8,
+                    offset: const Offset(0, 2),
+                  ),
+                ],
+              ),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(RadiusTokens.xl - 1),
+                child: Image.memory(
+                  msg.imageBytes!,
+                  width: 200,
+                  fit: BoxFit.cover,
+                ),
               ),
             ),
           ),
-        // Message bubble
+        ),
+        // Premium message bubble with assistant avatar (bot only)
         if (msg.text.isNotEmpty || msg.isStreaming)
-          Align(
-            alignment: isUser ? Alignment.centerRight : Alignment.centerLeft,
-            child: Container(
-              margin: const EdgeInsets.symmetric(vertical: 4),
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-              constraints: BoxConstraints(
-                maxWidth: MediaQuery.of(context).size.width * 0.78,
-              ),
-              decoration: BoxDecoration(
-                color: isUser ? Colors.black : Colors.grey.shade100,
-                borderRadius: BorderRadius.circular(18).copyWith(
-                  bottomRight: isUser ? const Radius.circular(4) : null,
-                  bottomLeft: !isUser ? const Radius.circular(4) : null,
+          isUser
+              ? Align(
+                  alignment: Alignment.centerRight,
+                  child: _buildBubble(context, tm, isUser),
+                )
+              : Row(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.only(right: 6, bottom: 4),
+                      child: const AssistantAvatar(
+                        size: AssistantAvatarSize.small,
+                      ),
+                    ),
+                    Flexible(
+                      child: _buildBubble(context, tm, isUser),
+                    ),
+                  ],
                 ),
+      ],
+    );
+  }
+
+  /// Shared bubble container used for both user and assistant messages.
+  Widget _buildBubble(BuildContext context, TourMateColors tm, bool isUser) {
+    return Container(
+      margin: const EdgeInsets.symmetric(vertical: 4),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      constraints: BoxConstraints(
+        maxWidth: MediaQuery.of(context).size.width * 0.72,
+      ),
+      decoration: BoxDecoration(
+        color: isUser ? tm.pureBlack : tm.pureWhite,
+        borderRadius: BorderRadius.circular(20).copyWith(
+          bottomRight: isUser ? const Radius.circular(4) : null,
+          bottomLeft: !isUser ? const Radius.circular(4) : null,
+        ),
+        border: isUser ? null : Border.all(color: tm.borderLight),
+        boxShadow: isUser
+            ? [
+                BoxShadow(
+                  color: tm.pureBlack.withValues(alpha: 0.12),
+                  blurRadius: 8,
+                  offset: const Offset(0, 2),
+                ),
+              ]
+            : [
+                BoxShadow(
+                  color: tm.pureBlack.withValues(alpha: 0.04),
+                  blurRadius: 8,
+                  offset: const Offset(0, 2),
+                ),
+              ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (msg.text.isNotEmpty)
+            Text(
+              msg.text,
+              style: GoogleFonts.inter(
+                color: isUser ? tm.pureWhite : tm.textPrimary,
+                fontSize: 15,
+                height: 1.4,
               ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+            ),
+          if (msg.isStreaming)
+            Padding(
+              padding: const EdgeInsets.only(top: 6),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
                 children: [
-                  if (msg.text.isNotEmpty)
-                    Text(
-                      msg.text,
-                      style: TextStyle(
-                        color: isUser ? Colors.white : Colors.black,
-                        fontSize: 15,
-                        height: 1.3,
-                      ),
+                  Container(
+                    width: 8,
+                    height: 8,
+                    decoration: BoxDecoration(
+                      color: tm.gold,
+                      shape: BoxShape.circle,
                     ),
-                  if (msg.isStreaming)
-                    const Padding(
-                      padding: EdgeInsets.only(top: 4),
-                      child: SizedBox(
-                        width: 12,
-                        height: 12,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          color: Colors.grey,
-                        ),
-                      ),
+                  ),
+                  const SizedBox(width: 6),
+                  Text(
+                    'Thinking',
+                    style: GoogleFonts.inter(
+                      fontSize: 12,
+                      color: tm.gold,
+                      fontWeight: FontWeight.w500,
                     ),
+                  ),
                 ],
               ),
             ),
-          ),
-      ],
+        ],
+      ),
     );
   }
 }

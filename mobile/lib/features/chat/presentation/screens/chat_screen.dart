@@ -1,17 +1,24 @@
+import 'dart:math' as math;
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:dio/dio.dart';
+import 'package:google_fonts/google_fonts.dart';
+import '../../../../app/app_theme.dart';
+import '../../../../core/theme/design_tokens.dart';
 import '../../../../core/network/service_locator.dart';
 import '../../../../core/network/api_services.dart';
 import '../../../../core/utils/image_picker_service.dart';
 import '../../../../core/widgets/app_snackbar.dart';
+import '../../../../core/widgets/premium_widgets.dart';
 import '../../data/models/chat_session_response.dart';
 import '../../data/repository/chat_repository.dart';
 import '../../logic/chat_cubit.dart';
 import '../../logic/chat_state.dart';
 import '../widgets/message_bubble.dart';
 import '../widgets/pipeline_progress_widget.dart';
+import '../widgets/assistant_avatar.dart';
+import '../widgets/suggestion_chips.dart';
 import '../../../trips/presentation/screens/trip_detail_screen.dart';
 import '../../../payments/data/datasource/payment_service.dart';
 import '../../../auth/data/datasource/firebase_auth_service.dart';
@@ -111,7 +118,12 @@ class _ChatView extends StatefulWidget {
   State<_ChatView> createState() => _ChatViewState();
 }
 
-class _ChatViewState extends State<_ChatView> {
+class _ChatViewState extends State<_ChatView>
+    with SingleTickerProviderStateMixin {
+  TourMateColors get tm => context.tm;
+
+  late final AnimationController _emptyAnimController;
+
   final TextEditingController _inputController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
   final ImagePickerService _imagePicker = ImagePickerService();
@@ -135,9 +147,19 @@ class _ChatViewState extends State<_ChatView> {
   }
 
   @override
+  void initState() {
+    super.initState();
+    _emptyAnimController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 900),
+    )..forward();
+  }
+
+  @override
   void dispose() {
     _scrollController.dispose();
     _inputController.dispose();
+    _emptyAnimController.dispose();
     super.dispose();
   }
 
@@ -231,6 +253,8 @@ class _ChatViewState extends State<_ChatView> {
   ///     → POST /bookings/combined/confirm (no priced_offer)
   Future<void> _onBookingPayNow(ChatCubit cubit) async {
     debugPrint('[ChatScreen] _onBookingPayNow CALLED');
+    final messenger = ScaffoldMessenger.of(context);
+    final navigator = Navigator.of(context);
     final tripId = cubit.bookingTripId;
     if (tripId == null || tripId.isEmpty) {
       debugPrint('[ChatScreen] tripId is null or empty, returning early');
@@ -321,9 +345,19 @@ class _ChatViewState extends State<_ChatView> {
       debugPrint('[ChatScreen] Stripe Payment Sheet result: $paymentSuccess');
 
       if (!paymentSuccess) {
-        if (context.mounted) {
-          AppSnackbar.error(
-              context, 'Payment was cancelled or failed. You can try again later.');
+        if (mounted) {
+          messenger.showSnackBar(
+            SnackBar(
+              content: const Text('Payment was cancelled or failed. You can try again later.'),
+              backgroundColor: tm.error,
+              behavior: SnackBarBehavior.floating,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+              margin: const EdgeInsets.fromLTRB(16, 0, 16, 24),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+              duration: const Duration(seconds: 4),
+              dismissDirection: DismissDirection.horizontal,
+            ),
+          );
         }
         return;
       }
@@ -382,10 +416,20 @@ class _ChatViewState extends State<_ChatView> {
               ? 'Flight'
               : 'Hotel';
 
-      if (context.mounted) {
-        AppSnackbar.success(context, '✅ $label booked!');
-        Navigator.push(
-          context,
+      if (mounted) {
+        messenger.showSnackBar(
+          SnackBar(
+            content: Text('✅ $label booked!'),
+            backgroundColor: tm.success,
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+            margin: const EdgeInsets.fromLTRB(16, 0, 16, 24),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+            duration: const Duration(seconds: 3),
+            dismissDirection: DismissDirection.horizontal,
+          ),
+        );
+        navigator.push(
           MaterialPageRoute(
             builder: (_) => TripDetailScreen(tripId: tripId),
           ),
@@ -393,9 +437,19 @@ class _ChatViewState extends State<_ChatView> {
       }
     } catch (e) {
       debugPrint('[ChatScreen] Combined booking FAILED: $e');
-      if (context.mounted) {
-        AppSnackbar.error(context,
-            'Booking failed: ${e.toString().replaceFirst(RegExp(r'^.+?: '), '')}');
+      if (mounted) {
+        messenger.showSnackBar(
+          SnackBar(
+            content: Text('Booking failed: ${e.toString().replaceFirst(RegExp(r'^.+?: '), '')}'),
+            backgroundColor: tm.error,
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+            margin: const EdgeInsets.fromLTRB(16, 0, 16, 24),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+            duration: const Duration(seconds: 4),
+            dismissDirection: DismissDirection.horizontal,
+          ),
+        );
       }
     }
   }
@@ -407,6 +461,7 @@ class _ChatViewState extends State<_ChatView> {
   /// for payment later.  Does NOT reset the chat — the booking card
   /// stays visible so the user can tap Pay Now at any time.
   Future<void> _onBookingLater(ChatCubit cubit) async {
+    final messenger = ScaffoldMessenger.of(context);
     final tripId = cubit.bookingTripId;
     if (tripId == null || tripId.isEmpty) return;
 
@@ -421,15 +476,31 @@ class _ChatViewState extends State<_ChatView> {
       debugPrint('[ChatScreen] updateTripStatus (book later) failed: $e');
     }
 
-    if (patchError != null && context.mounted) {
-      AppSnackbar.error(
-        context,
-        'Could not update trip status: $patchError.',
+    if (patchError != null && mounted) {
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text('Could not update trip status: $patchError.'),
+          backgroundColor: tm.error,
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+          margin: const EdgeInsets.fromLTRB(16, 0, 16, 24),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+          duration: const Duration(seconds: 4),
+          dismissDirection: DismissDirection.horizontal,
+        ),
       );
-    } else if (context.mounted) {
-      AppSnackbar.info(
-        context,
-        'Trip saved — you can pay whenever you\'re ready.',
+    } else if (mounted) {
+      messenger.showSnackBar(
+        SnackBar(
+          content: const Text('Trip saved — you can pay whenever you\'re ready.'),
+          backgroundColor: tm.info,
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+          margin: const EdgeInsets.fromLTRB(16, 0, 16, 24),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+          duration: const Duration(seconds: 3),
+          dismissDirection: DismissDirection.horizontal,
+        ),
       );
     }
 
@@ -446,7 +517,7 @@ class _ChatViewState extends State<_ChatView> {
 
     return Scaffold(
       key: widget.scaffoldKey,
-      backgroundColor: Colors.white,
+      backgroundColor: tm.nearWhite,
       drawer: showSidebarBtn ? _buildSidebar(context) : null,
       body: SafeArea(
         child: Column(
@@ -461,7 +532,7 @@ class _ChatViewState extends State<_ChatView> {
                   return state.when(
                     initial: () => const SizedBox(),
                     loading: () =>
-                        const Center(child: CircularProgressIndicator()),
+                        const Center(child: TMLoadingIndicator(message: 'Connecting...')),
                     connected: (messages, isTyping, refreshToken, isReconnecting) {
                       if (messages.isEmpty && !isTyping) {
                         return _buildEmptyState();
@@ -530,57 +601,75 @@ class _ChatViewState extends State<_ChatView> {
     );
   }
 
-  // ── Sidebar Drawer ───────────────────────────────────────────────────
+  // ── Premium Sidebar Drawer ───────────────────────────────────────────
 
   Widget _buildSidebar(BuildContext context) {
     return Drawer(
-      backgroundColor: Colors.white,
+      backgroundColor: tm.pureWhite,
       child: SafeArea(
         child: Column(
           children: [
-            // Header
+            // Premium header
             Container(
-              padding: const EdgeInsets.fromLTRB(20, 24, 20, 16),
+              padding: const EdgeInsets.fromLTRB(Spacing.xl4, Spacing.xl5, Spacing.xl4, Spacing.xl3),
               width: double.infinity,
-              decoration: const BoxDecoration(
-                border: Border(
-                  bottom: BorderSide(color: Color(0xFFF0F0F0)),
-                ),
+              decoration: BoxDecoration(
+                border: Border(bottom: BorderSide(color: tm.divider, width: 0.5)),
               ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text(
-                    'Chats',
-                    style: TextStyle(
-                      fontSize: 24,
-                      fontWeight: FontWeight.w800,
-                      color: Colors.black,
-                    ),
+                  Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          gradient: const LinearGradient(
+                            colors: [Color(0xFF0A0A0A), Color(0xFF1A1A1A)],
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                          ),
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(color: tm.gold.withValues(alpha: 0.3), width: 0.5),
+                        ),
+                        child: Icon(Icons.chat_bubble_outline, color: tm.goldLight, size: 18),
+                      ),
+                      const SizedBox(width: 12),
+                      Text(
+                        'Chats',
+                        style: GoogleFonts.inter(
+                          fontSize: 22,
+                          fontWeight: FontWeight.w800,
+                          color: tm.textPrimary,
+                          letterSpacing: -0.4,
+                        ),
+                      ),
+                    ],
                   ),
                   const SizedBox(height: 4),
                   Text(
                     '${widget.chatSessions.length} conversations',
-                    style: TextStyle(
-                      fontSize: 13,
-                      color: Colors.grey[500],
-                    ),
+                    style: GoogleFonts.inter(fontSize: 13, color: tm.textTertiary),
                   ),
-                  const SizedBox(height: 16),
+                  const SizedBox(height: Spacing.xl3),
                   SizedBox(
                     width: double.infinity,
                     child: ElevatedButton.icon(
                       onPressed: () {
-                        Navigator.pop(context); // close drawer
+                        Navigator.pop(context);
                         _startNewChat();
                       },
-                      icon: const Icon(Icons.add_rounded, size: 18),
-                      label: const Text('New Chat'),
+                      icon: Icon(Icons.add_rounded, size: 18, color: tm.goldLight),
+                      label: Text(
+                        'New Chat',
+                        style: GoogleFonts.inter(fontWeight: FontWeight.w600),
+                      ),
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.black,
-                        foregroundColor: Colors.white,
+                        backgroundColor: tm.pureBlack,
+                        foregroundColor: tm.pureWhite,
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(12),
+                          side: BorderSide(color: tm.gold.withValues(alpha: 0.3), width: 0.5),
                         ),
                         padding: const EdgeInsets.symmetric(vertical: 12),
                         elevation: 0,
@@ -594,21 +683,21 @@ class _ChatViewState extends State<_ChatView> {
             // Chat sessions list
             Expanded(
               child: widget.loadingSessions
-                  ? const Center(child: CircularProgressIndicator())
+                  ? const Center(child: TMLoadingIndicator(message: 'Loading chats...'))
                   : widget.chatSessions.isEmpty
-                      ? Center(
-                          child: Text(
-                            'No past chats yet',
-                            style: TextStyle(color: Colors.grey[400]),
-                          ),
+                      ? TMEmptyState(
+                          icon: Icons.chat_bubble_outline,
+                          title: 'No past chats yet',
+                          subtitle: 'Start a new conversation with TourMate',
                         )
                       : ListView.separated(
-                          padding: const EdgeInsets.symmetric(vertical: 8),
+                          padding: const EdgeInsets.symmetric(vertical: Spacing.sm),
                           itemCount: widget.chatSessions.length,
-                          separatorBuilder: (_, _) => const Divider(
+                          separatorBuilder: (_, _) => Divider(
                             height: 1,
-                            indent: 20,
-                            endIndent: 20,
+                            indent: Spacing.xl4,
+                            endIndent: Spacing.xl4,
+                            color: tm.divider,
                           ),
                           itemBuilder: (_, i) =>
                               _buildSidebarItem(widget.chatSessions[i]),
@@ -627,23 +716,27 @@ class _ChatViewState extends State<_ChatView> {
 
     return InkWell(
       onTap: () {
-        Navigator.pop(context); // close drawer
+        Navigator.pop(context);
         _openSession(session);
       },
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+        padding: const EdgeInsets.symmetric(horizontal: Spacing.xl4, vertical: Spacing.xl2),
         child: Row(
           children: [
             Container(
-              padding: const EdgeInsets.all(8),
+              padding: const EdgeInsets.all(10),
               decoration: BoxDecoration(
-                color: Colors.grey.shade100,
+                gradient: const LinearGradient(
+                  colors: [Color(0xFF0A0A0A), Color(0xFF1A1A1A)],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
                 borderRadius: BorderRadius.circular(10),
               ),
               child: Icon(
                 tripInfo != null ? Icons.card_travel : Icons.chat_bubble_outline,
-                size: 18,
-                color: Colors.grey[700],
+                size: 16,
+                color: tm.goldLight,
               ),
             ),
             const SizedBox(width: 14),
@@ -653,9 +746,10 @@ class _ChatViewState extends State<_ChatView> {
                 children: [
                   Text(
                     destination,
-                    style: const TextStyle(
+                    style: GoogleFonts.inter(
                       fontSize: 14,
                       fontWeight: FontWeight.w600,
+                      color: tm.textPrimary,
                     ),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
@@ -664,10 +758,7 @@ class _ChatViewState extends State<_ChatView> {
                     const SizedBox(height: 2),
                     Text(
                       lastMessage,
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: Colors.grey[500],
-                      ),
+                      style: GoogleFonts.inter(fontSize: 12, color: tm.textTertiary),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
@@ -675,28 +766,34 @@ class _ChatViewState extends State<_ChatView> {
                 ],
               ),
             ),
-            Icon(Icons.chevron_right, color: Colors.grey[300], size: 16),
+            Icon(Icons.chevron_right, color: tm.border, size: 16),
           ],
         ),
       ),
     );
   }
 
-  // ── Header ──────────────────────────────────────────────────────────
+  // ── Premium Header ───────────────────────────────────────────────────
 
   Widget _buildHeader(ChatCubit cubit, bool hasBack, bool showSidebarBtn) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-        decoration: BoxDecoration(
-          color: Colors.grey.shade100,
-          borderRadius: BorderRadius.circular(30),
-        ),
-        child: Row(
-          children: [
-            if (hasBack)
-              GestureDetector(
+    return Container(
+      padding: EdgeInsets.only(
+        top: 4,
+        left: Spacing.xl3,
+        right: Spacing.xl3,
+        bottom: 4,
+      ),
+      decoration: BoxDecoration(
+        color: tm.pureWhite,
+        border: Border(bottom: BorderSide(color: tm.divider, width: 0.5)),
+      ),
+      child: Row(
+        children: [
+          if (hasBack)
+            Material(
+              color: Colors.transparent,
+              child: InkWell(
+                borderRadius: BorderRadius.circular(10),
                 onTap: () {
                   if (Navigator.canPop(context)) {
                     Navigator.pop(context);
@@ -704,62 +801,60 @@ class _ChatViewState extends State<_ChatView> {
                     _startNewChat();
                   }
                 },
-                child: const Padding(
-                  padding: EdgeInsets.all(4),
-                  child: Icon(Icons.arrow_back_rounded, size: 20),
+                child: Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: tm.surface,
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: tm.borderLight),
+                  ),
+                  child: Icon(Icons.arrow_back_rounded, color: tm.textPrimary, size: 18),
                 ),
-              ),
-            if (showSidebarBtn)
-              GestureDetector(
-                onTap: () => widget.scaffoldKey.currentState?.openDrawer(),
-                child: const Padding(
-                  padding: EdgeInsets.all(4),
-                  child: Icon(Icons.menu_rounded, size: 20),
-                ),
-              ),
-            const SizedBox(width: 8),
-            const Spacer(),
-            Text(
-              widget.activeTripId != null ? "Trip Chat" : "✨ TourMate.",
-              style: const TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.w600,
               ),
             ),
-            const Spacer(),
-          ],
-        ),
+          if (showSidebarBtn)
+            Material(
+              color: Colors.transparent,
+              child: InkWell(
+                borderRadius: BorderRadius.circular(10),
+                onTap: () => widget.scaffoldKey.currentState?.openDrawer(),
+                child: Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: tm.surface,
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: tm.borderLight),
+                  ),
+                  child: Icon(Icons.menu_rounded, color: tm.textPrimary, size: 18),
+                ),
+              ),
+            ),
+          const SizedBox(width: Spacing.md),
+          // Assistant avatar mini
+          const Padding(
+            padding: EdgeInsets.only(right: 8),
+            child: AssistantAvatar(size: AssistantAvatarSize.small),
+          ),
+          Text(
+            widget.activeTripId != null ? "Trip Chat" : "TourMate",
+            style: GoogleFonts.inter(
+              fontSize: 17,
+              fontWeight: FontWeight.w700,
+              color: tm.textPrimary,
+              letterSpacing: -0.3,
+            ),
+          ),
+          const Spacer(),
+        ],
       ),
     );
   }
 
   Widget _buildError(String msg, ChatCubit cubit) {
     debugPrint('[ChatScreen] _buildError: $msg');
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Icon(Icons.wifi_off, size: 48, color: Colors.grey),
-            const SizedBox(height: 16),
-            const Text("Connection lost",
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-            const SizedBox(height: 8),
-            Text(msg, textAlign: TextAlign.center,
-                style: TextStyle(color: Colors.grey[600])),
-            const SizedBox(height: 24),
-            ElevatedButton(
-              onPressed: () => cubit.reconnect(),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.black,
-                foregroundColor: Colors.white,
-              ),
-              child: const Text("Reconnect"),
-            ),
-          ],
-        ),
-      ),
+    return TMErrorState(
+      message: msg,
+      onRetry: () => cubit.reconnect(),
     );
   }
 
@@ -768,47 +863,223 @@ class _ChatViewState extends State<_ChatView> {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          const SizedBox(height: 40),
-          CircleAvatar(
-            radius: 110,
-            backgroundImage: const AssetImage("assets/images/Screen1.png"),
-            backgroundColor: Colors.transparent,
-          ),
-          const SizedBox(height: 30),
-          const Text(
-            "Where to today?",
-            style: TextStyle(fontSize: 26, fontWeight: FontWeight.bold),
-          ),
-          const SizedBox(height: 10),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 30),
-            child: Text(
-              "Hey there, I'm here to assist you in planning your experience. Ask me anything travel related.",
-              textAlign: TextAlign.center,
-              style: TextStyle(color: Colors.grey.shade600, fontSize: 14),
+          const SizedBox(height: 56),
+          // Premium concierge avatar — staggered entrance
+          FadeTransition(
+            opacity: Tween<double>(begin: 0.0, end: 1.0).animate(
+              CurvedAnimation(
+                parent: _emptyAnimController,
+                curve:
+                    const Interval(0.0, 0.25, curve: Curves.easeOut),
+              ),
+            ),
+            child: SlideTransition(
+              position: Tween<Offset>(
+                begin: const Offset(0, 0.3),
+                end: Offset.zero,
+              ).animate(
+                CurvedAnimation(
+                  parent: _emptyAnimController,
+                  curve: const Interval(0.0, 0.25, curve: Curves.easeOutCubic),
+                ),
+              ),
+              child: _FloatingAnimation(
+                child: Container(
+                  width: 120,
+                  height: 120,
+                  decoration: BoxDecoration(
+                    gradient: const SweepGradient(
+                      startAngle: 0,
+                      endAngle: 3.14159 * 2,
+                      colors: [
+                        Color(0xFFC8A84E),
+                        Color(0x33C8A84E),
+                        Color(0xFFC8A84E),
+                        Color(0x66C8A84E),
+                        Color(0xFFC8A84E),
+                      ],
+                      stops: [0.0, 0.25, 0.5, 0.75, 1.0],
+                    ),
+                    shape: BoxShape.circle,
+                    boxShadow: [
+                      BoxShadow(
+                        color: tm.gold.withValues(alpha: 0.2),
+                        blurRadius: 24,
+                        offset: const Offset(0, 4),
+                      ),
+                    ],
+                  ),
+                  padding: const EdgeInsets.all(2.5),
+                  child: Container(
+                    decoration: BoxDecoration(
+                      gradient: const LinearGradient(
+                        colors: [Color(0xFF0A0A0A), Color(0xFF1A1A1A)],
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                      ),
+                      shape: BoxShape.circle,
+                    ),
+                    alignment: Alignment.center,
+                    child: Icon(
+                      Icons.explore_outlined,
+                      size: 48,
+                      color: tm.goldLight,
+                    ),
+                  ),
+                ),
+              ),
             ),
           ),
-          const SizedBox(height: 24),
-
+          const SizedBox(height: 28),
+          // "Where to today?" title — staggered entrance
+          FadeTransition(
+            opacity: Tween<double>(begin: 0.0, end: 1.0).animate(
+              CurvedAnimation(
+                parent: _emptyAnimController,
+                curve:
+                    const Interval(0.08, 0.33, curve: Curves.easeOut),
+              ),
+            ),
+            child: SlideTransition(
+              position: Tween<Offset>(
+                begin: const Offset(0, 0.25),
+                end: Offset.zero,
+              ).animate(
+                CurvedAnimation(
+                  parent: _emptyAnimController,
+                  curve: const Interval(0.08, 0.33, curve: Curves.easeOutCubic),
+                ),
+              ),
+              child: Text(
+                "Where to today?",
+                style: GoogleFonts.inter(
+                  fontSize: 26,
+                  fontWeight: FontWeight.w700,
+                  color: tm.textPrimary,
+                  letterSpacing: -0.5,
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: 10),
+          // Welcome message — staggered entrance
+          FadeTransition(
+            opacity: Tween<double>(begin: 0.0, end: 1.0).animate(
+              CurvedAnimation(
+                parent: _emptyAnimController,
+                curve:
+                    const Interval(0.16, 0.41, curve: Curves.easeOut),
+              ),
+            ),
+            child: SlideTransition(
+              position: Tween<Offset>(
+                begin: const Offset(0, 0.2),
+                end: Offset.zero,
+              ).animate(
+                CurvedAnimation(
+                  parent: _emptyAnimController,
+                  curve: const Interval(0.16, 0.41, curve: Curves.easeOutCubic),
+                ),
+              ),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 40),
+                child: Text.rich(
+                  TextSpan(
+                    style: GoogleFonts.inter(
+                      color: tm.textSecondary,
+                      fontSize: 14,
+                      height: 1.5,
+                    ),
+                    children: [
+                      TextSpan(
+                        text: "Hey there",
+                        style: TextStyle(
+                          fontWeight: FontWeight.w600,
+                          color: tm.textPrimary.withValues(alpha: 0.8),
+                        ),
+                      ),
+                      const TextSpan(
+                        text:
+                            ", I'm your TourMate concierge. Ask me anything about your next adventure.",
+                      ),
+                    ],
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: 32),
+          // Gold accent line — staggered entrance
+          FadeTransition(
+            opacity: Tween<double>(begin: 0.0, end: 1.0).animate(
+              CurvedAnimation(
+                parent: _emptyAnimController,
+                curve:
+                    const Interval(0.24, 0.49, curve: Curves.easeOut),
+              ),
+            ),
+            child: SlideTransition(
+              position: Tween<Offset>(
+                begin: const Offset(0, 0.15),
+                end: Offset.zero,
+              ).animate(
+                CurvedAnimation(
+                  parent: _emptyAnimController,
+                  curve: const Interval(0.24, 0.49, curve: Curves.easeOutCubic),
+                ),
+              ),
+              child: _SparkleEffect(
+                child: Container(
+                  width: 48,
+                  height: 2,
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      colors: [
+                        Colors.transparent,
+                        tm.gold.withValues(alpha: 0.6),
+                        Colors.transparent,
+                      ],
+                    ),
+                    borderRadius: BorderRadius.circular(1),
+                  ),
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: 32),
+          // Quick suggestion chips (have their own staggered animation)
+          SuggestionChips(
+            onChipTapped: (message) {
+              final cubit = context.read<ChatCubit>();
+              cubit.sendMessage(message);
+            },
+          ),
+          const SizedBox(height: 40),
         ],
       ),
     );
   }
 
   Widget _buildInputBar(ChatCubit cubit) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+    return Container(
+      padding: EdgeInsets.fromLTRB(Spacing.xl3, Spacing.sm, Spacing.xl3, Spacing.xl3),
+      decoration: BoxDecoration(
+        color: tm.pureWhite,
+        border: Border(top: BorderSide(color: tm.divider, width: 0.5)),
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.end,
         mainAxisSize: MainAxisSize.min,
         children: [
           if (_selectedImageBytes != null)
             Container(
-              margin: const EdgeInsets.only(bottom: 8),
-              padding: const EdgeInsets.all(8),
+              margin: const EdgeInsets.only(bottom: Spacing.sm),
+              padding: const EdgeInsets.all(Spacing.sm),
               decoration: BoxDecoration(
-                color: Colors.grey.shade100,
-                borderRadius: BorderRadius.circular(12),
+                color: tm.surface,
+                borderRadius: BorderRadius.circular(RadiusTokens.md),
+                border: Border.all(color: tm.borderLight),
               ),
               child: Stack(
                 children: [
@@ -816,8 +1087,8 @@ class _ChatViewState extends State<_ChatView> {
                     borderRadius: BorderRadius.circular(8),
                     child: Image.memory(
                       _selectedImageBytes!,
-                      height: 100,
-                      width: 100,
+                      height: 80,
+                      width: 80,
                       fit: BoxFit.cover,
                     ),
                   ),
@@ -829,14 +1100,10 @@ class _ChatViewState extends State<_ChatView> {
                       child: Container(
                         padding: const EdgeInsets.all(4),
                         decoration: BoxDecoration(
-                          color: Colors.black54,
+                          color: tm.pureBlack.withValues(alpha: 0.6),
                           shape: BoxShape.circle,
                         ),
-                        child: const Icon(
-                          Icons.close,
-                          color: Colors.white,
-                          size: 16,
-                        ),
+                        child: Icon(Icons.close, color: tm.pureWhite, size: 14),
                       ),
                     ),
                   ),
@@ -844,11 +1111,11 @@ class _ChatViewState extends State<_ChatView> {
               ),
             ),
           Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12),
+            padding: const EdgeInsets.symmetric(horizontal: Spacing.xl2),
             decoration: BoxDecoration(
-              color: Colors.grey.shade100,
-              borderRadius: BorderRadius.circular(30),
-              border: Border.all(color: Colors.grey.shade300),
+              color: tm.surface,
+              borderRadius: BorderRadius.circular(RadiusTokens.xl2 + 14),
+              border: Border.all(color: tm.borderLight),
             ),
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.center,
@@ -859,7 +1126,7 @@ class _ChatViewState extends State<_ChatView> {
                   child: IconButton(
                     padding: EdgeInsets.zero,
                     constraints: const BoxConstraints(),
-                    icon: const Icon(Icons.camera_alt_outlined, size: 22),
+                    icon: Icon(Icons.camera_alt_outlined, size: 20, color: tm.textTertiary),
                     onPressed: _pickImage,
                   ),
                 ),
@@ -870,22 +1137,28 @@ class _ChatViewState extends State<_ChatView> {
                     maxLines: 3,
                     minLines: 1,
                     textInputAction: TextInputAction.newline,
-                    decoration: const InputDecoration(
-                      hintText: "Ask anything",
+                    decoration: InputDecoration(
+                      hintText: "Ask your travel concierge...",
+                      hintStyle: GoogleFonts.inter(color: tm.textTertiary, fontSize: 15),
                       border: InputBorder.none,
                       isDense: true,
-                      contentPadding: EdgeInsets.symmetric(vertical: 8),
+                      contentPadding: const EdgeInsets.symmetric(vertical: 10),
                     ),
+                    style: GoogleFonts.inter(fontSize: 15, color: tm.textPrimary),
                     onSubmitted: (_) => _sendMessage(cubit),
                   ),
                 ),
-                SizedBox(
+                Container(
                   width: 36,
                   height: 36,
+                  decoration: BoxDecoration(
+                    color: tm.pureBlack,
+                    borderRadius: BorderRadius.circular(RadiusTokens.full),
+                  ),
                   child: IconButton(
                     padding: EdgeInsets.zero,
                     constraints: const BoxConstraints(),
-                    icon: const Icon(Icons.send, size: 22),
+                    icon: Icon(Icons.send_rounded, size: 18, color: tm.goldLight),
                     onPressed: () => _sendMessage(cubit),
                   ),
                 ),
@@ -898,20 +1171,134 @@ class _ChatViewState extends State<_ChatView> {
   }
 }
 
-/// ================= RECONNECTING BANNER =================
+/// ================= SPARKLE EFFECT FOR GOLD ACCENT LINE =================
+/// Data for a single sparkle particle — positions are relative to a
+/// 100x40px canvas, with a seeded random so sparkles are deterministic.
+class _SparkleData {
+  final double x;
+  final double y;
+  final double radius;
+  final double phase;
+  final double baseAlpha;
+
+  const _SparkleData({
+    required this.x,
+    required this.y,
+    required this.radius,
+    required this.phase,
+    required this.baseAlpha,
+  });
+}
+
+/// Custom painter that renders tiny gold sparkles that twinkle at
+/// different rates around the gold accent line.
+class _SparklePainter extends CustomPainter {
+  final List<_SparkleData> sparkles;
+  final double animationValue;
+  final Color goldColor;
+
+  _SparklePainter({
+    required this.sparkles,
+    required this.animationValue,
+    required this.goldColor,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    for (final s in sparkles) {
+      // Sine-wave twinkle with phase offset
+      final twinkle =
+          (math.sin((animationValue + s.phase) * 2 * math.pi)) * 0.5 + 0.5;
+      final alpha = (twinkle * s.baseAlpha).clamp(0.0, 0.7);
+      if (alpha < 0.01) continue;
+
+      final paint = Paint()
+        ..color = goldColor.withValues(alpha: alpha)
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 2);
+
+      canvas.drawCircle(Offset(s.x, s.y), s.radius, paint);
+    }
+  }
+
+  @override
+  bool shouldRepaint(_SparklePainter oldDelegate) =>
+      oldDelegate.animationValue != animationValue;
+}
+
+/// Wraps the gold accent line with a twinkling sparkle particle effect.
+/// Renders 8 tiny gold dots that fade in/out at staggered rates.
+class _SparkleEffect extends StatefulWidget {
+  final Widget child;
+
+  const _SparkleEffect({required this.child});
+
+  @override
+  State<_SparkleEffect> createState() => _SparkleEffectState();
+}
+
+class _SparkleEffectState extends State<_SparkleEffect>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+  late final List<_SparkleData> _sparkles;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(seconds: 4),
+    )..repeat();
+
+    // Seeded random for deterministic sparkle positions
+    final random = math.Random(42);
+    _sparkles = List.generate(8, (_) {
+      return _SparkleData(
+        x: random.nextDouble() * 80 + 10, // 10–90
+        y: random.nextDouble() * 24 + 8, // 8–32
+        radius: random.nextDouble() * 1.2 + 1.0, // 1.0–2.2
+        phase: random.nextDouble(),
+        baseAlpha: random.nextDouble() * 0.35 + 0.15, // 0.15–0.5
+      );
+    });
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final tm = context.tm;
+    return SizedBox(
+      width: 100,
+      height: 36,
+      child: CustomPaint(
+        painter: _SparklePainter(
+          sparkles: _sparkles,
+          animationValue: _controller.value,
+          goldColor: tm.gold,
+        ),
+        child: Center(child: widget.child),
+      ),
+    );
+  }
+}
+
+/// ================= PREMIUM RECONNECTING BANNER =================
 class _ReconnectingBanner extends StatelessWidget {
   const _ReconnectingBanner();
 
   @override
   Widget build(BuildContext context) {
+    final tm = context.tm;
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+      padding: const EdgeInsets.symmetric(horizontal: Spacing.xl3, vertical: Spacing.sm),
       decoration: BoxDecoration(
-        color: Colors.orange.shade50,
-        border: Border(
-          bottom: BorderSide(color: Colors.orange.shade200),
-        ),
+        color: tm.gold.withValues(alpha: 0.06),
+        border: Border(bottom: BorderSide(color: tm.gold.withValues(alpha: 0.15))),
       ),
       child: Row(
         children: [
@@ -920,17 +1307,13 @@ class _ReconnectingBanner extends StatelessWidget {
             height: 14,
             child: CircularProgressIndicator(
               strokeWidth: 2,
-              color: Colors.orange.shade700,
+              color: tm.gold,
             ),
           ),
           const SizedBox(width: 10),
           Text(
             'Reconnecting...',
-            style: TextStyle(
-              fontSize: 13,
-              fontWeight: FontWeight.w500,
-              color: Colors.orange.shade800,
-            ),
+            style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w600, color: tm.gold),
           ),
         ],
       ),
@@ -938,7 +1321,7 @@ class _ReconnectingBanner extends StatelessWidget {
   }
 }
 
-/// ================= TYPING INDICATOR =================
+/// ================= PREMIUM TYPING INDICATOR =================
 class _TypingIndicator extends StatefulWidget {
   const _TypingIndicator();
 
@@ -967,47 +1350,116 @@ class _TypingIndicatorState extends State<_TypingIndicator>
 
   @override
   Widget build(BuildContext context) {
+    final tm = context.tm;
     return Align(
       alignment: Alignment.centerLeft,
       child: Container(
         margin: const EdgeInsets.symmetric(vertical: 4),
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        padding: const EdgeInsets.symmetric(horizontal: Spacing.xl3, vertical: Spacing.md),
         decoration: BoxDecoration(
-          color: Colors.grey.shade100,
-          borderRadius: BorderRadius.circular(18).copyWith(
+          color: tm.pureWhite,
+          borderRadius: BorderRadius.circular(20).copyWith(
             bottomLeft: const Radius.circular(4),
           ),
+          border: Border.all(color: tm.borderLight),
         ),
-        child: AnimatedBuilder(
-          animation: _controller,
-          builder: (context, _) {
-            return Row(
-              mainAxisSize: MainAxisSize.min,
-              children: List.generate(3, (i) {
-                final delay = i * 0.2;
-                final value = ((_controller.value - delay) % 1.0);
-                final opacity = (value < 0.5)
-                    ? (value * 2).clamp(0.3, 1.0)
-                    : (1.0 - (value - 0.5) * 2).clamp(0.3, 1.0);
-                return Padding(
-                  padding: EdgeInsets.only(left: i > 0 ? 5 : 0),
-                  child: Opacity(
-                    opacity: opacity.toDouble(),
-                    child: Container(
-                      width: 8,
-                      height: 8,
-                      decoration: BoxDecoration(
-                        color: Colors.grey.shade500,
-                        shape: BoxShape.circle,
-                      ),
-                    ),
-                  ),
-                );
-              }),
-            );
-          },
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // Animated dots
+            SizedBox(
+              width: 32,
+              height: 16,
+              child: AnimatedBuilder(
+                animation: _controller,
+                builder: (context, _) {
+                  return Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: List.generate(3, (i) {
+                      final delay = i * 0.2;
+                      final value = ((_controller.value - delay) % 1.0);
+                      final opacity = (value < 0.5)
+                          ? (value * 2).clamp(0.3, 1.0)
+                          : (1.0 - (value - 0.5) * 2).clamp(0.3, 1.0);
+                      return Padding(
+                        padding: EdgeInsets.only(left: i > 0 ? 5 : 0),
+                        child: Opacity(
+                          opacity: opacity.toDouble(),
+                          child: Container(
+                            width: 7,
+                            height: 7,
+                            decoration: BoxDecoration(
+                              color: tm.gold,
+                              shape: BoxShape.circle,
+                            ),
+                          ),
+                        ),
+                      );
+                    }),
+                  );
+                },
+              ),
+            ),
+            const SizedBox(width: 8),
+            // "TourMate is thinking" label
+            Text(
+              'TourMate is thinking',
+              style: GoogleFonts.inter(
+                fontSize: 12,
+                color: tm.textTertiary,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ],
         ),
       ),
+    );
+  }
+}
+
+/// ================= FLOATING AVATAR WRAPPER =================
+/// A lightweight wrapper that adds a gentle sine-wave floating animation
+/// to the empty state concierge avatar (±4px over 3 seconds).
+class _FloatingAnimation extends StatefulWidget {
+  final Widget child;
+
+  const _FloatingAnimation({required this.child});
+
+  @override
+  State<_FloatingAnimation> createState() => _FloatingAnimationState();
+}
+
+class _FloatingAnimationState extends State<_FloatingAnimation>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 3000),
+    )..repeat();
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _controller,
+      builder: (context, child) {
+        final floatY = math.sin(_controller.value * 2 * math.pi) * 4.0;
+        return Transform.translate(
+          offset: Offset(0, floatY),
+          child: child,
+        );
+      },
+      child: widget.child,
     );
   }
 }

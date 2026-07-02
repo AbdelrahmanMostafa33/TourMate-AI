@@ -1,5 +1,6 @@
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:google_fonts/google_fonts.dart';
 import '../../data/datasource/firebase_auth_service.dart';
 import '../../../../core/network/service_locator.dart';
 import '../../../../core/widgets/city_picker.dart';
@@ -8,6 +9,8 @@ import '../../data/repository/auth_repository.dart';
 import '../widgets/custom_textfield.dart';
 import '../../../../core/errors/auth_error_handler.dart';
 import '../../../../core/widgets/app_snackbar.dart';
+import '../../../../app/app_theme.dart';
+import '../../../../core/theme/design_tokens.dart';
 
 class SignUpScreen extends StatefulWidget {
   const SignUpScreen({super.key});
@@ -17,6 +20,7 @@ class SignUpScreen extends StatefulWidget {
 }
 
 class _SignUpScreenState extends State<SignUpScreen> {
+  TourMateColors get tm => context.tm;
   final nameController = TextEditingController();
   final phoneController = TextEditingController();
   final emailController = TextEditingController();
@@ -24,8 +28,6 @@ class _SignUpScreenState extends State<SignUpScreen> {
   final confirmController = TextEditingController();
 
   bool loading = false;
-  bool _obscurePassword = true;
-  bool _obscureConfirm = true;
   String _selectedCity = '';
 
   Future<void> register() async {
@@ -108,7 +110,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
         height: double.infinity,
         decoration: const BoxDecoration(
           gradient: LinearGradient(
-            colors: [Color(0xff5e8b8f), Color(0xffdcdcdc)],
+            colors: [Color(0xFF0A0A0A), Color(0xFF141414)],
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
           ),
@@ -116,126 +118,148 @@ class _SignUpScreenState extends State<SignUpScreen> {
         child: SafeArea(
           child: Center(
             child: SingleChildScrollView(
-              padding: const EdgeInsets.symmetric(horizontal: 28),
+              padding: const EdgeInsets.symmetric(horizontal: Spacing.xl7),
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
+                  // ── Logo ─────────────────────────────────────
                   Container(
-                    padding: const EdgeInsets.all(18),
+                    padding: const EdgeInsets.all(Spacing.xl5),
                     decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: 0.2),
-                      borderRadius: BorderRadius.circular(20),
+                      color: tm.gold.withValues(alpha: 0.08),
+                      borderRadius: BorderRadius.circular(RadiusTokens.xl5),
+                      border: Border.all(
+                        color: tm.gold.withValues(alpha: 0.3),
+                        width: 1.5,
+                      ),
+                      boxShadow: [
+                        BoxShadow(
+                          color: tm.gold.withValues(alpha: 0.12),
+                          blurRadius: 24,
+                          offset: const Offset(0, 6),
+                        ),
+                      ],
                     ),
-                    child: const Icon(
+                    child: Icon(
                       Icons.travel_explore_rounded,
                       size: 40,
-                      color: Colors.white,
+                      color: tm.gold,
                     ),
                   ),
-                  const SizedBox(height: 24),
-                  const Text(
+                  const SizedBox(height: Spacing.xl5),
+                  // ── Title ────────────────────────────────────
+                  Text(
                     "Create Account",
-                    style: TextStyle(
-                      fontSize: 28,
+                    style: GoogleFonts.inter(
+                      fontSize: 30,
                       fontWeight: FontWeight.w700,
-                      color: Colors.white,
-                      letterSpacing: -0.5,
+                      color: tm.pureWhite,
+                      letterSpacing: -0.8,
+                      height: 1.1,
                     ),
                   ),
-                  const SizedBox(height: 4),
+                  const SizedBox(height: Spacing.md),
                   Text(
                     "Start your travel journey",
-                    style: TextStyle(
+                    style: GoogleFonts.inter(
                       fontSize: 14,
-                      color: Colors.white.withValues(alpha: 0.8),
+                      color: tm.pureWhite.withValues(alpha: 0.6),
+                      letterSpacing: 0.5,
+                      fontWeight: FontWeight.w400,
                     ),
                   ),
-                  const SizedBox(height: 28),
+                  const SizedBox(height: Spacing.xl7),
+                  // ── Form Fields ──────────────────────────────
                   CustomTextField(
                     controller: nameController,
                     hint: "Full Name",
+                    prefixIcon: Icons.person_outline,
                   ),
-                  const SizedBox(height: 14),
+                  const SizedBox(height: Spacing.xl3),
                   CustomTextField(
                     controller: phoneController,
                     hint: "Phone (optional)",
+                    prefixIcon: Icons.phone_outlined,
                   ),
-                  const SizedBox(height: 14),
+                  const SizedBox(height: Spacing.xl3),
                   CustomTextField(
                     controller: emailController,
                     hint: "Email address",
+                    prefixIcon: Icons.email_outlined,
                   ),
-                  const SizedBox(height: 14),
+                  const SizedBox(height: Spacing.xl3),
                   _buildLabel("Home City"),
-                  const SizedBox(height: 6),
+                  const SizedBox(height: Spacing.md),
                   CityPicker(
                     initialValue: _selectedCity,
                     onCitySelected: (city) {
                       _selectedCity = city;
                     },
                   ),
-                  const SizedBox(height: 14),
-                  _buildPasswordField(
+                  const SizedBox(height: Spacing.xl3),
+                  CustomTextField(
                     controller: passwordController,
                     hint: "Password",
-                    obscure: _obscurePassword,
-                    onToggle: () =>
-                        setState(() => _obscurePassword = !_obscurePassword),
+                    isPassword: true,
+                    prefixIcon: Icons.lock_outline,
                   ),
-                  const SizedBox(height: 14),
-                  _buildPasswordField(
+                  const SizedBox(height: Spacing.xl3),
+                  CustomTextField(
                     controller: confirmController,
                     hint: "Confirm Password",
-                    obscure: _obscureConfirm,
-                    onToggle: () =>
-                        setState(() => _obscureConfirm = !_obscureConfirm),
+                    isPassword: true,
+                    prefixIcon: Icons.lock_outline,
                   ),
-                  const SizedBox(height: 24),
+                  const SizedBox(height: Spacing.xl7),
+                  // ── Gold CTA Button ──────────────────────────
                   SizedBox(
                     width: double.infinity,
                     height: 54,
                     child: ElevatedButton(
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.black,
-                        foregroundColor: Colors.white,
+                        backgroundColor: tm.gold,
+                        foregroundColor: tm.pureBlack,
                         elevation: 0,
                         shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(16),
+                          borderRadius: BorderRadius.circular(RadiusTokens.xl2),
                         ),
+                        shadowColor: Colors.transparent,
                       ),
                       onPressed: loading ? null : register,
                       child: loading
-                          ? const SizedBox(
+                          ? SizedBox(
                               width: 22,
                               height: 22,
-                              child: CircularProgressIndicator(
-                                color: Colors.white,
+                              child:                              CircularProgressIndicator(
+                                color: tm.pureBlack,
                                 strokeWidth: 2.5,
                               ),
                             )
-                          : const Text(
+                          : Text(
                               "Create Account",
-                              style: TextStyle(
+                              style: GoogleFonts.inter(
                                 fontSize: 16,
-                                fontWeight: FontWeight.w600,
+                                fontWeight: FontWeight.w700,
+                                letterSpacing: 0.5,
                               ),
                             ),
                     ),
                   ),
-                  const SizedBox(height: 24),
+                  const SizedBox(height: Spacing.xl7),
+                  // ── Sign In Link ─────────────────────────────
                   RichText(
                     text: TextSpan(
-                      style: TextStyle(
-                        color: Colors.white.withValues(alpha: 0.8),
+                      style: GoogleFonts.inter(
+                        color: tm.pureWhite.withValues(alpha: 0.7),
                         fontSize: 14,
                       ),
                       children: [
-                        const TextSpan(text: "Already have an account? "),
+                        TextSpan(text: "Already have an account? "),
                         TextSpan(
                           text: "Sign In",
-                          style: TextStyle(
+                          style: GoogleFonts.inter(
                             fontWeight: FontWeight.w700,
-                            color: Colors.white.withValues(alpha: 0.95),
+                            color: tm.goldLight,
                             decoration: TextDecoration.underline,
                           ),
                           recognizer: TapGestureRecognizer()
@@ -246,7 +270,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
                       ],
                     ),
                   ),
-                  const SizedBox(height: 24),
+                  const SizedBox(height: Spacing.xl5),
                 ],
               ),
             ),
@@ -261,46 +285,11 @@ class _SignUpScreenState extends State<SignUpScreen> {
       padding: const EdgeInsets.only(left: 4),
       child: Text(
         text,
-        style: const TextStyle(
+        style: GoogleFonts.inter(
           fontSize: 13,
           fontWeight: FontWeight.w600,
-          color: Colors.white,
-        ),
-      ),
-    );
-  }
-
-  Widget _buildPasswordField({
-    required TextEditingController controller,
-    required String hint,
-    required bool obscure,
-    required VoidCallback onToggle,
-  }) {
-    return Container(
-      height: 55,
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-      ),
-      child: TextField(
-        controller: controller,
-        obscureText: obscure,
-        decoration: InputDecoration(
-          hintText: hint,
-          hintStyle: TextStyle(color: Colors.grey.shade400),
-          border: InputBorder.none,
-          contentPadding:
-              const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-          suffixIcon: IconButton(
-            icon: Icon(
-              obscure
-                  ? Icons.visibility_off_outlined
-                  : Icons.visibility_outlined,
-              color: Colors.grey.shade500,
-              size: 22,
-            ),
-            onPressed: onToggle,
-          ),
+          color: tm.pureWhite,
+          letterSpacing: 0.3,
         ),
       ),
     );

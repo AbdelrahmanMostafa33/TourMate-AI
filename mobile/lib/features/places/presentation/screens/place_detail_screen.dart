@@ -1,10 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:url_launcher/url_launcher.dart';
+import '../../../../app/app_theme.dart';
+import '../../../../core/theme/design_tokens.dart';
 import '../../../../core/network/service_locator.dart';
 import '../../../../core/network/api_services.dart';
 import '../../../../core/widgets/app_snackbar.dart';
+import '../../../../core/widgets/premium_widgets.dart';
 import '../../../../features/explore/data/models/place_model.dart';
 import '../../data/models/review_model.dart';
 import '../../data/repository/places_repository.dart';
@@ -38,95 +42,97 @@ class _PlaceDetailView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final tm = context.tm;
+
     return Scaffold(
-      backgroundColor: Colors.white,
+      backgroundColor: tm.pureWhite,
       body: BlocBuilder<PlaceDetailCubit, PlaceDetailState>(
         builder: (context, state) {
           return state.when(
-            initial: () => const Center(child: CircularProgressIndicator()),
-            loading: () => const Center(child: CircularProgressIndicator()),
-            error: (message) => _buildError(context, message),
-            loaded: (place) => _buildContent(context, place),
+            initial: () => const Center(child: TMLoadingIndicator(message: 'Loading place...')),
+            loading: () => const Center(child: TMLoadingIndicator(message: 'Loading place...')),
+            error: (message) => TMErrorState(message: message, onRetry: () => context.read<PlaceDetailCubit>().load()),
+            loaded: (place) => _buildContent(context, tm, place),
           );
         },
       ),
     );
   }
 
-  Widget _buildError(BuildContext context, String message) {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Icon(Icons.error_outline, size: 48, color: Colors.grey),
-            const SizedBox(height: 16),
-            const Text(
-              'Could not load place',
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              message,
-              textAlign: TextAlign.center,
-              style: TextStyle(color: Colors.grey[600]),
-            ),
-            const SizedBox(height: 24),
-            ElevatedButton(
-              onPressed: () => context.read<PlaceDetailCubit>().load(),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.black,
-                foregroundColor: Colors.white,
-              ),
-              child: const Text('Retry'),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildContent(BuildContext context, PlaceModel place) {
+  Widget _buildContent(BuildContext context, TourMateColors tm, PlaceModel place) {
     return CustomScrollView(
       slivers: [
-        // ── Photo Header ─────────────────────────────────
+        // ── Premium Photo Header ──────────────────────────
         SliverAppBar(
-          expandedHeight: 300,
+          expandedHeight: 320,
           pinned: true,
-          backgroundColor: Colors.black,
+          backgroundColor: tm.pureBlack,
           systemOverlayStyle: SystemUiOverlayStyle.light,
-          leading: IconButton(
-            icon: const Icon(Icons.arrow_back_rounded, color: Colors.white),
-            onPressed: () => Navigator.pop(context),
+          leading: Padding(
+            padding: const EdgeInsets.all(8),
+            child: Container(
+              decoration: BoxDecoration(
+                color: tm.pureBlack.withValues(alpha: 0.3),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: tm.pureWhite.withValues(alpha: 0.15)),
+              ),
+              child: IconButton(
+                icon: Icon(Icons.arrow_back_rounded, color: tm.textOnDark, size: 20),
+                onPressed: () => Navigator.pop(context),
+              ),
+            ),
           ),
           flexibleSpace: FlexibleSpaceBar(
-            background: _buildPhotoHeader(place),
+            background: _buildPhotoHeader(tm, place),
           ),
         ),
 
-        // ── Content ───────────────────────────────────────
+        // ── Premium Content ────────────────────────────────
         SliverToBoxAdapter(
           child: Padding(
-            padding: const EdgeInsets.all(20),
+            padding: const EdgeInsets.all(Spacing.xl4),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                _buildTitleSection(place),
-                const SizedBox(height: 20),
+                _buildTitleSection(tm, place),
+                const SizedBox(height: Spacing.xl4),
                 if (place.description != null && place.description!.isNotEmpty)
-                  _buildSection('Description', place.description!),
+                  _buildSection(tm, 'Description', place.description!),
                 if (place.address != null && place.address!.isNotEmpty) ...[
-                  const SizedBox(height: 16),
-                  _buildAddressSection(place),
+                  const SizedBox(height: Spacing.xl3),
+                  _buildInfoCard(
+                    tm,
+                    icon: Icons.location_on_outlined,
+                    title: place.address!,
+                    subtitle: 'Address',
+                  ),
                 ],
-                const SizedBox(height: 16),
-                _buildCategoryDetails(place),
+                const SizedBox(height: Spacing.xl3),
+                _buildCategoryDetails(tm, place),
                 if (place.lat != null && place.lng != null) ...[
-                  const SizedBox(height: 16),
-                  _buildLocationSection(place),
+                  const SizedBox(height: Spacing.xl3),
+                  GestureDetector(
+                    onTap: () => _openInGoogleMaps(place),
+                    child: _buildInfoCard(
+                      tm,
+                      icon: Icons.map_outlined,
+                      title: '${place.lat!.toStringAsFixed(4)}, ${place.lng!.toStringAsFixed(4)}',
+                      subtitle: 'Open in Google Maps',
+                      trailing: Icon(Icons.open_in_new, size: 16, color: tm.gold),
+                      isClickable: true,
+                    ),
+                  ),
                 ],
-                const SizedBox(height: 24),
+                if (place.phone != null && place.phone!.isNotEmpty) ...[
+                  const SizedBox(height: Spacing.xl3),
+                  _buildInfoCard(
+                    tm,
+                    icon: Icons.phone_outlined,
+                    title: place.phone!,
+                    subtitle: 'Phone',
+                  ),
+                ],
+                const SizedBox(height: Spacing.xl5),
                 _buildReviewsSection(place),
               ],
             ),
@@ -136,102 +142,200 @@ class _PlaceDetailView extends StatelessWidget {
     );
   }
 
-  Widget _buildPhotoHeader(PlaceModel place) {
+  Widget _buildInfoCard(
+    TourMateColors tm, {
+    required IconData icon,
+    required String title,
+    String? subtitle,
+    Widget? trailing,
+    bool isClickable = false,
+  }) {
+    return Container(
+      padding: const EdgeInsets.all(Spacing.xl3),
+      decoration: BoxDecoration(
+        color: tm.pureWhite,
+        borderRadius: BorderRadius.circular(RadiusTokens.xl3),
+        border: Border.all(color: tm.borderLight),
+        boxShadow: [
+          BoxShadow(
+            color: tm.pureBlack.withValues(alpha: 0.03),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              gradient: const LinearGradient(
+                colors: [Color(0xFF0A0A0A), Color(0xFF1A1A1A)],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Icon(icon, size: 18, color: tm.goldLight),
+          ),
+          const SizedBox(width: Spacing.md),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: GoogleFonts.inter(
+                    fontSize: 13,
+                    color: tm.textPrimary,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                if (subtitle != null) ...[
+                  const SizedBox(height: 2),
+                  Text(
+                    subtitle,
+                    style: GoogleFonts.inter(
+                      fontSize: 11,
+                      color: isClickable ? tm.gold : tm.textTertiary,
+                      fontWeight: isClickable ? FontWeight.w600 : FontWeight.w400,
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+          ?trailing,
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPhotoHeader(TourMateColors tm, PlaceModel place) {
+    Widget photoWidget;
     if (place.photoUrls.isEmpty) {
-      return Container(
-        color: Colors.grey[900],
+      photoWidget = Container(
+        color: tm.pureBlack,
         child: Center(
           child: Icon(
             Icons.image_outlined,
             size: 80,
-            color: Colors.grey[700],
+            color: tm.textSecondary,
           ),
         ),
       );
+    } else {
+      photoWidget = _PhotoCarousel(photoUrls: place.photoUrls);
     }
 
-    return _PhotoCarousel(photoUrls: place.photoUrls);
+    return Hero(
+      tag: 'place-photo-${place.placeId}',
+      child: photoWidget,
+    );
   }
 
-  Widget _buildTitleSection(PlaceModel place) {
+  Widget _buildTitleSection(TourMateColors tm, PlaceModel place) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // Category badge
+        // Premium category badge
         Container(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
           decoration: BoxDecoration(
-            color: Colors.grey.shade100,
+            color: tm.gold.withValues(alpha: 0.08),
             borderRadius: BorderRadius.circular(20),
+            border: Border.all(color: tm.gold.withValues(alpha: 0.2)),
           ),
-          child: Text(
-            '${place.categoryEmoji}  ${place.category}',
-            style: TextStyle(
-              fontSize: 12,
-              color: Colors.grey[700],
-              fontWeight: FontWeight.w600,
-            ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.category_outlined, size: 12, color: tm.gold),
+              const SizedBox(width: 5),
+              Text(
+                place.category,
+                style: GoogleFonts.inter(
+                  fontSize: 12,
+                  color: tm.gold,
+                  fontWeight: FontWeight.w600,
+                  letterSpacing: 0.5,
+                ),
+              ),
+            ],
           ),
         ),
-        const SizedBox(height: 12),
+        const SizedBox(height: Spacing.md),
 
         // Name
         Text(
           place.name,
-          style: const TextStyle(
+          style: GoogleFonts.inter(
             fontSize: 26,
             fontWeight: FontWeight.w800,
-            color: Colors.black,
+            color: tm.textPrimary,
             height: 1.1,
+            letterSpacing: -0.5,
           ),
         ),
 
-        const SizedBox(height: 8),
+        const SizedBox(height: Spacing.sm),
 
-        // Rating row
+        // Premium rating row
         Row(
           children: [
-            Icon(Icons.star_rounded, size: 20, color: Colors.amber[700]),
+            Icon(Icons.star_rounded, size: 20, color: tm.gold),
             const SizedBox(width: 4),
             Text(
               place.rating.toStringAsFixed(1),
-              style: TextStyle(
+              style: GoogleFonts.inter(
                 fontSize: 16,
                 fontWeight: FontWeight.w700,
-                color: Colors.amber[800],
+                color: tm.gold,
+                letterSpacing: -0.3,
               ),
             ),
             if (place.reviewCount > 0) ...[
               const SizedBox(width: 4),
               Text(
                 '(${_formatCount(place.reviewCount)})',
-                style: TextStyle(fontSize: 13, color: Colors.grey[500]),
+                style: GoogleFonts.inter(fontSize: 13, color: tm.textTertiary),
               ),
             ],
             if (place.priceLevel != null && place.priceLevel! > 0) ...[
               const SizedBox(width: 12),
-              Icon(Icons.attach_money, size: 16, color: Colors.grey[500]),
-              Text(
-                '\$' * place.priceLevel!,
-                style: TextStyle(fontSize: 13, color: Colors.grey[500]),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                decoration: BoxDecoration(
+                  color: tm.gold.withValues(alpha: 0.08),
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.attach_money, size: 13, color: tm.gold),
+                    Text(
+                      '\$' * place.priceLevel!,
+                      style: GoogleFonts.inter(fontSize: 12, color: tm.gold, fontWeight: FontWeight.w600),
+                    ),
+                  ],
+                ),
               ),
             ],
           ],
         ),
 
-        // City / country
+        // City / country with gold location icon
         if (place.city != null || place.country != null) ...[
           const SizedBox(height: 4),
           Row(
             children: [
-              Icon(Icons.location_on_outlined, size: 15, color: Colors.grey[400]),
+              Icon(Icons.location_on_outlined, size: 14, color: tm.goldLight),
               const SizedBox(width: 4),
               Text(
                 [
                   if (place.city != null) place.city,
                   if (place.country != null) place.country,
                 ].join(', '),
-                style: TextStyle(fontSize: 13, color: Colors.grey[500]),
+                style: GoogleFonts.inter(fontSize: 13, color: tm.textTertiary),
               ),
             ],
           ),
@@ -240,88 +344,42 @@ class _PlaceDetailView extends StatelessWidget {
     );
   }
 
-  Widget _buildSection(String title, String body) {
+  Widget _buildSection(TourMateColors tm, String title, String body) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          title,
-          style: const TextStyle(
-            fontSize: 16,
-            fontWeight: FontWeight.w700,
-            color: Colors.black,
-          ),
+        Row(
+          children: [
+            Container(
+              width: 3,
+              height: 18,
+              decoration: BoxDecoration(
+                color: tm.gold,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Text(
+              title,
+              style: GoogleFonts.inter(
+                fontSize: 16,
+                fontWeight: FontWeight.w700,
+                color: tm.textPrimary,
+                letterSpacing: -0.2,
+              ),
+            ),
+          ],
         ),
-        const SizedBox(height: 8),
+        const SizedBox(height: Spacing.sm),
         Text(
           body,
-          style: TextStyle(
+          style: GoogleFonts.inter(
             fontSize: 14,
-            color: Colors.grey[700],
-            height: 1.5,
+            color: tm.textSecondary,
+            height: 1.6,
           ),
         ),
       ],
-    );
-  }
-
-  Widget _buildAddressSection(PlaceModel place) {
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: Colors.grey.shade50,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: Colors.grey.shade200),
-      ),
-      child: Row(
-        children: [
-          Icon(Icons.location_on_outlined, color: Colors.grey[600], size: 20),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Text(
-              place.address!,
-              style: TextStyle(fontSize: 13, color: Colors.grey[700]),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildLocationSection(PlaceModel place) {
-    return GestureDetector(
-      onTap: () => _openInGoogleMaps(place),
-      child: Container(
-        padding: const EdgeInsets.all(14),
-        decoration: BoxDecoration(
-          color: Colors.grey.shade50,
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: Colors.grey.shade200),
-        ),
-        child: Row(
-          children: [
-            Icon(Icons.map_outlined, color: Colors.grey[600], size: 20),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    '${place.lat!.toStringAsFixed(4)}, ${place.lng!.toStringAsFixed(4)}',
-                    style: TextStyle(fontSize: 13, color: Colors.grey[700]),
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    'Open in Google Maps',
-                    style: TextStyle(fontSize: 11, color: Colors.blue[600]),
-                  ),
-                ],
-              ),
-            ),
-            Icon(Icons.open_in_new, color: Colors.blue[400], size: 18),
-          ],
-        ),
-      ),
     );
   }
 
@@ -343,39 +401,30 @@ class _PlaceDetailView extends StatelessWidget {
     }
   }
 
-  Widget _buildCategoryDetails(PlaceModel place) {
+  Widget _buildCategoryDetails(TourMateColors tm, PlaceModel place) {
     switch (place.category.toLowerCase()) {
       case 'hotel':
-        return _buildHotelDetails(place);
+        return _buildHotelDetails(tm, place);
       case 'restaurant':
-        return _buildRestaurantDetails(place);
+        return _buildRestaurantDetails(tm, place);
       case 'attraction':
-        return _buildAttractionDetails(place);
+        return _buildAttractionDetails(tm, place);
       default:
         return const SizedBox.shrink();
     }
   }
 
-  Widget _buildHotelDetails(PlaceModel place) {
+  Widget _buildHotelDetails(TourMateColors tm, PlaceModel place) {
     final details = <Widget>[];
 
     if (place.starClass != null && place.starClass! > 0) {
-      details.add(_buildInfoChip(
-        Icons.star_outline,
-        '${place.starClass}-star hotel',
-      ));
+      details.add(_buildGoldChip(tm.gold, Icons.star_outline, '${place.starClass}-star hotel'));
     }
     if (place.nightlyRate != null && place.nightlyRate! > 0) {
-      details.add(_buildInfoChip(
-        Icons.bed_outlined,
-        '\$${place.nightlyRate!.toStringAsFixed(0)} / night',
-      ));
+      details.add(_buildGoldChip(tm.gold, Icons.bed_outlined, '\$${place.nightlyRate!.toStringAsFixed(0)} / night'));
     }
     if (place.accommodationType != null && place.accommodationType!.isNotEmpty) {
-      details.add(_buildInfoChip(
-        Icons.home_outlined,
-        place.accommodationType!,
-      ));
+      details.add(_buildGoldChip(tm.gold, Icons.home_outlined, place.accommodationType!));
     }
 
     if (details.isEmpty) return const SizedBox.shrink();
@@ -383,11 +432,20 @@ class _PlaceDetailView extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text(
-          'Hotel Info',
-          style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: Colors.black),
+        Row(
+          children: [
+            Container(
+              width: 3, height: 18,
+              decoration: BoxDecoration(color: tm.gold, borderRadius: BorderRadius.circular(2)),
+            ),
+            const SizedBox(width: 8),
+            Text(
+              'Hotel Info',
+              style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.w700, color: tm.textPrimary, letterSpacing: -0.2),
+            ),
+          ],
         ),
-        const SizedBox(height: 10),
+        const SizedBox(height: Spacing.sm),
         Wrap(
           spacing: 8,
           runSpacing: 8,
@@ -397,14 +455,11 @@ class _PlaceDetailView extends StatelessWidget {
     );
   }
 
-  Widget _buildRestaurantDetails(PlaceModel place) {
+  Widget _buildRestaurantDetails(TourMateColors tm, PlaceModel place) {
     final details = <Widget>[];
 
     if (place.cuisineType != null && place.cuisineType!.isNotEmpty) {
-      details.add(_buildInfoChip(
-        Icons.restaurant_outlined,
-        place.cuisineType!,
-      ));
+      details.add(_buildGoldChip(tm.gold, Icons.restaurant_outlined, place.cuisineType!));
     }
 
     if (details.isEmpty) return const SizedBox.shrink();
@@ -412,11 +467,20 @@ class _PlaceDetailView extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text(
-          'Restaurant Info',
-          style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: Colors.black),
+        Row(
+          children: [
+            Container(
+              width: 3, height: 18,
+              decoration: BoxDecoration(color: tm.gold, borderRadius: BorderRadius.circular(2)),
+            ),
+            const SizedBox(width: 8),
+            Text(
+              'Restaurant Info',
+              style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.w700, color: tm.textPrimary, letterSpacing: -0.2),
+            ),
+          ],
         ),
-        const SizedBox(height: 10),
+        const SizedBox(height: Spacing.sm),
         Wrap(
           spacing: 8,
           runSpacing: 8,
@@ -426,41 +490,50 @@ class _PlaceDetailView extends StatelessWidget {
     );
   }
 
-  Widget _buildAttractionDetails(PlaceModel place) {
+  Widget _buildAttractionDetails(TourMateColors tm, PlaceModel place) {
     if (place.entryFee == null || place.entryFee! <= 0) return const SizedBox.shrink();
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text(
-          'Attraction Info',
-          style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: Colors.black),
+        Row(
+          children: [
+            Container(
+              width: 3, height: 18,
+              decoration: BoxDecoration(color: tm.gold, borderRadius: BorderRadius.circular(2)),
+            ),
+            const SizedBox(width: 8),
+            Text(
+              'Attraction Info',
+              style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.w700, color: tm.textPrimary, letterSpacing: -0.2),
+            ),
+          ],
         ),
-        const SizedBox(height: 10),
-        _buildInfoChip(Icons.monetization_on_outlined, 'Entry fee: \$${place.entryFee!.toStringAsFixed(0)}'),
+        const SizedBox(height: Spacing.sm),
+        _buildGoldChip(tm.gold, Icons.monetization_on_outlined, 'Entry fee: \$${place.entryFee!.toStringAsFixed(0)}'),
       ],
     );
   }
 
-  Widget _buildInfoChip(IconData icon, String label) {
+  Widget _buildGoldChip(Color goldColor, IconData icon, String label) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       decoration: BoxDecoration(
-        color: Colors.grey.shade50,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.grey.shade200),
+        color: goldColor.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(RadiusTokens.md),
+        border: Border.all(color: goldColor.withValues(alpha: 0.2)),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, size: 16, color: Colors.grey[600]),
+          Icon(icon, size: 15, color: goldColor),
           const SizedBox(width: 6),
           Text(
             label,
-            style: TextStyle(
+            style: GoogleFonts.inter(
               fontSize: 13,
-              color: Colors.grey[700],
-              fontWeight: FontWeight.w500,
+              color: goldColor,
+              fontWeight: FontWeight.w600,
             ),
           ),
         ],
@@ -525,44 +598,60 @@ class _ReviewsSection extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final tm = context.tm;
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         // Header row
         Row(
           children: [
-            const Text(
-              'Reviews',
-              style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.w700,
-                color: Colors.black,
-              ),
+            Row(
+              children: [
+                Container(
+                  width: 3, height: 20,
+                  decoration: BoxDecoration(color: tm.gold, borderRadius: BorderRadius.circular(2)),
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  'Reviews',
+                  style: GoogleFonts.inter(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w700,
+                    color: tm.textPrimary,
+                    letterSpacing: -0.3,
+                  ),
+                ),
+              ],
             ),
             const Spacer(),
-            // Write a review button
+            // Premium gold-accented write button
             Material(
-              color: Colors.black,
-              borderRadius: BorderRadius.circular(10),
+              color: Colors.transparent,
               child: InkWell(
                 borderRadius: BorderRadius.circular(10),
                 onTap: () => _showWriteReview(context),
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 14,
-                    vertical: 8,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                  decoration: BoxDecoration(
+                    gradient: const LinearGradient(
+                      colors: [Color(0xFF0A0A0A), Color(0xFF1A1A1A)],
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                    ),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: tm.gold.withValues(alpha: 0.3), width: 0.5),
                   ),
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      const Icon(Icons.edit_outlined,
-                          color: Colors.white, size: 14),
+                      Icon(Icons.edit_outlined, color: tm.goldLight, size: 14),
                       const SizedBox(width: 6),
                       Text(
                         'Write',
-                        style: TextStyle(
+                        style: GoogleFonts.inter(
                           fontSize: 12,
-                          color: Colors.grey[100],
+                          color: tm.pureWhite,
                           fontWeight: FontWeight.w600,
                         ),
                       ),
@@ -579,17 +668,18 @@ class _ReviewsSection extends StatelessWidget {
         // Reviews list from cubit
         BlocBuilder<ReviewsCubit, ReviewsState>(
           builder: (context, state) {
+            final tm = context.tm;
             return state.when(
               initial: () => const SizedBox.shrink(),
-              loading: () => const Padding(
-                padding: EdgeInsets.all(16),
+              loading: () => Padding(
+                padding: const EdgeInsets.all(16),
                 child: Center(
                   child: SizedBox(
                     width: 20,
                     height: 20,
                     child: CircularProgressIndicator(
                       strokeWidth: 2,
-                      color: Colors.black,
+                      color: tm.pureBlack,
                     ),
                   ),
                 ),
@@ -605,19 +695,19 @@ class _ReviewsSection extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     if (data.averageRating != null)
-                      _buildSummaryCard(data),
+                      _buildSummaryCard(tm, data),
 
                     if (data.reviews.isNotEmpty) ...[
                       const SizedBox(height: 16),
                       // Sort / filter toolbar
-                      _buildSortFilterToolbar(context, data.reviews,
+                      _buildSortFilterToolbar(context, tm, data.reviews,
                           sortBy: sortBy, filterRating: filterRating),
                       const SizedBox(height: 12),
                     ],
 
                     if (filtered.isEmpty) ...[
                       const SizedBox(height: 16),
-                      _buildEmptyReviews(
+                      _buildEmptyReviews(tm,
                         hasReviews: data.reviews.isNotEmpty,
                         filterRating: filterRating,
                       ),
@@ -640,12 +730,11 @@ class _ReviewsSection extends StatelessWidget {
                 padding: const EdgeInsets.symmetric(vertical: 12),
                 child: Row(
                   children: [
-                    Icon(Icons.cloud_off, size: 16, color: Colors.grey[400]),
+                    Icon(Icons.cloud_off, size: 16, color: tm.textTertiary),
                     const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
+                    Expanded(                        child: Text(
                         'Could not load reviews',
-                        style: TextStyle(color: Colors.grey[500], fontSize: 13),
+                        style: TextStyle(color: tm.textTertiary, fontSize: 13),
                       ),
                     ),
                   ],
@@ -658,9 +747,10 @@ class _ReviewsSection extends StatelessWidget {
     );
   }
 
-  /// Sort/filter toolbar with sort dropdown + rating filter chips
+  /// Premium sort/filter toolbar with gold-accented rating chips
   Widget _buildSortFilterToolbar(
     BuildContext context,
+    TourMateColors tm,
     List<ReviewModel> allReviews, {
     required ReviewSort sortBy,
     required int? filterRating,
@@ -669,27 +759,25 @@ class _ReviewsSection extends StatelessWidget {
 
     return Column(
       children: [
-        // Sort dropdown + filter chips header
+        // Sort dropdown + clear button
         Row(
           children: [
-            // Sort dropdown
             Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
               decoration: BoxDecoration(
-                color: Colors.grey.shade50,
+                color: tm.surface,
                 borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: Colors.grey.shade200),
+                border: Border.all(color: tm.borderLight),
               ),
               child: DropdownButtonHideUnderline(
                 child: DropdownButton<ReviewSort>(
                   value: sortBy,
                   isDense: true,
-                  icon: Icon(Icons.swap_vert,
-                      size: 16, color: Colors.grey[600]),
-                  style: TextStyle(
+                  icon: Icon(Icons.swap_vert, size: 16, color: tm.gold),
+                  style: GoogleFonts.inter(
                     fontSize: 12,
-                    color: Colors.grey[700],
-                    fontWeight: FontWeight.w500,
+                    color: tm.textSecondary,
+                    fontWeight: FontWeight.w600,
                   ),
                   items: const [
                     DropdownMenuItem(
@@ -706,36 +794,29 @@ class _ReviewsSection extends StatelessWidget {
                     ),
                   ],
                   onChanged: (val) {
-                    if (val != null) {
-                      cubit.setSortBy(val);
-                    }
+                    if (val != null) cubit.setSortBy(val);
                   },
                 ),
               ),
             ),
             const Spacer(),
-            // Active filter count text
             if (filterRating != null)
               GestureDetector(
                 onTap: () => cubit.setFilterRating(null),
                 child: Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                   decoration: BoxDecoration(
-                    color: Colors.grey.shade100,
+                    color: tm.gold.withValues(alpha: 0.08),
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Icon(Icons.close, size: 12, color: Colors.grey[600]),
+                      Icon(Icons.close, size: 11, color: tm.gold),
                       const SizedBox(width: 4),
                       Text(
                         'Clear',
-                        style: TextStyle(
-                          fontSize: 11,
-                          color: Colors.grey[600],
-                        ),
+                        style: GoogleFonts.inter(fontSize: 11, color: tm.gold, fontWeight: FontWeight.w600),
                       ),
                     ],
                   ),
@@ -743,10 +824,10 @@ class _ReviewsSection extends StatelessWidget {
               ),
           ],
         ),
-        const SizedBox(height: 10),
-        // Rating filter chips (horizontal scrollable row)
+        const SizedBox(height: Spacing.sm),
+        // Gold-accented rating filter chips
         SizedBox(
-          height: 32,
+          height: 34,
           child: ListView.separated(
             scrollDirection: Axis.horizontal,
             itemCount: 6,
@@ -759,22 +840,31 @@ class _ReviewsSection extends StatelessWidget {
                   : filterRating == rating;
 
               return GestureDetector(
-                onTap: () {
-                  cubit.setFilterRating(isAll ? null : rating);
-                },
+                onTap: () => cubit.setFilterRating(isAll ? null : rating),
                 child: AnimatedContainer(
                   duration: const Duration(milliseconds: 200),
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                   decoration: BoxDecoration(
-                    color:
-                        selected ? Colors.black : Colors.grey.shade50,
+                    gradient: selected
+                        ? const LinearGradient(
+                            colors: [Color(0xFF0A0A0A), Color(0xFF1A1A1A)],
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                          )
+                        : null,
+                    color: selected ? null : tm.surface,
                     borderRadius: BorderRadius.circular(20),
                     border: Border.all(
-                      color: selected
-                          ? Colors.black
-                          : Colors.grey.shade200,
+                      color: selected ? tm.gold.withValues(alpha: 0.5) : tm.borderLight,
+                      width: selected ? 1.5 : 1,
                     ),
+                    boxShadow: selected ? [
+                      BoxShadow(
+                        color: tm.gold.withValues(alpha: 0.15),
+                        blurRadius: 6,
+                        offset: const Offset(0, 1),
+                      ),
+                    ] : [],
                   ),
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
@@ -783,28 +873,25 @@ class _ReviewsSection extends StatelessWidget {
                         Icon(
                           Icons.star_rounded,
                           size: 13,
-                          color:
-                              selected ? Colors.amber[200] : Colors.amber[700],
+                          color: selected ? tm.goldLight : tm.gold,
                         ),
                         const SizedBox(width: 3),
                       ],
                       Text(
                         isAll ? 'All' : '$rating',
-                        style: TextStyle(
+                        style: GoogleFonts.inter(
                           fontSize: 12,
                           fontWeight: FontWeight.w600,
-                          color: selected ? Colors.white : Colors.grey[700],
+                          color: selected ? tm.goldLight : tm.textSecondary,
                         ),
                       ),
                       if (!isAll) ...[
                         const SizedBox(width: 3),
                         Text(
                           '(${_countRating(allReviews, rating)})',
-                          style: TextStyle(
+                          style: GoogleFonts.inter(
                             fontSize: 10,
-                            color: selected
-                                ? Colors.white70
-                                : Colors.grey[400],
+                            color: selected ? tm.gold.withValues(alpha: 0.6) : tm.textTertiary,
                           ),
                         ),
                       ],
@@ -819,14 +906,14 @@ class _ReviewsSection extends StatelessWidget {
     );
   }
 
-  Widget _buildSummaryCard(PlaceReviewsResponse data) {
+  Widget _buildSummaryCard(TourMateColors tm, PlaceReviewsResponse data) {
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(Spacing.xl3),
       decoration: BoxDecoration(
-        color: Colors.amber.shade50,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: Colors.amber.shade100),
+        color: tm.gold.withValues(alpha: 0.06),
+        borderRadius: BorderRadius.circular(RadiusTokens.xl3),
+        border: Border.all(color: tm.gold.withValues(alpha: 0.2)),
       ),
       child: Row(
         children: [
@@ -835,10 +922,11 @@ class _ReviewsSection extends StatelessWidget {
             children: [
               Text(
                 data.averageRating!.toStringAsFixed(1),
-                style: TextStyle(
-                  fontSize: 32,
+                style: GoogleFonts.inter(
+                  fontSize: 34,
                   fontWeight: FontWeight.w800,
-                  color: Colors.amber[800],
+                  color: tm.gold,
+                  letterSpacing: -0.5,
                 ),
               ),
               Row(
@@ -849,22 +937,19 @@ class _ReviewsSection extends StatelessWidget {
                   return Icon(
                     filled ? Icons.star_rounded : Icons.star_border_rounded,
                     size: 14,
-                    color: Colors.amber[700],
+                    color: tm.gold,
                   );
                 }),
               ),
               const SizedBox(height: 4),
               Text(
                 '${data.totalReviews} review${data.totalReviews == 1 ? '' : 's'}',
-                style: TextStyle(
-                  fontSize: 12,
-                  color: Colors.grey[600],
-                ),
+                style: GoogleFonts.inter(fontSize: 12, color: tm.textSecondary, fontWeight: FontWeight.w500),
               ),
             ],
           ),
           const SizedBox(width: 20),
-          // Rating distribution bars
+          // Premium rating distribution bars
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -882,10 +967,10 @@ class _ReviewsSection extends StatelessWidget {
                         width: 24,
                         child: Text(
                           '$starLevel',
-                          style: TextStyle(
+                          style: GoogleFonts.inter(
                             fontSize: 11,
-                            color: Colors.grey[500],
-                            fontWeight: FontWeight.w500,
+                            color: tm.textTertiary,
+                            fontWeight: FontWeight.w600,
                           ),
                         ),
                       ),
@@ -895,9 +980,8 @@ class _ReviewsSection extends StatelessWidget {
                           child: LinearProgressIndicator(
                             value: pct,
                             minHeight: 6,
-                            backgroundColor: Colors.amber.shade100,
-                            valueColor:
-                                AlwaysStoppedAnimation(Colors.amber[700]!),
+                            backgroundColor: tm.gold.withValues(alpha: 0.2),
+                            valueColor: AlwaysStoppedAnimation(tm.gold),
                           ),
                         ),
                       ),
@@ -905,9 +989,10 @@ class _ReviewsSection extends StatelessWidget {
                         width: 20,
                         child: Text(
                           '$count',
-                          style: TextStyle(
+                          style: GoogleFonts.inter(
                             fontSize: 11,
-                            color: Colors.grey[400],
+                            color: tm.textTertiary,
+                            fontWeight: FontWeight.w600,
                           ),
                           textAlign: TextAlign.right,
                         ),
@@ -927,39 +1012,33 @@ class _ReviewsSection extends StatelessWidget {
     return reviews.where((r) => r.rating == rating).length;
   }
 
-  Widget _buildEmptyReviews({bool hasReviews = false, int? filterRating}) {
+  Widget _buildEmptyReviews(TourMateColors tm, {bool hasReviews = false, int? filterRating}) {
     final isFiltered = filterRating != null && hasReviews;
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.symmetric(vertical: 24),
-      child: Column(
-        children: [
-          Icon(
-            isFiltered ? Icons.search_off : Icons.rate_review_outlined,
-            size: 40,
-            color: Colors.grey[300],
-          ),
-          const SizedBox(height: 12),
-          Text(
-            isFiltered ? 'No $filterRating-star reviews' : 'No reviews yet',
-            style: TextStyle(
-              fontSize: 15,
-              color: Colors.grey[500],
-              fontWeight: FontWeight.w500,
+    if (isFiltered) {
+      return Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(vertical: Spacing.xl5),
+        child: Column(
+          children: [
+            Icon(Icons.search_off, size: 40, color: tm.textTertiary),
+            const SizedBox(height: Spacing.md),
+            Text(
+              'No $filterRating-star reviews',
+              style: GoogleFonts.inter(fontSize: 15, color: tm.textTertiary, fontWeight: FontWeight.w600),
             ),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            isFiltered
-                ? 'Try selecting a different rating filter'
-                : 'Be the first to share your experience',
-            style: TextStyle(
-              fontSize: 12,
-              color: Colors.grey[400],
+            const SizedBox(height: 4),
+            Text(
+              'Try selecting a different rating filter',
+              style: GoogleFonts.inter(fontSize: 12, color: tm.textTertiary),
             ),
-          ),
-        ],
-      ),
+          ],
+        ),
+      );
+    }
+    return TMEmptyState(
+      icon: Icons.rate_review_outlined,
+      title: 'No reviews yet',
+      subtitle: 'Be the first to share your experience',
     );
   }
 
@@ -1030,21 +1109,46 @@ class _ReviewsSection extends StatelessWidget {
   }
 
   void _showDeleteConfirm(BuildContext context, ReviewModel review) {
+    final tm = context.tm;
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(20),
+          borderRadius: BorderRadius.circular(RadiusTokens.xl3),
         ),
-        title: const Text('Delete Review'),
-        content: const Text('Are you sure you want to delete this review? This cannot be undone.'),
+        backgroundColor: tm.pureWhite,
+        titlePadding: const EdgeInsets.fromLTRB(Spacing.xl3, Spacing.xl3, Spacing.xl3, 0),
+        contentPadding: const EdgeInsets.fromLTRB(Spacing.xl3, Spacing.md, Spacing.xl3, 0),
+        actionsPadding: const EdgeInsets.fromLTRB(Spacing.sm, Spacing.sm, Spacing.sm, Spacing.sm),
+        title: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(6),
+              decoration: BoxDecoration(
+                color: tm.error.withValues(alpha: 0.08),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Icon(Icons.delete_outline, size: 18, color: tm.error),
+            ),
+            const SizedBox(width: 10),
+            Text(
+              'Delete Review',
+              style: GoogleFonts.inter(fontWeight: FontWeight.w700, fontSize: 17, color: tm.textPrimary, letterSpacing: -0.2),
+            ),
+          ],
+        ),
+        content: Text(
+          'Are you sure you want to delete this review? This cannot be undone.',
+          style: GoogleFonts.inter(fontSize: 14, color: tm.textSecondary, height: 1.5),
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
-            child: const Text(
-              'Cancel',
-              style: TextStyle(color: Colors.grey),
+            style: TextButton.styleFrom(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
             ),
+            child: Text('Cancel', style: GoogleFonts.inter(color: tm.textTertiary, fontWeight: FontWeight.w600, fontSize: 14)),
           ),
           TextButton(
             onPressed: () async {
@@ -1058,13 +1162,12 @@ class _ReviewsSection extends StatelessWidget {
                 AppSnackbar.error(context, 'Failed to delete review');
               }
             },
-            child: const Text(
-              'Delete',
-              style: TextStyle(
-                color: Colors.red,
-                fontWeight: FontWeight.w600,
-              ),
+            style: TextButton.styleFrom(
+              backgroundColor: tm.error.withValues(alpha: 0.08),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
             ),
+            child: Text('Delete', style: GoogleFonts.inter(color: tm.error, fontWeight: FontWeight.w700, fontSize: 14)),
           ),
         ],
       ),
@@ -1072,7 +1175,7 @@ class _ReviewsSection extends StatelessWidget {
   }
 }
 
-// ── Single Review Card ──────────────────────────────────────────────────────
+// ── Premium Review Card ─────────────────────────────────────────────────────
 
 class _ReviewCard extends StatelessWidget {
   final ReviewModel review;
@@ -1089,18 +1192,27 @@ class _ReviewCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final tm = context.tm;
+
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.all(14),
+      padding: const EdgeInsets.all(Spacing.xl3),
       decoration: BoxDecoration(
-        color: Colors.grey.shade50,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: Colors.grey.shade200),
+        color: tm.pureWhite,
+        borderRadius: BorderRadius.circular(RadiusTokens.xl3),
+        border: Border.all(color: tm.borderLight),
+        boxShadow: [
+          BoxShadow(
+            color: tm.pureBlack.withValues(alpha: 0.03),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Header: star rating + date + popup menu
+          // Header: gold stars + date + popup menu
           Row(
             children: [
               Row(
@@ -1111,51 +1223,65 @@ class _ReviewCard extends StatelessWidget {
                         ? Icons.star_rounded
                         : Icons.star_border_rounded,
                     size: 16,
-                    color: Colors.amber[700],
+                    color: tm.gold,
                   );
                 }),
               ),
-              const SizedBox(width: 8),
+              const SizedBox(width: 6),
               Text(
                 review.rating.toString(),
-                style: TextStyle(fontSize: 11, color: Colors.grey[500], fontWeight: FontWeight.w600),
+                style: GoogleFonts.inter(fontSize: 11, color: tm.gold, fontWeight: FontWeight.w700),
               ),
               const Spacer(),
               if (review.reviewDate != null)
-                Text(
-                  _formatDate(review.reviewDate!),
-                  style: TextStyle(fontSize: 11, color: Colors.grey[400]),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: tm.gold.withValues(alpha: 0.08),
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: Text(
+                    _formatDate(review.reviewDate!),
+                    style: GoogleFonts.inter(fontSize: 10, color: tm.gold, fontWeight: FontWeight.w600),
+                  ),
                 ),
               const SizedBox(width: 4),
-              // Popup menu for edit/delete
+              // Popup menu
               PopupMenuButton<String>(
                 padding: EdgeInsets.zero,
-                icon: Icon(Icons.more_horiz, size: 18, color: Colors.grey[400]),
+                icon: Container(
+                  padding: const EdgeInsets.all(2),
+                  decoration: BoxDecoration(
+                    color: tm.surface,
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: Icon(Icons.more_horiz, size: 16, color: tm.textTertiary),
+                ),
                 shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
+                  borderRadius: BorderRadius.circular(RadiusTokens.md),
                 ),
                 onSelected: (value) {
                   if (value == 'edit') onEdit();
                   if (value == 'delete') onDelete();
                 },
                 itemBuilder: (_) => [
-                  const PopupMenuItem(
+                  PopupMenuItem(
                     value: 'edit',
                     child: Row(
                       children: [
-                        Icon(Icons.edit_outlined, size: 18, color: Colors.black87),
-                        SizedBox(width: 10),
-                        Text('Edit'),
+                        Icon(Icons.edit_outlined, size: 18, color: tm.textPrimary),
+                        const SizedBox(width: 10),
+                        const Text('Edit'),
                       ],
                     ),
                   ),
-                  const PopupMenuItem(
+                  PopupMenuItem(
                     value: 'delete',
                     child: Row(
                       children: [
-                        Icon(Icons.delete_outline, size: 18, color: Colors.red),
-                        SizedBox(width: 10),
-                        Text('Delete', style: TextStyle(color: Colors.red)),
+                        Icon(Icons.delete_outline, size: 18, color: tm.error),
+                        const SizedBox(width: 10),
+                        Text('Delete', style: TextStyle(color: tm.error)),
                       ],
                     ),
                   ),
@@ -1166,72 +1292,103 @@ class _ReviewCard extends StatelessWidget {
 
           // Comment
           if (review.comment != null && review.comment!.isNotEmpty) ...[
-            const SizedBox(height: 8),
+            const SizedBox(height: Spacing.sm),
             Text(
               review.comment!,
-              style: TextStyle(
+              style: GoogleFonts.inter(
                 fontSize: 13,
-                color: Colors.grey[700],
-                height: 1.4,
+                color: tm.textSecondary,
+                height: 1.5,
               ),
             ),
           ],
 
+          // Divider
+          const SizedBox(height: Spacing.md),
+          Container(
+            height: 1,
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: [tm.divider.withValues(alpha: 0), tm.divider, tm.divider.withValues(alpha: 0)],
+              ),
+            ),
+          ),
+          const SizedBox(height: Spacing.md),
+
           // Footer with like button + user avatar + name
-          const SizedBox(height: 8),
           Row(
             children: [
-              // Interactive like button
+              // Gold-accented like button
               GestureDetector(
                 onTap: onLike,
                 behavior: HitTestBehavior.opaque,
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    AnimatedSwitcher(
-                      duration: const Duration(milliseconds: 200),
-                      transitionBuilder: (child, anim) => ScaleTransition(
-                        scale: anim,
-                        child: child,
-                      ),
-                      child: Icon(
-                        review.likedByUser
-                            ? Icons.favorite
-                            : Icons.favorite_border,
-                        key: ValueKey(review.likedByUser),
-                        size: 14,
-                        color: review.likedByUser
-                            ? Colors.red
-                            : Colors.grey[400],
-                      ),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: review.likedByUser
+                        ? tm.error.withValues(alpha: 0.08)
+                        : tm.gold.withValues(alpha: 0.08),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(
+                      color: review.likedByUser
+                          ? tm.error.withValues(alpha: 0.2)
+                          : tm.gold.withValues(alpha: 0.15),
                     ),
-                    const SizedBox(width: 4),
-                    Text(
-                      '${review.likesCount}',
-                      style: TextStyle(
-                        fontSize: 11,
-                        color: review.likedByUser
-                            ? Colors.red[400]
-                            : Colors.grey[400],
-                        fontWeight: review.likedByUser
-                            ? FontWeight.w600
-                            : FontWeight.normal,
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      AnimatedSwitcher(
+                        duration: const Duration(milliseconds: 200),
+                        transitionBuilder: (child, anim) => ScaleTransition(
+                          scale: anim,
+                          child: child,
+                        ),
+                        child: Icon(
+                          review.likedByUser
+                              ? Icons.favorite
+                              : Icons.favorite_border,
+                          key: ValueKey(review.likedByUser),
+                          size: 13,
+                          color: review.likedByUser
+                              ? tm.error
+                              : tm.gold,
+                        ),
                       ),
-                    ),
-                  ],
+                      const SizedBox(width: 4),
+                      Text(
+                        '${review.likesCount}',
+                        style: GoogleFonts.inter(
+                          fontSize: 11,
+                          color: review.likedByUser ? tm.error : tm.gold,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ),
               const SizedBox(width: 12),
-              // User avatar circle
-              CircleAvatar(
-                radius: 10,
-                backgroundColor: Colors.grey.shade300,
+              // User avatar with black/gold gradient
+              Container(
+                width: 24,
+                height: 24,
+                decoration: BoxDecoration(
+                  gradient: const LinearGradient(
+                    colors: [Color(0xFF0A0A0A), Color(0xFF1A1A1A)],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                  ),
+                  shape: BoxShape.circle,
+                  border: Border.all(color: tm.gold.withValues(alpha: 0.3), width: 1),
+                ),
+                alignment: Alignment.center,
                 child: Text(
                   review.initials,
-                  style: const TextStyle(
-                    fontSize: 9,
-                    fontWeight: FontWeight.w600,
-                    color: Colors.white,
+                  style: GoogleFonts.inter(
+                    fontSize: 8,
+                    fontWeight: FontWeight.w700,
+                    color: tm.goldLight,
                   ),
                 ),
               ),
@@ -1239,7 +1396,7 @@ class _ReviewCard extends StatelessWidget {
               Expanded(
                 child: Text(
                   review.displayName,
-                  style: TextStyle(fontSize: 11, color: Colors.grey[400]),
+                  style: GoogleFonts.inter(fontSize: 11, color: tm.textTertiary, fontWeight: FontWeight.w500),
                   overflow: TextOverflow.ellipsis,
                 ),
               ),
@@ -1287,6 +1444,8 @@ class _PhotoCarouselState extends State<_PhotoCarousel> {
 
   @override
   Widget build(BuildContext context) {
+    final tm = context.tm;
+
     return Stack(
       fit: StackFit.expand,
       children: [
@@ -1299,28 +1458,28 @@ class _PhotoCarouselState extends State<_PhotoCarousel> {
             fit: BoxFit.cover,
             loadingBuilder: (_, child, progress) {
               if (progress == null) return child;
-              return Container(color: Colors.grey[900]);
+              return Container(color: tm.pureBlack);
             },
-            errorBuilder: (_, _, _) => Container(color: Colors.grey[900]),
+            errorBuilder: (_, _, _) => Container(color: tm.pureBlack),
           ),
         ),
-        // Gradient overlay for readability
-        DecoratedBox(
+        // Premium gradient overlay
+        const DecoratedBox(
           decoration: BoxDecoration(
             gradient: LinearGradient(
               begin: Alignment.topCenter,
               end: Alignment.bottomCenter,
               colors: [
                 Colors.transparent,
-                Colors.black.withValues(alpha: 0.6),
+                Color(0x99000000),
               ],
             ),
           ),
         ),
-        // Page indicator dots
+        // Gold page indicator dots
         if (widget.photoUrls.length > 1)
           Positioned(
-            bottom: 16,
+            bottom: 20,
             left: 0,
             right: 0,
             child: Center(
@@ -1328,7 +1487,7 @@ class _PhotoCarouselState extends State<_PhotoCarousel> {
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: List.generate(
                   widget.photoUrls.length,
-                  (i) => _PageDot(isActive: i == _currentPage),
+                  (i) => _GoldPageDot(isActive: i == _currentPage),
                 ),
               ),
             ),
@@ -1338,21 +1497,30 @@ class _PhotoCarouselState extends State<_PhotoCarousel> {
   }
 }
 
-class _PageDot extends StatelessWidget {
+class _GoldPageDot extends StatelessWidget {
   final bool isActive;
 
-  const _PageDot({required this.isActive});
+  const _GoldPageDot({required this.isActive});
 
   @override
   Widget build(BuildContext context) {
+    final tm = context.tm;
+
     return AnimatedContainer(
-      duration: const Duration(milliseconds: 200),
-      margin: const EdgeInsets.symmetric(horizontal: 3),
-      width: isActive ? 10 : 6,
-      height: 6,
+      duration: const Duration(milliseconds: 250),
+      margin: const EdgeInsets.symmetric(horizontal: 4),
+      width: isActive ? 20 : 7,
+      height: 7,
       decoration: BoxDecoration(
-        color: isActive ? Colors.white : Colors.white38,
-        borderRadius: BorderRadius.circular(3),
+        color: isActive ? tm.gold : tm.pureWhite.withValues(alpha: 0.35),
+        borderRadius: BorderRadius.circular(4),
+        boxShadow: isActive ? [
+          BoxShadow(
+            color: tm.gold.withValues(alpha: 0.4),
+            blurRadius: 6,
+            offset: const Offset(0, 1),
+          ),
+        ] : [],
       ),
     );
   }

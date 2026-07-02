@@ -25,11 +25,12 @@ class BookingRepository {
     required double amount,
     String? currency,
   }) async {
-    final result = await _api.initiateBookingPayment(bookingId, {
+    final body = <String, dynamic>{
       'payment_method': paymentMethod,
       'amount': amount,
-      if (currency != null) 'currency': currency,
-    });
+    };
+    if (currency != null) body['currency'] = currency;
+    final result = await _api.initiateBookingPayment(bookingId, body);
     return result.data;
   }
 

@@ -2,8 +2,12 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:shimmer/shimmer.dart';
 
+import '../../../../app/app_theme.dart';
+import '../../../../core/theme/design_tokens.dart';
+import '../../../../core/widgets/premium_widgets.dart';
 import '../../data/models/place_model.dart';
 import '../../logic/explore_cubit.dart';
 import '../../logic/explore_state.dart';
@@ -16,6 +20,8 @@ class ExploreScreen extends StatefulWidget {
 }
 
 class _ExploreScreenState extends State<ExploreScreen> {
+  TourMateColors get tm => context.tm;
+
   final TextEditingController _searchController = TextEditingController();
   final FocusNode _searchFocusNode = FocusNode();
   bool _isSearchActive = false;
@@ -45,19 +51,28 @@ class _ExploreScreenState extends State<ExploreScreen> {
     final cubit = context.read<ExploreCubit>();
 
     return Scaffold(
-      backgroundColor: Colors.white,
+      backgroundColor: tm.nearWhite,
       appBar: AppBar(
-        backgroundColor: Colors.white,
+        backgroundColor: tm.pureWhite,
         elevation: 0,
-        title: const Text(
+        scrolledUnderElevation: 0.5,
+        title: Text(
           'Explore',
-          style: TextStyle(
+          style: GoogleFonts.inter(
             fontSize: 22,
-            fontWeight: FontWeight.bold,
-            color: Colors.black,
+            fontWeight: FontWeight.w700,
+            color: tm.textPrimary,
+            letterSpacing: -0.3,
           ),
         ),
         centerTitle: false,
+        bottom: PreferredSize(
+          preferredSize: const Size.fromHeight(1),
+          child: Container(
+            color: tm.divider,
+            height: 0.5,
+          ),
+        ),
       ),
       body: Column(
         children: [
@@ -84,9 +99,7 @@ class _ExploreScreenState extends State<ExploreScreen> {
               builder: (context, state) {
                 return state.when(
                   initial: () => const SizedBox(),
-                  loading: () => const Center(
-                    child: CircularProgressIndicator(color: Colors.black),
-                  ),
+                  loading: () => const TMLoadingIndicator(message: 'Loading places...'),
                   loaded: (
                     places,
                     total,
@@ -97,7 +110,7 @@ class _ExploreScreenState extends State<ExploreScreen> {
                     savedPlaceIds,
                   ) {
                     return RefreshIndicator(
-                      color: Colors.black,
+                      color: tm.textPrimary,
                       onRefresh: () async {
                         if (_isSearchActive && _searchController.text.isNotEmpty) {
                           cubit.searchPlaces(_searchController.text);
@@ -119,30 +132,26 @@ class _ExploreScreenState extends State<ExploreScreen> {
                           // ── Results count ─────────────────────────
                           SliverToBoxAdapter(
                             child: Padding(
-                              padding: const EdgeInsets.fromLTRB(20, 8, 20, 4),
+                              padding: const EdgeInsets.fromLTRB(Spacing.xl4, Spacing.md, Spacing.xl4, Spacing.xs),
                               child: Row(
                                 children: [
                                   Text(
                                     total > 0
                                         ? '$total place${total > 1 ? 's' : ''} found'
                                         : 'No places found',
-                                    style: TextStyle(
+                                    style: GoogleFonts.inter(
                                       fontSize: 13,
-                                      color: Colors.grey[500],
+                                      color: tm.textTertiary,
                                       fontWeight: FontWeight.w500,
                                     ),
                                   ),
                                   if (_isSearchActive && _searchController.text.isNotEmpty) ...[
-                                    const SizedBox(width: 8),
-                                    Icon(Icons.auto_awesome, size: 14, color: Colors.indigo[400]),
-                                    const SizedBox(width: 4),
-                                    Text(
-                                      'Semantic search',
-                                      style: TextStyle(
-                                        fontSize: 11,
-                                        color: Colors.indigo[400],
-                                        fontWeight: FontWeight.w500,
-                                      ),
+                                    const SizedBox(width: Spacing.md),
+                                    TMBadge(
+                                      label: 'AI Search',
+                                      icon: Icons.auto_awesome,
+                                      gold: true,
+                                      fontSize: 10,
                                     ),
                                   ],
                                 ],
@@ -154,7 +163,7 @@ class _ExploreScreenState extends State<ExploreScreen> {
                           if (isLoadingResults)
                             // Show shimmer skeleton while searching
                             SliverPadding(
-                              padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
+                              padding: const EdgeInsets.fromLTRB(Spacing.xl3, Spacing.xs, Spacing.xl3, Spacing.xl5),
                               sliver: SliverList(
                                 delegate: SliverChildBuilderDelegate(
                                   (_, index) => const _ShimmerPlaceCard(),
@@ -203,7 +212,7 @@ class _ExploreScreenState extends State<ExploreScreen> {
                             )
                           else
                             SliverPadding(
-                              padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
+                              padding: const EdgeInsets.fromLTRB(Spacing.xl3, Spacing.xs, Spacing.xl3, Spacing.xl5),
                               sliver: SliverList(
                                 delegate: SliverChildBuilderDelegate(
                                   (context, index) => _PlaceCard(
@@ -219,47 +228,9 @@ class _ExploreScreenState extends State<ExploreScreen> {
                       ),
                     );
                   },
-                  error: (message) => Center(
-                    child: Padding(
-                      padding: const EdgeInsets.all(24),
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(Icons.cloud_off, size: 64, color: Colors.grey[300]),
-                          const SizedBox(height: 16),
-                          Text(
-                            "Couldn't load places",
-                            style: TextStyle(
-                              fontSize: 18,
-                              fontWeight: FontWeight.bold,
-                              color: Colors.grey[800],
-                            ),
-                          ),
-                          const SizedBox(height: 8),
-                          Text(
-                            message,
-                            textAlign: TextAlign.center,
-                            style: TextStyle(color: Colors.grey[600], fontSize: 13),
-                          ),
-                          const SizedBox(height: 24),
-                          ElevatedButton(
-                            onPressed: () => cubit.init(),
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: Colors.black,
-                              foregroundColor: Colors.white,
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(12),
-                              ),
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 24,
-                                vertical: 12,
-                              ),
-                            ),
-                            child: const Text('Try Again'),
-                          ),
-                        ],
-                      ),
-                    ),
+                  error: (message) => TMErrorState(
+                    message: message,
+                    onRetry: () => cubit.init(),
                   ),
                 );
               },
@@ -272,25 +243,44 @@ class _ExploreScreenState extends State<ExploreScreen> {
 
   Widget _buildSearchBar(ExploreCubit cubit) {
     return Container(
-      padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
-      child: Container(
-        height: 48,
+      padding: const EdgeInsets.fromLTRB(Spacing.xl3, Spacing.md, Spacing.xl3, Spacing.xl2),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        height: 50,
         decoration: BoxDecoration(
-          color: Colors.grey.shade50,
-          borderRadius: BorderRadius.circular(14),
+          color: tm.pureWhite,
+          borderRadius: BorderRadius.circular(RadiusTokens.xl2),
           border: Border.all(
-            color: _isSearchActive ? Colors.indigo.shade200 : Colors.grey.shade200,
+            color: _isSearchFocused
+                ? tm.gold.withValues(alpha: 0.5)
+                : tm.borderLight,
+            width: _isSearchFocused ? 1.5 : 1.0,
           ),
+          boxShadow: _isSearchFocused
+              ? [
+                  BoxShadow(
+                    color: tm.gold.withValues(alpha: 0.06),
+                    blurRadius: 12,
+                    offset: const Offset(0, 4),
+                  ),
+                ]
+              : [
+                  BoxShadow(
+                    color: tm.pureBlack.withValues(alpha: 0.03),
+                    blurRadius: 4,
+                    offset: const Offset(0, 2),
+                  ),
+                ],
         ),
         child: Row(
           children: [
-            const SizedBox(width: 14),
+            const SizedBox(width: Spacing.xl3),
             Icon(
               Icons.auto_awesome_outlined,
               size: 18,
-              color: _isSearchActive ? Colors.indigo[400] : Colors.grey[400],
+              color: _isSearchFocused ? tm.gold : tm.textTertiary,
             ),
-            const SizedBox(width: 10),
+            const SizedBox(width: Spacing.lg),
             Expanded(
               child: TextField(
                 controller: _searchController,
@@ -302,15 +292,15 @@ class _ExploreScreenState extends State<ExploreScreen> {
                   }
                   cubit.searchPlaces(query);
                 },
-                style: const TextStyle(fontSize: 14),
+                style: GoogleFonts.inter(fontSize: 14, color: tm.textPrimary),
                 decoration: InputDecoration(
-                  hintText: 'Search naturally... e.g. "romantic dinner with sea view"',
-                  hintStyle: TextStyle(
+                  hintText: 'Search naturally...',
+                  hintStyle: GoogleFonts.inter(
                     fontSize: 13,
-                    color: Colors.grey[400],
+                    color: tm.textTertiary,
                   ),
                   border: InputBorder.none,
-                  contentPadding: const EdgeInsets.symmetric(vertical: 12),
+                  contentPadding: const EdgeInsets.symmetric(vertical: Spacing.xl),
                 ),
               ),
             ),
@@ -323,15 +313,16 @@ class _ExploreScreenState extends State<ExploreScreen> {
                   cubit.clearSearch();
                 },
                 child: Container(
-                  padding: const EdgeInsets.all(6),
+                  margin: const EdgeInsets.only(right: Spacing.md),
+                  padding: const EdgeInsets.all(Spacing.sm),
                   decoration: BoxDecoration(
-                    color: Colors.grey.shade200,
+                    color: tm.surface,
                     shape: BoxShape.circle,
                   ),
-                  child: Icon(Icons.close, size: 16, color: Colors.grey[600]),
+                  child: Icon(Icons.close, size: 16, color: tm.textSecondary),
                 ),
               ),
-            const SizedBox(width: 12),
+            const SizedBox(width: Spacing.md),
           ],
         ),
       ),
@@ -360,54 +351,60 @@ class _FilterBar extends StatelessWidget {
 
   String? _categoryToParam(String label) {
     switch (label.toLowerCase()) {
-      case 'all':
-        return null;
-      case 'attraction':
-        return 'attraction';
-      case 'restaurant':
-        return 'restaurant';
-      case 'hotel':
-        return 'hotel';
-      default:
-        return null;
+      case 'all': return null;
+      case 'attraction': return 'attraction';
+      case 'restaurant': return 'restaurant';
+      case 'hotel': return 'hotel';
+      default: return null;
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    final tm = context.tm;
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+      padding: const EdgeInsets.fromLTRB(Spacing.xl3, Spacing.xs, Spacing.xl3, Spacing.md),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // ── City dropdown ───────────────────────────────────
+          // ── City dropdown — gold-accented ─────────────────
           Container(
-            padding: const EdgeInsets.symmetric(horizontal: 14),
+            padding: const EdgeInsets.symmetric(horizontal: Spacing.xl2),
             decoration: BoxDecoration(
-              color: Colors.grey.shade50,
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: Colors.grey.shade200),
+              color: tm.pureWhite,
+              borderRadius: BorderRadius.circular(RadiusTokens.xl),
+              border: Border.all(color: tm.borderLight),
             ),
             child: DropdownButtonHideUnderline(
               child: DropdownButton<String?>(
                 value: selectedCity,
                 isExpanded: true,
                 hint: Text(
-                  '📍  All cities',
-                  style: TextStyle(color: Colors.grey[600], fontSize: 14),
+                  'All cities',
+                  style: GoogleFonts.inter(color: tm.textTertiary, fontSize: 14),
                 ),
-                icon: Icon(Icons.expand_more, color: Colors.grey[600]),
+                icon: Icon(Icons.expand_more, color: tm.textTertiary),
+                style: GoogleFonts.inter(fontSize: 14, color: tm.textPrimary, fontWeight: FontWeight.w500),
                 items: [
                   DropdownMenuItem<String?>(
                     value: null,
-                    child: Text('📍  All cities',
-                        style: TextStyle(color: Colors.grey[700], fontSize: 14)),
+                    child: Row(
+                      children: [
+                        Icon(Icons.explore_outlined, size: 16, color: tm.gold),
+                        const SizedBox(width: Spacing.md),
+                        Text('All cities', style: GoogleFonts.inter(color: tm.textTertiary, fontSize: 14)),
+                      ],
+                    ),
                   ),
                   ...cities.map((city) => DropdownMenuItem<String?>(
                         value: city,
-                        child: Text('📍  $city',
-                            style: const TextStyle(
-                                color: Colors.black87, fontSize: 14)),
+                        child: Row(
+                          children: [
+                            Icon(Icons.location_city_outlined, size: 16, color: tm.textTertiary),
+                            const SizedBox(width: Spacing.md),
+                            Text(city, style: GoogleFonts.inter(color: tm.textPrimary, fontSize: 14)),
+                          ],
+                        ),
                       )),
                 ],
                 onChanged: onCityChanged,
@@ -415,37 +412,49 @@ class _FilterBar extends StatelessWidget {
             ),
           ),
 
-          const SizedBox(height: 12),
+          const SizedBox(height: Spacing.xl2),
 
-          // ── Category chips ────────────────────────────────
+          // ── Category chips — gold accent when selected ────
           SizedBox(
-            height: 36,
+            height: 38,
             child: ListView(
               scrollDirection: Axis.horizontal,
               children: _categories.map((label) {
                 final param = _categoryToParam(label);
                 final isSelected = selectedCategory == param;
                 return Padding(
-                  padding: const EdgeInsets.only(right: 8),
+                  padding: const EdgeInsets.only(right: Spacing.md),
                   child: GestureDetector(
                     onTap: () => onCategoryChanged(param),
                     child: AnimatedContainer(
-                      duration: const Duration(milliseconds: 200),
-                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      duration: const Duration(milliseconds: 250),
+                      curve: Curves.easeOutCubic,
+                      padding: const EdgeInsets.symmetric(horizontal: Spacing.xl4, vertical: Spacing.md),
                       decoration: BoxDecoration(
-                        color: isSelected ? Colors.black : Colors.grey.shade100,
-                        borderRadius: BorderRadius.circular(20),
+                        color: isSelected ? tm.pureBlack : tm.surface,
+                        borderRadius: BorderRadius.circular(RadiusTokens.full),
+                        border: isSelected
+                            ? Border.all(color: tm.gold.withValues(alpha: 0.3), width: 1)
+                            : Border.all(color: tm.borderLight),
                       ),
                       alignment: Alignment.center,
-                      child: Text(
-                        label,
-                        style: TextStyle(
-                          fontSize: 13,
-                          fontWeight:
-                              isSelected ? FontWeight.w600 : FontWeight.w500,
-                          color:
-                              isSelected ? Colors.white : Colors.grey[700],
-                        ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          if (isSelected)
+                            Padding(
+                              padding: const EdgeInsets.only(right: Spacing.sm),
+                              child: Icon(Icons.auto_awesome, size: 12, color: tm.goldLight),
+                            ),
+                          Text(
+                            label,
+                            style: GoogleFonts.inter(
+                              fontSize: 13,
+                              fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
+                              color: isSelected ? tm.pureWhite : tm.textSecondary,
+                            ),
+                          ),
+                        ],
                       ),
                     ),
                   ),
@@ -474,27 +483,10 @@ class _PlaceCard extends StatelessWidget {
 
   String get _categoryLabel {
     switch (place.category.toLowerCase()) {
-      case 'hotel':
-        return 'Hotel';
-      case 'restaurant':
-        return 'Restaurant';
-      case 'attraction':
-        return 'Attraction';
-      default:
-        return place.category.isEmpty ? 'Place' : place.category;
-    }
-  }
-
-  Color get _categoryColor {
-    switch (place.category.toLowerCase()) {
-      case 'hotel':
-        return const Color(0xFF2D3436);
-      case 'restaurant':
-        return const Color(0xFF636E72);
-      case 'attraction':
-        return const Color(0xFF0984E3);
-      default:
-        return Colors.grey;
+      case 'hotel': return 'Hotel';
+      case 'restaurant': return 'Restaurant';
+      case 'attraction': return 'Attraction';
+      default: return place.category.isEmpty ? 'Place' : place.category;
     }
   }
 
@@ -513,146 +505,160 @@ class _PlaceCard extends StatelessWidget {
   String get _locationText {
     final parts = <String>[];
     if (place.city != null && place.city!.isNotEmpty) parts.add(place.city!);
-    if (place.country != null && place.country!.isNotEmpty) {
-      parts.add(place.country!);
-    }
+    if (place.country != null && place.country!.isNotEmpty) parts.add(place.country!);
     return parts.join(', ');
   }
 
   @override
   Widget build(BuildContext context) {
+    final tm = context.tm;
     return Padding(
-      padding: const EdgeInsets.only(bottom: 16),
+      padding: const EdgeInsets.only(bottom: Spacing.xl3),
       child: Material(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
+        color: tm.pureWhite,
+        borderRadius: BorderRadius.circular(RadiusTokens.xl3),
         elevation: 0,
         child: InkWell(
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: BorderRadius.circular(RadiusTokens.xl3),
           onTap: () {
             if (place.placeId.isNotEmpty) {
-              Navigator.pushNamed(
-                context,
-                '/place-detail',
-                arguments: place.placeId,
-              );
+              Navigator.pushNamed(context, '/place-detail', arguments: place.placeId);
             }
           },
           child: Container(
             decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: Colors.grey.shade200),
+              borderRadius: BorderRadius.circular(RadiusTokens.xl3),
+              border: Border.all(color: tm.borderLight),
+              boxShadow: [
+                BoxShadow(
+                  color: tm.pureBlack.withValues(alpha: 0.04),
+                  blurRadius: 8,
+                  offset: const Offset(0, 2),
+                ),
+              ],
             ),
             clipBehavior: Clip.antiAlias,
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // ── Photo with heart overlay ──────────────────
+                // ── Photo with gold-accented save button ──────
                 if (place.hasPhoto)
-                  SizedBox(
-                    height: 180,
-                    width: double.infinity,
-                    child: Stack(
-                      fit: StackFit.expand,
-                      children: [
-                        Image.network(
-                          place.firstPhoto,
-                          fit: BoxFit.cover,
-                          loadingBuilder: (_, child, progress) {
-                            if (progress == null) return child;
-                            return Container(
-                              color: Colors.grey[100],
-                              child: const Center(
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                  color: Colors.black26,
-                                ),
-                              ),
-                            );
-                          },
-                          errorBuilder: (_, _, _) => Container(
-                            color: Colors.grey[100],
-                            child: Icon(Icons.image,
-                                color: Colors.grey[300], size: 48),
+                  Hero(
+                    tag: 'place-photo-${place.placeId}',
+                    child: SizedBox(
+                      height: 190,
+                      width: double.infinity,
+                      child: Stack(
+                        fit: StackFit.expand,
+                        children: [
+                          Image.network(
+                            place.firstPhoto,
+                            fit: BoxFit.cover,
+                            loadingBuilder: (_, child, progress) {
+                              if (progress == null) return child;
+                              return Container(color: tm.surface, child: const Center(child: CircularProgressIndicator(strokeWidth: 2, color: Colors.black26)));
+                            },
+                            errorBuilder: (_, _, _) => Container(
+                              color: tm.surface,
+                              child: Icon(Icons.image, color: tm.textTertiary, size: 48),
+                            ),
                           ),
-                        ),
-                        // Heart overlay
-                        Positioned(
-                          top: 8,
-                          right: 8,
-                          child: Material(
-                            color: Colors.transparent,
-                            child: InkWell(
-                              borderRadius: BorderRadius.circular(20),
-                              onTap: onToggleSave,
-                              child: AnimatedContainer(
-                                duration: const Duration(milliseconds: 200),
-                                padding: const EdgeInsets.all(8),
-                                decoration: BoxDecoration(
-                                  color: Colors.white.withValues(alpha: 0.85),
-                                  shape: BoxShape.circle,
-                                ),
-                                child: Icon(
-                                  isSaved
-                                      ? Icons.favorite
-                                      : Icons.favorite_border,
-                                  size: 22,
-                                  color: isSaved
-                                      ? Colors.red[400]
-                                      : Colors.grey[600],
+                          // Gradient overlay at bottom
+                          Positioned(
+                            bottom: 0,
+                            left: 0,
+                            right: 0,
+                            height: 60,
+                            child: Container(
+                              decoration: BoxDecoration(
+                                gradient: LinearGradient(
+                                  begin: Alignment.bottomCenter,
+                                  end: Alignment.topCenter,
+                                  colors: [
+                                    tm.pureBlack.withValues(alpha: 0.4),
+                                    Colors.transparent,
+                                  ],
                                 ),
                               ),
                             ),
                           ),
-                        ),
-                      ],
+                          // Save button with gold accent
+                          Positioned(
+                            top: Spacing.lg,
+                            right: Spacing.lg,
+                            child: Material(
+                              color: Colors.transparent,
+                              child: InkWell(
+                                borderRadius: BorderRadius.circular(RadiusTokens.xl4),
+                                onTap: onToggleSave,
+                                child: AnimatedContainer(
+                                  duration: const Duration(milliseconds: 250),
+                                  curve: Curves.easeOutCubic,
+                                  padding: const EdgeInsets.all(Spacing.lg),
+                                  decoration: BoxDecoration(
+                                    color: tm.pureWhite.withValues(alpha: 0.9),
+                                    shape: BoxShape.circle,
+                                    border: isSaved
+                                        ? Border.all(color: tm.gold.withValues(alpha: 0.5), width: 1.5)
+                                        : null,
+                                  ),
+                                  child: Icon(
+                                    isSaved ? Icons.favorite : Icons.favorite_border,
+                                    size: 20,
+                                    color: isSaved ? tm.gold : tm.textSecondary,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                          // Rating badge on photo
+                          if (_ratingText.isNotEmpty)
+                            Positioned(
+                              bottom: Spacing.lg,
+                              left: Spacing.lg,
+                              child: TMRatingBadge(rating: place.rating, reviewCount: place.reviewCount > 0 ? place.reviewCount : null),
+                            ),
+                        ],
+                      ),
                     ),
                   )
                 else
-                  Container(
-                    height: 140,
+                  Hero(
+                    tag: 'place-photo-${place.placeId}',
+                    child: Container(
+                      height: 150,
                     width: double.infinity,
-                    color: Colors.grey[50],
+                    color: tm.surface,
                     child: Stack(
                       children: [
                         Center(
                           child: Column(
                             mainAxisAlignment: MainAxisAlignment.center,
                             children: [
-                              Icon(Icons.image_outlined,
-                                  size: 40, color: Colors.grey[300]),
-                              const SizedBox(height: 8),
-                              Text(
-                                'No image available',
-                                style: TextStyle(
-                                    fontSize: 12, color: Colors.grey[400]),
-                              ),
+                              Icon(Icons.image_outlined, size: 40, color: tm.borderLight),
+                              const SizedBox(height: Spacing.md),
+                              Text('No image available', style: GoogleFonts.inter(fontSize: 12, color: tm.textTertiary)),
                             ],
                           ),
                         ),
-                        // Heart overlay (also on no-image placeholder)
                         Positioned(
-                          top: 8,
-                          right: 8,
+                          top: Spacing.lg,
+                          right: Spacing.lg,
                           child: Material(
                             color: Colors.transparent,
                             child: InkWell(
-                              borderRadius: BorderRadius.circular(20),
+                              borderRadius: BorderRadius.circular(RadiusTokens.xl4),
                               onTap: onToggleSave,
                               child: Container(
-                                padding: const EdgeInsets.all(8),
+                                padding: const EdgeInsets.all(Spacing.lg),
                                 decoration: BoxDecoration(
-                                  color: Colors.white.withValues(alpha: 0.85),
+                                  color: tm.pureWhite.withValues(alpha: 0.9),
                                   shape: BoxShape.circle,
                                 ),
                                 child: Icon(
-                                  isSaved
-                                      ? Icons.favorite
-                                      : Icons.favorite_border,
-                                  size: 22,
-                                  color: isSaved
-                                      ? Colors.red[400]
-                                      : Colors.grey[600],
+                                  isSaved ? Icons.favorite : Icons.favorite_border,
+                                  size: 20,
+                                  color: isSaved ? tm.gold : tm.textSecondary,
                                 ),
                               ),
                             ),
@@ -661,88 +667,61 @@ class _PlaceCard extends StatelessWidget {
                       ],
                     ),
                   ),
+                  ),
 
+                // ── Card content ─────────────────────────────
                 Padding(
-                  padding: const EdgeInsets.all(14),
+                  padding: const EdgeInsets.all(Spacing.xl3),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
+                      // Category + rating row
                       Row(
                         children: [
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 8,
-                              vertical: 3,
-                            ),
-                            decoration: BoxDecoration(
-                              color: _categoryColor.withValues(alpha: 0.1),
-                              borderRadius: BorderRadius.circular(6),
-                            ),
-                            child: Text(
-                              _categoryLabel,
-                              style: TextStyle(
-                                fontSize: 11,
-                                fontWeight: FontWeight.w600,
-                                color: _categoryColor,
-                              ),
-                            ),
-                          ),
+                          TMBadge(label: _categoryLabel, icon: Icons.sell_outlined),
                           const Spacer(),
-                          if (_ratingText.isNotEmpty)
-                            Row(
-                              children: [
-                                Icon(Icons.star_rounded,
-                                    size: 16, color: Colors.amber[700]),
-                                const SizedBox(width: 3),
-                                Text(
-                                  _ratingText,
-                                  style: const TextStyle(
-                                    fontSize: 13,
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                                ),
-                              ],
-                            ),
+                          if (_ratingText.isNotEmpty && !place.hasPhoto)
+                            TMRatingBadge(rating: place.rating),
                         ],
                       ),
-                      const SizedBox(height: 10),
+                      const SizedBox(height: Spacing.sm),
+                      // Name
                       Text(
                         place.name,
-                        style: const TextStyle(
+                        style: GoogleFonts.inter(
                           fontSize: 16,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.black87,
+                          fontWeight: FontWeight.w700,
+                          color: tm.textPrimary,
+                          letterSpacing: -0.2,
                         ),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                       ),
+                      // Description
                       if (_descriptionSnippet.isNotEmpty) ...[
-                        const SizedBox(height: 6),
+                        const SizedBox(height: Spacing.sm),
                         Text(
                           _descriptionSnippet,
-                          style: TextStyle(
+                          style: GoogleFonts.inter(
                             fontSize: 13,
-                            color: Colors.grey[600],
-                            height: 1.3,
+                            color: tm.textSecondary,
+                            height: 1.35,
                           ),
                           maxLines: 2,
                           overflow: TextOverflow.ellipsis,
                         ),
                       ],
+                      // Location
                       if (_locationText.isNotEmpty) ...[
-                        const SizedBox(height: 8),
+                        const SizedBox(height: Spacing.sm),
                         Row(
                           children: [
-                            Icon(Icons.location_on_outlined,
-                                size: 14, color: Colors.grey[400]),
-                            const SizedBox(width: 4),
-                            Expanded(
-                              child: Text(
-                                _locationText,
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  color: Colors.grey[500],
-                                ),
+                            Icon(Icons.location_on_outlined, size: 14, color: tm.textTertiary),
+                          const SizedBox(width: Spacing.xs),
+                          Expanded(
+                            child: Text(
+                              _locationText,
+                                style: GoogleFonts.inter(fontSize: 12, color: tm.textTertiary),
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
                               ),
@@ -812,62 +791,71 @@ class _EmptyState extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final tm = context.tm;
     return Center(
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 32),
+        padding: const EdgeInsets.symmetric(horizontal: Spacing.xl7),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            // Icon
+            // Icon with gold gradient
             Container(
               width: 80,
               height: 80,
               decoration: BoxDecoration(
-                color: isSearch ? Colors.indigo.shade50 : Colors.grey.shade50,
+                gradient: LinearGradient(
+                  colors: [
+                    tm.gold.withValues(alpha: 0.08),
+                    tm.gold.withValues(alpha: 0.02),
+                  ],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
                 shape: BoxShape.circle,
+                border: Border.all(color: tm.gold.withValues(alpha: 0.12)),
               ),
               child: Icon(
                 isSearch ? Icons.search_off_rounded : Icons.filter_list_off_rounded,
                 size: 36,
-                color: isSearch ? Colors.indigo[300] : Colors.grey[400],
+                color: tm.gold.withValues(alpha: 0.6),
               ),
             ),
-            const SizedBox(height: 20),
+            const SizedBox(height: Spacing.xl4),
 
             // Title
             Text(
               isSearch ? 'No results found' : 'No places match',
-              style: const TextStyle(
+              style: GoogleFonts.inter(
                 fontSize: 18,
                 fontWeight: FontWeight.w700,
-                color: Colors.black87,
+                color: tm.textPrimary,
               ),
               textAlign: TextAlign.center,
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: Spacing.md),
 
             // Subtitle
             Text(
               isSearch
-                  ?              'We couldn\'t find places for "${query.length > 40 ? '${query.substring(0, 37)}...' : query}"'
+                  ? 'We couldn\'t find places for "${query.length > 40 ? '${query.substring(0, 37)}...' : query}"'
                   : 'Try broadening your filters or search for something else',
-              style: TextStyle(
+              style: GoogleFonts.inter(
                 fontSize: 13,
-                color: Colors.grey[500],
+                color: tm.textTertiary,
                 height: 1.4,
               ),
               textAlign: TextAlign.center,
             ),
-            const SizedBox(height: 20),
+            const SizedBox(height: Spacing.xl4),
 
             // Action buttons
             if (isSearch)
               Wrap(
-                spacing: 8,
-                runSpacing: 8,
+                spacing: Spacing.md,
+                runSpacing: Spacing.md,
                 alignment: WrapAlignment.center,
                 children: [
-                  _actionChip(
+                  _actionChip(tm,
                     icon: Icons.clear_all,
                     label: 'Clear search',
                     onTap: onClearSearch,
@@ -877,18 +865,18 @@ class _EmptyState extends StatelessWidget {
               )
             else
               Wrap(
-                spacing: 8,
-                runSpacing: 8,
+                spacing: Spacing.md,
+                runSpacing: Spacing.md,
                 alignment: WrapAlignment.center,
                 children: [
                   if (selectedCategory != null || selectedCity != null)
-                    _actionChip(
+                    _actionChip(tm,
                       icon: Icons.restart_alt,
                       label: 'Reset filters',
                       onTap: onResetFilters,
                       isPrimary: true,
                     ),
-                  _actionChip(
+                  _actionChip(tm,
                     icon: Icons.auto_awesome_outlined,
                     label: 'Try semantic search',
                     onTap: () {
@@ -899,23 +887,23 @@ class _EmptyState extends StatelessWidget {
                 ],
               ),
 
-            const SizedBox(height: 24),
+            const SizedBox(height: Spacing.xl5),
 
-            // Suggestion chips
+            // Suggestion chips header
             Text(
               isSearch ? 'Try searching for:' : 'Quick suggestions:',
-              style: TextStyle(
+              style: GoogleFonts.inter(
                 fontSize: 12,
-                color: Colors.grey[400],
+                color: tm.textTertiary,
                 fontWeight: FontWeight.w600,
               ),
             ),
-            const SizedBox(height: 10),
+            const SizedBox(height: Spacing.lg),
             Wrap(
               spacing: 8,
               runSpacing: 8,
               alignment: WrapAlignment.center,
-              children: _suggestions.map((s) => _suggestionChip(s)).toList(),
+              children: _suggestions.map((s) => _suggestionChip(tm, s)).toList(),
             ),
           ],
         ),
@@ -923,7 +911,7 @@ class _EmptyState extends StatelessWidget {
     );
   }
 
-  Widget _actionChip({
+  Widget _actionChip(TourMateColors tm, {
     required IconData icon,
     required String label,
     required VoidCallback onTap,
@@ -932,25 +920,25 @@ class _EmptyState extends StatelessWidget {
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+        padding: const EdgeInsets.symmetric(horizontal: Spacing.xl2, vertical: Spacing.md),
         decoration: BoxDecoration(
-          color: isPrimary ? Colors.black : Colors.white,
-          borderRadius: BorderRadius.circular(20),
+          color: isPrimary ? tm.pureBlack : tm.pureWhite,
+          borderRadius: BorderRadius.circular(RadiusTokens.xl4),
           border: Border.all(
-            color: isPrimary ? Colors.black : Colors.grey.shade300,
+            color: isPrimary ? tm.pureBlack : tm.borderLight,
           ),
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(icon, size: 14, color: isPrimary ? Colors.white : Colors.grey[600]),
-            const SizedBox(width: 6),
+            Icon(icon, size: 14,            color: isPrimary ? tm.pureWhite : tm.gold),
+            const SizedBox(width: Spacing.sm),
             Text(
               label,
-              style: TextStyle(
+              style: GoogleFonts.inter(
                 fontSize: 12,
                 fontWeight: FontWeight.w600,
-                color: isPrimary ? Colors.white : Colors.grey[700],
+                color: isPrimary ? tm.pureWhite : tm.textPrimary,
               ),
             ),
           ],
@@ -959,21 +947,22 @@ class _EmptyState extends StatelessWidget {
     );
   }
 
-  Widget _suggestionChip(String text) {
+  Widget _suggestionChip(TourMateColors tm, String text) {
     return GestureDetector(
       onTap: () => onSuggestionTap(text),
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+        padding: const EdgeInsets.symmetric(horizontal: Spacing.xl, vertical: Spacing.sm),
         decoration: BoxDecoration(
-          color: Colors.grey.shade50,
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: Colors.grey.shade200),
+          color: tm.surface,
+          borderRadius: BorderRadius.circular(RadiusTokens.xl3),
+          border: Border.all(color: tm.borderLight),
         ),
         child: Text(
           text,
-          style: TextStyle(
+          style: GoogleFonts.inter(
             fontSize: 12,
-            color: Colors.grey[600],
+            color: tm.textSecondary,
+            fontWeight: FontWeight.w500,
           ),
         ),
       ),
@@ -998,8 +987,9 @@ class _RecentSearchOverlay extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final tm = context.tm;
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      padding: const EdgeInsets.fromLTRB(Spacing.xl3, Spacing.sm, Spacing.xl3, Spacing.sm),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisSize: MainAxisSize.min,
@@ -1007,32 +997,46 @@ class _RecentSearchOverlay extends StatelessWidget {
           // Header row
           Row(
             children: [
-              Icon(Icons.history, size: 14, color: Colors.grey[400]),
-              const SizedBox(width: 6),
+              Container(
+                padding: const EdgeInsets.all(Spacing.sm),
+                decoration: BoxDecoration(
+                  color: tm.gold.withValues(alpha: 0.06),
+                  borderRadius: BorderRadius.circular(RadiusTokens.sm),
+                ),
+                child: Icon(Icons.history, size: 13, color: tm.gold),
+              ),
+              const SizedBox(width: Spacing.md),
               Text(
                 'Recent searches',
-                style: TextStyle(
+                style: GoogleFonts.inter(
                   fontSize: 12,
                   fontWeight: FontWeight.w600,
-                  color: Colors.grey[500],
+                  color: tm.textTertiary,
                 ),
               ),
               const Spacer(),
               GestureDetector(
                 onTap: onClearAll,
-                child: Text(
-                  'Clear all',
-                  style: TextStyle(
-                    fontSize: 11,
-                    color: Colors.grey[400],
-                    fontWeight: FontWeight.w500,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: Spacing.lg, vertical: Spacing.xs),
+                  decoration: BoxDecoration(
+                    color: tm.gold.withValues(alpha: 0.06),
+                    borderRadius: BorderRadius.circular(RadiusTokens.md),
+                  ),
+                  child: Text(
+                    'Clear all',
+                    style: GoogleFonts.inter(
+                      fontSize: 11,
+                      color: tm.gold,
+                      fontWeight: FontWeight.w600,
+                    ),
                   ),
                 ),
               ),
             ],
           ),
-          const SizedBox(height: 8),
-          // Search chips
+          const SizedBox(height: Spacing.sm),
+          // Search chips with gold accent
           Wrap(
             spacing: 8,
             runSpacing: 8,
@@ -1040,35 +1044,50 @@ class _RecentSearchOverlay extends StatelessWidget {
               return GestureDetector(
                 onTap: () => onSearchTap(query),
                 child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+                  padding: const EdgeInsets.symmetric(horizontal: Spacing.xl, vertical: Spacing.sm),
                   decoration: BoxDecoration(
-                    color: Colors.grey.shade50,
-                    borderRadius: BorderRadius.circular(16),
-                    border: Border.all(color: Colors.grey.shade200),
+                    color: tm.pureWhite,
+                    borderRadius: BorderRadius.circular(RadiusTokens.xl3),
+                    border: Border.all(color: tm.borderLight),
+                    boxShadow: [
+                      BoxShadow(
+                        color: tm.pureBlack.withValues(alpha: 0.03),
+                        blurRadius: 4,
+                        offset: const Offset(0, 1),
+                      ),
+                    ],
                   ),
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Icon(Icons.access_time, size: 12, color: Colors.grey[400]),
-                      const SizedBox(width: 6),
+                      Icon(Icons.access_time, size: 12, color: tm.gold.withValues(alpha: 0.6)),
+                      const SizedBox(width: Spacing.sm),
                       ConstrainedBox(
                         constraints: BoxConstraints(
-                          maxWidth: MediaQuery.of(context).size.width * 0.6,
+                          maxWidth: MediaQuery.of(context).size.width * 0.55,
                         ),
                         child: Text(
                           query,
-                          style: TextStyle(
+                          style: GoogleFonts.inter(
                             fontSize: 12,
-                            color: Colors.grey[600],
+                            color: tm.textSecondary,
+                            fontWeight: FontWeight.w500,
                           ),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                         ),
                       ),
-                      const SizedBox(width: 4),
+                      const SizedBox(width: Spacing.xs),
                       GestureDetector(
                         onTap: () => onRemove(query),
-                        child: Icon(Icons.close, size: 12, color: Colors.grey[400]),
+                        child: Container(
+                          padding: const EdgeInsets.all(Spacing.xxs),
+                          decoration: BoxDecoration(
+                            color: tm.gold.withValues(alpha: 0.06),
+                            borderRadius: BorderRadius.circular(RadiusTokens.xs),
+                          ),
+                          child: Icon(Icons.close, size: 11, color: tm.gold.withValues(alpha: 0.6)),
+                        ),
                       ),
                     ],
                   ),
@@ -1089,108 +1108,47 @@ class _ShimmerPlaceCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final tm = context.tm;
     return Shimmer.fromColors(
-      baseColor: Colors.grey.shade200,
-      highlightColor: Colors.grey.shade50,
+      baseColor: tm.border,
+      highlightColor: tm.goldSurface,
       period: const Duration(milliseconds: 1500),
       child: Padding(
-        padding: const EdgeInsets.only(bottom: 16),
+        padding: const EdgeInsets.only(bottom: Spacing.xl3),
         child: Container(
           decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: Colors.grey.shade200),
+            borderRadius: BorderRadius.circular(RadiusTokens.xl3),
+            border: Border.all(color: tm.borderLight),
           ),
           clipBehavior: Clip.antiAlias,
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // ── Image skeleton ──────────────────────────
-              Container(
-                height: 180,
-                width: double.infinity,
-                color: Colors.white,
-              ),
-              // ── Text skeleton ──────────────────────────
+              Container(height: 190, width: double.infinity, color: Colors.white),
               Padding(
-                padding: const EdgeInsets.all(14),
+                padding: const EdgeInsets.all(Spacing.xl3),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    // Category badge + rating row
                     Row(
                       children: [
-                        Container(
-                          width: 70,
-                          height: 18,
-                          decoration: BoxDecoration(
-                            color: Colors.white,
-                            borderRadius: BorderRadius.circular(6),
-                          ),
-                        ),
+                        Container(width: 70, height: 18, decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(RadiusTokens.sm))),
                         const Spacer(),
-                        Container(
-                          width: 40,
-                          height: 18,
-                          decoration: BoxDecoration(
-                            color: Colors.white,
-                            borderRadius: BorderRadius.circular(6),
-                          ),
-                        ),
+                        Container(width: 50, height: 18, decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(RadiusTokens.sm))),
                       ],
                     ),
-                    const SizedBox(height: 10),
-                    // Title
-                    Container(
-                      width: double.infinity,
-                      height: 16,
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(4),
-                      ),
-                    ),
-                    const SizedBox(height: 10),
-                    // Description line 1
-                    Container(
-                      width: double.infinity,
-                      height: 12,
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(4),
-                      ),
-                    ),
-                    const SizedBox(height: 6),
-                    // Description line 2
-                    Container(
-                      width: 200,
-                      height: 12,
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(4),
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    // Location
-                    Row(
-                      children: [
-                        Container(
-                          width: 14,
-                          height: 14,
-                          decoration: const BoxDecoration(
-                            color: Colors.white,
-                            shape: BoxShape.circle,
-                          ),
-                        ),
-                        const SizedBox(width: 4),
-                        Container(
-                          width: 100,
-                          height: 12,
-                          decoration: BoxDecoration(
-                            color: Colors.white,
-                            borderRadius: BorderRadius.circular(4),
-                          ),
-                        ),
-                      ],
-                    ),
+                    const SizedBox(height: Spacing.lg),
+                    Container(width: double.infinity, height: 16, decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(RadiusTokens.xs))),
+                    const SizedBox(height: Spacing.lg),
+                    Container(width: double.infinity, height: 12, decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(4))),
+                    const SizedBox(height: Spacing.sm),
+                    Container(width: 200, height: 12, decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(RadiusTokens.xs))),
+                    const SizedBox(height: Spacing.md),
+                    Row(children: [
+                      Container(width: 14, height: 14, decoration: const BoxDecoration(color: Colors.white, shape: BoxShape.circle)),
+                      const SizedBox(width: Spacing.xs),
+                      Container(width: 100, height: 12, decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(RadiusTokens.xs))),
+                    ]),
                   ],
                 ),
               ),

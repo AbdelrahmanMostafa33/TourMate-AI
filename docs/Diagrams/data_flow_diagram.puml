@@ -1,0 +1,318 @@
+@startuml Chat_Message_Data_Flow
+skinparam backgroundColor #FEFEFE
+skinparam packageStyle rectangle
+skinparam defaultTextAlignment left
+
+title TourMate AI — Chat Message Data Flow
+caption Flutter → WebSocket → Orchestrator → Redis → Streaming Response
+
+' ═══════════════════════════════════════════════════════
+' LAYER 1: Client
+' ═══════════════════════════════════════════════════════
+
+rectangle "🌍 Client" as ClientLayer #e3f2fd {
+  rectangle "📱 Flutter Mobile App" as Flutter [
+    Opens WebSocket connection
+    Sends JSON: {"message": "...", "image": "..."}
+    Receives streaming token chunks
+    Displays typed-out text in chat UI
+  ]
+}
+
+' ═══════════════════════════════════════════════════════
+' LAYER 2: Entry
+' ═══════════════════════════════════════════════════════
+
+rectangle "🚪 Entry Layer" as EntryLayer #fff3e0 {
+  rectangle "🔌 WebSocket Manager\n(app/ws/manager.py)" as WSManager [
+    ConnectionManager
+    ─────────────────────
+    connect(key, ws): accept + store
+    disconnect(key): cleanup
+    get_lock(key): per-key async lock
+    send(key, data): send_json
+  ]
+
+  rectangle "🗺 Chat Routes\n(app/api/v1/routes/chat.py)" as ChatRoutes [
+    /ws/chat/new     → new conversation
+    /ws/chat/{trip}  → existing trip
+    GET  /chat/{trip}/history
+    GET  /chats/
+    DEL  /chat/{trip}/clear
+  ]
+
+  rectangle "🔐 Firebase Auth\n(app/core/firebase.py)" as Firebase [
+    verify_token(token)
+    → uid or None
+    → close WS on failure (4001)
+  ]
+}
+
+' ═══════════════════════════════════════════════════════
+' LAYER 3: Processing
+' ═══════════════════════════════════════════════════════
+
+rectangle "⚙️ Processing Layer" as ProcessingLayer #e8f5e9 {
+
+  rectangle "🔄 process_message_stream()" as ProcessStream [
+    1. Save user message to DB
+    2. Send "typing" to client
+    3. Load initial pool state from DB
+    4. Call handle_chat_stream()
+    5. Stream tokens to client
+    6. Execute actions (CREATE_TRIP, etc.)
+    7. Sync Redis session → DB
+    8. Persist image features
+    9. Commit transaction
+  ]
+
+  rectangle "🧠 Orchestrator\n(ai_engine/conversation/orchestrator.py)" as Orchestrator [
+    handle_chat()        → non-streaming
+    handle_chat_stream() → streaming generator
+    ───────────────────────
+    _process_message()     → error-safe wrapper
+    _process_message_inner() → main routing
+      │
+      ├─ interpret_message()  → classify intent
+      ├─ parse_image()        → VisionFeatures
+      └─ route by action:
+           plan_trip         → _handle_plan_trip()
+           modify_itinerary  → _handle_modify_itinerary()
+           search_flights    → _handle_search_flights()
+           select_hotel      → _handle_select_hotel()
+           approve_itinerary → approve logic
+           etc.
+  ]
+
+  rectangle "💬 Message Interpreter\n(ai_engine/conversation/)\nmessage_interpreter.py" as MsgInterp [
+    interpret_message(state, text)
+    → RouterResult with:
+      action: plan_trip / clarify / chat / modify / etc.
+      extracted: { destination, duration, interests, ... }
+      response: clarification text
+    ───────────────────────
+    Uses LLM to classify intent
+    Updates conversation slots
+  ]
+
+  rectangle "🗃 Conversation State\n(ai_engine/conversation/)\nconversation_state.py" as ConvState [
+    ConversationState
+    ───────────────────────
+    user_id, session_id
+    phase: GREETING → SLOT_FILLING
+           → PLAN_GENERATION
+           → ITINERARY_REVIEW
+           → FLIGHT_SELECTION
+           → HOTEL_SELECTION
+           → BOOKING → COMPLETED
+    slots: TripSlots
+    history: message list
+    itinerary: planned trip
+    candidate_places
+    filtered_places
+    ───────────────────────
+    to_dict() / from_dict()
+    transition_to(phase)
+  ]
+
+  rectangle "🗄 Redis Session Manager\n(ai_engine/conversation/)\nredis_memory.py" as RedisMgr [
+    SessionManager
+    ───────────────────────
+    save(state) → Redis JSON blob
+    load(session_id) ← Redis
+    resume_or_create(user, session_id)
+    extend_ttl(session_id)
+    get_active_session(user)
+    get_user_sessions(user)
+    cleanup_expired()
+    ───────────────────────
+    Keys:
+    session:{sid} → JSON
+    user_sessions:{uid} → sorted set
+    user_active_session:{uid} → sid
+    TTL: configurable expiry
+  ]
+}
+
+' ═══════════════════════════════════════════════════════
+' LAYER 4: Pipeline
+' ═══════════════════════════════════════════════════════
+
+rectangle "🧩 Pipeline Layer" as PipelineLayer #f3e5f5 {
+
+  rectangle "🔗 LangGraph Pipeline\n(ai_engine/graph/)" as LangGraph [
+    trip_graph → compiled StateGraph
+    ───────────────────────
+    Nodes (execute in order):
+      N1: load_profile
+      N2: retrieval_agent  (get places from DB)
+      N3: ranking_agent    (score + diversity)
+      N4: planning_agent   (LLM generates plan)
+      N5: optimization_agent (OSRM routing)
+      N6: validator_agent  (quality check)
+      N7: hotel_selector   (post-approval)
+    ───────────────────────
+    Edges (conditional routing):
+      should_rank      → scorer or end
+      should_plan      → planner or end
+      should_retry     → planner or end (up to N attempts)
+  ]
+
+  rectangle "🤖 Planning Agent\n(ai_engine/agents/)\nplanning_agent.py" as PlanAgent [
+    run_planning_agent(state)
+    → generates day-by-day plan
+    → LLM: Gemini 2.5 Flash
+  ]
+
+  rectangle "🏨 Hotel Agent\n(ai_engine/agents/)\nhotel_agent.py" as HotelAgent [
+    run_hotel_selection(state)
+    → matches accommodation
+    → Expedia / pool matching
+  ]
+
+  rectangle "✈️ Flight Selection\n(ai_engine/agents/)\nflight_selection_agent.py" as FlightAgent [
+    search_flights_for_trip()
+    format_flight_options()
+    extract_flight_selection()
+    → Amadeus API
+  ]
+
+  rectangle "✂️ Itinerary Modifier\n(ai_engine/agents/)\nitinerary_modifier_agent.py" as Modifier [
+    run_itinerary_modifier()
+    → surgical ADD/REMOVE/SWAP
+    → preference re-rank
+    → full pipeline regen
+  ]
+
+  rectangle "🏆 Scorer / Optimizer / Validator" as OtherAgents [
+    CandidateScorer → ranking + diversity
+    RouteOptimizer  → OSRM travel times
+    ItineraryValidator → quality score
+    PoolManager     → coverage + enrichment
+  ]
+}
+
+' ═══════════════════════════════════════════════════════
+' LAYER 5: External / Infrastructure
+' ═══════════════════════════════════════════════════════
+
+rectangle "🔗 External / Infrastructure" as ExtLayer #fce4ec {
+
+  rectangle "📦 SQLAlchemy\nPostgreSQL DB" as DB [
+    trips, itineraries, days, stops
+    places, profiles, conversations
+    messages, reviews, bookings
+    images, feedback
+  ]
+
+  rectangle "🧠 LLM Services" as LLM [
+    Gemini 2.5 Flash → planning + vision
+    Groq Llama → fast classification
+  ]
+
+  rectangle "🗺 External APIs" as ExtAPI [
+    Amadeus  → flights (real test env)
+    OSRM     → routing
+    Stripe   → payments (sandbox)
+  ]
+
+  rectangle "🔍 LangSmith" as LangSmith [
+    @traceable decorators
+    Agent-level tracing
+  ]
+
+  rectangle "📊 Token Tracker" as TokenTracker [
+    Per-pipeline-run token counts
+    Agent-level token attribution
+  ]
+}
+
+' ═══════════════════════════════════════════════════════
+' DATA FLOW ARROWS (numbered steps)
+' ═══════════════════════════════════════════════════════
+
+' Step 1: Flutter opens WS
+Flutter -down-> WSManager : "① ws://host/ws/chat/{trip_id}?token=xxx"
+Flutter -down-> ChatRoutes : "① ws://host/ws/chat/new?token=xxx"
+
+' Step 2: Auth
+ChatRoutes -right-> Firebase : "② verify_token(token)"
+Firebase --> ChatRoutes : "② uid or None"
+
+' Step 3: Accept connection
+ChatRoutes -right-> WSManager : "③ manager.connect(key, ws)"
+WSManager --> Flutter : "③ WebSocket accepted"
+
+' Step 4: Flutter sends message
+Flutter -down-> ChatRoutes : "④ {message: 'Plan 3-day trip', image: ...}"
+
+' Step 5: Process message
+ChatRoutes -down-> ProcessStream : "⑤ process_message_stream()"
+
+' Step 6: Lock + Orchestrator
+ProcessStream -right-> Orchestrator : "⑥ handle_chat_stream()"
+ProcessStream -right-> DB : "⑥ save user message"
+
+' Step 7: Orchestrator routing
+Orchestrator -down-> MsgInterp : "⑦ interpret_message(state, text)"
+MsgInterp --> Orchestrator : "⑦ {action: plan_trip, extracted: {...}}"
+
+' Step 8: Redis load/save
+Orchestrator -right-> RedisMgr : "⑧ resume_or_create(user_id, session_id)"
+RedisMgr -right-> RedisMgr : "⑧ Redis: session:{sid} → JSON"
+RedisMgr --> Orchestrator : "⑧ ConversationState"
+
+' Step 9: Run pipeline
+Orchestrator -down-> LangGraph : "⑨ run_pipeline(state)"
+
+' Step 10: Pipeline agents
+LangGraph -down-> PlanAgent : "⑩ planning_agent (Gemini)"
+LangGraph -down-> HotelAgent : "⑩ hotel_selector"
+LangGraph -down-> FlightAgent : "⑩ flight_selection"
+LangGraph -down-> Modifier : "⑩ itinerary_modifier"
+LangGraph -down-> OtherAgents : "⑩ scorer / optimizer / validator"
+
+' Step 11: External calls
+PlanAgent -down-> LLM : "⑪ generate itinerary → Gemini"
+HotelAgent -down-> DB : "⑪ Match hotels from local DB pool
+(Simulated — no external API)"
+FlightAgent -down-> ExtAPI : "⑪ Amadeus for flights"
+OtherAgents -down-> ExtAPI : "⑪ OSRM for routing"
+
+' Step 12: Results back
+LangGraph --> Orchestrator : "⑫ itinerary + hotels + flights"
+
+' Step 13: Save session
+Orchestrator -right-> RedisMgr : "⑬ manager.save(state)"
+RedisMgr --> Orchestrator : "⑬ Redis updated"
+
+' Step 14: Stream response
+Orchestrator -up-> ProcessStream : "⑭ yield stream chunks"
+ProcessStream -up-> WSManager : "⑮ manager.send(key, {type: token, data: ...})"
+WSManager -up-> Flutter : "⑯ WebSocket send_json → Flutter renders"
+
+' Step 15: DB persistence
+ProcessStream -right-> DB : "⑰ save itinerary, profile, messages"
+ProcessStream -right-> DB : "⑰ sync Redis → DB messages"
+ProcessStream -right-> DB : "⑰ persist image features"
+
+' Step 16: LangSmith tracing
+Orchestrator -right-> LangSmith : "traced() decorators"
+PlanAgent -right-> LangSmith : "traced()"
+HotelAgent -right-> LangSmith : "traced()"
+
+' Token tracking
+Orchestrator -right-> TokenTracker : "token_tracker.reset() + summary"
+
+' Legend
+rectangle "📋 Flow Legend" as Legend #FFFFF0 [
+  ①-③ WebSocket connection & auth
+  ④-⑤ Message received & processing started
+  ⑥-⑧ Intent classification & state loading
+  ⑨-⑪ AI pipeline execution with external LLMs/APIs
+  ⑫-⑬ Results collected & state saved
+  ⑭-⑯ Streaming response back to Flutter
+  ⑰ Final persistence to PostgreSQL DB
+]
+
+@enduml

@@ -11,6 +11,26 @@ import '../features/trips/presentation/screens/trip_detail_screen.dart';
 import '../features/trips/presentation/screens/trips_screen.dart';
 
 class AppRouter {
+  /// A premium fade-through route transition for the splash → home
+  /// handoff. The new screen fades in over 600ms with an easeOut curve.
+  static Route _fadeThroughRoute(Widget page) {
+    return PageRouteBuilder(
+      pageBuilder: (context, animation, secondaryAnimation) => page,
+      transitionsBuilder: (context, animation, secondaryAnimation, child) {
+        return FadeTransition(
+          opacity: Tween<double>(begin: 0.0, end: 1.0).animate(
+            CurvedAnimation(
+              parent: animation,
+              curve: Curves.easeOut,
+            ),
+          ),
+          child: child,
+        );
+      },
+      transitionDuration: const Duration(milliseconds: 600),
+    );
+  }
+
   static Route generateRoute(RouteSettings settings) {
     switch(settings.name){
 
@@ -18,10 +38,10 @@ class AppRouter {
         return MaterialPageRoute(builder: (_) => const SplashScreen());
 
       case "/home":
-        return MaterialPageRoute(builder: (_) => const MainShell());
+        return _fadeThroughRoute(const MainShell());
 
       case "/signin":
-        return MaterialPageRoute(builder: (_) => const SignInScreen());
+        return _fadeThroughRoute(const SignInScreen());
 
       case "/signup":
         return MaterialPageRoute(builder: (_) => const SignUpScreen());

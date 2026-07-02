@@ -1,0 +1,72 @@
+@startuml Flight_Booking_Flow
+title Flight Booking (UC#5) — Amadeus Search & Booking
+
+actor Traveler
+participant "Chat" as Chat
+participant "Flight\nService" as FltSvc
+participant "Amadeus\nAPI" as Amadeus
+
+== City Autocomplete (in chat) ==
+
+Traveler -> Chat: "I want to fly from Paris"
+activate Chat
+
+Chat -> FltSvc: search_cities("Paris")
+activate FltSvc
+
+FltSvc -> Amadeus: GET /v1/reference-data/locations\n{subtype: CITY, keyword: "Paris"}
+activate Amadeus
+Amadeus --> FltSvc: {iataCode: "CDG", city: "Paris"}
+deactivate Amadeus
+
+FltSvc --> Chat: {cities: ["CDG - Paris"]}
+deactivate FltSvc
+
+Chat --> Traveler: "I found Paris (CDG). Is that correct?"
+deactivate Chat
+
+== Search Flights (in chat) ==
+
+Traveler -> Chat: "Yes. Search flights CDG → CAI"
+activate Chat
+
+Chat -> FltSvc: search_flights(CDG, CAI, dates)
+activate FltSvc
+
+FltSvc -> Amadeus: GET /v2/shopping/flight-offers\n{origin: CDG, dest: CAI, dates}
+activate Amadeus
+Amadeus --> FltSvc: {data: flight_offers[]}
+deactivate Amadeus
+
+FltSvc --> Chat: {offers: [...]}
+deactivate FltSvc
+
+Chat --> Traveler: "Here are available flights..."
+deactivate Chat
+
+== Book Flight (pending payment) ==
+
+Traveler -> Chat: "Select the EgyptAir flight at 10:00"
+activate Chat
+
+Chat -> FltSvc: initiate_flight_booking(raw_offer)
+activate FltSvc
+
+FltSvc -> Amadeus: price_flight(raw_offer)
+activate Amadeus
+Amadeus --> FltSvc: {priced_offer, total_price}
+deactivate Amadeus
+
+FltSvc --> Chat: {priced_offer, summary}
+deactivate FltSvc
+
+Chat --> Traveler: "Flight confirmed at $450.\nProceed to payment?"
+deactivate Chat
+
+Traveler -> Chat: "Yes, proceed"
+activate Chat
+Chat --> Traveler: "Opening secure checkout..."
+note right: Payment handled in UC#7 — Manage Payments
+deactivate Chat
+
+@enduml

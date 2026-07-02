@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import '../../../../core/theme/design_tokens.dart';
+import '../../../../app/app_theme.dart';
 
 /// Bottom sheet for writing or editing a review.
 /// When [initialRating] and [initialComment] are provided, it operates in edit mode.
@@ -23,6 +25,7 @@ class WriteReviewSheet extends StatefulWidget {
 }
 
 class _WriteReviewSheetState extends State<WriteReviewSheet> {
+  TourMateColors get tm => context.tm;
   late int _rating;
   late TextEditingController _commentController;
   bool _submitting = false;
@@ -44,7 +47,7 @@ class _WriteReviewSheetState extends State<WriteReviewSheet> {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(24, 12, 24, 32),
+      padding: const EdgeInsets.fromLTRB(Spacing.xl5, Spacing.xl, Spacing.xl5, Spacing.xl7),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -55,13 +58,13 @@ class _WriteReviewSheetState extends State<WriteReviewSheet> {
               width: 40,
               height: 4,
               decoration: BoxDecoration(
-                color: Colors.grey.shade300,
-                borderRadius: BorderRadius.circular(2),
+                color: tm.border,
+                borderRadius: BorderRadius.circular(Spacing.xxs),
               ),
             ),
           ),
 
-          const SizedBox(height: 20),
+          const SizedBox(height: Spacing.xl4),
 
           // Title
           Center(
@@ -74,7 +77,7 @@ class _WriteReviewSheetState extends State<WriteReviewSheet> {
             ),
           ),
 
-          const SizedBox(height: 24),
+          const SizedBox(height: Spacing.xl5),
 
           // Star rating
           Center(
@@ -85,7 +88,7 @@ class _WriteReviewSheetState extends State<WriteReviewSheet> {
                 return GestureDetector(
                   onTap: () => setState(() => _rating = starNum),
                   child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 6),
+                    padding: const EdgeInsets.symmetric(horizontal: Spacing.sm),
                     child: AnimatedScale(
                       scale: starNum <= _rating ? 1.1 : 1.0,
                       duration: const Duration(milliseconds: 150),
@@ -95,8 +98,8 @@ class _WriteReviewSheetState extends State<WriteReviewSheet> {
                             : Icons.star_border_rounded,
                         size: 40,
                         color: starNum <= _rating
-                            ? Colors.amber[700]
-                            : Colors.grey[300],
+                            ? tm.gold
+                            : tm.border,
                       ),
                     ),
                   ),
@@ -106,20 +109,20 @@ class _WriteReviewSheetState extends State<WriteReviewSheet> {
           ),
 
           if (_rating > 0) ...[
-            const SizedBox(height: 8),
+            const SizedBox(height: Spacing.md),
             Center(
               child: Text(
                 _ratingLabel(_rating),
                 style: TextStyle(
                   fontSize: 14,
-                  color: Colors.grey[600],
+                  color: tm.textSecondary,
                   fontWeight: FontWeight.w500,
                 ),
               ),
             ),
           ],
 
-          const SizedBox(height: 24),
+          const SizedBox(height: Spacing.xl5),
 
           // Comment field
           TextField(
@@ -128,27 +131,27 @@ class _WriteReviewSheetState extends State<WriteReviewSheet> {
             maxLength: 500,
             decoration: InputDecoration(
               hintText: 'Share your experience...',
-              hintStyle: TextStyle(color: Colors.grey[400]),
+              hintStyle: TextStyle(color: tm.textTertiary),
               filled: true,
-              fillColor: Colors.grey.shade50,
+              fillColor: tm.surface,
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(14),
-                borderSide: BorderSide(color: Colors.grey.shade200),
+                borderSide: BorderSide(color: tm.border),
               ),
               enabledBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(14),
-                borderSide: BorderSide(color: Colors.grey.shade200),
+                borderSide: BorderSide(color: tm.border),
               ),
               focusedBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(14),
-                borderSide: const BorderSide(color: Colors.black, width: 1.5),
+                borderSide: BorderSide(color: tm.pureBlack, width: 1.5),
               ),
               contentPadding: const EdgeInsets.all(16),
             ),
             style: const TextStyle(fontSize: 14),
           ),
 
-          const SizedBox(height: 16),
+          const SizedBox(height: Spacing.xl3),
 
           // Submit button
           SizedBox(
@@ -166,20 +169,20 @@ class _WriteReviewSheetState extends State<WriteReviewSheet> {
                       );
                     },
               style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.black,
-                foregroundColor: Colors.white,
-                disabledBackgroundColor: Colors.grey.shade200,
+                backgroundColor: tm.pureBlack,
+                foregroundColor: tm.pureWhite,
+                disabledBackgroundColor: tm.border,
                 shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(14),
+                  borderRadius: BorderRadius.circular(RadiusTokens.xl2),
                 ),
-                padding: const EdgeInsets.symmetric(vertical: 16),
+                padding: const EdgeInsets.symmetric(vertical: Spacing.xl3),
               ),
               child: _submitting
-                  ? const SizedBox(
+                  ? SizedBox(
                       width: 20,
                       height: 20,
                       child: CircularProgressIndicator(
-                        color: Colors.white,
+                        color: tm.pureWhite,
                         strokeWidth: 2,
                       ),
                     )
