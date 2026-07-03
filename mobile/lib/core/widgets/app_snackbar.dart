@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../app/app_theme.dart';
+import '../../core/theme/design_tokens.dart';
 
 /// A polished, reusable snackbar utility for consistent app-wide feedback.
 ///
@@ -92,7 +93,7 @@ class AppSnackbar {
           content: Row(
             children: [
               Icon(icon, color: Colors.white, size: 22),
-              const SizedBox(width: 12),
+              const SizedBox(width: Spacing.xl),
               Expanded(
                 child: Text(
                   message,
@@ -109,10 +110,10 @@ class AppSnackbar {
           ),
           backgroundColor: backgroundColor,
           behavior: SnackBarBehavior.floating,
-          margin: const EdgeInsets.fromLTRB(16, 0, 16, 24),
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+          margin: const EdgeInsets.fromLTRB(Spacing.xl3, 0, Spacing.xl3, Spacing.xl5),
+          padding: const EdgeInsets.symmetric(horizontal: Spacing.xl3, vertical: Spacing.xl2),
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(14),
+            borderRadius: BorderRadius.circular(RadiusTokens.xl2),
           ),
           duration: duration,
           dismissDirection: DismissDirection.horizontal,

@@ -1,192 +1,282 @@
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
-import '../../../../app/app_theme.dart';
 
-/// A premium avatar representing the TourMate AI concierge.
+/// A premium **AI Travel Orb** representing the TourMate AI concierge.
 ///
-/// Features a deep blue gradient ring with a subtle glow, a dark center,
-/// and a hand-crafted compass rose icon painted via [CustomPainter].
-/// The avatar gently floats up and down with a subtle sine-wave animation
-/// while idle — no spinning, shimmering, or gimmicky effects.
+/// The design communicates artificial intelligence, travel, guidance, and
+/// discovery through a single cohesive illustration:
 ///
-/// Three sizes are available:
-/// [AssistantAvatarSize.small] (28px), .medium (36px), .large (48px).
-class AssistantAvatar extends StatefulWidget {
+/// * A floating sapphire-blue glass orb
+/// * A subtle translucent glass effect with radial gradient
+/// * A thin orbit line wrapping around the orb
+/// * A tiny airplane seamlessly integrated into the orbit
+/// * Delicate sparkling highlights suggesting intelligence & responsiveness
+/// * A soft ambient blue glow
+///
+/// Four sizes are available:
+/// - [AssistantAvatarSize.small] (28px) – used in message bubbles
+/// - [AssistantAvatarSize.medium] (36px) – used in compact contexts
+/// - [AssistantAvatarSize.large] (48px) – used in headers
+/// - [AssistantAvatarSize.xlarge] (120px) – used in the welcome/empty state
+class AssistantAvatar extends StatelessWidget {
   final AssistantAvatarSize size;
 
   const AssistantAvatar({super.key, this.size = AssistantAvatarSize.small});
 
   @override
-  State<AssistantAvatar> createState() => _AssistantAvatarState();
-}
-
-class _AssistantAvatarState extends State<AssistantAvatar>
-    with TickerProviderStateMixin {
-  late final AnimationController _floatController;
-  late final Animation<double> _floatAnimation;
-
-  @override
-  void initState() {
-    super.initState();
-    _floatController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 4000),
-    )..repeat(reverse: true);
-    _floatAnimation = Tween<double>(begin: -2.0, end: 2.0).animate(
-      CurvedAnimation(
-        parent: _floatController,
-        curve: Curves.easeInOutSine,
-      ),
-    );
-  }
-
-  @override
-  void dispose() {
-    _floatController.dispose();
-    super.dispose();
-  }
-
-  @override
   Widget build(BuildContext context) {
-    final tm = context.tm;
-    final outerRadius = switch (widget.size) {
+    final outerRadius = switch (size) {
       AssistantAvatarSize.small => 14.0,
       AssistantAvatarSize.medium => 18.0,
       AssistantAvatarSize.large => 24.0,
+      AssistantAvatarSize.xlarge => 60.0,
     };
 
-    return AnimatedBuilder(
-      animation: _floatAnimation,
-      builder: (context, _) {
-        return Transform.translate(
-          offset: Offset(0, _floatAnimation.value),
-          child: Container(
-            width: outerRadius * 2,
-            height: outerRadius * 2,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              gradient: const SweepGradient(
-                colors: [
-                  Color(0xFF1E3A8A),
-                  Color(0xFF2563EB),
-                  Color(0xFF1E3A8A),
-                ],
-              ),
-              boxShadow: [
-                BoxShadow(
-                  color: tm.deepRoyalBlue.withValues(alpha: 0.25),
-                  blurRadius: 6,
-                  offset: const Offset(0, 2),
-                ),
-              ],
-            ),
-            padding: const EdgeInsets.all(1.5),
-            child: Container(
-              decoration: const BoxDecoration(
-                color: Color(0xFF0F172A),
-                shape: BoxShape.circle,
-              ),
-              child: Padding(
-                padding: const EdgeInsets.all(3.0),
-                child: CustomPaint(
-                  painter: _CompassPainter(
-                    color: tm.sapphireLight,
-                  ),
-                ),
-              ),
-            ),
-          ),
-        );
-      },
+    return SizedBox(
+      width: outerRadius * 2,
+      height: outerRadius * 2,
+      child: CustomPaint(
+        painter: _TravelOrbPainter(radius: outerRadius),
+      ),
     );
   }
 }
 
-/// Custom painter that draws a refined compass rose icon.
-///
-/// The compass has:
-/// - Four cardinal points (N, S, E, W) drawn as diamond shapes
-/// - A small solid circle at the center representing AI intelligence
-/// - Balanced proportions that scale with the available canvas
-class _CompassPainter extends CustomPainter {
-  final Color color;
+enum AssistantAvatarSize { small, medium, large, xlarge }
 
-  _CompassPainter({required this.color});
+/// Custom painter that draws the complete Travel Orb illustration.
+///
+/// Renders in order:
+/// 1. Outer ambient glow
+/// 2. Glass orb body with radial gradient
+/// 3. Thin edge ring
+/// 4. Inner glow for depth
+/// 5. Top-left light reflection (glass effect)
+/// 6. Tilted orbit ellipse
+/// 7. Tiny airplane positioned on the orbit
+/// 8. Sparkle highlights
+class _TravelOrbPainter extends CustomPainter {
+  final double radius;
+
+  static const Color _primary = Color(0xFF1E3A8A);  // Deep Royal Blue
+  static const Color _accent = Color(0xFF2563EB);   // Sapphire
+  static const Color _dark = Color(0xFF0F172A);     // Midnight Navy
+
+  _TravelOrbPainter({required this.radius});
 
   @override
   void paint(Canvas canvas, Size size) {
     final center = Offset(size.width / 2, size.height / 2);
-    final radius = size.width / 2;
+    final r = radius;
 
-    // ── North pointer (filled, largest) ──
-    _drawCardinalPoint(canvas, center, radius, -math.pi / 2, true);
+    // ── 1. Outer ambient glow ──────────────────────────────────
+    final glowPaint = Paint()
+      ..color = _accent.withValues(alpha: 0.12)
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 8.0);
+    canvas.drawCircle(center, r * 0.95, glowPaint);
 
-    // ── South pointer (filled) ──
-    _drawCardinalPoint(canvas, center, radius, math.pi / 2, true);
+    // Wider, softer glow ring
+    final softGlowPaint = Paint()
+      ..color = _accent.withValues(alpha: 0.06)
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 16.0);
+    canvas.drawCircle(center, r * 1.05, softGlowPaint);
 
-    // ── East pointer (outlined, slightly smaller) ──
-    _drawCardinalPoint(canvas, center, radius * 0.75, 0, false);
+    // ── 2. Glass orb body ─────────────────────────────────────
+    final orbPaint = Paint()
+      ..shader = RadialGradient(
+        center: const Alignment(-0.35, -0.35),
+        radius: 1.1,
+        colors: [
+          _accent.withValues(alpha: 0.04),
+          _primary.withValues(alpha: 0.12),
+          _accent.withValues(alpha: 0.22),
+          _primary.withValues(alpha: 0.38),
+          _dark.withValues(alpha: 0.48),
+        ],
+        stops: const [0.0, 0.3, 0.6, 0.85, 1.0],
+      ).createShader(Rect.fromCircle(center: center, radius: r));
+    canvas.drawCircle(center, r, orbPaint);
 
-    // ── West pointer (outlined, slightly smaller) ──
-    _drawCardinalPoint(canvas, center, radius * 0.75, math.pi, false);
-
-    // ── Center AI dot ──
-    final centerPaint = Paint()
-      ..color = color
-      ..style = PaintingStyle.fill;
-    canvas.drawCircle(center, radius * 0.18, centerPaint);
-
-    // ── Small ring around center ──
-    final ringPaint = Paint()
-      ..color = color.withValues(alpha: 0.35)
+    // ── 3. Thin edge ring ─────────────────────────────────────
+    final edgePaint = Paint()
+      ..color = _accent.withValues(alpha: 0.18)
       ..style = PaintingStyle.stroke
-      ..strokeWidth = 0.8;
-    canvas.drawCircle(center, radius * 0.32, ringPaint);
-  }
+      ..strokeWidth = 1.0;
+    canvas.drawCircle(center, r - 0.5, edgePaint);
 
-  void _drawCardinalPoint(
-    Canvas canvas,
-    Offset center,
-    double radius,
-    double angle,
-    bool filled,
-  ) {
-    final paint = Paint()
-      ..color = filled ? color : color.withValues(alpha: 0.5)
-      ..style = filled ? PaintingStyle.fill : PaintingStyle.stroke
+    // ── 4. Inner glow for depth ───────────────────────────────
+    final innerGlowPaint = Paint()
+      ..shader = RadialGradient(
+        center: const Alignment(0.2, 0.2),
+        radius: 0.8,
+        colors: [
+          _accent.withValues(alpha: 0.0),
+          _accent.withValues(alpha: 0.0),
+          _accent.withValues(alpha: 0.06),
+          _accent.withValues(alpha: 0.10),
+        ],
+        stops: const [0.0, 0.6, 0.85, 1.0],
+      ).createShader(Rect.fromCircle(center: center, radius: r));
+    canvas.drawCircle(center, r, innerGlowPaint);
+
+    // ── 5. Light reflection (top-left glass highlight) ────────
+    final reflectionPaint = Paint()
+      ..shader = RadialGradient(
+        center: const Alignment(-0.4, -0.4),
+        radius: 0.5,
+        colors: [
+          Colors.white.withValues(alpha: 0.12),
+          Colors.white.withValues(alpha: 0.04),
+          Colors.white.withValues(alpha: 0.0),
+        ],
+        stops: const [0.0, 0.5, 1.0],
+      ).createShader(Rect.fromCircle(center: center, radius: r));
+    canvas.drawCircle(center, r, reflectionPaint);
+
+    // ── 6. Orbit ellipse (tilted ~25°) ─────────────────────────
+    final orbitPaint = Paint()
+      ..color = _accent.withValues(alpha: 0.28)
+      ..style = PaintingStyle.stroke
       ..strokeWidth = 1.0;
 
-    final path = Path();
-    // Diamond shape pointing outward
-    final tip = Offset(
-      center.dx + math.cos(angle) * radius,
-      center.dy + math.sin(angle) * radius,
+    canvas.save();
+    canvas.translate(center.dx, center.dy);
+    canvas.rotate(-0.45); // ~25 degree tilt
+
+    final orbitWidth = r * 1.65;
+    final orbitHeight = r * 0.72;
+    final orbitRect = Rect.fromCenter(
+      center: Offset.zero,
+      width: orbitWidth,
+      height: orbitHeight,
     );
-    final left = Offset(
-      center.dx + math.cos(angle + math.pi / 2) * radius * 0.35,
-      center.dy + math.sin(angle + math.pi / 2) * radius * 0.35,
-    );
-    final right = Offset(
-      center.dx + math.cos(angle - math.pi / 2) * radius * 0.35,
-      center.dy + math.sin(angle - math.pi / 2) * radius * 0.35,
-    );
-    final base = Offset(
-      center.dx + math.cos(angle + math.pi) * radius * 0.25,
-      center.dy + math.sin(angle + math.pi) * radius * 0.25,
+    canvas.drawOval(orbitRect, orbitPaint);
+
+    // ── 7. Airplane on orbit ──────────────────────────────────
+    // Position at ~30° from the right side of the ellipse
+    final planeAngle = 0.6;
+    final px = math.cos(planeAngle) * (orbitWidth / 2);
+    final py = -math.sin(planeAngle) * (orbitHeight / 2);
+
+    // Tangent angle at this point on the ellipse
+    final tangentAngle = math.atan2(
+      -math.cos(planeAngle) * orbitHeight,
+      -math.sin(planeAngle) * orbitWidth,
     );
 
-    path.moveTo(tip.dx, tip.dy);
-    path.lineTo(left.dx, left.dy);
-    path.lineTo(base.dx, base.dy);
-    path.lineTo(right.dx, right.dy);
-    path.close();
+    _drawAirplane(canvas, Offset(px, py), tangentAngle, r);
 
-    canvas.drawPath(path, paint);
+    // ── 7b. Second airplane on opposite side (more subtle) ────
+    final planeAngle2 = planeAngle + math.pi;
+    final px2 = math.cos(planeAngle2) * (orbitWidth / 2);
+    final py2 = -math.sin(planeAngle2) * (orbitHeight / 2);
+    final tangentAngle2 = math.atan2(
+      -math.cos(planeAngle2) * orbitHeight,
+      -math.sin(planeAngle2) * orbitWidth,
+    );
+    _drawAirplane(canvas, Offset(px2, py2), tangentAngle2, r,
+        opacity: 0.35, scale: 0.7);
+
+    canvas.restore();
+
+    // ── 8. Sparkle highlights ─────────────────────────────────
+    _drawSparkle(canvas, center + Offset(-r * 0.45, -r * 0.45), r * 0.09);
+    _drawSparkle(canvas, center + Offset(-r * 0.12, -r * 0.75), r * 0.06);
+    _drawSparkle(canvas, center + Offset(r * 0.6, -r * 0.2), r * 0.04,
+        opacity: 0.5);
+  }
+
+  void _drawAirplane(
+    Canvas canvas,
+    Offset position,
+    double angle,
+    double r, {
+    double opacity = 0.8,
+    double scale = 1.0,
+  }) {
+    final planeScale = r * 0.12 * scale;
+    if (planeScale < 1.2) return;
+
+    canvas.save();
+    canvas.translate(position.dx, position.dy);
+    canvas.rotate(angle);
+
+    final planePaint = Paint()
+      ..color = _accent.withValues(alpha: opacity)
+      ..style = PaintingStyle.fill;
+
+    // Fuselage
+    final fuselagePath = Path()
+      ..addOval(Rect.fromCenter(
+        center: Offset.zero,
+        width: planeScale * 2.2,
+        height: planeScale * 0.45,
+      ));
+    canvas.drawPath(fuselagePath, planePaint);
+
+    // Wings (left side extending back)
+    final wingPath = Path()
+      ..moveTo(planeScale * 0.15, 0)
+      ..lineTo(-planeScale * 0.3, -planeScale * 0.55)
+      ..lineTo(-planeScale * 0.05, 0)
+      ..close();
+    canvas.drawPath(wingPath, planePaint);
+
+    // Wings (right side)
+    final wingPath2 = Path()
+      ..moveTo(planeScale * 0.15, 0)
+      ..lineTo(-planeScale * 0.3, planeScale * 0.55)
+      ..lineTo(-planeScale * 0.05, 0)
+      ..close();
+    canvas.drawPath(wingPath2, planePaint);
+
+    // Tail fin
+    final tailPaint = Paint()
+      ..color = _accent.withValues(alpha: opacity * 0.6)
+      ..style = PaintingStyle.fill;
+    final tailPath = Path()
+      ..moveTo(-planeScale * 0.85, 0)
+      ..lineTo(-planeScale * 1.15, -planeScale * 0.25)
+      ..lineTo(-planeScale * 1.15, planeScale * 0.25)
+      ..close();
+    canvas.drawPath(tailPath, tailPaint);
+
+    canvas.restore();
+  }
+
+  void _drawSparkle(
+    Canvas canvas,
+    Offset position,
+    double size, {
+    double opacity = 0.9,
+  }) {
+    if (size < 0.8) return;
+
+    // Main bright dot
+    final dotPaint = Paint()
+      ..color = Colors.white.withValues(alpha: opacity);
+    canvas.drawCircle(position, size, dotPaint);
+
+    // Cross shine (subtle)
+    final shineLength = size * 2.5;
+    final shinePaint = Paint()
+      ..color = Colors.white.withValues(alpha: opacity * 0.25)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 0.5;
+
+    canvas.drawLine(
+      position - Offset(shineLength, 0),
+      position + Offset(shineLength, 0),
+      shinePaint,
+    );
+    canvas.drawLine(
+      position - Offset(0, shineLength),
+      position + Offset(0, shineLength),
+      shinePaint,
+    );
   }
 
   @override
-  bool shouldRepaint(_CompassPainter oldDelegate) =>
-      oldDelegate.color != color;
+  bool shouldRepaint(_TravelOrbPainter oldDelegate) =>
+      oldDelegate.radius != radius;
 }
-
-enum AssistantAvatarSize { small, medium, large }

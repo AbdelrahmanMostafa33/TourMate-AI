@@ -49,7 +49,7 @@ class TMPrimaryButton extends StatelessWidget {
           disabledBackgroundColor: tm.textTertiary.withValues(alpha: 0.3),
           disabledForegroundColor: tm.textOnDark.withValues(alpha: 0.5),
           elevation: 0,
-          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+          padding: const EdgeInsets.symmetric(horizontal: Spacing.xl5, vertical: Spacing.xl3),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(RadiusTokens.xl2),
           ),
@@ -135,7 +135,7 @@ class TMAccentButton extends StatelessWidget {
             disabledForegroundColor: tm.brandWhite.withValues(alpha: 0.5),
             elevation: 0,
             shadowColor: Colors.transparent,
-            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+            padding: const EdgeInsets.symmetric(horizontal: Spacing.xl5, vertical: Spacing.xl3),
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(RadiusTokens.xl2),
             ),
@@ -199,7 +199,7 @@ class TMOutlinedSapphireButton extends StatelessWidget {
         style: OutlinedButton.styleFrom(
           foregroundColor: tm.sapphire,
           side: BorderSide(color: tm.sapphire.withValues(alpha: 0.5)),
-          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
+          padding: const EdgeInsets.symmetric(horizontal: Spacing.xl5, vertical: Spacing.xl2),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(RadiusTokens.xl2),
           ),
@@ -248,7 +248,7 @@ class TMTextButton extends StatelessWidget {
       onPressed: onPressed,
       style: TextButton.styleFrom(
         foregroundColor: color ?? tm.textSecondary,
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        padding: const EdgeInsets.symmetric(horizontal: Spacing.xl, vertical: Spacing.md),
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(RadiusTokens.md),
         ),
@@ -443,7 +443,7 @@ class TMBadge extends StatelessWidget {
     final fg = textColor ?? (isAccented ? tm.sapphireDark : tm.textSecondary);
 
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      padding: const EdgeInsets.symmetric(horizontal: Spacing.lg, vertical: Spacing.xs),
       decoration: BoxDecoration(
         color: bg,
         borderRadius: BorderRadius.circular(RadiusTokens.full),
@@ -490,7 +490,7 @@ class TMRatingBadge extends StatelessWidget {
   Widget build(BuildContext context) {
     final tm = context.tm;
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      padding: const EdgeInsets.symmetric(horizontal: Spacing.md, vertical: Spacing.xxs),
       decoration: BoxDecoration(
         color: tm.sapphireSurface,
         borderRadius: BorderRadius.circular(RadiusTokens.full),

@@ -17,8 +17,9 @@ import '../../logic/chat_cubit.dart';
 import '../../logic/chat_state.dart';
 import '../widgets/message_bubble.dart';
 import '../widgets/pipeline_progress_widget.dart';
-import '../widgets/assistant_avatar.dart';
+
 import '../widgets/suggestion_chips.dart';
+import '../widgets/assistant_avatar.dart';
 import '../../../trips/presentation/screens/trip_detail_screen.dart';
 import '../../../payments/data/datasource/payment_service.dart';
 import '../../../auth/data/datasource/firebase_auth_service.dart';
@@ -351,9 +352,9 @@ class _ChatViewState extends State<_ChatView>
               content: const Text('Payment was cancelled or failed. You can try again later.'),
               backgroundColor: tm.error,
               behavior: SnackBarBehavior.floating,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-              margin: const EdgeInsets.fromLTRB(16, 0, 16, 24),
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(RadiusTokens.xl2)),
+              margin: const EdgeInsets.fromLTRB(Spacing.xl3, 0, Spacing.xl3, Spacing.xl5),
+              padding: const EdgeInsets.symmetric(horizontal: Spacing.xl3, vertical: Spacing.xl2),
               duration: const Duration(seconds: 4),
               dismissDirection: DismissDirection.horizontal,
             ),
@@ -422,9 +423,9 @@ class _ChatViewState extends State<_ChatView>
             content: Text('✅ $label booked!'),
             backgroundColor: tm.success,
             behavior: SnackBarBehavior.floating,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-            margin: const EdgeInsets.fromLTRB(16, 0, 16, 24),
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(RadiusTokens.xl2)),
+            margin: const EdgeInsets.fromLTRB(Spacing.xl3, 0, Spacing.xl3, Spacing.xl5),
+            padding: const EdgeInsets.symmetric(horizontal: Spacing.xl3, vertical: Spacing.xl2),
             duration: const Duration(seconds: 3),
             dismissDirection: DismissDirection.horizontal,
           ),
@@ -443,9 +444,9 @@ class _ChatViewState extends State<_ChatView>
             content: Text('Booking failed: ${e.toString().replaceFirst(RegExp(r'^.+?: '), '')}'),
             backgroundColor: tm.error,
             behavior: SnackBarBehavior.floating,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-            margin: const EdgeInsets.fromLTRB(16, 0, 16, 24),
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(RadiusTokens.xl2)),
+            margin: const EdgeInsets.fromLTRB(Spacing.xl3, 0, Spacing.xl3, Spacing.xl5),
+            padding: const EdgeInsets.symmetric(horizontal: Spacing.xl3, vertical: Spacing.xl2),
             duration: const Duration(seconds: 4),
             dismissDirection: DismissDirection.horizontal,
           ),
@@ -482,9 +483,9 @@ class _ChatViewState extends State<_ChatView>
           content: Text('Could not update trip status: $patchError.'),
           backgroundColor: tm.error,
           behavior: SnackBarBehavior.floating,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-          margin: const EdgeInsets.fromLTRB(16, 0, 16, 24),
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(RadiusTokens.xl2)),
+          margin: const EdgeInsets.fromLTRB(Spacing.xl3, 0, Spacing.xl3, Spacing.xl5),
+          padding: const EdgeInsets.symmetric(horizontal: Spacing.xl3, vertical: Spacing.xl2),
           duration: const Duration(seconds: 4),
           dismissDirection: DismissDirection.horizontal,
         ),
@@ -495,9 +496,9 @@ class _ChatViewState extends State<_ChatView>
           content: const Text('Trip saved — you can pay whenever you\'re ready.'),
           backgroundColor: tm.info,
           behavior: SnackBarBehavior.floating,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-          margin: const EdgeInsets.fromLTRB(16, 0, 16, 24),
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(RadiusTokens.xl2)),
+          margin: const EdgeInsets.fromLTRB(Spacing.xl3, 0, Spacing.xl3, Spacing.xl5),
+          padding: const EdgeInsets.symmetric(horizontal: Spacing.xl3, vertical: Spacing.xl2),
           duration: const Duration(seconds: 3),
           dismissDirection: DismissDirection.horizontal,
         ),
@@ -561,7 +562,7 @@ class _ChatViewState extends State<_ChatView>
                           Expanded(
                             child: ListView.builder(
                               controller: _scrollController,
-                              padding: const EdgeInsets.all(12),
+                              padding: const EdgeInsets.all(Spacing.xl),
                               itemCount: itemCount,
                               itemBuilder: (_, i) {
                                 if (showPipeline && i == messages.length) {
@@ -622,19 +623,19 @@ class _ChatViewState extends State<_ChatView>
                   Row(
                     children: [
                       Container(
-                        padding: const EdgeInsets.all(8),
+                        padding: const EdgeInsets.all(Spacing.md),
                         decoration: BoxDecoration(
                           gradient: const LinearGradient(
                             colors: [Color(0xFF0F172A), Color(0xFF1E3A8A)],
                             begin: Alignment.topLeft,
                             end: Alignment.bottomRight,
                           ),
-                          borderRadius: BorderRadius.circular(10),
+                          borderRadius: BorderRadius.circular(RadiusTokens.lg),
                           border: Border.all(color: tm.sapphire.withValues(alpha: 0.3), width: 0.5),
                         ),
                         child: Icon(Icons.chat_bubble_outline, color: tm.sapphireLight, size: 18),
                       ),
-                      const SizedBox(width: 12),
+                      const SizedBox(width: Spacing.xl),
                       Text(
                         'Chats',
                         style: GoogleFonts.inter(
@@ -646,7 +647,7 @@ class _ChatViewState extends State<_ChatView>
                       ),
                     ],
                   ),
-                  const SizedBox(height: 4),
+                  const SizedBox(height: Spacing.xs),
                   Text(
                     '${widget.chatSessions.length} conversations',
                     style: GoogleFonts.inter(fontSize: 13, color: tm.textTertiary),
@@ -668,10 +669,10 @@ class _ChatViewState extends State<_ChatView>
                         backgroundColor: tm.deepNavy,
                         foregroundColor: tm.brandWhite,
                         shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
+                          borderRadius: BorderRadius.circular(RadiusTokens.xl),
                           side: BorderSide(color: tm.sapphire.withValues(alpha: 0.3), width: 0.5),
                         ),
-                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        padding: const EdgeInsets.symmetric(vertical: Spacing.xl),
                         elevation: 0,
                       ),
                     ),
@@ -724,14 +725,14 @@ class _ChatViewState extends State<_ChatView>
         child: Row(
           children: [
             Container(
-              padding: const EdgeInsets.all(10),
+              padding: const EdgeInsets.all(Spacing.lg),
               decoration: BoxDecoration(
                 gradient: const LinearGradient(
                   colors: [Color(0xFF0F172A), Color(0xFF1E3A8A)],
                   begin: Alignment.topLeft,
                   end: Alignment.bottomRight,
                 ),
-                borderRadius: BorderRadius.circular(10),
+                borderRadius: BorderRadius.circular(RadiusTokens.lg),
               ),
               child: Icon(
                 tripInfo != null ? Icons.card_travel : Icons.chat_bubble_outline,
@@ -739,7 +740,7 @@ class _ChatViewState extends State<_ChatView>
                 color: tm.sapphireLight,
               ),
             ),
-            const SizedBox(width: 14),
+            const SizedBox(width: Spacing.xl2),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -755,7 +756,7 @@ class _ChatViewState extends State<_ChatView>
                     overflow: TextOverflow.ellipsis,
                   ),
                   if (lastMessage != null) ...[
-                    const SizedBox(height: 2),
+                    const SizedBox(height: Spacing.xxs),
                     Text(
                       lastMessage,
                       style: GoogleFonts.inter(fontSize: 12, color: tm.textTertiary),
@@ -778,10 +779,10 @@ class _ChatViewState extends State<_ChatView>
   Widget _buildHeader(ChatCubit cubit, bool hasBack, bool showSidebarBtn) {
     return Container(
       padding: EdgeInsets.only(
-        top: 4,
+        top: Spacing.sm,
         left: Spacing.xl3,
         right: Spacing.xl3,
-        bottom: 4,
+        bottom: Spacing.sm,
       ),
       decoration: BoxDecoration(
         color: tm.brandWhite,
@@ -793,7 +794,7 @@ class _ChatViewState extends State<_ChatView>
             Material(
               color: Colors.transparent,
               child: InkWell(
-                borderRadius: BorderRadius.circular(10),
+                borderRadius: BorderRadius.circular(RadiusTokens.lg),
                 onTap: () {
                   if (Navigator.canPop(context)) {
                     Navigator.pop(context);
@@ -802,10 +803,10 @@ class _ChatViewState extends State<_ChatView>
                   }
                 },
                 child: Container(
-                  padding: const EdgeInsets.all(8),
+                  padding: const EdgeInsets.all(Spacing.md),
                   decoration: BoxDecoration(
                     color: tm.surface,
-                    borderRadius: BorderRadius.circular(10),
+                    borderRadius: BorderRadius.circular(RadiusTokens.lg),
                     border: Border.all(color: tm.borderLight),
                   ),
                   child: Icon(Icons.arrow_back_rounded, color: tm.textPrimary, size: 18),
@@ -816,25 +817,27 @@ class _ChatViewState extends State<_ChatView>
             Material(
               color: Colors.transparent,
               child: InkWell(
-                borderRadius: BorderRadius.circular(10),
+                borderRadius: BorderRadius.circular(RadiusTokens.lg),
                 onTap: () => widget.scaffoldKey.currentState?.openDrawer(),
                 child: Container(
-                  padding: const EdgeInsets.all(8),
+                  padding: const EdgeInsets.all(Spacing.md),
                   decoration: BoxDecoration(
                     color: tm.surface,
-                    borderRadius: BorderRadius.circular(10),
+                    borderRadius: BorderRadius.circular(RadiusTokens.lg),
                     border: Border.all(color: tm.borderLight),
                   ),
                   child: Icon(Icons.menu_rounded, color: tm.textPrimary, size: 18),
                 ),
               ),
             ),
-          const SizedBox(width: Spacing.md),
-          // Assistant avatar mini
-          const Padding(
-            padding: EdgeInsets.only(right: 8),
-            child: AssistantAvatar(size: AssistantAvatarSize.small),
+          const SizedBox(width: Spacing.lg),          // Logo — standalone brand mark, no container
+          Image.asset(
+            'assets/images/logo.png',
+            width: 38,
+            height: 38,
+            fit: BoxFit.contain,
           ),
+          const SizedBox(width: Spacing.lg),
           Text(
             widget.activeTripId != null ? "Trip Chat" : "TourMate",
             style: GoogleFonts.inter(
@@ -863,7 +866,7 @@ class _ChatViewState extends State<_ChatView>
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          const SizedBox(height: 56),
+          const SizedBox(height: Spacing.xl10),
           // Premium concierge avatar — staggered entrance
           FadeTransition(
             opacity: Tween<double>(begin: 0.0, end: 1.0).animate(
@@ -883,54 +886,12 @@ class _ChatViewState extends State<_ChatView>
                   curve: const Interval(0.0, 0.25, curve: Curves.easeOutCubic),
                 ),
               ),
-              child: _FloatingAnimation(
-                child: Container(
-                  width: 120,
-                  height: 120,
-                  decoration: BoxDecoration(
-                    gradient: const SweepGradient(
-                      startAngle: 0,
-                      endAngle: 3.14159 * 2,
-                      colors: [
-                        Color(0xFF2563EB),
-                        Color(0x332563EB),
-                        Color(0xFF2563EB),
-                        Color(0x662563EB),
-                        Color(0xFF2563EB),
-                      ],
-                      stops: [0.0, 0.25, 0.5, 0.75, 1.0],
-                    ),
-                    shape: BoxShape.circle,
-                    boxShadow: [
-                      BoxShadow(
-                        color: tm.sapphire.withValues(alpha: 0.2),
-                        blurRadius: 24,
-                        offset: const Offset(0, 4),
-                      ),
-                    ],
-                  ),
-                  padding: const EdgeInsets.all(2.5),
-                  child: Container(
-                    decoration: BoxDecoration(
-                      gradient: const LinearGradient(
-                        colors: [Color(0xFF0F172A), Color(0xFF1E3A8A)],
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
-                      ),
-                      shape: BoxShape.circle,
-                    ),
-                    alignment: Alignment.center,
-                    child: Icon(
-                      Icons.explore_outlined,
-                      size: 48,
-                      color: tm.sapphireLight,
-                    ),
-                  ),
-                ),
+              child: const AssistantAvatar(
+                size: AssistantAvatarSize.xlarge,
               ),
             ),
           ),
-          const SizedBox(height: 28),
+          const SizedBox(height: Spacing.xl6),
           // "Where to today?" title — staggered entrance
           FadeTransition(
             opacity: Tween<double>(begin: 0.0, end: 1.0).animate(
@@ -961,7 +922,7 @@ class _ChatViewState extends State<_ChatView>
               ),
             ),
           ),
-          const SizedBox(height: 10),
+          const SizedBox(height: Spacing.lg),
           // Welcome message — staggered entrance
           FadeTransition(
             opacity: Tween<double>(begin: 0.0, end: 1.0).animate(
@@ -1009,7 +970,7 @@ class _ChatViewState extends State<_ChatView>
               ),
             ),
           ),
-          const SizedBox(height: 32),
+          const SizedBox(height: Spacing.xl7),
           // accent line — staggered entrance
           FadeTransition(
             opacity: Tween<double>(begin: 0.0, end: 1.0).animate(
@@ -1045,21 +1006,21 @@ class _ChatViewState extends State<_ChatView>
               ),
             ),
           ),
-          const SizedBox(height: 32),
+          const SizedBox(height: Spacing.xl7),
           // Quick suggestion chips (have their own staggered animation)
           SuggestionChips(
             onChipTapped: (message) {
               final cubit = context.read<ChatCubit>();
               cubit.sendMessage(message);
             },
-          ),            const SizedBox(height: 40),
+          ),            const SizedBox(height: Spacing.xl8),
         ],
       ),
     );
   }
   Widget _buildInputBar(ChatCubit cubit) {
     return Container(
-      padding: EdgeInsets.fromLTRB(Spacing.xl3, Spacing.sm, Spacing.xl3, Spacing.xl3),
+      padding: EdgeInsets.fromLTRB(Spacing.xl3, Spacing.sm, Spacing.xl3, Spacing.xl4),
       decoration: BoxDecoration(
         color: tm.brandWhite,
         border: Border(top: BorderSide(color: tm.divider, width: 0.5)),
@@ -1070,17 +1031,17 @@ class _ChatViewState extends State<_ChatView>
         children: [
           if (_selectedImageBytes != null)
             Container(
-              margin: const EdgeInsets.only(bottom: Spacing.sm),
-              padding: const EdgeInsets.all(Spacing.sm),
+              margin: const EdgeInsets.only(bottom: Spacing.md),
+              padding: const EdgeInsets.all(Spacing.md),
               decoration: BoxDecoration(
                 color: tm.surface,
-                borderRadius: BorderRadius.circular(RadiusTokens.md),
+                borderRadius: BorderRadius.circular(RadiusTokens.xl),
                 border: Border.all(color: tm.borderLight),
               ),
               child: Stack(
                 children: [
                   ClipRRect(
-                    borderRadius: BorderRadius.circular(8),
+                    borderRadius: BorderRadius.circular(RadiusTokens.md),
                     child: Image.memory(
                       _selectedImageBytes!,
                       height: 80,
@@ -1094,7 +1055,7 @@ class _ChatViewState extends State<_ChatView>
                     child: GestureDetector(
                       onTap: _clearImage,
                       child: Container(
-                        padding: const EdgeInsets.all(4),
+                        padding: const EdgeInsets.all(Spacing.xs),
                         decoration: BoxDecoration(
                           color: tm.deepNavy.withValues(alpha: 0.6),
                           shape: BoxShape.circle,
@@ -1107,7 +1068,7 @@ class _ChatViewState extends State<_ChatView>
               ),
             ),
           Container(
-            padding: const EdgeInsets.symmetric(horizontal: Spacing.xl2),
+            padding: const EdgeInsets.symmetric(horizontal: Spacing.xl2, vertical: Spacing.xxs),
             decoration: BoxDecoration(
               color: tm.surface,
               borderRadius: BorderRadius.circular(RadiusTokens.xl2 + 14),
@@ -1117,16 +1078,17 @@ class _ChatViewState extends State<_ChatView>
               crossAxisAlignment: CrossAxisAlignment.center,
               children: [
                 SizedBox(
-                  width: 36,
-                  height: 36,
+                  width: 38,
+                  height: 38,
                   child: IconButton(
                     padding: EdgeInsets.zero,
                     constraints: const BoxConstraints(),
                     icon: Icon(Icons.camera_alt_outlined, size: 20, color: tm.textTertiary),
                     onPressed: _pickImage,
+                    splashRadius: 20,
                   ),
                 ),
-                const SizedBox(width: 4),
+                const SizedBox(width: Spacing.md),
                 Expanded(
                   child: TextField(
                     controller: _inputController,
@@ -1138,24 +1100,37 @@ class _ChatViewState extends State<_ChatView>
                       hintStyle: GoogleFonts.inter(color: tm.textTertiary, fontSize: 15),
                       border: InputBorder.none,
                       isDense: true,
-                      contentPadding: const EdgeInsets.symmetric(vertical: 10),
+                      contentPadding: const EdgeInsets.symmetric(vertical: Spacing.lg),
                     ),
                     style: GoogleFonts.inter(fontSize: 15, color: tm.textPrimary),
                     onSubmitted: (_) => _sendMessage(cubit),
                   ),
                 ),
+                const SizedBox(width: Spacing.sm),
                 Container(
-                  width: 36,
-                  height: 36,
+                  width: 38,
+                  height: 38,
                   decoration: BoxDecoration(
-                    color: tm.deepNavy,
+                    gradient: LinearGradient(
+                      colors: [tm.deepRoyalBlue, tm.sapphire],
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                    ),
                     borderRadius: BorderRadius.circular(RadiusTokens.full),
+                    boxShadow: [
+                      BoxShadow(
+                        color: tm.deepRoyalBlue.withValues(alpha: 0.25),
+                        blurRadius: 6,
+                        offset: const Offset(0, 2),
+                      ),
+                    ],
                   ),
                   child: IconButton(
                     padding: EdgeInsets.zero,
                     constraints: const BoxConstraints(),
                     icon: Icon(Icons.send_rounded, size: 18, color: tm.brandWhite),
                     onPressed: () => _sendMessage(cubit),
+                    splashRadius: 20,
                   ),
                 ),
               ],
@@ -1191,7 +1166,7 @@ class _ReconnectingBanner extends StatelessWidget {
               color: tm.deepRoyalBlue,
             ),
           ),
-          const SizedBox(width: 10),
+          const SizedBox(width: Spacing.lg),
           Text(
             'Reconnecting...',
             style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w600, color: tm.deepRoyalBlue),
@@ -1235,12 +1210,12 @@ class _TypingIndicatorState extends State<_TypingIndicator>
     return Align(
       alignment: Alignment.centerLeft,
       child: Container(
-        margin: const EdgeInsets.symmetric(vertical: 4),
+        margin: const EdgeInsets.symmetric(vertical: Spacing.xs),
         padding: const EdgeInsets.symmetric(horizontal: Spacing.xl3, vertical: Spacing.md),
         decoration: BoxDecoration(
           color: tm.brandWhite,
           borderRadius: BorderRadius.circular(20).copyWith(
-            bottomLeft: const Radius.circular(4),
+            bottomLeft: const Radius.circular(RadiusTokens.xs),
           ),
           border: Border.all(color: tm.borderLight),
         ),
@@ -1262,7 +1237,7 @@ class _TypingIndicatorState extends State<_TypingIndicator>
                   final sine = (math.sin(raw * 2 * math.pi) + 1) / 2;
                   final opacity = 0.3 + sine * 0.7;
                       return Padding(
-                        padding: EdgeInsets.only(left: i > 0 ? 5 : 0),
+                        padding: EdgeInsets.only(left: i > 0 ? Spacing.sm : 0),
                         child: Opacity(
                           opacity: opacity.toDouble(),
                           child: Container(
@@ -1280,7 +1255,7 @@ class _TypingIndicatorState extends State<_TypingIndicator>
                 },
               ),
             ),
-            const SizedBox(width: 8),
+            const SizedBox(width: Spacing.md),
             // "TourMate is thinking" label
             Text(
               'TourMate is thinking',
@@ -1297,49 +1272,4 @@ class _TypingIndicatorState extends State<_TypingIndicator>
   }
 }
 
-/// ================= FLOATING AVATAR WRAPPER =================
-/// A lightweight wrapper that adds a gentle sine-wave floating animation
-/// to the empty state concierge avatar (±4px over 3 seconds).
-class _FloatingAnimation extends StatefulWidget {
-  final Widget child;
 
-  const _FloatingAnimation({required this.child});
-
-  @override
-  State<_FloatingAnimation> createState() => _FloatingAnimationState();
-}
-
-class _FloatingAnimationState extends State<_FloatingAnimation>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _controller;
-
-  @override
-  void initState() {
-    super.initState();
-    _controller = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 3000),
-    )..repeat();
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return AnimatedBuilder(
-      animation: _controller,
-      builder: (context, child) {
-        final floatY = math.sin(_controller.value * 2 * math.pi) * 4.0;
-        return Transform.translate(
-          offset: Offset(0, floatY),
-          child: child,
-        );
-      },
-      child: widget.child,
-    );
-  }
-}

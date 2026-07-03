@@ -177,7 +177,7 @@ class _BookingPaymentViewState extends State<_BookingPaymentView> {
                             fontWeight: FontWeight.w500,
                           ),
                         ),
-                        const SizedBox(height: 8),
+                        const SizedBox(height: Spacing.md),
                         Row(
                           mainAxisSize: MainAxisSize.min,
                           crossAxisAlignment: CrossAxisAlignment.start,
@@ -212,7 +212,7 @@ class _BookingPaymentViewState extends State<_BookingPaymentView> {
                             ],
                           ],
                         ),
-                        const SizedBox(height: 4),
+                        const SizedBox(height: Spacing.xs),
                         Container(
                           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
                           decoration: BoxDecoration(
@@ -232,7 +232,7 @@ class _BookingPaymentViewState extends State<_BookingPaymentView> {
                       ],
                     ),
                   ),
-                  const SizedBox(height: 32),
+                  const SizedBox(height: Spacing.xl7),
 
                   // Status indicator
                   if (state is BookingPaymentInitial)
@@ -314,9 +314,8 @@ class _BookingPaymentViewState extends State<_BookingPaymentView> {
             strokeWidth: 3,
             color: Color(0xFF2563EB),
           ),
-        ),
-        const SizedBox(height: 20),
-        Container(
+        ),        const SizedBox(height: Spacing.xl4),
+          Container(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
           decoration: BoxDecoration(
             color: const Color(0xFF2563EB).withValues(alpha: 0.06),
@@ -371,9 +370,8 @@ class _BookingPaymentViewState extends State<_BookingPaymentView> {
             ],
           ),
           child: const Icon(Icons.check_rounded, color: Colors.white, size: 36),
-        ),
-        const SizedBox(height: 20),
-        Text(
+        ),        const SizedBox(height: Spacing.xl4),
+          Text(
           'Payment Successful!',
           style: GoogleFonts.inter(
             fontSize: 22,
@@ -383,7 +381,7 @@ class _BookingPaymentViewState extends State<_BookingPaymentView> {
           ),
         ),
         if (state.simulated) ...[
-          const SizedBox(height: 8),
+          const SizedBox(height: Spacing.md),
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
             decoration: BoxDecoration(
@@ -424,9 +422,8 @@ class _BookingPaymentViewState extends State<_BookingPaymentView> {
             border: Border.all(color: tm.error.withValues(alpha: 0.12)),
           ),
           child: Icon(Icons.error_outline_rounded, color: tm.error, size: 32),
-        ),
-        const SizedBox(height: 20),
-        Text(
+        ),        const SizedBox(height: Spacing.xl4),
+          Text(
           'Payment Failed',
           style: GoogleFonts.inter(
             fontSize: 20,
@@ -453,7 +450,7 @@ class _BookingPaymentViewState extends State<_BookingPaymentView> {
             ),
           ),
         ),
-        const SizedBox(height: 28),
+        const SizedBox(height: Spacing.xl6),
         GestureDetector(
           onTap: () => Navigator.of(context).pop(false),
           child: Container(

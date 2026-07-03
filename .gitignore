@@ -25,3 +25,9 @@ Thumbs.db
 # === Secrets ===
 *.credentials.json
 firebase-credentials.json
+
+# === Temp files ===
+~$*.docx
+~WRL*.tmp
+**/errors/errors-*.log
+.kotlin/

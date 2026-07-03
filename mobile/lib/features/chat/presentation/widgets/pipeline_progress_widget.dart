@@ -65,32 +65,15 @@ class _PipelineProgressWidgetState extends State<PipelineProgressWidget>
           crossAxisAlignment: CrossAxisAlignment.start,
           mainAxisSize: MainAxisSize.min,
           children: [
-            /// ── Premium Header ──────────────────────────────────────
-            Row(
-              children: [
-                SizedBox(
-                  width: 18,
-                  height: 18,
-                  child: CircularProgressIndicator(
-                    strokeWidth: 2,
-                    valueColor: AlwaysStoppedAnimation<Color>(tm.deepRoyalBlue),
+            /// ── Pipeline Steps (staggered entry) ───────────────────
+            ...widget.steps.asMap().entries.map(
+                  (entry) => _StepTile(
+                    key: ValueKey(entry.value.agent),
+                    step: entry.value,
+                    index: entry.key,
+                    builder: _buildStep,
                   ),
                 ),
-                const SizedBox(width: 10),
-                Text(
-                  'Generating your itinerary…',
-                  style: GoogleFonts.inter(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w600,
-                    color: tm.textPrimary,
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: Spacing.md),
-
-            /// ── Premium Steps ───────────────────────────────────────
-            ...widget.steps.map(_buildStep),
           ],
         ),
       ),
@@ -100,6 +83,8 @@ class _PipelineProgressWidgetState extends State<PipelineProgressWidget>
   Widget _buildStep(PipelineStep step) {
     final isRunning = step.status == 'running';
     final isDone = step.status == 'done';
+
+    final tm = this.tm;
 
     return Padding(
       padding: const EdgeInsets.only(bottom: Spacing.sm),
@@ -145,6 +130,81 @@ class _PipelineProgressWidgetState extends State<PipelineProgressWidget>
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// A single pipeline step tile with a staggered fade + slide entrance animation.
+///
+/// Each tile waits `index * staggerDelay` before beginning its animation,
+/// creating a cascading reveal effect when multiple steps appear together.
+class _StepTile extends StatefulWidget {
+  final PipelineStep step;
+  final int index;
+  final Widget Function(PipelineStep) builder;
+
+  const _StepTile({
+    super.key,
+    required this.step,
+    required this.index,
+    required this.builder,
+  });
+
+  @override
+  State<_StepTile> createState() => _StepTileState();
+}
+
+class _StepTileState extends State<_StepTile>
+    with SingleTickerProviderStateMixin {
+  static const Duration _staggerDelay = Duration(milliseconds: 120);
+  static const Duration _animDuration = Duration(milliseconds: 450);
+
+  late final AnimationController _controller;
+  late final Animation<double> _fadeAnimation;
+  late final Animation<Offset> _slideAnimation;
+
+  @override
+  void initState() {
+    super.initState();
+
+    _controller = AnimationController(
+      vsync: this,
+      duration: _animDuration,
+    );
+
+    _fadeAnimation = CurvedAnimation(
+      parent: _controller,
+      curve: Curves.easeOut,
+    );
+
+    _slideAnimation = Tween<Offset>(
+      begin: const Offset(0.0, -0.25),
+      end: Offset.zero,
+    ).animate(CurvedAnimation(
+      parent: _controller,
+      curve: Curves.easeOutCubic,
+    ));
+
+    // Staggered delay: each successive step waits longer before animating
+    Future.delayed(_staggerDelay * (widget.index + 1), () {
+      if (mounted) _controller.forward();
+    });
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FadeTransition(
+      opacity: _fadeAnimation,
+      child: SlideTransition(
+        position: _slideAnimation,
+        child: widget.builder(widget.step),
       ),
     );
   }

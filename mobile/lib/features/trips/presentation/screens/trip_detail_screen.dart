@@ -98,10 +98,10 @@ class _TripDetailScreenState extends State<TripDetailScreen> {
   Widget _buildHeader(BuildContext context, TripDetailModel trip) {
     return Container(
       padding: EdgeInsets.only(
-        top: MediaQuery.of(context).padding.top + 8,
-        left: 4,
-        right: 4,
-        bottom: 4,
+        top: MediaQuery.of(context).padding.top + Spacing.md,
+        left: Spacing.xs,
+        right: Spacing.xs,
+        bottom: Spacing.xs,
       ),
       decoration: BoxDecoration(
         color: tm.brandWhite,
@@ -112,17 +112,17 @@ class _TripDetailScreenState extends State<TripDetailScreen> {
           // Back button with sapphire accent on press
           IconButton(
             icon: Container(
-              padding: const EdgeInsets.all(6),
+              padding: const EdgeInsets.all(Spacing.sm),
               decoration: BoxDecoration(
                 color: tm.surface,
-                borderRadius: BorderRadius.circular(10),
+                borderRadius: BorderRadius.circular(RadiusTokens.lg),
                 border: Border.all(color: tm.borderLight),
               ),
               child: Icon(Icons.arrow_back_rounded, color: tm.textPrimary, size: 18),
             ),
             onPressed: () => Navigator.pop(context),
           ),
-          const SizedBox(width: 4),
+          const SizedBox(width: Spacing.xs),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -141,7 +141,7 @@ class _TripDetailScreenState extends State<TripDetailScreen> {
                 Row(
                   children: [
                     Icon(Icons.location_on_outlined, size: 12, color: tm.sapphire),
-                    const SizedBox(width: 3),
+                    const SizedBox(width: Spacing.xxs),
                     Text(
                       trip.destination,
                       style: GoogleFonts.inter(fontSize: 12, color: tm.textSecondary),
@@ -155,30 +155,30 @@ class _TripDetailScreenState extends State<TripDetailScreen> {
           Material(
             color: Colors.transparent,
             child: InkWell(
-              borderRadius: BorderRadius.circular(10),
+              borderRadius: BorderRadius.circular(RadiusTokens.lg),
               onTap: () => _continueChat(context, trip),
               child: Container(
-                padding: const EdgeInsets.all(8),
+                padding: const EdgeInsets.all(Spacing.md),
                 decoration: BoxDecoration(
                   color: tm.sapphire.withValues(alpha: 0.08),
-                  borderRadius: BorderRadius.circular(10),
+                  borderRadius: BorderRadius.circular(RadiusTokens.lg),
                 ),
                 child: Icon(Icons.chat_bubble_outline, color: tm.deepRoyalBlue, size: 18),
               ),
             ),
           ),
-          const SizedBox(width: 4),
+          const SizedBox(width: Spacing.xs),
           // Delete button
           Material(
             color: Colors.transparent,
             child: InkWell(
-              borderRadius: BorderRadius.circular(10),
+              borderRadius: BorderRadius.circular(RadiusTokens.lg),
               onTap: () => _confirmDelete(context, trip),
               child: Container(
-                padding: const EdgeInsets.all(8),
+                padding: const EdgeInsets.all(Spacing.md),
                 decoration: BoxDecoration(
                   color: tm.error.withValues(alpha: 0.06),
-                  borderRadius: BorderRadius.circular(10),
+                  borderRadius: BorderRadius.circular(RadiusTokens.lg),
                 ),
                 child: Icon(Icons.delete_outline, color: tm.error, size: 18),
               ),
@@ -195,7 +195,7 @@ class _TripDetailScreenState extends State<TripDetailScreen> {
     return Hero(
       tag: 'booking-summary-${widget.tripId}',
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(Spacing.xl3, 4, Spacing.xl3, Spacing.xl3),
+        padding: const EdgeInsets.fromLTRB(Spacing.xl3, Spacing.xs, Spacing.xl3, Spacing.xl3),
       child: Container(
         padding: const EdgeInsets.all(Spacing.xl3),
         decoration: BoxDecoration(
@@ -231,7 +231,7 @@ class _TripDetailScreenState extends State<TripDetailScreen> {
               Row(
                 children: [
                   Icon(Icons.date_range_outlined, size: 14, color: tm.sapphireLight),
-                  const SizedBox(width: 6),
+                  const SizedBox(width: Spacing.sm),
                   Text(
                     _formatDateRange(trip),
                     style: GoogleFonts.inter(fontSize: 13, color: tm.textSecondary),
@@ -245,7 +245,7 @@ class _TripDetailScreenState extends State<TripDetailScreen> {
               Row(
                 children: [
                   Icon(Icons.people_outline, size: 14, color: tm.sapphireLight),
-                  const SizedBox(width: 6),
+                  const SizedBox(width: Spacing.sm),
                   Text(
                     '${trip.numberOfTravelers} travelers',
                     style: GoogleFonts.inter(fontSize: 13, color: tm.textSecondary),
@@ -319,17 +319,17 @@ class _TripDetailScreenState extends State<TripDetailScreen> {
 
   Widget _headerInfoChip(IconData icon, String label) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      padding: const EdgeInsets.symmetric(horizontal: Spacing.lg, vertical: Spacing.sm),
       decoration: BoxDecoration(
         color: tm.brandWhite,
-        borderRadius: BorderRadius.circular(10),
+        borderRadius: BorderRadius.circular(RadiusTokens.lg),
         border: Border.all(color: tm.borderLight),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
           Icon(icon, size: 13, color: tm.sapphireLight),
-          const SizedBox(width: 5),
+          const SizedBox(width: Spacing.sm),
           Text(
             label,
             style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w600, color: tm.textPrimary),
@@ -344,18 +344,18 @@ class _TripDetailScreenState extends State<TripDetailScreen> {
       child: Column(
         children: [
           Container(
-            padding: const EdgeInsets.all(8),
+            padding: const EdgeInsets.all(Spacing.md),
             decoration: BoxDecoration(
               gradient: const LinearGradient(
                 colors: [Color(0xFF0F172A), Color(0xFF1E3A8A)],
                 begin: Alignment.topLeft,
                 end: Alignment.bottomRight,
               ),
-              borderRadius: BorderRadius.circular(10),
+              borderRadius: BorderRadius.circular(RadiusTokens.lg),
             ),
             child: Icon(icon, size: 16, color: tm.sapphireLight),
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: Spacing.md),
           Text(
             value,
             style: GoogleFonts.inter(
@@ -486,18 +486,18 @@ class _TripDetailScreenState extends State<TripDetailScreen> {
             Row(
               children: [
                 Container(
-                  padding: const EdgeInsets.all(6),
+                  padding: const EdgeInsets.all(Spacing.sm),
                   decoration: BoxDecoration(
                     gradient: const LinearGradient(
                       colors: [Color(0xFF0F172A), Color(0xFF1E3A8A)],
                       begin: Alignment.topLeft,
                       end: Alignment.bottomRight,
                     ),
-                    borderRadius: BorderRadius.circular(8),
+                    borderRadius: BorderRadius.circular(RadiusTokens.md),
                   ),
                   child: Icon(Icons.tune_outlined, size: 14, color: tm.sapphireLight),
                 ),
-                const SizedBox(width: 10),
+                const SizedBox(width: Spacing.lg),
                 Text(
                   'Trip Preferences',
                   style: GoogleFonts.inter(
@@ -512,14 +512,14 @@ class _TripDetailScreenState extends State<TripDetailScreen> {
             const SizedBox(height: Spacing.md),
             hasChips
                 ? Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
+                    spacing: Spacing.md,
+                    runSpacing: Spacing.md,
                     children: chips,
                   )
                 : Row(
                     children: [
                       Icon(Icons.info_outline, size: 14, color: tm.textTertiary),
-                      const SizedBox(width: 8),
+                      const SizedBox(width: Spacing.md),
                       Text(
                         profile == null
                             ? 'Chat with TourMate to generate preferences'
@@ -541,17 +541,17 @@ class _TripDetailScreenState extends State<TripDetailScreen> {
   Widget _prefChip(IconData icon, String label, Color color) {
     final adjustedColor = color;
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      padding: const EdgeInsets.symmetric(horizontal: Spacing.lg, vertical: Spacing.sm),
       decoration: BoxDecoration(
         color: color.withValues(alpha: 0.08),
-        borderRadius: BorderRadius.circular(10),
+        borderRadius: BorderRadius.circular(RadiusTokens.lg),
         border: Border.all(color: color.withValues(alpha: 0.25)),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
           Icon(icon, size: 13, color: adjustedColor),
-          const SizedBox(width: 5),
+          const SizedBox(width: Spacing.sm),
           Text(
             label,
             style: GoogleFonts.inter(
@@ -614,7 +614,7 @@ class _TripDetailScreenState extends State<TripDetailScreen> {
           unselectedLabelStyle: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.w500),
           indicatorSize: TabBarIndicatorSize.tab,
           dividerColor: Colors.transparent,
-          padding: const EdgeInsets.all(4),
+          padding: const EdgeInsets.all(Spacing.xs),
           tabs: [
             Tab(
               child: Row(
@@ -622,7 +622,7 @@ class _TripDetailScreenState extends State<TripDetailScreen> {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Icon(Icons.explore_outlined, size: 16),
-                  const SizedBox(width: 6),
+                  const SizedBox(width: Spacing.sm),
                   const Text('Itinerary'),
                 ],
               ),
@@ -633,7 +633,7 @@ class _TripDetailScreenState extends State<TripDetailScreen> {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Icon(Icons.map_outlined, size: 16),
-                  const SizedBox(width: 6),
+                  const SizedBox(width: Spacing.sm),
                   const Text('Map'),
                 ],
               ),
@@ -660,7 +660,7 @@ class _TripDetailScreenState extends State<TripDetailScreen> {
 
   Widget _buildItineraryTab(TripDetailModel trip) {
     return ListView(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(Spacing.xl3),
       children: trip.itineraries.map((itin) {
         return _ItineraryTimeline(itinerary: itin);
       }).toList(),
@@ -680,7 +680,7 @@ class _TripDetailScreenState extends State<TripDetailScreen> {
           mainAxisSize: MainAxisSize.min,
           children: [
             Icon(Icons.map_outlined, size: 48, color: tm.textTertiary),
-            const SizedBox(height: 12),
+            const SizedBox(height: Spacing.xl),
             Text(
               'No location data available',
               style: TextStyle(color: tm.textTertiary),
@@ -704,7 +704,7 @@ class _TripDetailScreenState extends State<TripDetailScreen> {
           child: Stack(
             children: [
               ClipRRect(
-                borderRadius: BorderRadius.circular(16),
+                borderRadius: BorderRadius.circular(RadiusTokens.xl3),
                 child: FlutterMap(
                   mapController: _mapController,
                   options: MapOptions(
@@ -810,7 +810,7 @@ class _TripDetailScreenState extends State<TripDetailScreen> {
                           ),
                         ),
                       ),
-                      const SizedBox(width: 8),
+                      const SizedBox(width: Spacing.md),
                       Expanded(
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
@@ -828,7 +828,7 @@ class _TripDetailScreenState extends State<TripDetailScreen> {
                               overflow: TextOverflow.ellipsis,
                             ),
                             if (stop.category != null) ...[
-                              const SizedBox(height: 2),
+                              const SizedBox(height: Spacing.xxs),
                               Text(
                                 _categoryLabel(stop.category!),
                                 style: GoogleFonts.inter(
@@ -858,7 +858,7 @@ class _TripDetailScreenState extends State<TripDetailScreen> {
     return Positioned(
       left: Spacing.xl3,
       right: Spacing.xl3,
-      bottom: 12,
+      bottom: Spacing.xl,
       child: GestureDetector(
         onTap: () {
           if (stop.placeId != null && stop.placeId!.isNotEmpty) {
@@ -932,21 +932,21 @@ class _TripDetailScreenState extends State<TripDetailScreen> {
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                       ),
-                      const SizedBox(height: 4),
+                      const SizedBox(height: Spacing.xs),
                       Row(
                         children: [
                           if (stop.category != null) ...[
                             Icon(Icons.explore_outlined, size: 11, color: tm.sapphireLight),
-                            const SizedBox(width: 3),
+                            const SizedBox(width: Spacing.xxs),
                             Text(
                               _categoryLabel(stop.category!),
                               style: GoogleFonts.inter(fontSize: 11, color: tm.textTertiary),
                             ),
-                            const SizedBox(width: 8),
+                            const SizedBox(width: Spacing.md),
                           ],
                           if (stop.rating != null) ...[
                             Icon(Icons.star_rounded, size: 12, color: tm.sapphire),
-                            const SizedBox(width: 2),
+                            const SizedBox(width: Spacing.xxs),
                             Text(
                               stop.rating!.toStringAsFixed(1),
                               style: GoogleFonts.inter(
@@ -957,9 +957,9 @@ class _TripDetailScreenState extends State<TripDetailScreen> {
                             ),
                           ],
                           if (stop.durationMinutes != null && stop.durationMinutes! > 0) ...[
-                            const SizedBox(width: 8),
+                            const SizedBox(width: Spacing.md),
                             Icon(Icons.timer_outlined, size: 11, color: tm.textTertiary),
-                            const SizedBox(width: 2),
+                            const SizedBox(width: Spacing.xxs),
                             Text(
                               '${stop.durationMinutes} min',
                               style: GoogleFonts.inter(fontSize: 11, color: tm.textTertiary),
@@ -972,10 +972,10 @@ class _TripDetailScreenState extends State<TripDetailScreen> {
                 ),
                 // Premium arrow
                 Container(
-                  padding: const EdgeInsets.all(4),
+                  padding: const EdgeInsets.all(Spacing.xs),
                   decoration: BoxDecoration(
                     color: tm.sapphire.withValues(alpha: 0.08),
-                    borderRadius: BorderRadius.circular(8),
+                    borderRadius: BorderRadius.circular(RadiusTokens.md),
                   ),
                   child: Icon(Icons.chevron_right_rounded, size: 18, color: tm.deepRoyalBlue),
                 ),
@@ -1039,14 +1039,14 @@ class _TripDetailScreenState extends State<TripDetailScreen> {
         title: Row(
           children: [
             Container(
-              padding: const EdgeInsets.all(6),
+              padding: const EdgeInsets.all(Spacing.sm),
               decoration: BoxDecoration(
                 color: tm.error.withValues(alpha: 0.08),
-                borderRadius: BorderRadius.circular(8),
+                borderRadius: BorderRadius.circular(RadiusTokens.md),
               ),
               child: Icon(Icons.delete_outline, size: 18, color: tm.error),
             ),
-            const SizedBox(width: 10),
+            const SizedBox(width: Spacing.lg),
             Text(
               "Delete Trip",
               style: GoogleFonts.inter(
@@ -1070,9 +1070,9 @@ class _TripDetailScreenState extends State<TripDetailScreen> {
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
             style: TextButton.styleFrom(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              padding: Insets.message,
               shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(10),
+                borderRadius: BorderRadius.circular(RadiusTokens.lg),
               ),
             ),
             child: Text(
@@ -1084,9 +1084,9 @@ class _TripDetailScreenState extends State<TripDetailScreen> {
             onPressed: () => Navigator.pop(ctx, true),
             style: TextButton.styleFrom(
               backgroundColor: tm.error.withValues(alpha: 0.08),
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              padding: Insets.message,
               shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(10),
+                borderRadius: BorderRadius.circular(RadiusTokens.lg),
               ),
             ),
             child: Text(
@@ -1145,17 +1145,17 @@ class _ItineraryTimeline extends StatelessWidget {
           Padding(
             padding: const EdgeInsets.only(bottom: Spacing.md),
             child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              padding: Insets.chip,
               decoration: BoxDecoration(
                 color: tm.sapphire.withValues(alpha: 0.08),
-                borderRadius: BorderRadius.circular(8),
+                borderRadius: BorderRadius.circular(RadiusTokens.md),
                 border: Border.all(color: tm.sapphire.withValues(alpha: 0.2)),
               ),
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Icon(Icons.auto_awesome, size: 12, color: tm.sapphire),
-                  const SizedBox(width: 6),
+                  const SizedBox(width: Spacing.sm),
                   Text(
                     'v${itinerary.versionNumber}: ${itinerary.description}',
                     style: GoogleFonts.inter(
@@ -1253,10 +1253,10 @@ class _DayTimeline extends StatelessWidget {
               ),
               if (day.date != null)
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  padding: const EdgeInsets.symmetric(horizontal: Spacing.md, vertical: Spacing.xs),
                   decoration: BoxDecoration(
                     color: tm.sapphire.withValues(alpha: 0.08),
-                    borderRadius: BorderRadius.circular(8),
+                    borderRadius: BorderRadius.circular(RadiusTokens.md),
                   ),
                   child: Text(
                     day.date!.length >= 10
@@ -1277,7 +1277,7 @@ class _DayTimeline extends StatelessWidget {
           // Stop cards with premium timeline
           if (filteredStops.isEmpty)
             Padding(
-              padding: const EdgeInsets.only(left: 52),
+              padding: const EdgeInsets.only(left: Spacing.xl10),
               child: Container(
                 padding: const EdgeInsets.all(Spacing.md),
                 decoration: BoxDecoration(
@@ -1304,11 +1304,11 @@ class _DayTimeline extends StatelessWidget {
           // Travel time
           if (day.stops.isNotEmpty && day.stops.any((s) => s.minutesFromPrevStop != null && s.minutesFromPrevStop! > 0))
             Padding(
-              padding: const EdgeInsets.only(left: 52, top: Spacing.sm),
+              padding: const EdgeInsets.only(left: Spacing.xl10, top: Spacing.sm),
               child: Row(
                 children: [
                   Icon(Icons.access_time, size: 14, color: tm.sapphireLight),
-                  const SizedBox(width: 4),
+                  const SizedBox(width: Spacing.xs),
                   Text(
                     'Total: ${day.stops.fold(0, (int sum, s) => sum + (s.minutesFromPrevStop ?? 0))} min travel',
                     style: GoogleFonts.inter(fontSize: 11, color: tm.textTertiary),
@@ -1370,7 +1370,7 @@ class _StopTimelineCard extends StatelessWidget {
               SizedBox(
                 width: 40,
                 child: Padding(
-                  padding: const EdgeInsets.only(top: 6),
+                  padding: const EdgeInsets.only(top: Spacing.sm),
                   child: Center(
                     child: AnimatedContainer(
                       duration: const Duration(milliseconds: 200),
@@ -1408,7 +1408,7 @@ class _StopTimelineCard extends StatelessWidget {
               // Premium stop card
               Expanded(
                 child: Container(
-                  margin: const EdgeInsets.only(left: 8),
+                  margin: const EdgeInsets.only(left: Spacing.md),
                   child: Material(
                     color: tm.brandWhite,
                     borderRadius: BorderRadius.circular(RadiusTokens.xl3),
@@ -1456,12 +1456,12 @@ class _StopTimelineCard extends StatelessWidget {
                                 if (timeLabel.isNotEmpty)
                                   Container(
                                     padding: const EdgeInsets.symmetric(
-                                      horizontal: 8,
-                                      vertical: 3,
+                                      horizontal: Spacing.md,
+                                      vertical: Spacing.xxs,
                                     ),
                                     decoration: BoxDecoration(
                                       color: timeColor.withValues(alpha: 0.12),
-                                      borderRadius: BorderRadius.circular(8),
+                                      borderRadius: BorderRadius.circular(RadiusTokens.md),
                                       border: Border.all(color: timeColor.withValues(alpha: 0.2)),
                                     ),
                                     child: Text(
@@ -1480,8 +1480,8 @@ class _StopTimelineCard extends StatelessWidget {
 
                             // sapphire-accented metadata chips
                             Wrap(
-                              spacing: 6,
-                              runSpacing: 4,
+                              spacing: Spacing.sm,
+                              runSpacing: Spacing.xs,
                               children: [
                                 if (stop.durationMinutes != null &&
                                     stop.durationMinutes! > 0)
@@ -1531,14 +1531,14 @@ class _StopTimelineCard extends StatelessWidget {
                             if (stop.travelMode != null &&
                                 stop.minutesFromPrevStop != null &&
                                 stop.minutesFromPrevStop! > 0) ...[
-                              const SizedBox(height: 6),
+                              const SizedBox(height: Spacing.sm),
                               Row(
                                 children: [
                                   Container(
-                                    padding: const EdgeInsets.all(3),
+                                    padding: const EdgeInsets.all(Spacing.xxs),
                                     decoration: BoxDecoration(
                                       color: tm.sapphire.withValues(alpha: 0.08),
-                                      borderRadius: BorderRadius.circular(6),
+                                      borderRadius: BorderRadius.circular(RadiusTokens.sm),
                                     ),
                                     child: Icon(
                                       _travelModeIcon(stop.travelMode!),
@@ -1546,7 +1546,7 @@ class _StopTimelineCard extends StatelessWidget {
                                       color: tm.sapphire,
                                     ),
                                   ),
-                                  const SizedBox(width: 6),
+                                  const SizedBox(width: Spacing.sm),
                                   Text(
                                     '${_travelModeLabel(stop.travelMode!)} · ${stop.minutesFromPrevStop} min',
                                     style: GoogleFonts.inter(
@@ -1560,12 +1560,12 @@ class _StopTimelineCard extends StatelessWidget {
 
                             // Address
                             if (stop.address != null && stop.address!.isNotEmpty) ...[
-                              const SizedBox(height: 4),
+                              const SizedBox(height: Spacing.xs),
                               Row(
                                 children: [
                                   Icon(Icons.location_on_outlined,
                                       size: 12, color: tm.sapphireLight),
-                                  const SizedBox(width: 3),
+                                  const SizedBox(width: Spacing.xxs),
                                   Expanded(
                                     child: Text(
                                       stop.address!,
@@ -1593,17 +1593,17 @@ class _StopTimelineCard extends StatelessWidget {
 
   Widget _metaChip(String label, IconData icon, Color accentColor) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      padding: const EdgeInsets.symmetric(horizontal: Spacing.md, vertical: Spacing.xs),
       decoration: BoxDecoration(
         color: accentColor.withValues(alpha: 0.08),
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(RadiusTokens.md),
         border: Border.all(color: accentColor.withValues(alpha: 0.2)),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
           Icon(icon, size: 11, color: accentColor),
-          const SizedBox(width: 4),
+          const SizedBox(width: Spacing.xs),
           Text(
             label,
             style: GoogleFonts.inter(

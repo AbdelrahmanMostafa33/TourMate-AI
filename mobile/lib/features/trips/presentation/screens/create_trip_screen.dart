@@ -189,7 +189,7 @@ class _CreateTripViewState extends State<_CreateTripView> {
                   elevation: 0,
                   padding: const EdgeInsets.symmetric(horizontal: 14),
                   shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(10),
+                    borderRadius: BorderRadius.circular(RadiusTokens.lg),
                     side: BorderSide(color: _tm.sapphire.withValues(alpha: 0.3), width: 0.5),
                   ),
                   shadowColor: Colors.transparent,
@@ -363,7 +363,7 @@ class _CreateTripViewState extends State<_CreateTripView> {
               begin: Alignment.topCenter,
               end: Alignment.bottomCenter,
             ),
-            borderRadius: BorderRadius.circular(2),
+            borderRadius: BorderRadius.circular(RadiusTokens.xxs),
           ),
         ),
         const SizedBox(width: Spacing.md),
@@ -399,7 +399,7 @@ class _CreateTripViewState extends State<_CreateTripView> {
                 padding: const EdgeInsets.all(6),
                 decoration: BoxDecoration(
                   color: _tm.sapphire.withValues(alpha: 0.06),
-                  borderRadius: BorderRadius.circular(8),
+                  borderRadius: BorderRadius.circular(RadiusTokens.md),
                 ),
                 child: Icon(prefixIcon, size: 18, color: _tm.sapphire),
               )
@@ -469,7 +469,7 @@ class _CreateTripViewState extends State<_CreateTripView> {
                       letterSpacing: 0.5,
                     ),
                   ),
-                  const SizedBox(height: 2),
+                  const SizedBox(height: Spacing.xxs),
                   Text(
                     value,
                     style: GoogleFonts.inter(

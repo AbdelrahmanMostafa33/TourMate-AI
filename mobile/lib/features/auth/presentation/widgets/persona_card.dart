@@ -63,7 +63,7 @@ class PersonaCard extends StatelessWidget {
                 ),
 
                 // Accent underline
-                const SizedBox(height: 8),
+                const SizedBox(height: Spacing.md),
                 Container(
                   width: 32,
                   height: 3,
@@ -79,7 +79,7 @@ class PersonaCard extends StatelessWidget {
                 ),
 
                 // Description
-                const SizedBox(height: 14),
+                const SizedBox(height: Spacing.xl2),
                 Text(
                   persona.description,
                   style: GoogleFonts.inter(
@@ -91,10 +91,10 @@ class PersonaCard extends StatelessWidget {
 
                 // ── Trait chips ──────────────────────────────────────────
                 if (persona.traits.isNotEmpty) ...[
-                  const SizedBox(height: 18),
+                  const SizedBox(height: Spacing.xl4 - Spacing.xxs),
                   Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
+                    spacing: Spacing.md,
+                    runSpacing: Spacing.md,
                     children: persona.traits.map((trait) {
                       final traitInfo = _traitDisplay(trait);
                       return Container(
@@ -145,7 +145,7 @@ class PersonaCard extends StatelessWidget {
             ),
           ),
 
-          const SizedBox(height: 4),
+          const SizedBox(height: Spacing.xs),
 
           // ── Bottom stats bar ──────────────────────────────────────────
           Container(
@@ -480,8 +480,7 @@ class _HeaderSection extends StatelessWidget {
                     letterSpacing: 1.8,
                     color: tm.brandWhite.withValues(alpha: 0.6),
                   ),
-                ),
-                const SizedBox(height: 2),
+                ),                  const SizedBox(height: Spacing.xxs),
                 Text(
                   persona.name,
                   style: GoogleFonts.inter(

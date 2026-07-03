@@ -55,7 +55,7 @@ class FlightOptionsCard extends StatelessWidget {
           }),
 
           // ── Bottom padding ──────────────────────────
-          const SizedBox(height: 12),
+          const SizedBox(height: Spacing.xl),
         ],
       ),
     );
@@ -67,19 +67,19 @@ class FlightOptionsCard extends StatelessWidget {
       child: Row(
         children: [
           Container(
-            padding: const EdgeInsets.all(8),
+            padding: const EdgeInsets.all(Spacing.md),
             decoration: BoxDecoration(
               gradient: const LinearGradient(
                 colors: [Color(0xFF0F172A), Color(0xFF1E3A8A)],
                 begin: Alignment.topLeft,
                 end: Alignment.bottomRight,
               ),
-              borderRadius: BorderRadius.circular(12),
+              borderRadius: BorderRadius.circular(RadiusTokens.xl),
               border: Border.all(color: tm.sapphire.withValues(alpha: 0.3), width: 0.5),
             ),
             child: Icon(Icons.flight_takeoff_rounded, color: tm.sapphireLight, size: 22),
           ),
-          const SizedBox(width: 14),
+          const SizedBox(width: Spacing.xl2),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -88,7 +88,7 @@ class FlightOptionsCard extends StatelessWidget {
                   'Available Flights',
                   style: GoogleFonts.inter(fontSize: 18, fontWeight: FontWeight.w700, color: tm.textPrimary, letterSpacing: -0.3),
                 ),
-                const SizedBox(height: 2),
+                const SizedBox(height: Spacing.xxs),
                 Text(
                   '${payload.offers.length} option${payload.offers.length > 1 ? 's' : ''} found',
                   style: GoogleFonts.inter(fontSize: 13, color: tm.textTertiary, fontWeight: FontWeight.w500),
@@ -150,7 +150,7 @@ class _FlightOfferCard extends StatelessWidget {
                             begin: Alignment.topLeft,
                             end: Alignment.bottomRight,
                           ),
-                          borderRadius: BorderRadius.circular(8),
+                          borderRadius: BorderRadius.circular(RadiusTokens.md),
                           border: Border.all(color: tm.sapphire.withValues(alpha: 0.3), width: 0.5),
                         ),
                         alignment: Alignment.center,
@@ -159,7 +159,7 @@ class _FlightOfferCard extends StatelessWidget {
                           style: GoogleFonts.inter(color: tm.sapphireLight, fontSize: 13, fontWeight: FontWeight.w800),
                         ),
                       ),
-                      const SizedBox(width: 10),
+                      const SizedBox(width: Spacing.lg),
                       // Airline + flight number
                       Expanded(
                         child: Column(
@@ -179,10 +179,10 @@ class _FlightOfferCard extends StatelessWidget {
                       ),
                       // Gold price
                       Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                        padding: const EdgeInsets.symmetric(horizontal: Spacing.lg, vertical: Spacing.sm),
                         decoration: BoxDecoration(
                           color: tm.sapphire.withValues(alpha: 0.08),
-                          borderRadius: BorderRadius.circular(20),
+                          borderRadius: BorderRadius.circular(RadiusTokens.xl4),
                           border: Border.all(color: tm.sapphire.withValues(alpha: 0.2)),
                         ),
                         child: Text(
@@ -210,7 +210,7 @@ class _FlightOfferCard extends StatelessWidget {
 
                       // Gold flight line
                       Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 8),
+                        padding: const EdgeInsets.symmetric(horizontal: Spacing.md),
                         child: Column(
                           children: [
                             Icon(Icons.flight_rounded, size: 16, color: tm.sapphire),
@@ -248,7 +248,7 @@ class _FlightOfferCard extends StatelessWidget {
                           ),
                         if (offer.cabin != null && offer.cabin!.isNotEmpty)
                           Padding(
-                            padding: const EdgeInsets.only(left: 6),
+                            padding: const EdgeInsets.only(left: Spacing.sm),
                             child: _infoChip(
                               offer.cabin!,
                               Icons.airline_seat_recline_normal,
@@ -269,7 +269,7 @@ class _FlightOfferCard extends StatelessWidget {
                         style: ElevatedButton.styleFrom(
                           backgroundColor: tm.deepNavy,
                           foregroundColor: tm.brandWhite,
-                          padding: const EdgeInsets.symmetric(vertical: 12),
+                          padding: const EdgeInsets.symmetric(vertical: Spacing.xl),
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(RadiusTokens.md),
                             side: BorderSide(color: tm.sapphire.withValues(alpha: 0.3), width: 0.5),
@@ -305,7 +305,7 @@ class _FlightOfferCard extends StatelessWidget {
           time.isNotEmpty ? time : '--:--',
           style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.w700, color: tm.textPrimary),
         ),
-        const SizedBox(height: 2),
+        const SizedBox(height: Spacing.xxs),
         Text(
           iata.isNotEmpty ? iata : '---',
           style: GoogleFonts.inter(fontSize: 12, color: tm.textSecondary, fontWeight: FontWeight.w600),
@@ -320,17 +320,17 @@ class _FlightOfferCard extends StatelessWidget {
 
   Widget _infoChip(String label, IconData icon, Color accent) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      padding: const EdgeInsets.symmetric(horizontal: Spacing.md, vertical: Spacing.xs),
       decoration: BoxDecoration(
         color: accent.withValues(alpha: 0.08),
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(RadiusTokens.md),
         border: Border.all(color: accent.withValues(alpha: 0.2)),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
           Icon(icon, size: 11, color: accent),
-          const SizedBox(width: 4),
+          const SizedBox(width: Spacing.xs),
           Text(
             label,
             style: GoogleFonts.inter(fontSize: 11, color: accent, fontWeight: FontWeight.w600),

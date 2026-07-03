@@ -1,11 +1,9 @@
 import 'dart:async';
-import 'dart:math' as math;
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../app/app_theme.dart';
 import '../../core/theme/design_tokens.dart';
-
 
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
@@ -17,57 +15,65 @@ class SplashScreen extends StatefulWidget {
 class _SplashScreenState extends State<SplashScreen>
     with TickerProviderStateMixin {
   late AnimationController _controller;
-  late AnimationController _floatController;
-  late Animation<double> _fadeIn;
-  late Animation<double> _scaleIn;
-  late Animation<double> _accentSlide;
-  late Animation<double> _subtitleFade;
+  late Animation<double> _logoFade;
+  late Animation<double> _logoScale;
+  late Animation<double> _titleFade;
+  late Animation<double> _titleSlide;
+  late Animation<double> _taglineFade;
+  late Animation<double> _indicatorFade;
 
   @override
   void initState() {
     super.initState();
 
-    _floatController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 3000),
-    )..repeat();
-
     _controller = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 2200),
+      duration: const Duration(milliseconds: 2400),
     );
 
-    _fadeIn = Tween<double>(begin: 0.0, end: 1.0).animate(
+    _logoFade = Tween<double>(begin: 0.0, end: 1.0).animate(
       CurvedAnimation(
         parent: _controller,
-        curve: const Interval(0.0, 0.6, curve: Curves.easeOut),
+        curve: const Interval(0.0, 0.45, curve: Curves.easeOut),
+      ),
+    );
+    _logoScale = Tween<double>(begin: 0.92, end: 1.0).animate(
+      CurvedAnimation(
+        parent: _controller,
+        curve: const Interval(0.0, 0.55, curve: Curves.easeOutCubic),
       ),
     );
 
-    _scaleIn = Tween<double>(begin: 0.88, end: 1.0).animate(
+    _titleFade = Tween<double>(begin: 0.0, end: 1.0).animate(
       CurvedAnimation(
         parent: _controller,
-        curve: const Interval(0.0, 0.6, curve: Curves.easeOutCubic),
+        curve: const Interval(0.3, 0.7, curve: Curves.easeOut),
+      ),
+    );
+    _titleSlide = Tween<double>(begin: 12.0, end: 0.0).animate(
+      CurvedAnimation(
+        parent: _controller,
+        curve: const Interval(0.3, 0.7, curve: Curves.easeOutCubic),
       ),
     );
 
-    _accentSlide = Tween<double>(begin: -60, end: 0).animate(
+    _taglineFade = Tween<double>(begin: 0.0, end: 1.0).animate(
       CurvedAnimation(
         parent: _controller,
-        curve: const Interval(0.2, 0.7, curve: Curves.easeOutCubic),
+        curve: const Interval(0.55, 0.9, curve: Curves.easeOut),
       ),
     );
 
-    _subtitleFade = Tween<double>(begin: 0.0, end: 1.0).animate(
+    _indicatorFade = Tween<double>(begin: 0.0, end: 1.0).animate(
       CurvedAnimation(
         parent: _controller,
-        curve: const Interval(0.5, 0.9, curve: Curves.easeOut),
+        curve: const Interval(0.75, 1.0, curve: Curves.easeOut),
       ),
     );
 
     _controller.forward();
 
-    Timer(const Duration(seconds: 3), () {
+    Timer(const Duration(milliseconds: 2800), () {
       if (!mounted) return;
       final user = FirebaseAuth.instance.currentUser;
       final route = user != null ? '/home' : '/signin';
@@ -77,7 +83,6 @@ class _SplashScreenState extends State<SplashScreen>
 
   @override
   void dispose() {
-    _floatController.dispose();
     _controller.dispose();
     super.dispose();
   }
@@ -86,20 +91,9 @@ class _SplashScreenState extends State<SplashScreen>
   Widget build(BuildContext context) {
     final tm = context.tm;
 
-    return Container(
-      decoration: const BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-          colors: [
-            Color(0xFF0F172A),
-            Color(0xFF1E3A8A),
-            Color(0xFF0F172A),
-          ],
-          stops: [0.0, 0.5, 1.0],
-        ),
-      ),
-      child: SafeArea(
+    return Scaffold(
+      backgroundColor: tm.nearWhite,
+      body: SafeArea(
         child: Center(
           child: AnimatedBuilder(
             animation: _controller,
@@ -107,151 +101,72 @@ class _SplashScreenState extends State<SplashScreen>
               return Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  AnimatedBuilder(
-                    animation: _accentSlide,
-                    builder: (context, _) {
-                      return Transform.translate(
-                        offset: Offset(0, _accentSlide.value),
-                        child: Opacity(
-                          opacity: _fadeIn.value,
-                          child: Container(
-                            width: 60,
-                            height: 1.5,
-                            decoration: BoxDecoration(
-                              gradient: LinearGradient(
-                                colors: [
-                                  Colors.transparent,
-                                  tm.sapphire,
-                                  Colors.transparent,
-                                ],
-                              ),
-                              borderRadius: BorderRadius.circular(1),
-                            ),
-                          ),
-                        ),
-                      );
-                    },
-                  ),
-                  const SizedBox(height: Spacing.xl5),
+                  const Spacer(flex: 5),
+
+                  // Logo — hero element
                   Opacity(
-                    opacity: _fadeIn.value,
+                    opacity: _logoFade.value,
                     child: Transform.scale(
-                      scale: _scaleIn.value,
-                      child: AnimatedBuilder(
-                        animation: _floatController,
-                        builder: (context, child) {
-                          final floatY = math.sin(_floatController.value * 2 * math.pi) * 3.0;
-                          return Transform.translate(
-                            offset: Offset(0, floatY),
-                            child: child,
-                          );
-                        },
-                        child: Container(
-                          width: 104,
-                          height: 104,
-                          decoration: BoxDecoration(
-                            color: tm.sapphire.withValues(alpha: 0.08),
-                            borderRadius: BorderRadius.circular(RadiusTokens.xl6),
-                            border: Border.all(
-                              color: tm.sapphire.withValues(alpha: 0.3),
-                              width: 1.5,
-                            ),
-                            boxShadow: [
-                              BoxShadow(
-                                color: tm.sapphire.withValues(alpha: 0.15),
-                                blurRadius: 30,
-                                offset: const Offset(0, 8),
-                              ),
-                            ],
-                          ),
-                          child: Stack(
-                            alignment: Alignment.center,
-                            children: [
-                              Icon(
-                                Icons.travel_explore_rounded,
-                                size: 48,
-                                color: tm.sapphire,
-                              ),
-                              Positioned(
-                                bottom: 16,
-                                child: Container(
-                                  width: 32,
-                                  height: 2,
-                                  decoration: BoxDecoration(
-                                    color: tm.sapphire.withValues(alpha: 0.3),
-                                    borderRadius: BorderRadius.circular(1),
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
+                      scale: _logoScale.value,
+                      child: Image.asset(
+                        'assets/images/logo.png',
+                        width: 180,
+                        height: 180,
+                        fit: BoxFit.contain,
+                      ),
+                    ),
+                  ),
+
+                  const SizedBox(height: Spacing.xl8),
+
+                  // Title — refined, complementary to logo
+                  Opacity(
+                    opacity: _titleFade.value,
+                    child: Transform.translate(
+                      offset: Offset(0, _titleSlide.value),
+                      child: Text(
+                        'TourMate',
+                        style: TMTextStyles.displayLarge.copyWith(
+                          fontSize: 42,
+                          color: tm.deepRoyalBlue,
                         ),
                       ),
                     ),
                   ),
-                  const SizedBox(height: Spacing.xl7),
+
+                  const SizedBox(height: Spacing.xl),
+
                   Opacity(
-                    opacity: _fadeIn.value,
-                    child: Transform.scale(
-                      scale: _scaleIn.value,
-                      child: Column(
-                        children: [
-                          Text(
-                            'TourMate',
-                            style: GoogleFonts.inter(
-                              fontSize: 34,
-                              fontWeight: FontWeight.w700,
-                              color: tm.brandWhite,
-                              letterSpacing: -1.0,
-                              height: 1.05,
-                            ),
-                          ),
-                          const SizedBox(height: Spacing.md),
-                          Container(
-                            width: 32,
-                            height: 2,
-                            decoration: BoxDecoration(
-                              gradient: LinearGradient(
-                                colors: [
-                                  Colors.transparent,
-                                  tm.sapphire,
-                                  Colors.transparent,
-                                ],
-                              ),
-                              borderRadius: BorderRadius.circular(1),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: Spacing.xl2),
-                  Opacity(
-                    opacity: _subtitleFade.value,
+                    opacity: _taglineFade.value,
                     child: Text(
                       'Your AI Travel Companion',
                       style: GoogleFonts.inter(
-                        fontSize: 13,
-                        color: tm.brandWhite.withValues(alpha: 0.55),
+                        fontSize: 14,
+                        color: tm.textTertiary,
                         letterSpacing: 2.0,
                         fontWeight: FontWeight.w400,
+                        height: 1.3,
                       ),
                     ),
                   ),
-                  const SizedBox(height: Spacing.xl10),
+
+                  const Spacer(flex: 4),
+
                   Opacity(
-                    opacity: _subtitleFade.value,
+                    opacity: _indicatorFade.value,
                     child: SizedBox(
                       width: 20,
                       height: 20,
                       child: CircularProgressIndicator(
-                        strokeWidth: 2,
+                        strokeWidth: 1.5,
                         valueColor: AlwaysStoppedAnimation<Color>(
-                          tm.sapphire.withValues(alpha: 0.7),
+                          tm.sapphire.withValues(alpha: 0.4),
                         ),
                       ),
                     ),
                   ),
+
+                  const SizedBox(height: Spacing.xl8),
                 ],
               );
             },

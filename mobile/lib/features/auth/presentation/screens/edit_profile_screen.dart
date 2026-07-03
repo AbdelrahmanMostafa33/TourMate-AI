@@ -103,14 +103,14 @@ class _EditProfileViewState extends State<_EditProfileView> {
         centerTitle: true,
         actions: [
           Padding(
-            padding: const EdgeInsets.only(right: 16, top: 8, bottom: 8),
+            padding: const EdgeInsets.only(right: Spacing.xl3, top: Spacing.md, bottom: Spacing.md),
             child: ElevatedButton(
               onPressed: _loading ? null : _save,
               style: ElevatedButton.styleFrom(
                 backgroundColor: tm.deepNavy,
                 foregroundColor: tm.brandWhite,
                 shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
+                  borderRadius: BorderRadius.circular(RadiusTokens.xl),
                 ),
                 padding: const EdgeInsets.symmetric(horizontal: 16),
               ),
@@ -139,7 +139,7 @@ class _EditProfileViewState extends State<_EditProfileView> {
           );
         },
         child: SingleChildScrollView(
-          padding: const EdgeInsets.all(Spacing.xl4),
+          padding: const EdgeInsets.all(Spacing.xl5),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -179,57 +179,56 @@ class _EditProfileViewState extends State<_EditProfileView> {
                         ),
                       ),
                     ),
-                    const SizedBox(height: 8),
+                    const SizedBox(height: Spacing.xl),
                     Text(
                       widget.profile.email,
                       style: GoogleFonts.inter(
                         fontSize: 14,
                         color: tm.textSecondary,
+                        fontWeight: FontWeight.w500,
                       ),
                     ),
                   ],
                 ),
               ),
 
-              const SizedBox(height: 32),
+              const SizedBox(height: Spacing.xl7),
 
-              // ── Form Fields ──────────────────────────────
+              // ── Section header ───────────────────────────
               Row(
                 children: [
                   Container(
                     width: 3,
-                    height: 14,
+                    height: 16,
                     decoration: BoxDecoration(
-                      gradient: const LinearGradient(
-                        colors: [Color(0xFF2563EB), Color(0xFFDBEAFE)],
+                      gradient: LinearGradient(
+                        colors: [tm.sapphire, tm.sapphire.withValues(alpha: 0.3)],
                         begin: Alignment.topCenter,
                         end: Alignment.bottomCenter,
-                      ),
-                      borderRadius: BorderRadius.circular(2),
+                      ),                        borderRadius: BorderRadius.circular(RadiusTokens.xxs),
                     ),
                   ),
-                  const SizedBox(width: 8),
+                  const SizedBox(width: 10),
                   Text(
                     'PERSONAL INFORMATION',
                     style: GoogleFonts.inter(
                       fontSize: 12,
                       fontWeight: FontWeight.w700,
                       color: tm.textTertiary,
-                      letterSpacing: 1,
+                      letterSpacing: 1.2,
+                      height: 1.3,
                     ),
                   ),
                 ],
               ),
-              const SizedBox(height: 16),
+              const SizedBox(height: Spacing.xl3),
 
               _buildField(
                 label: 'Full Name',
                 controller: _nameController,
                 icon: Icons.person_outline,
               ),
-
-              const SizedBox(height: 16),
-
+              const SizedBox(height: Spacing.xl3),
               _buildField(
                 label: 'Phone Number',
                 controller: _phoneController,
@@ -237,35 +236,37 @@ class _EditProfileViewState extends State<_EditProfileView> {
                 keyboardType: TextInputType.phone,
               ),
 
-              const SizedBox(height: 16),
+              const SizedBox(height: Spacing.xl7),
 
-              // ── Home City (Country + City dropdown) ──────
+              // ── Home City ────────────────────────────────
               Text(
                 'HOME CITY',
                 style: GoogleFonts.inter(
                   fontSize: 12,
                   fontWeight: FontWeight.w700,
                   color: tm.textTertiary,
-                  letterSpacing: 1,
+                  letterSpacing: 1.2,
+                  height: 1.3,
                 ),
               ),
-              const SizedBox(height: 12),
+              const SizedBox(height: Spacing.xl3),
               CityPicker(
                 initialValue: _selectedCity,
                 onCitySelected: (city) {
                   _selectedCity = city;
                 },
+                darkBackground: false,
               ),
 
-              const SizedBox(height: 40),
+              const SizedBox(height: Spacing.xl7),
 
-              // ── Info text ────────────────────────────────
+              // ── Info card ────────────────────────────────
               Container(
-                padding: const EdgeInsets.all(14),
+                padding: const EdgeInsets.all(Spacing.xl3),
                 decoration: BoxDecoration(
                   color: tm.sapphire.withValues(alpha: 0.06),
-                  borderRadius: BorderRadius.circular(RadiusTokens.xl),
-                  border: Border.all(color: tm.sapphire.withValues(alpha: 0.15)),
+                  borderRadius: BorderRadius.circular(RadiusTokens.xl3),
+                  border: Border.all(color: tm.sapphire.withValues(alpha: 0.12)),
                 ),
                 child: Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -278,18 +279,18 @@ class _EditProfileViewState extends State<_EditProfileView> {
                           begin: Alignment.topLeft,
                           end: Alignment.bottomRight,
                         ),
-                        borderRadius: BorderRadius.circular(6),
+                        borderRadius: BorderRadius.circular(RadiusTokens.sm),
                       ),
                       child: Icon(Icons.info_outline, size: 14, color: tm.sapphireLight),
                     ),
-                    const SizedBox(width: 10),
+                    const SizedBox(width: 12),
                     Expanded(
                       child: Text(
                         'Update your personal details above. Your travel preferences are learned from your chats with TourMate.',
                         style: GoogleFonts.inter(
                           fontSize: 13,
                           color: tm.textSecondary,
-                          height: 1.4,
+                          height: 1.5,
                         ),
                       ),
                     ),
@@ -297,7 +298,7 @@ class _EditProfileViewState extends State<_EditProfileView> {
                 ),
               ),
 
-              const SizedBox(height: 32),
+              const SizedBox(height: Spacing.xl7),
             ],
           ),
         ),
@@ -311,41 +312,113 @@ class _EditProfileViewState extends State<_EditProfileView> {
     required IconData icon,
     TextInputType keyboardType = TextInputType.text,
   }) {
+    return _FormField(
+      label: label,
+      controller: controller,
+      icon: icon,
+      keyboardType: keyboardType,
+      tm: tm,
+    );
+  }
+}
+
+/// A premium form field with animated focus border and shadow.
+class _FormField extends StatefulWidget {
+  final String label;
+  final TextEditingController controller;
+  final IconData icon;
+  final TextInputType keyboardType;
+  final TourMateColors tm;
+
+  const _FormField({
+    required this.label,
+    required this.controller,
+    required this.icon,
+    required this.keyboardType,
+    required this.tm,
+  });
+
+  @override
+  State<_FormField> createState() => _FormFieldState();
+}
+
+class _FormFieldState extends State<_FormField> {
+  bool _isFocused = false;
+  late final FocusNode _focusNode;
+
+  @override
+  void initState() {
+    super.initState();
+    _focusNode = FocusNode();
+    _focusNode.addListener(() {
+      if (mounted) setState(() => _isFocused = _focusNode.hasFocus);
+    });
+  }
+
+  @override
+  void dispose() {
+    _focusNode.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final tm = widget.tm;
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
-          label,
+          widget.label,
           style: GoogleFonts.inter(
-            fontSize: 12,
+            fontSize: 13,
             fontWeight: FontWeight.w600,
-            color: tm.textSecondary,
+            color: _isFocused ? tm.sapphire : tm.textSecondary,
+            height: 1.3,
           ),
         ),
-        const SizedBox(height: 8),
-        Container(
+        const SizedBox(height: Spacing.sm),
+        AnimatedContainer(
+          duration: const Duration(milliseconds: 250),
+          curve: Curves.easeOutCubic,
+          height: 56,
           decoration: BoxDecoration(
-            color: tm.surface,
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: tm.borderLight),
+            color: tm.brandWhite,
+            borderRadius: BorderRadius.circular(RadiusTokens.xl3),
+            border: Border.all(
+              color: _isFocused ? tm.sapphire.withValues(alpha: 0.6) : tm.border,
+              width: _isFocused ? 2.0 : 1.0,
+            ),
+            boxShadow: _isFocused
+                ? [
+                    BoxShadow(
+                      color: tm.sapphire.withValues(alpha: 0.08),
+                      blurRadius: 12,
+                      offset: const Offset(0, 4),
+                    ),
+                  ]
+                : [],
           ),
           child: TextField(
-            controller: controller,
-            keyboardType: keyboardType,
+            controller: widget.controller,
+            focusNode: _focusNode,
+            keyboardType: widget.keyboardType,
             decoration: InputDecoration(
-              prefixIcon: Container(
-                margin: const EdgeInsets.only(left: 12, right: 8),
-                padding: const EdgeInsets.all(6),
-                decoration: BoxDecoration(
-                  color: tm.sapphire.withValues(alpha: 0.06),
-                  borderRadius: BorderRadius.circular(8),
+              prefixIcon: Padding(
+                padding: const EdgeInsets.only(left: Spacing.xl3, right: Spacing.lg),
+                child: Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: tm.sapphire.withValues(alpha: _isFocused ? 0.12 : 0.08),
+                    borderRadius: BorderRadius.circular(RadiusTokens.md),
+                  ),
+                  child: Icon(widget.icon, size: 18, color: _isFocused ? tm.sapphire : tm.deepRoyalBlue),
                 ),
-                child: Icon(icon, size: 18, color: tm.deepRoyalBlue),
               ),
               border: InputBorder.none,
-              contentPadding: Insets.input,
+              contentPadding: const EdgeInsets.symmetric(horizontal: Spacing.xl4, vertical: Spacing.xl3),
             ),
-            style: GoogleFonts.inter(fontSize: 15, color: tm.textPrimary),
+            style: GoogleFonts.inter(fontSize: 15, color: tm.textPrimary, fontWeight: FontWeight.w500),
           ),
         ),
       ],

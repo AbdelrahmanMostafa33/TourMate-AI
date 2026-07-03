@@ -69,11 +69,11 @@ class _PlaceDetailView extends StatelessWidget {
           backgroundColor: tm.deepNavy,
           systemOverlayStyle: SystemUiOverlayStyle.light,
           leading: Padding(
-            padding: const EdgeInsets.all(8),
+            padding: const EdgeInsets.all(Spacing.md),
             child: Container(
               decoration: BoxDecoration(
                 color: tm.deepNavy.withValues(alpha: 0.3),
-                borderRadius: BorderRadius.circular(10),
+                borderRadius: BorderRadius.circular(RadiusTokens.lg),
                 border: Border.all(color: tm.brandWhite.withValues(alpha: 0.15)),
               ),
               child: IconButton(
@@ -167,14 +167,14 @@ class _PlaceDetailView extends StatelessWidget {
       child: Row(
         children: [
           Container(
-            padding: const EdgeInsets.all(8),
+            padding: const EdgeInsets.all(Spacing.md),
             decoration: BoxDecoration(
               gradient: const LinearGradient(
                 colors: [Color(0xFF0F172A), Color(0xFF1E3A8A)],
                 begin: Alignment.topLeft,
                 end: Alignment.bottomRight,
               ),
-              borderRadius: BorderRadius.circular(10),
+              borderRadius: BorderRadius.circular(RadiusTokens.lg),
             ),
             child: Icon(icon, size: 18, color: tm.sapphireLight),
           ),
@@ -192,7 +192,7 @@ class _PlaceDetailView extends StatelessWidget {
                   ),
                 ),
                 if (subtitle != null) ...[
-                  const SizedBox(height: 2),
+                  const SizedBox(height: Spacing.xxs),
                   Text(
                     subtitle,
                     style: GoogleFonts.inter(
@@ -240,17 +240,17 @@ class _PlaceDetailView extends StatelessWidget {
       children: [
         // Premium category badge
         Container(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+          padding: Insets.chip,
           decoration: BoxDecoration(
             color: tm.sapphire.withValues(alpha: 0.08),
-            borderRadius: BorderRadius.circular(20),
+            borderRadius: BorderRadius.circular(RadiusTokens.xl4),
             border: Border.all(color: tm.sapphire.withValues(alpha: 0.2)),
           ),
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
               Icon(Icons.category_outlined, size: 12, color: tm.sapphire),
-              const SizedBox(width: 5),
+              const SizedBox(width: Spacing.xxs),
               Text(
                 place.category,
                 style: GoogleFonts.inter(
@@ -283,7 +283,7 @@ class _PlaceDetailView extends StatelessWidget {
         Row(
           children: [
             Icon(Icons.star_rounded, size: 20, color: tm.sapphire),
-            const SizedBox(width: 4),
+            const SizedBox(width: Spacing.xs),
             Text(
               place.rating.toStringAsFixed(1),
               style: GoogleFonts.inter(
@@ -294,19 +294,19 @@ class _PlaceDetailView extends StatelessWidget {
               ),
             ),
             if (place.reviewCount > 0) ...[
-              const SizedBox(width: 4),
+              const SizedBox(width: Spacing.xs),
               Text(
                 '(${_formatCount(place.reviewCount)})',
                 style: GoogleFonts.inter(fontSize: 13, color: tm.textTertiary),
               ),
             ],
             if (place.priceLevel != null && place.priceLevel! > 0) ...[
-              const SizedBox(width: 12),
+              const SizedBox(width: Spacing.xl),
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                padding: const EdgeInsets.symmetric(horizontal: Spacing.sm, vertical: Spacing.xxs),
                 decoration: BoxDecoration(
                   color: tm.sapphire.withValues(alpha: 0.08),
-                  borderRadius: BorderRadius.circular(6),
+                  borderRadius: BorderRadius.circular(RadiusTokens.sm),
                 ),
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
@@ -325,11 +325,11 @@ class _PlaceDetailView extends StatelessWidget {
 
         // City / country with location icon
         if (place.city != null || place.country != null) ...[
-          const SizedBox(height: 4),
+          const SizedBox(height: Spacing.xs),
           Row(
             children: [
               Icon(Icons.location_on_outlined, size: 14, color: tm.sapphireLight),
-              const SizedBox(width: 4),
+              const SizedBox(width: Spacing.xs),
               Text(
                 [
                   if (place.city != null) place.city,
@@ -355,10 +355,10 @@ class _PlaceDetailView extends StatelessWidget {
               height: 18,
               decoration: BoxDecoration(
                 color: tm.sapphire,
-                borderRadius: BorderRadius.circular(2),
+                borderRadius: BorderRadius.circular(RadiusTokens.xxs),
               ),
             ),
-            const SizedBox(width: 8),
+            const SizedBox(width: Spacing.md),
             Text(
               title,
               style: GoogleFonts.inter(
@@ -436,9 +436,9 @@ class _PlaceDetailView extends StatelessWidget {
           children: [
             Container(
               width: 3, height: 18,
-              decoration: BoxDecoration(color: tm.sapphire, borderRadius: BorderRadius.circular(2)),
+              decoration: BoxDecoration(color: tm.sapphire, borderRadius: BorderRadius.circular(RadiusTokens.xxs)),
             ),
-            const SizedBox(width: 8),
+            const SizedBox(width: Spacing.md),
             Text(
               'Hotel Info',
               style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.w700, color: tm.textPrimary, letterSpacing: -0.2),
@@ -447,8 +447,8 @@ class _PlaceDetailView extends StatelessWidget {
         ),
         const SizedBox(height: Spacing.sm),
         Wrap(
-          spacing: 8,
-          runSpacing: 8,
+          spacing: Spacing.md,
+          runSpacing: Spacing.md,
           children: details,
         ),
       ],
@@ -471,9 +471,9 @@ class _PlaceDetailView extends StatelessWidget {
           children: [
             Container(
               width: 3, height: 18,
-              decoration: BoxDecoration(color: tm.sapphire, borderRadius: BorderRadius.circular(2)),
+              decoration: BoxDecoration(color: tm.sapphire, borderRadius: BorderRadius.circular(RadiusTokens.xxs)),
             ),
-            const SizedBox(width: 8),
+            const SizedBox(width: Spacing.md),
             Text(
               'Restaurant Info',
               style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.w700, color: tm.textPrimary, letterSpacing: -0.2),
@@ -482,8 +482,8 @@ class _PlaceDetailView extends StatelessWidget {
         ),
         const SizedBox(height: Spacing.sm),
         Wrap(
-          spacing: 8,
-          runSpacing: 8,
+          spacing: Spacing.md,
+          runSpacing: Spacing.md,
           children: details,
         ),
       ],
@@ -500,9 +500,9 @@ class _PlaceDetailView extends StatelessWidget {
           children: [
             Container(
               width: 3, height: 18,
-              decoration: BoxDecoration(color: tm.sapphire, borderRadius: BorderRadius.circular(2)),
+              decoration: BoxDecoration(color: tm.sapphire, borderRadius: BorderRadius.circular(RadiusTokens.xxs)),
             ),
-            const SizedBox(width: 8),
+            const SizedBox(width: Spacing.md),
             Text(
               'Attraction Info',
               style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.w700, color: tm.textPrimary, letterSpacing: -0.2),
@@ -517,7 +517,7 @@ class _PlaceDetailView extends StatelessWidget {
 
   Widget _buildAccentChip(Color accentColor, IconData icon, String label) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      padding: const EdgeInsets.symmetric(horizontal: Spacing.xl, vertical: Spacing.md),
       decoration: BoxDecoration(
         color: accentColor.withValues(alpha: 0.08),
         borderRadius: BorderRadius.circular(RadiusTokens.md),
@@ -527,7 +527,7 @@ class _PlaceDetailView extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           Icon(icon, size: 15, color: accentColor),
-          const SizedBox(width: 6),
+          const SizedBox(width: Spacing.sm),
           Text(
             label,
             style: GoogleFonts.inter(
@@ -608,11 +608,11 @@ class _ReviewsSection extends StatelessWidget {
           children: [
             Row(
               children: [
-                Container(
-                  width: 3, height: 20,
-                  decoration: BoxDecoration(color: tm.sapphire, borderRadius: BorderRadius.circular(2)),
-                ),
-                const SizedBox(width: 8),
+            Container(
+              width: 3, height: 20,
+              decoration: BoxDecoration(color: tm.sapphire, borderRadius: BorderRadius.circular(RadiusTokens.xxs)),
+            ),
+            const SizedBox(width: Spacing.md),
                 Text(
                   'Reviews',
                   style: GoogleFonts.inter(
@@ -632,14 +632,14 @@ class _ReviewsSection extends StatelessWidget {
                 borderRadius: BorderRadius.circular(10),
                 onTap: () => _showWriteReview(context),
                 child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                  padding: const EdgeInsets.symmetric(horizontal: Spacing.xl2, vertical: Spacing.md),
                   decoration: BoxDecoration(
                     gradient: const LinearGradient(
                       colors: [Color(0xFF0F172A), Color(0xFF1E3A8A)],
                       begin: Alignment.topLeft,
                       end: Alignment.bottomRight,
                     ),
-                    borderRadius: BorderRadius.circular(10),
+                    borderRadius: BorderRadius.circular(RadiusTokens.lg),
                     border: Border.all(color: tm.sapphire.withValues(alpha: 0.3), width: 0.5),
                   ),
                   child: Row(
@@ -663,7 +663,7 @@ class _ReviewsSection extends StatelessWidget {
           ],
         ),
 
-        const SizedBox(height: 16),
+        const SizedBox(height: Spacing.xl3),
 
         // Reviews list from cubit
         BlocBuilder<ReviewsCubit, ReviewsState>(
@@ -672,7 +672,7 @@ class _ReviewsSection extends StatelessWidget {
             return state.when(
               initial: () => const SizedBox.shrink(),
               loading: () => Padding(
-                padding: const EdgeInsets.all(16),
+                padding: const EdgeInsets.all(Spacing.xl3),
                 child: Center(
                   child: SizedBox(
                     width: 20,
@@ -698,23 +698,23 @@ class _ReviewsSection extends StatelessWidget {
                       _buildSummaryCard(tm, data),
 
                     if (data.reviews.isNotEmpty) ...[
-                      const SizedBox(height: 16),
-                      // Sort / filter toolbar
+              const SizedBox(height: Spacing.xl3),
+              // Sort / filter toolbar
                       _buildSortFilterToolbar(context, tm, data.reviews,
                           sortBy: sortBy, filterRating: filterRating),
-                      const SizedBox(height: 12),
+                      const SizedBox(height: Spacing.xl),
                     ],
 
                     if (filtered.isEmpty) ...[
-                      const SizedBox(height: 16),
+                      const SizedBox(height: Spacing.xl3),
                       _buildEmptyReviews(tm,
                         hasReviews: data.reviews.isNotEmpty,
                         filterRating: filterRating,
                       ),
                     ] else ...[
-                      const SizedBox(height: 4),
+                      const SizedBox(height: Spacing.xs),
                       ...filtered.map((review) => Padding(
-                        padding: const EdgeInsets.only(bottom: 12),
+                        padding: const EdgeInsets.only(bottom: Spacing.xl),
                         child: _ReviewCard(
                           review: review,
                           onEdit: () => _showEditReview(context, review),
@@ -726,12 +726,11 @@ class _ReviewsSection extends StatelessWidget {
                   ],
                 );
               },
-              error: (message) => Padding(
-                padding: const EdgeInsets.symmetric(vertical: 12),
-                child: Row(
-                  children: [
-                    Icon(Icons.cloud_off, size: 16, color: tm.textTertiary),
-                    const SizedBox(width: 8),
+              error: (message) => Padding(                      padding: const EdgeInsets.symmetric(vertical: Spacing.xl),
+                      child: Row(
+                        children: [
+                          Icon(Icons.cloud_off, size: 16, color: tm.textTertiary),
+                          const SizedBox(width: Spacing.md),
                     Expanded(                        child: Text(
                         'Could not load reviews',
                         style: TextStyle(color: tm.textTertiary, fontSize: 13),
@@ -763,10 +762,10 @@ class _ReviewsSection extends StatelessWidget {
         Row(
           children: [
             Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+              padding: const EdgeInsets.symmetric(horizontal: Spacing.xl, vertical: Spacing.xs),
               decoration: BoxDecoration(
                 color: tm.surface,
-                borderRadius: BorderRadius.circular(10),
+                borderRadius: BorderRadius.circular(RadiusTokens.lg),
                 border: Border.all(color: tm.borderLight),
               ),
               child: DropdownButtonHideUnderline(
@@ -804,16 +803,16 @@ class _ReviewsSection extends StatelessWidget {
               GestureDetector(
                 onTap: () => cubit.setFilterRating(null),
                 child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  padding: const EdgeInsets.symmetric(horizontal: Spacing.md, vertical: Spacing.xs),
                   decoration: BoxDecoration(
                     color: tm.sapphire.withValues(alpha: 0.08),
-                    borderRadius: BorderRadius.circular(8),
+                    borderRadius: BorderRadius.circular(RadiusTokens.md),
                   ),
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       Icon(Icons.close, size: 11, color: tm.sapphire),
-                      const SizedBox(width: 4),
+                      const SizedBox(width: Spacing.xs),
                       Text(
                         'Clear',
                         style: GoogleFonts.inter(fontSize: 11, color: tm.sapphire, fontWeight: FontWeight.w600),
@@ -831,7 +830,7 @@ class _ReviewsSection extends StatelessWidget {
           child: ListView.separated(
             scrollDirection: Axis.horizontal,
             itemCount: 6,
-            separatorBuilder: (_, _) => const SizedBox(width: 8),
+            separatorBuilder: (_, _) => const SizedBox(width: Spacing.md),
             itemBuilder: (ctx, i) {
               final rating = 5 - i;
               final isAll = rating == 0;
@@ -843,7 +842,7 @@ class _ReviewsSection extends StatelessWidget {
                 onTap: () => cubit.setFilterRating(isAll ? null : rating),
                 child: AnimatedContainer(
                   duration: const Duration(milliseconds: 200),
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  padding: Insets.chip,
                   decoration: BoxDecoration(
                     gradient: selected
                         ? const LinearGradient(
@@ -853,7 +852,7 @@ class _ReviewsSection extends StatelessWidget {
                           )
                         : null,
                     color: selected ? null : tm.surface,
-                    borderRadius: BorderRadius.circular(20),
+                    borderRadius: BorderRadius.circular(RadiusTokens.xl4),
                     border: Border.all(
                       color: selected ? tm.sapphire.withValues(alpha: 0.5) : tm.borderLight,
                       width: selected ? 1.5 : 1,
@@ -875,7 +874,7 @@ class _ReviewsSection extends StatelessWidget {
                           size: 13,
                           color: selected ? tm.sapphireLight : tm.sapphire,
                         ),
-                        const SizedBox(width: 3),
+                        const SizedBox(width: Spacing.xxs),
                       ],
                       Text(
                         isAll ? 'All' : '$rating',
@@ -886,7 +885,7 @@ class _ReviewsSection extends StatelessWidget {
                         ),
                       ),
                       if (!isAll) ...[
-                        const SizedBox(width: 3),
+                        const SizedBox(width: Spacing.xxs),
                         Text(
                           '(${_countRating(allReviews, rating)})',
                           style: GoogleFonts.inter(
@@ -948,7 +947,7 @@ class _ReviewsSection extends StatelessWidget {
               ),
             ],
           ),
-          const SizedBox(width: 20),
+          const SizedBox(width: Spacing.xl4),
           // Premium rating distribution bars
           Expanded(
             child: Column(
@@ -960,7 +959,7 @@ class _ReviewsSection extends StatelessWidget {
                     ? count / data.totalReviews
                     : 0.0;
                 return Padding(
-                  padding: const EdgeInsets.only(bottom: 4),
+                  padding: const EdgeInsets.only(bottom: Spacing.xs),
                   child: Row(
                     children: [
                       SizedBox(
@@ -976,7 +975,7 @@ class _ReviewsSection extends StatelessWidget {
                       ),
                       Expanded(
                         child: ClipRRect(
-                          borderRadius: BorderRadius.circular(4),
+                          borderRadius: BorderRadius.circular(RadiusTokens.xs),
                           child: LinearProgressIndicator(
                             value: pct,
                             minHeight: 6,
@@ -1046,8 +1045,7 @@ class _ReviewsSection extends StatelessWidget {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      shape: const RoundedRectangleBorder(              borderRadius: BorderRadius.vertical(top: Radius.circular(RadiusTokens.xl5)),
       ),
       builder: (ctx) => BlocProvider.value(
         value: context.read<ReviewsCubit>(),
@@ -1235,10 +1233,10 @@ class _ReviewCard extends StatelessWidget {
               const Spacer(),
               if (review.reviewDate != null)
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  padding: const EdgeInsets.symmetric(horizontal: Spacing.sm, vertical: Spacing.xxs),
                   decoration: BoxDecoration(
                     color: tm.sapphire.withValues(alpha: 0.08),
-                    borderRadius: BorderRadius.circular(6),
+                    borderRadius: BorderRadius.circular(RadiusTokens.sm),
                   ),
                   child: Text(
                     _formatDate(review.reviewDate!),
@@ -1250,10 +1248,10 @@ class _ReviewCard extends StatelessWidget {
               PopupMenuButton<String>(
                 padding: EdgeInsets.zero,
                 icon: Container(
-                  padding: const EdgeInsets.all(2),
+                  padding: const EdgeInsets.all(Spacing.xxs),
                   decoration: BoxDecoration(
                     color: tm.surface,
-                    borderRadius: BorderRadius.circular(6),
+                    borderRadius: BorderRadius.circular(RadiusTokens.sm),
                   ),
                   child: Icon(Icons.more_horiz, size: 16, color: tm.textTertiary),
                 ),
@@ -1270,7 +1268,7 @@ class _ReviewCard extends StatelessWidget {
                     child: Row(
                       children: [
                         Icon(Icons.edit_outlined, size: 18, color: tm.textPrimary),
-                        const SizedBox(width: 10),
+                        const SizedBox(width: Spacing.lg),
                         const Text('Edit'),
                       ],
                     ),
@@ -1280,7 +1278,7 @@ class _ReviewCard extends StatelessWidget {
                     child: Row(
                       children: [
                         Icon(Icons.delete_outline, size: 18, color: tm.error),
-                        const SizedBox(width: 10),
+                        const SizedBox(width: Spacing.lg),
                         Text('Delete', style: TextStyle(color: tm.error)),
                       ],
                     ),
@@ -1323,12 +1321,12 @@ class _ReviewCard extends StatelessWidget {
                 onTap: onLike,
                 behavior: HitTestBehavior.opaque,
                 child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  padding: const EdgeInsets.symmetric(horizontal: Spacing.md, vertical: Spacing.xs),
                   decoration: BoxDecoration(
                     color: review.likedByUser
                         ? tm.error.withValues(alpha: 0.08)
                         : tm.sapphire.withValues(alpha: 0.08),
-                    borderRadius: BorderRadius.circular(8),
+                    borderRadius: BorderRadius.circular(RadiusTokens.md),
                     border: Border.all(
                       color: review.likedByUser
                           ? tm.error.withValues(alpha: 0.2)
@@ -1355,7 +1353,7 @@ class _ReviewCard extends StatelessWidget {
                               : tm.sapphire,
                         ),
                       ),
-                      const SizedBox(width: 4),
+                      const SizedBox(width: Spacing.xs),
                       Text(
                         '${review.likesCount}',
                         style: GoogleFonts.inter(
@@ -1368,7 +1366,7 @@ class _ReviewCard extends StatelessWidget {
                   ),
                 ),
               ),
-              const SizedBox(width: 12),
+              const SizedBox(width: Spacing.xl),
               // User avatar with black/sapphire gradient
               Container(
                 width: 24,
@@ -1392,7 +1390,7 @@ class _ReviewCard extends StatelessWidget {
                   ),
                 ),
               ),
-              const SizedBox(width: 6),
+              const SizedBox(width: Spacing.sm),
               Expanded(
                 child: Text(
                   review.displayName,

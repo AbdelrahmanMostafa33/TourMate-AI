@@ -37,7 +37,7 @@ class _ProfileView extends StatelessWidget {
       backgroundColor: tm.nearWhite,
       body: SafeArea(
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16),
+          padding: const EdgeInsets.symmetric(horizontal: Spacing.xl3),
           child: BlocBuilder<ProfileCubit, ProfileState>(
             builder: (context, state) {
               return state.when(
@@ -62,13 +62,13 @@ class _ProfileView extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-        const SizedBox(height: 16),
+        const SizedBox(height: Spacing.xl3),
 
         /// ================= HEADER =================
         Row(
           children: [
             Container(
-              padding: const EdgeInsets.all(2),
+              padding: const EdgeInsets.all(Spacing.xxs),
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
                 gradient: const LinearGradient(
@@ -95,22 +95,21 @@ class _ProfileView extends StatelessWidget {
                 ),
               ),
             ),
-            const SizedBox(width: 14),
+            const SizedBox(width: Spacing.xl2),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    data.fullName ?? "User",style: TextStyle(
-                      fontSize: 22,
-                      fontWeight: FontWeight.bold,
+                    data.fullName ?? "User",
+                    style: TMTextStyles.headlineMedium.copyWith(
                       color: tm.textPrimary,
                     ),
                   ),
-                  const SizedBox(height: 2),
+                  const SizedBox(height: Spacing.xxs),
                   Text(
                     data.email,
-                    style: TextStyle(color: tm.textSecondary),
+                    style: TMTextStyles.bodyMedium.copyWith(color: tm.textSecondary),
                   ),
                 ],
               ),
@@ -118,7 +117,7 @@ class _ProfileView extends StatelessWidget {
           ],
         ),
 
-        const SizedBox(height: 24),
+        const SizedBox(height: Spacing.xl5),
 
         /// ================= INFO CARDS =================
         if (data.phoneNumber != null && data.phoneNumber!.isNotEmpty)
@@ -126,18 +125,18 @@ class _ProfileView extends StatelessWidget {
         if (data.homeCity != null && data.homeCity!.isNotEmpty)
           _infoTile(tm, Icons.location_city_outlined, data.homeCity!),
 
-        const SizedBox(height: 20),
+        const SizedBox(height: Spacing.xl4),
 
         /// ================= TRAVELER PERSONA =================
         PersonaCard(profile: data),
 
-        const SizedBox(height: 24),
+        const SizedBox(height: Spacing.xl5),
 
-        const SizedBox(height: 24),
+        const SizedBox(height: Spacing.xl5),
 
         /// ================= SETTINGS =================
         _sectionHeader(tm, "Settings"),
-        const SizedBox(height: 12),
+        const SizedBox(height: Spacing.xl),
 
         // Edit Profile
         _settingsTile(
@@ -159,7 +158,7 @@ class _ProfileView extends StatelessWidget {
           },
         ),
 
-        const SizedBox(height: 8),
+        const SizedBox(height: Spacing.md),
 
         // Sign Out
         _settingsTile(
@@ -172,7 +171,7 @@ class _ProfileView extends StatelessWidget {
           onTap: () => _showLogoutDialog(context),
         ),
 
-        const SizedBox(height: 32),
+        const SizedBox(height: Spacing.xl7),
       ],
     ),
   );
@@ -196,16 +195,15 @@ class _ProfileView extends StatelessWidget {
           ],
         ),
         child: Row(
-          children: [
-            Container(
-              padding: const EdgeInsets.all(8),
+          children: [              Container(
+                padding: const EdgeInsets.all(Spacing.md),
               decoration: BoxDecoration(
                 gradient: const LinearGradient(
                   colors: [Color(0xFF0F172A), Color(0xFF1E3A8A)],
                   begin: Alignment.topLeft,
                   end: Alignment.bottomRight,
                 ),
-                borderRadius: BorderRadius.circular(10),
+                borderRadius: BorderRadius.circular(RadiusTokens.lg),
               ),
               child: Icon(icon, size: 18, color: tm.sapphireLight),
             ),
@@ -255,12 +253,12 @@ class _ProfileView extends StatelessWidget {
                 padding: const EdgeInsets.all(10),
                 decoration: BoxDecoration(
                   color: effectiveColor.withValues(alpha: 0.08),
-                  borderRadius: BorderRadius.circular(12),
+                  borderRadius: BorderRadius.circular(RadiusTokens.xl),
                   border: Border.all(color: effectiveColor.withValues(alpha: 0.15)),
                 ),
                 child: Icon(icon, size: 20, color: effectiveColor),
               ),
-              const SizedBox(width: 14),
+              const SizedBox(width: Spacing.xl2),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -273,7 +271,7 @@ class _ProfileView extends StatelessWidget {
                         color: titleColor ?? tm.textPrimary,
                       ),
                     ),
-                    const SizedBox(height: 2),
+                    const SizedBox(height: Spacing.xxs),
                     Text(
                       subtitle,
                       style: GoogleFonts.inter(fontSize: 12, color: tm.textTertiary),
@@ -285,7 +283,7 @@ class _ProfileView extends StatelessWidget {
                 padding: const EdgeInsets.all(4),
                 decoration: BoxDecoration(
                   color: effectiveColor.withValues(alpha: 0.06),
-                  borderRadius: BorderRadius.circular(8),
+                  borderRadius: BorderRadius.circular(RadiusTokens.md),
                 ),
                 child: Icon(Icons.chevron_right, size: 16, color: effectiveColor),
               ),
@@ -309,8 +307,7 @@ class _ProfileView extends StatelessWidget {
                 colors: [Color(0xFF2563EB), Color(0xFFDBEAFE)],
                 begin: Alignment.topCenter,
                 end: Alignment.bottomCenter,
-              ),
-              borderRadius: BorderRadius.circular(2),
+              ),                    borderRadius: BorderRadius.circular(RadiusTokens.xxs),
             ),
           ),
           const SizedBox(width: 8),
@@ -346,7 +343,7 @@ class _ProfileView extends StatelessWidget {
               padding: const EdgeInsets.all(6),
               decoration: BoxDecoration(
                 color: tm.error.withValues(alpha: 0.08),
-                borderRadius: BorderRadius.circular(8),
+                borderRadius: BorderRadius.circular(RadiusTokens.md),
               ),
               child: Icon(Icons.logout_rounded, size: 18, color: tm.error),
             ),
@@ -366,7 +363,7 @@ class _ProfileView extends StatelessWidget {
             onPressed: () => Navigator.pop(ctx),
             style: TextButton.styleFrom(
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(RadiusTokens.lg)),
             ),
             child: Text('Cancel', style: GoogleFonts.inter(color: tm.textTertiary, fontWeight: FontWeight.w600, fontSize: 14)),
           ),
@@ -378,7 +375,7 @@ class _ProfileView extends StatelessWidget {
             style: TextButton.styleFrom(
               backgroundColor: tm.error.withValues(alpha: 0.08),
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(RadiusTokens.lg)),
             ),
             child: Text('Sign Out', style: GoogleFonts.inter(color: tm.error, fontWeight: FontWeight.w700, fontSize: 14)),
           ),

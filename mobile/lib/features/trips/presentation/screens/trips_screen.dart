@@ -95,7 +95,7 @@ class _TripsBodyState extends State<_TripsBody> {
                   elevation: 0,
                   padding: const EdgeInsets.symmetric(horizontal: 14),
                   shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(10),
+                    borderRadius: BorderRadius.circular(RadiusTokens.lg),
                     side: BorderSide(color: tm.sapphire.withValues(alpha: 0.3), width: 0.5),
                   ),
                   shadowColor: Colors.transparent,
@@ -128,7 +128,7 @@ class _TripsBodyState extends State<_TripsBody> {
                           begin: Alignment.topCenter,
                           end: Alignment.bottomCenter,
                         ),
-                        borderRadius: BorderRadius.circular(2),
+                        borderRadius: BorderRadius.circular(RadiusTokens.xxs),
                       ),
                     ),
                     const SizedBox(width: 10),
@@ -153,7 +153,7 @@ class _TripsBodyState extends State<_TripsBody> {
                       begin: Alignment.topCenter,
                       end: Alignment.bottomCenter,
                     ),
-                    borderRadius: BorderRadius.circular(2),
+                    borderRadius: BorderRadius.circular(RadiusTokens.xxs),
                   ),
                 ),
               ],
@@ -310,7 +310,7 @@ class _TripsBodyState extends State<_TripsBody> {
                           letterSpacing: -0.2,
                         ),
                       ),
-                      const SizedBox(height: 4),
+                      const SizedBox(height: Spacing.xs),
                       Row(
                         children: [
                           if (trip.durationDays > 0) ...[

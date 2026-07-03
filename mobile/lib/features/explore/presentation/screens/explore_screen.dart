@@ -919,8 +919,8 @@ class _EmptyState extends StatelessWidget {
             ),
             const SizedBox(height: Spacing.lg),
             Wrap(
-              spacing: 8,
-              runSpacing: 8,
+              spacing: Spacing.md,
+              runSpacing: Spacing.md,
               alignment: WrapAlignment.center,
               children: _suggestions.map((s) => _suggestionChip(tm, s)).toList(),
             ),
@@ -1057,8 +1057,8 @@ class _RecentSearchOverlay extends StatelessWidget {
           const SizedBox(height: Spacing.sm),
           // Search chips with sapphire accent
           Wrap(
-            spacing: 8,
-            runSpacing: 8,
+            spacing: Spacing.md,
+            runSpacing: Spacing.md,
             children: searches.map((query) {
               return GestureDetector(
                 onTap: () => onSearchTap(query),
