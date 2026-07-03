@@ -76,8 +76,8 @@ class _SignInScreenState extends State<SignInScreen> {
                   padding: const EdgeInsets.symmetric(vertical: Spacing.xl3),
                   child: Image.asset(
                     'assets/images/logo.png',
-                    width: 100,
-                    height: 100,
+                    width: 120,
+                    height: 120,
                     fit: BoxFit.contain,
                   ),
                 ),

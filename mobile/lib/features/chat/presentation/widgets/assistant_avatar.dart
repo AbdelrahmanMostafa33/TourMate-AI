@@ -1,87 +1,172 @@
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 
-/// A premium **AI Travel Orb** representing the TourMate AI concierge.
+/// A premium **AI Travel Companion** avatar representing TourMate's concierge.
 ///
-/// The design communicates artificial intelligence, travel, guidance, and
-/// discovery through a single cohesive illustration:
+/// The illustration centers on the concept of *"an AI guiding your journey
+/// around the world"* — a refined glass globe with a graceful flight path
+/// orbiting around it:
 ///
-/// * A floating sapphire-blue glass orb
-/// * A subtle translucent glass effect with radial gradient
-/// * A thin orbit line wrapping around the orb
-/// * A tiny airplane seamlessly integrated into the orbit
-/// * Delicate sparkling highlights suggesting intelligence & responsiveness
-/// * A soft ambient blue glow
+/// * A minimalist glass globe with subtle latitude/longitude grid lines
+/// * A thin, elegant orbit line wrapping around the globe (the flight path)
+/// * A premium airplane silhouette integrated into the orbit
+/// * Delicate sparkling highlights suggesting intelligence
+/// * A soft sapphire-blue ambient glow
+///
+/// ### Ambient animations (all derived from a single 18s controller)
+///
+/// 1. **Globe glow** — A soft sapphire glow that gently "breathes" (~5s cycle)
+/// 2. **Flight path rotation** — The orbit rotates slowly (~18s per revolution)
+/// 3. **Sparkles** — Three highlights fade independently (staggered timing)
+/// 4. **Glass reflection** — A gentle highlight drift across the surface (~36s)
+///
+/// The globe itself remains stable — only the flight path moves.
 ///
 /// Four sizes are available:
-/// - [AssistantAvatarSize.small] (28px) – used in message bubbles
-/// - [AssistantAvatarSize.medium] (36px) – used in compact contexts
-/// - [AssistantAvatarSize.large] (48px) – used in headers
-/// - [AssistantAvatarSize.xlarge] (120px) – used in the welcome/empty state
-class AssistantAvatar extends StatelessWidget {
+/// - [AssistantAvatarSize.small] (28px) – message bubbles
+/// - [AssistantAvatarSize.medium] (36px) – compact contexts
+/// - [AssistantAvatarSize.large] (48px) – headers
+/// - [AssistantAvatarSize.xlarge] (120px) – welcome/empty state
+class AssistantAvatar extends StatefulWidget {
   final AssistantAvatarSize size;
 
   const AssistantAvatar({super.key, this.size = AssistantAvatarSize.small});
 
   @override
+  State<AssistantAvatar> createState() => _AssistantAvatarState();
+}
+
+class _AssistantAvatarState extends State<AssistantAvatar>
+    with TickerProviderStateMixin {
+  /// Single master controller at 18 seconds.
+  ///
+  /// All animations derive from this one linear controller:
+  ///   - Glow:     3.6 cycles → ~5s per breath
+  ///   - Orbit:    1.0 cycles → 18s per rotation
+  ///   - Sparkles: staggered frequencies (1.7–2.5)
+  ///   - Reflection: 0.5 cycles → 36s per drift
+  late final AnimationController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 18000),
+    )..repeat();
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final outerRadius = switch (size) {
+    final outerRadius = switch (widget.size) {
       AssistantAvatarSize.small => 14.0,
       AssistantAvatarSize.medium => 18.0,
       AssistantAvatarSize.large => 24.0,
       AssistantAvatarSize.xlarge => 60.0,
     };
 
-    return SizedBox(
-      width: outerRadius * 2,
-      height: outerRadius * 2,
-      child: CustomPaint(
-        painter: _TravelOrbPainter(radius: outerRadius),
-      ),
+    return AnimatedBuilder(
+      animation: _controller,
+      builder: (context, _) {
+        final v = _controller.value;
+
+        // ── 1. Ambient glow (sine-based breathing) ───────────────
+        final glowRaw = math.sin(v * 2 * math.pi * 3.6);
+        final glowBreath = (glowRaw + 1.0) / 2.0;
+        final glowOpacity = 0.50 + glowBreath * 0.50;
+
+        // ── 2. Orbit rotation (flight path) ──────────────────────
+        final orbitAngle = v * 2 * math.pi;
+
+        // ── 3. Sparkle opacities ─────────────────────────────────
+        final s1 = _sparkleOpacity(v, frequency: 2.0, phase: 0.0);
+        final s2 = _sparkleOpacity(v, frequency: 2.5, phase: 1.8);
+        final s3 = _sparkleOpacity(v, frequency: 1.7, phase: 3.6);
+
+        // ── 4. Glass reflection drift ────────────────────────────
+        final refX = math.sin(v * 2 * math.pi * 0.5) * 0.12;
+        final refY = math.cos(v * 2 * math.pi * 0.5) * 0.08;
+
+        return SizedBox(
+          width: outerRadius * 2,
+          height: outerRadius * 2,
+          child: CustomPaint(
+            painter: _TravelGlobePainter(
+              radius: outerRadius,
+              glowOpacity: glowOpacity,
+              orbitAngle: orbitAngle,
+              sparkleOpacities: [s1, s2, s3],
+              reflectionOffset: Offset(refX, refY),
+            ),
+          ),
+        );
+      },
     );
+  }
+
+  double _sparkleOpacity(double t,
+      {required double frequency, required double phase}) {
+    final raw = math.sin(t * 2 * math.pi * frequency + phase);
+    return (raw * 0.35) + 0.65;
   }
 }
 
 enum AssistantAvatarSize { small, medium, large, xlarge }
 
-/// Custom painter that draws the complete Travel Orb illustration.
+/// Custom painter that draws the Travel Globe with flight path.
 ///
-/// Renders in order:
-/// 1. Outer ambient glow
-/// 2. Glass orb body with radial gradient
-/// 3. Thin edge ring
-/// 4. Inner glow for depth
-/// 5. Top-left light reflection (glass effect)
-/// 6. Tilted orbit ellipse
-/// 7. Tiny airplane positioned on the orbit
+/// Render order:
+/// 1. Ambient glow (breathing)
+/// 2. Globe body (radial gradient)
+/// 3. Inner glow for depth
+/// 4. Glass reflection (animated drift)
+/// 5. Globe grid lines (lat/long, clipped to orb)
+/// 6. Edge ring (covers clip artifacts)
+/// 7. Flight path orbit + airplane (rotating)
 /// 8. Sparkle highlights
-class _TravelOrbPainter extends CustomPainter {
+class _TravelGlobePainter extends CustomPainter {
   final double radius;
+  final double glowOpacity;
+  final double orbitAngle;
+  final List<double> sparkleOpacities;
+  final Offset reflectionOffset;
 
-  static const Color _primary = Color(0xFF1E3A8A);  // Deep Royal Blue
-  static const Color _accent = Color(0xFF2563EB);   // Sapphire
-  static const Color _dark = Color(0xFF0F172A);     // Midnight Navy
+  static const Color _primary = Color(0xFF1E3A8A);
+  static const Color _accent = Color(0xFF2563EB);
+  static const Color _dark = Color(0xFF0F172A);
 
-  _TravelOrbPainter({required this.radius});
+  _TravelGlobePainter({
+    required this.radius,
+    required this.glowOpacity,
+    required this.orbitAngle,
+    required this.sparkleOpacities,
+    required this.reflectionOffset,
+  });
 
   @override
   void paint(Canvas canvas, Size size) {
     final center = Offset(size.width / 2, size.height / 2);
     final r = radius;
+    if (r < 2) return;
 
-    // ── 1. Outer ambient glow ──────────────────────────────────
+    // ── 1. Animated ambient glow ──────────────────────────────────
     final glowPaint = Paint()
-      ..color = _accent.withValues(alpha: 0.12)
+      ..color = _accent.withValues(alpha: 0.20 * glowOpacity)
       ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 8.0);
-    canvas.drawCircle(center, r * 0.95, glowPaint);
+    canvas.drawCircle(center, r * 1.0, glowPaint);
 
-    // Wider, softer glow ring
     final softGlowPaint = Paint()
-      ..color = _accent.withValues(alpha: 0.06)
-      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 16.0);
-    canvas.drawCircle(center, r * 1.05, softGlowPaint);
+      ..color = _accent.withValues(alpha: 0.10 * glowOpacity)
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 20.0);
+    canvas.drawCircle(center, r * 1.15, softGlowPaint);
 
-    // ── 2. Glass orb body ─────────────────────────────────────
+    // ── 2. Globe body ─────────────────────────────────────────────
     final orbPaint = Paint()
       ..shader = RadialGradient(
         center: const Alignment(-0.35, -0.35),
@@ -97,14 +182,7 @@ class _TravelOrbPainter extends CustomPainter {
       ).createShader(Rect.fromCircle(center: center, radius: r));
     canvas.drawCircle(center, r, orbPaint);
 
-    // ── 3. Thin edge ring ─────────────────────────────────────
-    final edgePaint = Paint()
-      ..color = _accent.withValues(alpha: 0.18)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.0;
-    canvas.drawCircle(center, r - 0.5, edgePaint);
-
-    // ── 4. Inner glow for depth ───────────────────────────────
+    // ── 3. Inner glow for depth ──────────────────────────────────
     final innerGlowPaint = Paint()
       ..shader = RadialGradient(
         center: const Alignment(0.2, 0.2),
@@ -119,10 +197,14 @@ class _TravelOrbPainter extends CustomPainter {
       ).createShader(Rect.fromCircle(center: center, radius: r));
     canvas.drawCircle(center, r, innerGlowPaint);
 
-    // ── 5. Light reflection (top-left glass highlight) ────────
+    // ── 4. Animated glass reflection ─────────────────────────────
+    final refCenter = Alignment(
+      -0.4 + reflectionOffset.dx,
+      -0.4 + reflectionOffset.dy,
+    );
     final reflectionPaint = Paint()
       ..shader = RadialGradient(
-        center: const Alignment(-0.4, -0.4),
+        center: refCenter,
         radius: 0.5,
         colors: [
           Colors.white.withValues(alpha: 0.12),
@@ -133,7 +215,64 @@ class _TravelOrbPainter extends CustomPainter {
       ).createShader(Rect.fromCircle(center: center, radius: r));
     canvas.drawCircle(center, r, reflectionPaint);
 
-    // ── 6. Orbit ellipse (tilted ~25°) ─────────────────────────
+    // ── 5. Globe grid lines (latitudes + longitude) ──────────────
+    // Clipped to the globe circle so lines don't extend past the edge.
+    final globeBounds = Rect.fromCircle(center: center, radius: r);
+    canvas.save();
+    canvas.clipPath(Path()..addOval(globeBounds));
+
+    final gridPaint = Paint()
+      ..color = _accent.withValues(alpha: 0.12)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 0.8;
+
+    // Equator line
+    canvas.drawOval(
+      Rect.fromCenter(center: center, width: r * 2.2, height: r * 0.5),
+      gridPaint,
+    );
+
+    // Northern parallel
+    canvas.drawOval(
+      Rect.fromCenter(
+        center: Offset(center.dx, center.dy - r * 0.45),
+        width: r * 2.2,
+        height: r * 0.65,
+      ),
+      gridPaint,
+    );
+
+    // Southern parallel
+    canvas.drawOval(
+      Rect.fromCenter(
+        center: Offset(center.dx, center.dy + r * 0.45),
+        width: r * 2.2,
+        height: r * 0.65,
+      ),
+      gridPaint,
+    );
+
+    // Prime meridian (longitude)
+    final lonPaint = Paint()
+      ..color = _accent.withValues(alpha: 0.08)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 0.6;
+    canvas.drawOval(
+      Rect.fromCenter(center: center, width: r * 0.45, height: r * 2.2),
+      lonPaint,
+    );
+
+    canvas.restore(); // remove clip
+
+    // ── 6. Edge ring (over grid lines to cover clip edge) ───────
+    final edgePaint = Paint()
+      ..color = _accent.withValues(alpha: 0.18)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.0;
+    canvas.drawCircle(center, r - 0.5, edgePaint);
+
+    // ── 7. Flight path orbit + airplane ─────────────────────────
+    // The orbit rotates continuously around the stationary globe.
     final orbitPaint = Paint()
       ..color = _accent.withValues(alpha: 0.28)
       ..style = PaintingStyle.stroke
@@ -141,7 +280,7 @@ class _TravelOrbPainter extends CustomPainter {
 
     canvas.save();
     canvas.translate(center.dx, center.dy);
-    canvas.rotate(-0.45); // ~25 degree tilt
+    canvas.rotate(-0.45 + orbitAngle);
 
     final orbitWidth = r * 1.65;
     final orbitHeight = r * 0.72;
@@ -152,21 +291,17 @@ class _TravelOrbPainter extends CustomPainter {
     );
     canvas.drawOval(orbitRect, orbitPaint);
 
-    // ── 7. Airplane on orbit ──────────────────────────────────
-    // Position at ~30° from the right side of the ellipse
+    // Primary airplane (actively traveling along the orbit)
     final planeAngle = 0.6;
     final px = math.cos(planeAngle) * (orbitWidth / 2);
     final py = -math.sin(planeAngle) * (orbitHeight / 2);
-
-    // Tangent angle at this point on the ellipse
     final tangentAngle = math.atan2(
       -math.cos(planeAngle) * orbitHeight,
       -math.sin(planeAngle) * orbitWidth,
     );
-
     _drawAirplane(canvas, Offset(px, py), tangentAngle, r);
 
-    // ── 7b. Second airplane on opposite side (more subtle) ────
+    // Secondary airplane (opposite side, subtle)
     final planeAngle2 = planeAngle + math.pi;
     final px2 = math.cos(planeAngle2) * (orbitWidth / 2);
     final py2 = -math.sin(planeAngle2) * (orbitHeight / 2);
@@ -179,11 +314,27 @@ class _TravelOrbPainter extends CustomPainter {
 
     canvas.restore();
 
-    // ── 8. Sparkle highlights ─────────────────────────────────
-    _drawSparkle(canvas, center + Offset(-r * 0.45, -r * 0.45), r * 0.09);
-    _drawSparkle(canvas, center + Offset(-r * 0.12, -r * 0.75), r * 0.06);
-    _drawSparkle(canvas, center + Offset(r * 0.6, -r * 0.2), r * 0.04,
-        opacity: 0.5);
+    // ── 8. Sparkle highlights ────────────────────────────────────
+    if (sparkleOpacities.length >= 3) {
+      _drawSparkle(
+        canvas,
+        center + Offset(-r * 0.45, -r * 0.45),
+        r * 0.09,
+        opacity: sparkleOpacities[0],
+      );
+      _drawSparkle(
+        canvas,
+        center + Offset(-r * 0.12, -r * 0.75),
+        r * 0.06,
+        opacity: sparkleOpacities[1],
+      );
+      _drawSparkle(
+        canvas,
+        center + Offset(r * 0.6, -r * 0.2),
+        r * 0.04,
+        opacity: sparkleOpacities[2] * 0.6,
+      );
+    }
   }
 
   void _drawAirplane(
@@ -214,7 +365,7 @@ class _TravelOrbPainter extends CustomPainter {
       ));
     canvas.drawPath(fuselagePath, planePaint);
 
-    // Wings (left side extending back)
+    // Wings
     final wingPath = Path()
       ..moveTo(planeScale * 0.15, 0)
       ..lineTo(-planeScale * 0.3, -planeScale * 0.55)
@@ -222,7 +373,6 @@ class _TravelOrbPainter extends CustomPainter {
       ..close();
     canvas.drawPath(wingPath, planePaint);
 
-    // Wings (right side)
     final wingPath2 = Path()
       ..moveTo(planeScale * 0.15, 0)
       ..lineTo(-planeScale * 0.3, planeScale * 0.55)
@@ -252,12 +402,10 @@ class _TravelOrbPainter extends CustomPainter {
   }) {
     if (size < 0.8) return;
 
-    // Main bright dot
     final dotPaint = Paint()
       ..color = Colors.white.withValues(alpha: opacity);
     canvas.drawCircle(position, size, dotPaint);
 
-    // Cross shine (subtle)
     final shineLength = size * 2.5;
     final shinePaint = Paint()
       ..color = Colors.white.withValues(alpha: opacity * 0.25)
@@ -277,6 +425,18 @@ class _TravelOrbPainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(_TravelOrbPainter oldDelegate) =>
-      oldDelegate.radius != radius;
+  bool shouldRepaint(_TravelGlobePainter oldDelegate) =>
+      oldDelegate.radius != radius ||
+      (oldDelegate.glowOpacity - glowOpacity).abs() > 0.001 ||
+      (oldDelegate.orbitAngle - orbitAngle).abs() > 0.001 ||
+      oldDelegate.reflectionOffset != reflectionOffset ||
+      _opacitiesChanged(oldDelegate.sparkleOpacities);
+
+  bool _opacitiesChanged(List<double> old) {
+    if (old.length != sparkleOpacities.length) return true;
+    for (var i = 0; i < old.length; i++) {
+      if ((old[i] - sparkleOpacities[i]).abs() > 0.001) return true;
+    }
+    return false;
+  }
 }

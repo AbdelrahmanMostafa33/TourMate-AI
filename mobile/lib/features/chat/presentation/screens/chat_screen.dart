@@ -838,13 +838,16 @@ class _ChatViewState extends State<_ChatView>
             fit: BoxFit.contain,
           ),
           const SizedBox(width: Spacing.lg),
-          Text(
-            widget.activeTripId != null ? "Trip Chat" : "TourMate",
-            style: GoogleFonts.inter(
-              fontSize: 17,
-              fontWeight: FontWeight.w700,
-              color: tm.textPrimary,
-              letterSpacing: -0.3,
+          Flexible(
+            child: Text(
+              widget.activeTripId != null ? "Trip Chat" : "TourMate",
+              style: GoogleFonts.inter(
+                fontSize: 17,
+                fontWeight: FontWeight.w700,
+                color: tm.textPrimary,
+                letterSpacing: -0.3,
+              ),
+              overflow: TextOverflow.ellipsis,
             ),
           ),
           const Spacer(),
@@ -1224,7 +1227,7 @@ class _TypingIndicatorState extends State<_TypingIndicator>
           children: [
             // Animated dots
             SizedBox(
-              width: 32,
+              width: 34,
               height: 16,
               child: AnimatedBuilder(
                 animation: _controller,
@@ -1271,5 +1274,3 @@ class _TypingIndicatorState extends State<_TypingIndicator>
     );
   }
 }
-
-

@@ -103,15 +103,15 @@ class _SplashScreenState extends State<SplashScreen>
                 children: [
                   const Spacer(flex: 5),
 
-                  // Logo — hero element
+                  // Logo — clean, without glow circle
                   Opacity(
                     opacity: _logoFade.value,
                     child: Transform.scale(
                       scale: _logoScale.value,
                       child: Image.asset(
                         'assets/images/logo.png',
-                        width: 180,
-                        height: 180,
+                        width: 200,
+                        height: 200,
                         fit: BoxFit.contain,
                       ),
                     ),
