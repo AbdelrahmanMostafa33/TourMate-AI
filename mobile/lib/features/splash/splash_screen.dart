@@ -117,7 +117,7 @@ class _SplashScreenState extends State<SplashScreen>
                     ),
                   ),
 
-                  const SizedBox(height: Spacing.xl8),
+                  const SizedBox(height: Spacing.xl5),
 
                   // Title — refined, complementary to logo
                   Opacity(
@@ -134,16 +134,16 @@ class _SplashScreenState extends State<SplashScreen>
                     ),
                   ),
 
-                  const SizedBox(height: Spacing.xl),
+                  const SizedBox(height: Spacing.md),
 
                   Opacity(
                     opacity: _taglineFade.value,
                     child: Text(
                       'Your AI Travel Companion',
                       style: GoogleFonts.inter(
-                        fontSize: 14,
+                        fontSize: 15,
                         color: tm.textTertiary,
-                        letterSpacing: 2.0,
+                        letterSpacing: 1.8,
                         fontWeight: FontWeight.w400,
                         height: 1.3,
                       ),

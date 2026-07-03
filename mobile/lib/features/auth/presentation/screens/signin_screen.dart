@@ -73,40 +73,40 @@ class _SignInScreenState extends State<SignInScreen> {
               children: [
                 // ── Logo ──────────────────────────────────────────────
                 Padding(
-                  padding: const EdgeInsets.symmetric(vertical: Spacing.xl3),
+                  padding: const EdgeInsets.only(top: Spacing.xl),
                   child: Image.asset(
                     'assets/images/logo.png',
-                    width: 120,
-                    height: 120,
+                    width: 160,
+                    height: 160,
                     fit: BoxFit.contain,
                   ),
                 ),
-                const SizedBox(height: Spacing.xl5),
+                const SizedBox(height: 10),
 
                 // ── Title ─────────────────────────────────────────────
                 Text(
                   "Welcome Back",
                   style: GoogleFonts.inter(
-                    fontSize: 26,
+                    fontSize: 34,
                     fontWeight: FontWeight.w700,
                     color: tm.textPrimary,
-                    letterSpacing: -0.5,
+                    letterSpacing: -0.8,
                     height: 1.1,
                   ),
                 ),
-                const SizedBox(height: Spacing.xs),
+                const SizedBox(height: Spacing.sm),
                 Text(
                   "Sign in to continue your journey",
                   style: GoogleFonts.inter(
-                    fontSize: 14,
+                    fontSize: 16,
                     color: tm.textSecondary,
-                    letterSpacing: 0.1,
+                    letterSpacing: 0.2,
                     fontWeight: FontWeight.w400,
                     height: 1.3,
                   ),
                 ),
 
-                const SizedBox(height: Spacing.xl7),
+                const SizedBox(height: Spacing.xl9),
 
                 // ── Card ──────────────────────────────────────────────
                 Container(
@@ -115,12 +115,11 @@ class _SignInScreenState extends State<SignInScreen> {
                   decoration: BoxDecoration(
                     color: tm.brandWhite,
                     borderRadius: BorderRadius.circular(RadiusTokens.xl4),
-                    border: Border.all(color: tm.borderLight),
                     boxShadow: [
                       BoxShadow(
                         color: Colors.black.withValues(alpha: 0.04),
-                        blurRadius: 20,
-                        offset: const Offset(0, 8),
+                        blurRadius: 24,
+                        offset: const Offset(0, 10),
                       ),
                       BoxShadow(
                         color: Colors.black.withValues(alpha: 0.02),
