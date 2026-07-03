@@ -21,6 +21,7 @@ from sqlalchemy import select, func, delete
 from app.repositories.itinerary_repo import ItineraryRepo
 from app.models.enums import TimeOfDay, TravelMode
 from app.models.itinerary import Day as DayModel, ItineraryStop as StopModel, Itinerary
+from app.models.place import Place
 
 logger = logging.getLogger(__name__)
 
@@ -77,6 +78,42 @@ class ItineraryService:
         self.db = db
         self.repo = ItineraryRepo(db)
 
+    async def _resolve_valid_place_ids(self, stops: list[dict], hotels: Optional[list[dict]] = None) -> set[str]:
+        """
+        Batch-query the database to find which place_ids actually exist.
+
+        Unknown IDs (fake UUIDs from planner fallback, None, etc.) are filtered out
+        so they won't cause ForeignKeyViolationError when creating stops.
+
+        Returns a set of valid place_ids that exist in the ``places`` table.
+        """
+        candidate_ids: set[str] = set()
+        for s in stops:
+            pid = s.get("id")
+            if pid:
+                candidate_ids.add(pid)
+        if hotels:
+            for h in hotels:
+                pid = h.get("id")
+                if pid:
+                    candidate_ids.add(pid)
+
+        if not candidate_ids:
+            return set()
+
+        result = await self.db.execute(
+            select(Place.place_id).where(Place.place_id.in_(list(candidate_ids)))
+        )
+        rows = result.all()
+        valid = {row.place_id for row in rows if row.place_id}
+        invalid = candidate_ids - valid
+        if invalid:
+            logger.warning(
+                "[ItineraryService] %d place_id(s) not found in DB — setting to None: %s",
+                len(invalid), sorted(invalid)[:5],
+            )
+        return valid
+
     async def create_stops_from_ai_days(
         self,
         itinerary_id: str,
@@ -85,6 +122,12 @@ class ItineraryService:
         start_date: Optional[date] = None,
     ) -> int:
         total_stops = 0
+
+        # ── Pre-validate place_ids to avoid FK violations ────────────────
+        all_stops = [s for d in days_data for s in (d.get("stops") or [])]
+        valid_place_ids = await self._resolve_valid_place_ids(
+            all_stops, accommodation_suggestions,
+        )
 
         for day_data in days_data:
             day_number = day_data.get("day_number", 1)
@@ -125,10 +168,12 @@ class ItineraryService:
             for order, stop_data in enumerate(stops):
                 time_of_day = _map_time_of_day(stop_data.get("suggested_time_of_day"))
                 travel_mode = _map_travel_mode(stop_data.get("transport_mode"))
+                stop_id = stop_data.get("id")
+                resolved_place_id = stop_id if stop_id in valid_place_ids else None
 
                 await self.repo.create_stop(
                     day_id=day.day_id,
-                    place_id=stop_data.get("id"),
+                    place_id=resolved_place_id,
                     place_snapshot=_build_place_snapshot(stop_data),
                     duration_minutes=stop_data.get("estimated_duration_minutes"),
                     order_in_day=order + 1,
@@ -157,9 +202,11 @@ class ItineraryService:
                 next_order = (max_order_result.scalar() or 0) + 1
 
                 for hotel in accommodation_suggestions:
+                    hotel_id = hotel.get("id")
+                    resolved_hotel_id = hotel_id if hotel_id in valid_place_ids else None
                     await self.repo.create_stop(
                         day_id=last_day.day_id,
-                        place_id=hotel.get("id"),
+                        place_id=resolved_hotel_id,
                         place_snapshot={
                             "name": hotel.get("name", ""),
                             "category": "hotel",

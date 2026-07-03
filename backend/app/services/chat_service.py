@@ -458,10 +458,15 @@ class ChatService:
             user_id,
         )
 
-        pool_state = ai_result.get("pool_state")
-        if pool_state:
+        # ── 5. Save candidate pool + accommodation_suggestions ────────────────
+        pool_state = ai_result.get("pool_state") or {}
+        accommodations = itinerary_data.get("accommodation_suggestions")
+        if pool_state or accommodations:
+            combined = dict(pool_state)  # copy so we don't mutate the original
+            if accommodations:
+                combined["_accommodation_suggestions"] = accommodations
             itin_svc = ItineraryService(self.db)
-            await itin_svc.save_candidate_pool(itinerary.itinerary_id, pool_state)
+            await itin_svc.save_candidate_pool(itinerary.itinerary_id, combined)
 
         return {
             "trip_id": trip.trip_id,
@@ -850,11 +855,16 @@ class ChatService:
                         days_list.append(entry)
 
                     # Load stops from ItineraryStop relationships
+                    # Rebuild accommodation_suggestions from candidate_pool_json
+                    # (stored there during create_trip_from_ai_result)
+                    pool = itinerary.candidate_pool_json or {}
+                    accommodations = pool.get("_accommodation_suggestions", [])
+
                     itinerary_data = {
                         "destination": trip.destination or "",
                         "days": days_list,
                         "duration_days": slots_data.get("duration_days", len(days_list)),
-                        "accommodation_suggestions": itinerary.accommodation_suggestions or [],
+                        "accommodation_suggestions": accommodations,
                     }
 
             # TripProfile data

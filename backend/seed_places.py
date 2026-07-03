@@ -86,18 +86,31 @@ def build_place(row: dict, embeddings_map: dict[str, list[float]] | None = None)
     }
 
 
+VALID_ACCOMMODATION_TYPES = {"hotel", "hostel", "resort", "luxury"}
+
+
 def build_hotel_details(row: dict) -> dict | None:
-    """Build a hotel_details dict if the row has hotel_details."""
+    """Build a hotel_details dict if the row has hotel_details.
+
+    Normalises ``accommodation_type`` to lowercase and only includes it
+    if it matches one of the valid PostgreSQL enum values.
+    """
     hd = row.get("hotel_details")
     if not hd:
         return None
+
+    raw_accom = hd.get("accommodation_type")
+    normalized = raw_accom.strip().lower() if raw_accom else None
+    if normalized is not None and normalized not in VALID_ACCOMMODATION_TYPES:
+        normalized = None
+
     return {
         "place_id": row["place_id"],
         "star_class": hd.get("star_class"),
         "nightly_rate": parse_nightly_rate(hd.get("nightly_rate")),
         "amenities": hd.get("amenities"),
         "booking_platforms": hd.get("booking_platforms"),
-        "accommodation_type": hd.get("accommodation_type"),
+        "accommodation_type": normalized,
     }
 
 

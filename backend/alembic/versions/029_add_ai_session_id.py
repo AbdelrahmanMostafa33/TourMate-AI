@@ -18,7 +18,7 @@ import sqlalchemy as sa
 
 
 revision: str = "029_add_ai_session_id"
-down_revision: Union[str, None] = "028_add_conversation_state_snapshot"
+down_revision: Union[str, None] = "028_add_state_snapshot"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

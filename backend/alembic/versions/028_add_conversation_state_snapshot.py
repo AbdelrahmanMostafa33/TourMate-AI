@@ -17,7 +17,7 @@ import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
 
 
-revision: str = "028_add_conversation_state_snapshot"
+revision: str = "028_add_state_snapshot"
 down_revision: Union[str, None] = "027_add_card_data_column"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
