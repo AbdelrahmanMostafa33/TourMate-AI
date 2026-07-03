@@ -349,8 +349,8 @@ class _ChatViewState extends State<_ChatView>
         if (mounted) {
           messenger.showSnackBar(
             SnackBar(
-              content: const Text('Payment was cancelled or failed. You can try again later.'),
-              backgroundColor: tm.error,
+              content: const Text('No problem — you can pay anytime. Your booking is saved.'),
+              backgroundColor: tm.info,
               behavior: SnackBarBehavior.floating,
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(RadiusTokens.xl2)),
               margin: const EdgeInsets.fromLTRB(Spacing.xl3, 0, Spacing.xl3, Spacing.xl5),

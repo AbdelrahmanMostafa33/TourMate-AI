@@ -25,12 +25,22 @@ class PaymentService {
 
   /// Present the Stripe Payment Sheet to the user.
   ///
-  /// Returns `true` if payment succeeded.
+  /// Returns `true` if payment succeeded, `false` if the user cancelled
+  /// (e.g. tapped outside the sheet).
   ///
-  /// Throws a [StripeException] if payment fails (card declined, network error, etc.).
+  /// Throws a [StripeException] for actual payment failures
+  /// (card declined, network error, etc.).
   Future<bool> presentPaymentSheet() async {
-    await Stripe.instance.presentPaymentSheet();
-    return true; // Payment succeeded
+    try {
+      await Stripe.instance.presentPaymentSheet();
+      return true; // Payment succeeded
+    } on StripeException catch (e) {
+      // User cancelled by tapping outside — not an error, return false
+      if (e.error.code == FailureCode.Canceled) {
+        return false;
+      }
+      rethrow; // Re-throw other Stripe errors (declined, network failure, etc.)
+    }
   }
 
   /// Convenience: init + present in one call.

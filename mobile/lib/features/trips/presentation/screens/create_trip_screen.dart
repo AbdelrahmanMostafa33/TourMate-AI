@@ -21,8 +21,18 @@ class _CreateTripView extends StatefulWidget {
 
 class _CreateTripViewState extends State<_CreateTripView> {
   TourMateColors get _tm => context.tm;
-  final _cityController = TextEditingController();
-  final _countryController = TextEditingController();
+
+  /// Available Egyptian cities from the database.
+  static const _egyptianCities = [
+    'Cairo',
+    'Alexandria',
+    'Luxor',
+    'Aswan',
+  ];
+
+  String? _selectedCity;
+  static const String _selectedCountry = 'Egypt';
+
   final _travelersController = TextEditingController();
 
   DateTime? _startDate;
@@ -62,8 +72,6 @@ class _CreateTripViewState extends State<_CreateTripView> {
 
   @override
   void dispose() {
-    _cityController.dispose();
-    _countryController.dispose();
     _travelersController.dispose();
     super.dispose();
   }
@@ -93,8 +101,8 @@ class _CreateTripViewState extends State<_CreateTripView> {
   }
 
   String _buildAutoMessage() {
-    final city = _cityController.text.trim();
-    final country = _countryController.text.trim();
+    final city = _selectedCity ?? '';
+    final country = _selectedCountry;
     final destination = country.isNotEmpty ? "$city, $country" : city;
 
     final parts = <String>["I want to plan a trip to $destination."];
@@ -123,9 +131,9 @@ class _CreateTripViewState extends State<_CreateTripView> {
   }
 
   void _submit() {
-    final city = _cityController.text.trim();
-    if (city.isEmpty) {
-      _showSnackbar('City is required');
+    final city = _selectedCity;
+    if (city == null || city.isEmpty) {
+      _showSnackbar('Please select a city');
       return;
     }
 
@@ -214,19 +222,11 @@ class _CreateTripViewState extends State<_CreateTripView> {
                   Row(
                     children: [
                       Expanded(
-                        child: _field(
-                          controller: _cityController,
-                          hint: "City",
-                          prefixIcon: Icons.location_city_outlined,
-                        ),
+                        child: _cityDropdown(),
                       ),
                       const SizedBox(width: Spacing.xl),
                       Expanded(
-                        child: _field(
-                          controller: _countryController,
-                          hint: "Country",
-                          prefixIcon: Icons.public_outlined,
-                        ),
+                        child: _countryField(),
                       ),
                     ],
                   ),
@@ -377,6 +377,91 @@ class _CreateTripViewState extends State<_CreateTripView> {
           ),
         ),
       ],
+    );
+  }
+
+  Widget _cityDropdown() {
+    return Container(
+      height: 56,
+      decoration: BoxDecoration(
+        color: _tm.brandWhite,
+        borderRadius: BorderRadius.circular(RadiusTokens.xl),
+        border: Border.all(color: _tm.borderLight),
+      ),
+      padding: const EdgeInsets.symmetric(horizontal: Spacing.xl3),
+      child: DropdownButtonHideUnderline(
+        child: DropdownButton<String>(
+          value: _selectedCity,
+          isExpanded: true,
+          hint: Text(
+            'City',
+            style: TextStyle(color: _tm.textTertiary, fontSize: 14, fontWeight: FontWeight.w400),
+          ),
+          icon: Icon(Icons.expand_more, color: _tm.textTertiary),
+          style: TextStyle(
+            fontSize: 15,
+            color: _tm.textPrimary,
+            fontWeight: FontWeight.w500,
+          ),
+          items: _egyptianCities.map((city) {
+            return DropdownMenuItem(
+              value: city,
+              child: Row(
+                children: [
+                  Container(
+                    margin: const EdgeInsets.only(right: 10),
+                    padding: const EdgeInsets.all(4),
+                    decoration: BoxDecoration(
+                      color: _tm.sapphire.withValues(alpha: 0.06),
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: Icon(Icons.location_city_outlined, size: 16, color: _tm.sapphire),
+                  ),
+                  Text(city),
+                ],
+              ),
+            );
+          }).toList(),
+          onChanged: (value) {
+            setState(() => _selectedCity = value);
+          },
+        ),
+      ),
+    );
+  }
+
+  Widget _countryField() {
+    return Container(
+      height: 56,
+      padding: const EdgeInsets.symmetric(horizontal: Spacing.xl3),
+      decoration: BoxDecoration(
+        color: _tm.brandWhite,
+        borderRadius: BorderRadius.circular(RadiusTokens.xl),
+        border: Border.all(color: _tm.borderLight),
+      ),
+      child: Row(
+        children: [
+          Container(
+            margin: const EdgeInsets.only(right: 10),
+            padding: const EdgeInsets.all(4),
+            decoration: BoxDecoration(
+              color: _tm.sapphire.withValues(alpha: 0.06),
+              borderRadius: BorderRadius.circular(6),
+            ),
+            child: Icon(Icons.public_outlined, size: 16, color: _tm.sapphire),
+          ),
+          Text(
+            _selectedCountry,
+            style: TextStyle(
+              fontSize: 15,
+              color: _tm.textPrimary,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+          const Spacer(),
+          Icon(Icons.lock_outline, size: 14, color: _tm.textTertiary.withValues(alpha: 0.5)),
+        ],
+      ),
     );
   }
 
