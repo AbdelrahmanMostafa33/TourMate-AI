@@ -493,19 +493,20 @@ class ChatCubit extends Cubit<ChatState> {
     try {
       return ItineraryData.fromJson(Map<String, dynamic>.from(raw));
     } catch (e) {
-      debugPrint('[ChatCubit] Failed to parse itinerary JSON: $e');
+      debugPrint('[ChatCubit] ❌ Failed to parse itinerary JSON: $e');
+      debugPrint('[ChatCubit] ❌ Raw data keys: ${(raw as Map).keys.take(20).toList()}');
       return null;
     }
   }
 
+  /// Attach itinerary data to the last assistant message, or create a new one.
+  /// Returns true if the itinerary was attached (or a pending was stored).
   void _attachItinerary(ItineraryData itineraryData) {
-    if (_messages.isNotEmpty && !_messages.last.isUser) {
-      _messages[_messages.length - 1] = _messages.last.copyWith(
-        itinerary: itineraryData,
-        text: '',
-        isStreaming: false,
-      );
-    } else {
+    // If there's a pending itinerary, update it (itinerary_data arrived before
+    // any assistant message existed; now the message exists or we create one).
+    if (_messages.isEmpty || _messages.last.isUser) {
+      // No assistant message yet — create one with the card immediately
+      // so the UI doesn't show the raw text before the card replaces it.
       _messages.add(
         ChatMessage(
           text: '',
@@ -514,13 +515,32 @@ class ChatCubit extends Cubit<ChatState> {
           itinerary: itineraryData,
         ),
       );
+    } else {
+      // Replace the last assistant message's text with the card
+      _messages[_messages.length - 1] = _messages.last.copyWith(
+        itinerary: itineraryData,
+        text: '',
+        isStreaming: false,
+      );
     }
     _pendingItinerary = null;
   }
 
   void _applyPendingItineraryToLastAssistant() {
     if (_pendingItinerary == null) return;
-    if (_messages.isEmpty || _messages.last.isUser) return;
+    if (_messages.isEmpty || _messages.last.isUser) {
+      // No assistant message — create one with the pending itinerary
+      _messages.add(
+        ChatMessage(
+          text: '',
+          isUser: false,
+          isStreaming: false,
+          itinerary: _pendingItinerary,
+        ),
+      );
+      _pendingItinerary = null;
+      return;
+    }
 
     _messages[_messages.length - 1] = _messages.last.copyWith(
       itinerary: _pendingItinerary,
@@ -784,6 +804,16 @@ class ChatCubit extends Cubit<ChatState> {
         // The trip was approved (status → awaiting_booking/booking_pending).
         // The UI can read bookingTripId to navigate to the trip detail page.
         debugPrint('[ChatCubit] trip_approved event received, tripId=$_bookingTripId');
+
+        // Lock the itinerary signature so subsequent phase transitions (e.g.
+        // after the booking flow) don't re-render the same itinerary card.
+        // Before approval, the signature is null so modifications always get
+        // a fresh card (duplicate suppression only applies post-approval).
+        if (_messages.isNotEmpty && !_messages.last.isUser && _messages.last.itinerary != null) {
+          _renderedItinerarySignature = _computeItinerarySignature(_messages.last.itinerary!);
+          debugPrint('[ChatCubit] 🛑 Locked itinerary signature after approval: $_renderedItinerarySignature');
+        }
+
         if (_messages.isNotEmpty && !_messages.last.isUser) {
           final last = _messages.last;
           _messages[_messages.length - 1] = last.copyWith(
@@ -815,6 +845,7 @@ class ChatCubit extends Cubit<ChatState> {
             if (!_isDuplicateItinerary(itinerary)) {
               _attachItinerary(itinerary);
               _renderedItinerarySignature = _computeItinerarySignature(itinerary);
+              debugPrint('[ChatCubit] ✅ Attached itinerary card from result event (${itinerary.destination}, ${itinerary.days.length} days)');
             } else {
               debugPrint('[ChatCubit] Suppressed duplicate itinerary in result event (phase transition)');
             }
@@ -867,6 +898,8 @@ class ChatCubit extends Cubit<ChatState> {
           if (!_isDuplicateItinerary(itinerary)) {
             _attachItinerary(itinerary);
             _renderedItinerarySignature = _computeItinerarySignature(itinerary);
+            final stopCount = itinerary.days.fold<int>(0, (sum, d) => sum + d.stops.length);
+            debugPrint('[ChatCubit] ✅ Attached itinerary card (${itinerary.destination}, ${itinerary.days.length} days, $stopCount stops)');
           } else {
             debugPrint('[ChatCubit] Suppressed duplicate itinerary card (phase transition)');
           }
@@ -875,6 +908,8 @@ class ChatCubit extends Cubit<ChatState> {
             orElse: () => false,
           );
           _emitConnected(isTyping: currentIsTyping, bumpRefresh: true);
+        } else {
+          debugPrint('[ChatCubit] ⚠️ itinerary_data event received but parsing returned null');
         }
         break;
 

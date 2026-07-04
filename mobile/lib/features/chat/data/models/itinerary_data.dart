@@ -22,6 +22,20 @@ int? _parseIntOrNull(dynamic value) {
   return null;
 }
 
+double _parseDouble(dynamic value, [double defaultValue = 0.0]) {
+  if (value == null) return defaultValue;
+  if (value is num) return value.toDouble();
+  if (value is String) return double.tryParse(value) ?? defaultValue;
+  return defaultValue;
+}
+
+double? _parseDoubleOrNull(dynamic value) {
+  if (value == null) return null;
+  if (value is num) return value.toDouble();
+  if (value is String) return double.tryParse(value);
+  return null;
+}
+
 String _parseString(dynamic value, [String defaultValue = '']) {
   if (value == null) return defaultValue;
   return value.toString();
@@ -33,14 +47,40 @@ String? _parseStringOrNull(dynamic value) {
   return text.isEmpty ? null : text;
 }
 
+/// Safely extract a photo URL from various backend shapes:
+///   - null / absent → null
+///   - a List → first element (string or map with url/photo_url key)
+///   - a String → the string itself
+///   - a Map → url or photo_url key
 String? _parsePhotoUrl(dynamic photos) {
-  if (photos is! List || photos.isEmpty) return null;
-  final first = photos.first;
-  if (first is String) return first;
-  if (first is Map) {
-    return first['url'] as String? ?? first['photo_url'] as String?;
+  if (photos == null) return null;
+  if (photos is String) return photos.isEmpty ? null : photos;
+  if (photos is List) {
+    if (photos.isEmpty) return null;
+    final first = photos.first;
+    if (first is String) return first.isEmpty ? null : first;
+    if (first is Map) {
+      return _parseStringOrNull(first['url'] ?? first['photo_url']);
+    }
+    return null;
+  }
+  if (photos is Map) {
+    return _parseStringOrNull(photos['url'] ?? photos['photo_url']);
   }
   return null;
+}
+
+List<ItineraryStop> _parseStops(dynamic rawStops) {
+  final stops = <ItineraryStop>[];
+  if (rawStops is! List) return stops;
+  for (final rawStop in rawStops) {
+    final stopMap = _asJsonMap(rawStop);
+    if (stopMap == null) continue;
+    try {
+      stops.add(ItineraryStop.fromJson(stopMap));
+    } catch (_) {}
+  }
+  return stops;
 }
 
 class ItineraryData {
@@ -182,7 +222,7 @@ class ItineraryDay {
       dayNumber: _parseInt(json['day_number']),
       theme: _parseString(json['theme']),
       totalTravelTimeMinutes:
-          (json['total_travel_time_minutes'] as num?)?.toDouble(),
+          _parseDoubleOrNull(json['total_travel_time_minutes']),
       stops: _parseStops(json['stops']),
     );
   }
@@ -232,13 +272,13 @@ class ItineraryStop {
       category: _parseString(json['category']),
       subCategory: _parseString(json['sub_category']),
       cuisineType: _parseString(json['cuisine_type']),
-      lat: (json['lat'] as num?)?.toDouble() ?? 0.0,
-      lon: (json['lon'] as num?)?.toDouble() ?? 0.0,
+      lat: _parseDouble(json['lat']),
+      lon: _parseDouble(json['lon']),
       whyRecommended: _parseString(json['why_recommended']),
       estimatedDurationMinutes:
           _parseInt(json['estimated_duration_minutes']),
       suggestedTimeOfDay: _parseString(json['suggested_time_of_day']),
-      rating: (json['rating'] as num?)?.toDouble(),
+      rating: _parseDoubleOrNull(json['rating']),
       address: _parseStringOrNull(json['address']),
       photoUrl: _parsePhotoUrl(json['photos'] ?? json['photo']),
       travelTimeToNextMinutes:
@@ -277,26 +317,12 @@ class AccommodationSuggestion {
       id: _parseString(json['id']),
       name: _parseString(json['name']),
       accommodationType: _parseString(json['accommodation_type']),
-      lat: (json['lat'] as num?)?.toDouble() ?? 0.0,
-      lon: (json['lon'] as num?)?.toDouble() ?? 0.0,
+      lat: _parseDouble(json['lat']),
+      lon: _parseDouble(json['lon']),
       whyRecommended: _parseString(json['why_recommended']),
-      rating: (json['rating'] as num?)?.toDouble(),
-      photoUrl: _parsePhotoUrl(json['photos']),
+      rating: _parseDoubleOrNull(json['rating']),
+      photoUrl: _parsePhotoUrl(json['photos'] ?? json['photo']),
       address: _parseStringOrNull(json['address']),
     );
   }
-}
-
-List<ItineraryStop> _parseStops(dynamic rawStops) {
-  final stops = <ItineraryStop>[];
-  if (rawStops is! List) return stops;
-
-  for (final rawStop in rawStops) {
-    final stopMap = _asJsonMap(rawStop);
-    if (stopMap == null) continue;
-    try {
-      stops.add(ItineraryStop.fromJson(stopMap));
-    } catch (_) {}
-  }
-  return stops;
 }
