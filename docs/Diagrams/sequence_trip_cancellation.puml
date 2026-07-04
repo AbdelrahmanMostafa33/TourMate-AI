@@ -1,0 +1,49 @@
+@startuml Trip_Cancellation_Flow
+title Cancel Trip — Coordinated Cancellation & Refund
+
+actor Traveler
+participant "Mobile App" as App
+participant "Backend" as Backend
+participant "Database" as DB
+
+== Cancel Entire Trip ==
+
+Traveler -> App: Request to cancel entire trip
+activate App
+
+App -> Backend: Cancel trip\n{trip_id}
+activate Backend
+
+Backend -> DB: Load all bookings\nwith payments
+activate DB
+DB --> Backend: Bookings + payments
+deactivate DB
+
+alt Has hotel booking
+  Backend -> Backend: Cancel hotel booking
+  note right
+    Marks booking as cancelled
+    Refunds linked payment
+  end note
+end
+
+alt Has flight booking
+  Backend -> Backend: Cancel flight booking
+  note right
+    Marks booking as cancelled
+    Refunds linked payment
+  end note
+end
+
+Backend -> DB: Update trip status\nto cancelled
+activate DB
+DB --> Backend: Status updated
+deactivate DB
+
+Backend --> App: Trip cancelled\n{cancelled_bookings, refunded_payments}
+deactivate Backend
+
+App --> Traveler: Trip cancelled successfully\nBookings cancelled, payments refunded
+deactivate App
+
+@enduml

@@ -103,7 +103,7 @@ def _determine_booking_provider(booking_type: BookingType) -> BookingProvider:
     """Map booking type to a realistic mock provider."""
     mapping = {
         BookingType.hotel:     BookingProvider.booking_com,
-        BookingType.transport: BookingProvider.other,
+        BookingType.flight:    BookingProvider.amadeus,
     }
     return mapping.get(booking_type, BookingProvider.direct)
 
@@ -966,7 +966,11 @@ class BookingService:
             select(Trip).where(Trip.trip_id == trip_id)
         )
         trip = result.scalar_one_or_none()
-        if not trip or trip.status != TripStatus.payment_processing:
+        if not trip:
+            return False
+        # Accept both payment_processing (individual flow via initiate-payment)
+        # and awaiting_booking (direct confirm without prior initiate)
+        if trip.status not in (TripStatus.payment_processing, TripStatus.awaiting_booking):
             return False
 
         # Check if any pending bookings remain

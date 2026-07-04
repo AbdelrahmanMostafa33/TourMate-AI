@@ -298,13 +298,13 @@ async def run_hotel_selection(state: TripState) -> TripState:
     for hotel in selected:
         full = place_index.get(hotel["id"])
         if full:
-            hotel.setdefault("accommodation_type", full.get("accommodation_type", ""))
-            hotel.setdefault("amenities", full.get("amenities", []))
-            hotel.setdefault("photos", (full.get("photos") or [])[:1])
-            hotel.setdefault("address", full.get("address"))
-            hotel.setdefault("maps_link", full.get("maps_link"))
-            hotel.setdefault("category", "hotel")
-            # Always overwrite nightly_rate from DB (LLM may output 0 if it doesn't know)
+            hotel["accommodation_type"] = full.get("accommodation_type", "")
+            hotel["amenities"] = full.get("amenities", [])
+            hotel["photos"] = (full.get("photos") or [])[:1]
+            hotel["address"] = full.get("address")
+            hotel["maps_link"] = full.get("maps_link")
+            hotel["category"] = "hotel"
+            # Overwrite nightly_rate from DB (LLM may output 0 if it doesn't know)
             hotel["nightly_rate"] = full.get("nightly_rate", hotel.get("nightly_rate", 0))
 
     # ── Store on itinerary ──────────────────────────────────────────────

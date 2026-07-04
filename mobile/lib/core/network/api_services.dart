@@ -243,4 +243,11 @@ abstract class ApiServices {
   Future<FlightBookingConfirmResponse> cancelFlightBooking(
     @Path('booking_id') String bookingId,
   );
+
+  /// Cancel an entire trip — cancels all bookings, refunds payments, and marks trip as cancelled.
+  /// Returns: {success, trip_id, status, cancelled_bookings, refunded_payments}
+  @POST("/api/v1/trips/{trip_id}/cancel")
+  Future<JsonMap> cancelTrip(
+    @Path('trip_id') String tripId,
+  );
 }

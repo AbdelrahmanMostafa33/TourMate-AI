@@ -1,72 +1,66 @@
 @startuml Flight_Booking_Flow
-title Flight Booking (UC#5) — Amadeus Search & Booking
+title Flight Booking (UC#5) — Analysis View
 
 actor Traveler
-participant "Chat" as Chat
-participant "Flight\nService" as FltSvc
-participant "Amadeus\nAPI" as Amadeus
+participant "Mobile App" as App
+participant "Backend" as Backend
+participant "Amadeus API" as Amadeus
+participant "Database" as DB
 
-== City Autocomplete (in chat) ==
+== Search Flights ==
 
-Traveler -> Chat: "I want to fly from Paris"
-activate Chat
+Traveler -> App: Request to book a flight
+activate App
 
-Chat -> FltSvc: search_cities("Paris")
-activate FltSvc
+App -> Backend: Search flights\n{departure, destination, dates}
+activate Backend
 
-FltSvc -> Amadeus: GET /v1/reference-data/locations\n{subtype: CITY, keyword: "Paris"}
+Backend -> Amadeus: Query available flight offers
 activate Amadeus
-Amadeus --> FltSvc: {iataCode: "CDG", city: "Paris"}
+Amadeus --> Backend: Available flights with pricing
 deactivate Amadeus
 
-FltSvc --> Chat: {cities: ["CDG - Paris"]}
-deactivate FltSvc
+Backend --> App: Flight options
+deactivate Backend
 
-Chat --> Traveler: "I found Paris (CDG). Is that correct?"
-deactivate Chat
+App --> Traveler: Display available flights
+deactivate App
 
-== Search Flights (in chat) ==
+== Select and Book Flight ==
 
-Traveler -> Chat: "Yes. Search flights CDG → CAI"
-activate Chat
+Traveler -> App: Select a specific flight
+activate App
 
-Chat -> FltSvc: search_flights(CDG, CAI, dates)
-activate FltSvc
+App -> Backend: Book selected flight
+activate Backend
 
-FltSvc -> Amadeus: GET /v2/shopping/flight-offers\n{origin: CDG, dest: CAI, dates}
+Backend -> Amadeus: Confirm flight booking
 activate Amadeus
-Amadeus --> FltSvc: {data: flight_offers[]}
-deactivate Amadeus
 
-FltSvc --> Chat: {offers: [...]}
-deactivate FltSvc
+alt Booking confirmed
+  Amadeus --> Backend: Booking successful
+  deactivate Amadeus
 
-Chat --> Traveler: "Here are available flights..."
-deactivate Chat
+  Backend -> DB: Store booking record
+  activate DB
+  DB --> Backend: Booking saved
+  deactivate DB
 
-== Book Flight (pending payment) ==
+  Backend --> App: Booking confirmed with price
+  deactivate Backend
 
-Traveler -> Chat: "Select the EgyptAir flight at 10:00"
-activate Chat
+  App --> Traveler: Flight booked, proceed\nto payment
+  deactivate App
 
-Chat -> FltSvc: initiate_flight_booking(raw_offer)
-activate FltSvc
+else Booking unavailable
+  Amadeus --> Backend: Booking failed
+  deactivate Amadeus
 
-FltSvc -> Amadeus: price_flight(raw_offer)
-activate Amadeus
-Amadeus --> FltSvc: {priced_offer, total_price}
-deactivate Amadeus
+  Backend --> App: Booking failed
+  deactivate Backend
 
-FltSvc --> Chat: {priced_offer, summary}
-deactivate FltSvc
-
-Chat --> Traveler: "Flight confirmed at $450.\nProceed to payment?"
-deactivate Chat
-
-Traveler -> Chat: "Yes, proceed"
-activate Chat
-Chat --> Traveler: "Opening secure checkout..."
-note right: Payment handled in UC#7 — Manage Payments
-deactivate Chat
+  App --> Traveler: No longer available
+  deactivate App
+end
 
 @enduml

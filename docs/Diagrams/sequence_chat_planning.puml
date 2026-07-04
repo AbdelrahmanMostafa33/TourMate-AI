@@ -1,122 +1,76 @@
 @startuml Chat_Planning_Flow
-title AI Chat & Trip Planning (UC#3 → UC#2)
+title AI Chat & Trip Planning (UC#3 / UC#2) — Analysis View
 
 actor Traveler
-participant "WebSocket\nManager" as WS
-participant "Orchestrator" as Orch
-participant "Message\nInterpreter" as MI
-participant "Graph\nPipeline" as Graph
-participant "Profile\nLoader" as Prof
-participant "Planning\nAgent" as Plan
-participant "Hotel\nAgent" as Hotel
-participant "Flight Sel.\nAgent" as Flight
-participant "OSRM\nService" as OSRM
-participant "LLM\nService" as LLM
-participant "Place\nRetriever" as Ret
+participant "Mobile App" as App
+participant "Backend" as Backend
+participant "AI Service" as AI
+participant "Database" as DB
 
-== WebSocket Connection ==
+== Start Conversation ==
 
-Traveler -> WS: ws://host/ws/chat/{trip_id}
-activate WS
+Traveler -> App: Open chat and describe trip
+activate App
 
-WS -> Orch: new_message(trip_id, "Plan a 3-day trip to Paris")
-activate Orch
+App -> Backend: Send trip request
+activate Backend
 
-Orch -> MI: classify_intent(message)
-activate MI
-MI --> Orch: {intent: "plan_trip", params: {days: 3, city: "Paris"}}
-deactivate MI
+Backend -> AI: Interpret request and\ncheck for missing details
+activate AI
 
-Orch -> Graph: run_pipeline(state)
-activate Graph
+alt Missing information
+  AI --> Backend: Ask clarifying question
+  Backend --> App: Prompt for more details
+  App --> Traveler: Question displayed
+  Traveler -> App: Provide additional info
+  App -> Backend: Updated request
+  Backend -> AI: Complete requirements
+end
 
-== Phase 1: Trip Profile (per-trip) ==
+AI --> Backend: Trip requirements understood
+deactivate AI
 
-Graph -> Prof: load_profile(state)
-activate Prof
+== Generate Itinerary ==
 
-Prof -> Prof: Initialize per-trip profile
-note right: Default profile for new trip
-Refined through conversation
-choices and feedback
+Backend -> DB: Retrieve places matching\nuser preferences
+activate DB
+DB --> Backend: Place candidates
+deactivate DB
 
-Prof --> Graph: {trip_profile}
-deactivate Prof
+Backend -> AI: Generate personalized\nitinerary
+activate AI
+AI --> Backend: Day-by-day itinerary
+deactivate AI
 
-== Phase 2: Place Retrieval ==
+Backend -> Backend: Validate itinerary
+Backend -> DB: Store generated itinerary
+activate DB
+DB --> Backend: Itinerary saved
+deactivate DB
 
-Graph -> Ret: retrieve_places(city, profile)
-activate Ret
+Backend --> App: Stream itinerary to chat
+deactivate Backend
 
-Ret -> Ret: Query DB by city + category
-Apply semantic interest matching
+App --> Traveler: Display itinerary
+deactivate App
 
-Ret --> Graph: {filtered_places}
-deactivate Ret
+== Approve Itinerary ==
 
-== Phase 3: Planning ==
+Traveler -> App: Approve the itinerary
+activate App
 
-Graph -> Plan: generate_plan(state)
-activate Plan
+App -> Backend: Confirm approval
+activate Backend
 
-Plan -> LLM: generate_day_plan("Paris, 3 days, cultural")
-activate LLM
-LLM --> Plan: {days: [{day: 1, theme: "Art"}, ...]}
-deactivate LLM
+Backend -> DB: Update trip status
+activate DB
+DB --> Backend: Status updated
+deactivate DB
 
-Plan -> OSRM: optimize_routing(places)
-activate OSRM
-OSRM --> Plan: {ordered_stops, travel_times}
-deactivate OSRM
+Backend --> App: Moving to booking phase
+deactivate Backend
 
-Plan --> Graph: {plan: itinerary_draft}
-deactivate Plan
-
-== Phase 4: Accommodation (in chat) ==
-
-Graph -> Hotel: find_hotels(state)
-activate Hotel
-
-Hotel -> LLM: extract_hotel_prefs(message)
-activate LLM
-LLM --> Hotel: {budget: "mid", location: "city_center"}
-deactivate LLM
-
-Hotel -> Hotel: Match from local pool
-note right: Hotels matched from DB pool
-Simulated booking — no external
-hotel API called
-
-Hotel --> Graph: {hotel_options: [...]}
-deactivate Hotel
-
-== Phase 5: Flights (in chat) ==
-
-Graph -> Flight: find_flights(state)
-activate Flight
-Flight --> Graph: {flight_options: [...]}
-deactivate Flight
-
-Graph --> Orch: {itinerary, hotels, flights}
-deactivate Graph
-
-== Itinerary Approval (in chat) ==
-
-Orch -> WS: stream_response(chunks...)
-activate Orch
-WS --> Traveler: Streaming itinerary text
-deactivate Orch
-
-Traveler -> WS: "I approve this itinerary"
-activate WS
-WS -> Orch: approve_itinerary(trip_id)
-activate Orch
-Orch -> Orch: Advance trip status to itinerary_ready
-Orch -> WS: "Great! Moving to booking phase..."
-note right: Booking handled via chat
-in UC#5 (Flights) and UC#6 (Hotels)
-Payment handled in UC#7
-deactivate Orch
-deactivate WS
+App --> Traveler: Ready for flight and\nhotel booking
+deactivate App
 
 @enduml

@@ -22,6 +22,9 @@ class TripStatus(str, PyEnum):
     # Active Phase
     active                = "active"              # Trip is ongoing
 
+    # Cancellation Phase
+    cancelled             = "cancelled"           # Trip cancelled by user
+
     # Completion Phase
     completed             = "completed"           # Trip finished
 
@@ -72,7 +75,6 @@ class AccommodationType(str, PyEnum):
 
 class BookingType(str, PyEnum):
     hotel      = "hotel"
-    transport  = "transport"
     flight     = "flight"
 
 

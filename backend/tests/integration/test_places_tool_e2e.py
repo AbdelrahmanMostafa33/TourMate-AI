@@ -142,21 +142,20 @@ class TestGetPlacesForCityE2E:
         assert "wifi" in marriott.get("amenities", [])
         assert "pool" in marriott.get("amenities", [])
         assert "spa" in marriott.get("amenities", [])
-        assert "pool" not in marriott.get("interest_tags", [])
-        assert "spa" not in marriott.get("interest_tags", [])
+        assert "interest_tags" not in marriott
 
     async def test_restaurant_cuisine_populated(self, seeded_db):
         """Restaurant cuisine_type should appear in interest_tags."""
         places = await seeded_db("Cairo")
         abu_shukri = next(p for p in places if p["name"] == "Abu Shukri")
         assert abu_shukri["cuisine_type"] == "local cuisine"
-        assert "local cuisine" in abu_shukri.get("interest_tags", [])
+        assert abu_shukri.get("cuisine_type") == "local cuisine"
 
     async def test_attraction_subcategory_in_tags(self, seeded_db):
-        """Attraction subcategory should appear in interest_tags."""
+        """Attraction subcategory should appear in result."""
         places = await seeded_db("Cairo")
         museum = next(p for p in places if p["name"] == "Egyptian Museum")
-        assert "museum" in museum.get("interest_tags", [])
+        assert museum.get("sub_category") == "museum"
 
     async def test_sorted_by_popularity_descending(self, seeded_db):
         """Places should be returned sorted by popularity_score descending."""

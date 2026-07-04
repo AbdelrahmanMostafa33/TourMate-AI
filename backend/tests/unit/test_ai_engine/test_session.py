@@ -87,7 +87,12 @@ class TestTripSlots:
         assert "interests" in missing
         assert len(missing) == 1
         assert slots.is_complete() is False
-        # After fill_defaults, interests is populated
+        # fill_defaults does NOT populate interests when None (kept as required field)
+        # User must explicitly provide interests or opt out (set to [])
+        slots.fill_defaults()
+        assert slots.is_complete() is False  # interests still None
+        # After explicitly setting interests, it's complete
+        slots.interests = []
         slots.fill_defaults()
         assert slots.is_complete() is True
 
@@ -108,14 +113,19 @@ class TestTripSlots:
         slots = TripSlots(destination_city="Paris", duration_days=5)
         # Destination + duration alone is NOT enough — interests is required
         assert slots.is_complete() is False
-        # fill_defaults should populate the rest including interests
+        # fill_defaults populates profile defaults but NOT interests (still None)
         slots.fill_defaults()
         assert slots.budget_level == "moderate"
         assert slots.travel_style == "cultural"
         assert slots.pace == "moderate"
         assert slots.group_size == 1
         assert slots.traveler_group_type == "solo"
-        assert slots.is_complete() is True  # now complete after fill_defaults
+        # is_complete is still False because interests is None
+        assert slots.is_complete() is False
+        # After explicitly setting interests (even empty = opt-out), it's complete
+        slots.interests = []
+        slots.fill_defaults()
+        assert slots.is_complete() is True
 
     def test_is_complete_when_missing_trip_info(self):
         slots = TripSlots(
@@ -356,7 +366,12 @@ class TestConversationState:
         assert not state.slots.is_complete()
         state.slots.merge({"duration_days": 3})
         assert not state.slots.is_complete()  # interests still missing
-        # fill_defaults() populates interests + the rest
+        # fill_defaults() populates profile defaults but NOT interests when None
+        state.slots.fill_defaults()
+        # is_complete is still False because interests is None
+        assert not state.slots.is_complete()
+        # Explicitly set interests to opt out
+        state.slots.interests = []
         state.slots.fill_defaults()
         assert state.slots.is_complete()  # now complete
         assert state.slots.budget_level == "moderate"

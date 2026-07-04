@@ -43,7 +43,6 @@
 2. Users shall be able to book flights and hotels through the chat conversation, with explicit confirmation required before any booking is finalized.
 3. Hotel bookings shall be simulated — the system generates realistic confirmation numbers and provider details without connecting to a live hotel booking API.
 4. Users shall have full control to cancel bookings before payment is completed.
-5. Bulk operations such as booking accommodation for all itinerary stops at once shall be supported for efficient trip finalization.
 
 ## 7. Payment Management
 

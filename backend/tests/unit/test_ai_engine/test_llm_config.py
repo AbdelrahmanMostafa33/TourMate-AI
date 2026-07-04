@@ -1,6 +1,6 @@
 # tests/unit/test_ai_engine/test_llm_config.py
 
-"""Unit tests for ai_engine.llm_config — LLM provider registry.
+"""Unit tests for ai_engine.llm.config — LLM provider registry.
 
 Tests the AGENT_LLM_REGISTRY mapping to ensure every agent role is
 assigned to the correct provider, model, temperature, and token cap.
@@ -14,6 +14,14 @@ from ai_engine.llm import AGENT_LLM_REGISTRY, Provider
 
 class TestAgentRegistry:
     """Verify every entry in AGENT_LLM_REGISTRY has the expected config."""
+
+    def test_extractor_config(self):
+        """extractor → Groq Llama 3.3 70B, low temp for extraction."""
+        config = AGENT_LLM_REGISTRY["extractor"]
+        assert config.provider == Provider.GROQ
+        assert config.model == "llama-3.3-70b-versatile"
+        assert config.temperature == 0.1
+        assert config.max_tokens == 512
 
     def test_router_config(self):
         """router → Groq Llama 3.3 70B, low temp for consistent extraction."""
@@ -47,6 +55,22 @@ class TestAgentRegistry:
         assert config.temperature == 0.7
         assert config.max_tokens == 8192
 
+    def test_persona_updater_config(self):
+        """persona_updater → Groq Llama 3.3 70B, moderate temp."""
+        config = AGENT_LLM_REGISTRY["persona_updater"]
+        assert config.provider == Provider.GROQ
+        assert config.model == "llama-3.3-70b-versatile"
+        assert config.temperature == 0.3
+        assert config.max_tokens == 512
+
+    def test_hotel_selector_config(self):
+        """hotel_selector → Groq Llama 3.3 70B, moderate temp."""
+        config = AGENT_LLM_REGISTRY["hotel_selector"]
+        assert config.provider == Provider.GROQ
+        assert config.model == "llama-3.3-70b-versatile"
+        assert config.temperature == 0.3
+        assert config.max_tokens == 8192
+
     def test_modifier_config(self):
         """modifier → Gemini 2.5 Flash, temperature 0 for deterministic edits."""
         config = AGENT_LLM_REGISTRY["modifier"]
@@ -71,7 +95,7 @@ class TestAgentRegistry:
         assert config.temperature == 0.7
         assert config.max_tokens == 8192
 
-    def test_all_roles_have_config(self):
+    def test_all_roles_have_valid_config(self):
         """Every registered agent role has a valid config with required fields."""
         for role, config in AGENT_LLM_REGISTRY.items():
             assert config.provider in (Provider.GEMINI, Provider.GROQ), (
@@ -100,15 +124,19 @@ class TestAgentRegistry:
             _ = AGENT_LLM_REGISTRY["nonexistent_agent"]
 
     def test_groq_agents_use_groq_provider(self):
-        """All three Groq agents share the same provider."""
-        groq_roles = ["router", "preference_reranker", "validator", "review_qa"]
+        """All 7 Groq agents share the same provider."""
+        groq_roles = [
+            "extractor", "router", "preference_reranker",
+            "validator", "review_qa", "persona_updater",
+            "hotel_selector",
+        ]
         for role in groq_roles:
             assert AGENT_LLM_REGISTRY[role].provider == Provider.GROQ, (
                 f"{role} should use Groq"
             )
 
     def test_gemini_agents_use_gemini_provider(self):
-        """All three Gemini agents share the same provider."""
+        """All 3 Gemini agents share the same provider."""
         gemini_roles = ["modifier", "planner", "vision"]
         for role in gemini_roles:
             assert AGENT_LLM_REGISTRY[role].provider == Provider.GEMINI, (
@@ -118,7 +146,6 @@ class TestAgentRegistry:
     def test_modifier_placed_under_gemini_section(self):
         """The modifier entry appears after the '# ── Gemini' comment in source,
         verifying it's grouped under the Gemini section (not Groq)."""
-        # The AGENT_LLM_REGISTRY lives in ai_engine/llm/config.py
         import ai_engine.llm.config as llm_config_module
 
         with open(llm_config_module.__file__, encoding="utf-8") as f:

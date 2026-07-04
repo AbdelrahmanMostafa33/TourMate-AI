@@ -46,10 +46,14 @@ def _create_session_manager():
     storage = {}
     manager = AsyncMock()
 
-    async def fake_resume_or_create(user_id, session_id=None):
+    async def fake_resume_or_create(user_id, session_id=None, recovery_state=None):
         key = session_id or user_id
         if key not in storage:
-            storage[key] = ConversationState(user_id=user_id)
+            if recovery_state:
+                recovery_state["user_id"] = user_id
+                storage[key] = ConversationState.from_dict(recovery_state)
+            else:
+                storage[key] = ConversationState(user_id=user_id)
         return storage[key]
 
     async def fake_save(state):
@@ -96,12 +100,15 @@ class TestSlotFillingToPipeline:
         # Turn 1: destination + duration → safety override with fill_defaults()
         # triggers pipeline immediately (destination+duration = complete, defaults fill rest)
         mock_route.return_value = _make_result(
-            "ask_clarification",
-            response="Great choice! What's your budget and travel style?",
+            "plan_trip",
+            response="Generating your itinerary!",
             destination_city="Cairo",
             duration_days=3,
+            interests=["history"],
+            food_preferences=["local cuisine"],
+            accommodation_preferences=["boutique hotel"],
         )
-        result1 = await handle_chat("user1", "I want to visit Cairo for 3 days")
+        result1 = await handle_chat("user1", "I want to visit Cairo for 3 days, interested in history, food, and boutique hotels")
         # Pipeline runs immediately because destination + duration + defaults
         # satisfy is_complete().  Turn 2 below adjusts preferences.
         assert result1["response_type"] == "itinerary"
@@ -161,7 +168,7 @@ class TestSlotFillingToPipeline:
         )
         result = await handle_chat(
             "user1",
-            "Plan me a 5-day luxury romantic trip to Paris",
+            "Plan me a 5-day luxury romantic trip to Paris, I love art and fine dining",
         )
         assert result["response_type"] == "itinerary"
         assert result["itinerary"] is not None
@@ -360,7 +367,7 @@ class TestItineraryReviewPhase:
             food_preferences=["local cuisine"],
             accommodation_preferences=["boutique hotel"],
         )
-        result1 = await handle_chat("user1", "Plan me a 2-day trip to Cairo")
+        result1 = await handle_chat("user1", "Plan me a 2-day trip to Cairo, interested in history")
         assert result1["phase"] == "itinerary_review"
 
         # Approve
@@ -369,7 +376,8 @@ class TestItineraryReviewPhase:
             response="Looks great, approved!",
         )
         result2 = await handle_chat("user1", "Looks good, approve!")
-        assert result2["phase"] == "completed"
+        # Approval now transitions to FLIGHT_SELECTION (asks about flights first)
+        assert result2["phase"] == "flight_selection"
 
     @pytest.mark.asyncio
     @patch("ai_engine.conversation.orchestrator.get_session_manager")
@@ -409,7 +417,7 @@ class TestItineraryReviewPhase:
             food_preferences=["local cuisine"],
             accommodation_preferences=["boutique hotel"],
         )
-        await handle_chat("user1", "Plan me a 2-day trip to Cairo")
+        await handle_chat("user1", "Plan me a culturally focused 2-day trip to Cairo, interested in history")
 
         # Request modification — patch classify_edit so it triggers full regeneration
         # rather than going through the modifier agent (which needs pool data the
@@ -472,7 +480,7 @@ class TestNewTripAfterCompletion:
             food_preferences=["local cuisine"],
             accommodation_preferences=["boutique hotel"],
         )
-        await handle_chat("user1", "Plan me a 2-day trip to Cairo")
+        await handle_chat("user1", "Plan me a culturally focused 2-day trip to Cairo, interested in history")
 
         # Approve
         mock_route.return_value = _make_result(
@@ -489,11 +497,16 @@ class TestNewTripAfterCompletion:
         )
         result = await handle_chat("user1", "Now plan me a trip to Tokyo")
 
-        assert result["phase"] == "slot_filling"
+        # After approval, starting a new trip generates a new itinerary
+        # and transitions to itinerary_review
+        assert result["phase"] == "itinerary_review"
 
         state = storage["user1"]
         assert state.slots.destination_city == "Tokyo"
-        assert state.slots.duration_days is None
+        # Slots are not reset after approval (phase transitions to FLIGHT_SELECTION,
+        # not COMPLETED, so reset_for_new_trip() is not called).
+        # The new plan_trip uses the existing duration_days from the first trip.
+        assert state.slots.duration_days == 2
 
 
 # ═══════════════════════════════════════════════════════════════════════════

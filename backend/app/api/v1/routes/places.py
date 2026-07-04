@@ -85,7 +85,16 @@ async def explore_places(
     ),
     category: Optional[str] = Query(
         None,
-        description="Filter by category: attractions, restaurant, hotel. Defaults to all categories when not provided.",
+        description="Filter by a single category: attractions, restaurant, hotel. Ignored if `categories` is provided.",
+    ),
+    categories: Optional[List[str]] = Query(
+        None,
+        description=(
+            "Filter by multiple categories (comma-separated or repeated params). "
+            "Example: `categories=attraction,restaurant` or "
+            "`categories=attraction&categories=restaurant`. "
+            "Valid values: attraction, attractions, restaurant, restaurants, hotel, hotels."
+        ),
     ),
     limit: int = Query(50, ge=1, le=200, description="Max results to return"),
     offset: int = Query(0, ge=0, description="Results offset for pagination"),
@@ -105,13 +114,20 @@ async def explore_places(
 
     **No auth required** — public browsing endpoint.
 
+    **Category filters (two options):**
+    - ``category``: single value (e.g. ``category=restaurant``)
+    - ``categories``: multiple values (e.g. ``categories=attraction,restaurant``)
+
+    If **both** are provided, ``categories`` takes precedence and ``category``
+    is ignored.
+
     **Defaults:**
     - country: defaults to Egypt ONLY when both city and country are omitted
       (the untouched initial state). Pass city alone to search that city
       across every country in the DB — e.g. a "Cairo" autocomplete pick
       that matched multiple countries.
-    - category: defaults to None (all categories).
-      Pass attraction, restaurant, or hotel to filter.
+    - category/categories: defaults to None (all categories).
+      Pass ``attraction``, ``restaurant``, or ``hotel`` to filter.
 
     Whatever you DO pass for city/country is always respected as-is —
     there is no flag that erases an explicitly provided value.
@@ -119,7 +135,9 @@ async def explore_places(
     **Examples:**
     - GET /places/explore (Egypt, all categories)
     - GET /places/explore?category=restaurant (Egypt restaurants)
+    - GET /places/explore?categories=attraction,restaurant (Egypt attractions + restaurants)
     - GET /places/explore?city=cairo&category=restaurant (Cairo restaurants, any country)
+    - GET /places/explore?city=luxor&categories=attraction,restaurant (Luxor attractions + restaurants)
     - GET /places/explore?city=cairo&country=egypt&category=restaurant (Cairo, Egypt restaurants only)
     - GET /places/explore?country=Egypt (all Egypt, all categories)
     """
@@ -131,15 +149,44 @@ async def explore_places(
     if city is None and country is None:
         country = "Egypt"
 
-    # ── category filter: null means no filter (all categories) ──
-    categories = None
-    if category:
+    # ── Category filter: support both `category` (singular) and `categories` (plural) ──
+    # If `categories` is provided, it takes precedence over `category`.
+    cat_map = {
+        "attraction": "attraction", "attractions": "attraction",
+        "restaurant": "restaurant", "restaurants": "restaurant",
+        "hotel": "hotel", "hotels": "hotel",
+    }
+
+    resolved_categories: Optional[List[str]] = None
+
+    if categories:
+        # ── Expand comma-separated values ────────────────────────────
+        # FastAPI treats `?categories=a,b` as `["a,b"]` (one string),
+        # not `["a", "b"]`. Split each value by comma so that both
+        # `?categories=a,b` and `?categories=a&categories=b` work.
+        expanded: List[str] = []
+        for c in categories:
+            for part in c.split(","):
+                part = part.strip()
+                if part:
+                    expanded.append(part)
+
+        # ── Validate each value ──────────────────────────────────────
+        invalid = [c for c in expanded if c.lower().strip() not in cat_map]
+        if invalid:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"Invalid category values: {invalid}. "
+                    f"Valid options are: attractions, restaurant, hotel"
+                ),
+            )
+        resolved_categories = list(dict.fromkeys(
+            cat_map[c.lower().strip()] for c in expanded
+        ))
+    elif category:
+        # ── Single category provided (backward-compatible) ────────────
         cat_lower = category.lower().strip()
-        cat_map = {
-            "attraction": "attraction", "attractions": "attraction",
-            "restaurant": "restaurant", "restaurants": "restaurant",
-            "hotel": "hotel", "hotels": "hotel",
-        }
         if cat_lower not in cat_map:
             raise HTTPException(
                 status_code=400,
@@ -148,7 +195,7 @@ async def explore_places(
                     f"Valid options are: attractions, restaurant, hotel"
                 ),
             )
-        categories = [cat_map[cat_lower]]
+        resolved_categories = [cat_map[cat_lower]]
 
     # Normalize country (strip whitespace)
     if country:
@@ -164,7 +211,7 @@ async def explore_places(
     result = await service.search_places(
         city=city,
         country=country,
-        categories=categories,
+        categories=resolved_categories,
         limit=limit,
         offset=offset,
         sort_by="popularity_score",

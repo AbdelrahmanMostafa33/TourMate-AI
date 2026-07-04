@@ -2125,6 +2125,11 @@ async def _handle_modify_itinerary(
         if blocked is not None:
             return blocked
 
+    # Modifier was unchanged — log transition
+    logger.info(
+        "[ConversationAgent] Modifier unchanged — trying preference re-ranking"
+    )
+
     # Branch 3: fallback preference adjustment (only when adjustments exist)
     if adjustments:
         acc_add = adjustments.get("accommodation_preferences_add") or []
@@ -2158,6 +2163,10 @@ async def _handle_modify_itinerary(
                     agent_messages + reranked.get("agent_messages", []),
                     reranked.get("validation"),
                 )
+
+    logger.info(
+        "[ConversationAgent] Preference re-ranking failed or no adjustments"
+    )
 
     logger.info("[ConversationAgent] Falling back to full pipeline regeneration")
     return await _fallback_full_regeneration(

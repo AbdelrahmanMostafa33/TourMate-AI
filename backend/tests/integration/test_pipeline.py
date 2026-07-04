@@ -101,8 +101,11 @@ class TestFullPipelineHappyPath:
         assert len(candidates) <= 30  # MAX_TOTAL_CANDIDATES
 
     @pytest.mark.asyncio
+    @patch("ai_engine.services.place_retriever._compute_semantic_interest_subcats", return_value=set())
+    @patch("ai_engine.services.candidate_scorer.load_place_embeddings", return_value={})
+    @patch("ai_engine.services.candidate_scorer.embed_query_async", return_value=None)
     @patch("ai_engine.agents.planning_agent.invoke_with_fallback")
-    async def test_planner_produces_draft_itinerary(self, mock_plan_llm):
+    async def test_planner_produces_draft_itinerary(self, mock_plan_llm, mock_embed, mock_embeddings, mock_semantic):
         """Planning Agent produces a draft itinerary from candidates."""
         mock_plan_llm.return_value = build_planning_llm_response(num_days=2, num_stops_per_day=3)
 
@@ -124,10 +127,13 @@ class TestFullPipelineHappyPath:
         assert sum(len(d.get("stops", [])) for d in draft["days"]) > 0
 
     @pytest.mark.asyncio
+    @patch("ai_engine.services.place_retriever._compute_semantic_interest_subcats", return_value=set())
+    @patch("ai_engine.services.candidate_scorer.load_place_embeddings", return_value={})
+    @patch("ai_engine.services.candidate_scorer.embed_query_async", return_value=None)
     @patch("ai_engine.agents.planning_agent.invoke_with_fallback")
     @patch("ai_engine.services.route_optimizer.compute_day_matrix", new_callable=AsyncMock)
     async def test_optimizer_reorders_stops(
-        self, mock_matrix, mock_plan_llm
+        self, mock_matrix, mock_plan_llm, mock_embed, mock_embeddings, mock_semantic
     ):
         """Route optimizer reorders stops and annotates travel times."""
         mock_plan_llm.return_value = build_planning_llm_response(num_days=1, num_stops_per_day=3)
@@ -153,11 +159,14 @@ class TestFullPipelineHappyPath:
             assert "transport_mode" in stop
 
     @pytest.mark.asyncio
+    @patch("ai_engine.services.place_retriever._compute_semantic_interest_subcats", return_value=set())
+    @patch("ai_engine.services.candidate_scorer.load_place_embeddings", return_value={})
+    @patch("ai_engine.services.candidate_scorer.embed_query_async", return_value=None)
     @patch("ai_engine.agents.planning_agent.invoke_with_fallback")
     @patch("ai_engine.services.route_optimizer.compute_day_matrix", new_callable=AsyncMock)
     @patch("ai_engine.services.itinerary_validator.invoke_with_fallback")
     async def test_full_pipeline_produces_valid_itinerary(
-        self, mock_val_llm, mock_matrix, mock_plan_llm
+        self, mock_val_llm, mock_matrix, mock_plan_llm, mock_embed, mock_embeddings, mock_semantic
     ):
         """Full pipeline: retrieval → ranking → planner → optimizer → validator."""
         mock_plan_llm.return_value = build_planning_llm_response(num_days=2, num_stops_per_day=3)
@@ -357,11 +366,14 @@ class TestAgentMetricsIntegration:
     """Running all pipeline nodes should record metrics for all 6 agent roles."""
 
     @pytest.mark.asyncio
+    @patch("ai_engine.services.place_retriever._compute_semantic_interest_subcats", return_value=set())
+    @patch("ai_engine.services.candidate_scorer.load_place_embeddings", return_value={})
+    @patch("ai_engine.services.candidate_scorer.embed_query_async", return_value=None)
     @patch("ai_engine.agents.planning_agent.invoke_with_fallback")
     @patch("ai_engine.services.route_optimizer.compute_day_matrix", new_callable=AsyncMock)
     @patch("ai_engine.services.itinerary_validator.invoke_with_fallback")
     async def test_all_six_roles_recorded(
-        self, mock_val_llm, mock_matrix, mock_plan_llm
+        self, mock_val_llm, mock_matrix, mock_plan_llm, mock_embed, mock_embeddings, mock_semantic
     ):
         """After running all 6 pipeline nodes, agent_metrics has all roles with non-zero calls."""
         mock_plan_llm.return_value = build_planning_llm_response(num_days=2, num_stops_per_day=3)
@@ -459,11 +471,14 @@ class TestValidationRetryFlow:
     """When validation fails, the pipeline can retry from the planner."""
 
     @pytest.mark.asyncio
+    @patch("ai_engine.services.place_retriever._compute_semantic_interest_subcats", return_value=set())
+    @patch("ai_engine.services.candidate_scorer.load_place_embeddings", return_value={})
+    @patch("ai_engine.services.candidate_scorer.embed_query_async", return_value=None)
     @patch("ai_engine.agents.planning_agent.invoke_with_fallback")
     @patch("ai_engine.services.route_optimizer.compute_day_matrix", new_callable=AsyncMock)
     @patch("ai_engine.services.itinerary_validator.invoke_with_fallback")
     async def test_validation_failure_increments_planning_attempts(
-        self, mock_val_llm, mock_matrix, mock_plan_llm
+        self, mock_val_llm, mock_matrix, mock_plan_llm, mock_embed, mock_embeddings, mock_semantic
     ):
         """When validation fails, planning_attempts should be trackable."""
         mock_plan_llm.return_value = build_planning_llm_response(num_days=1, num_stops_per_day=3)

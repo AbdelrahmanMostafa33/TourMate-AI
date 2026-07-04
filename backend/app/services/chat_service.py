@@ -624,26 +624,22 @@ class ChatService:
         )
         messages = result.scalars().all()
 
-        # ── Deduplication ────────────────────────────────────────────────
-        # Safety net: if a user message and an agent message have the same
-        # content in the same conversation, keep only the agent message.
-        # This handles lingering duplicates from an earlier bug where
-        # ``rebuild_conversation_state_from_db`` incorrectly mapped
-        # "agent" (DB) → "user" (ChatMessage role), causing
-        # ``sync_redis_to_db`` to insert duplicate user messages.
+        # ── Deduplication (safety net) ────────────────────────────────
+        # Remove only exact (sender, content) duplicates that may have been
+        # created by an earlier bug in ``rebuild_conversation_state_from_db``
+        # (mapped "agent" DB → "user" ChatMessage role, causing
+        # sync_redis_to_db to insert exact-duplicate user messages).
+        #
+        # We ONLY remove true duplicates (same sender + same content) and
+        # NEVER drop cross-sender matches — a user and AI could legitimately
+        # say the same text in different turns.
         seen_content: set[tuple] = set()
         deduped = []
         for m in messages:
             key = (m.sender, m.content)
-            if m.sender == "user":
-                # Skip user message if the same content exists as agent message
-                if ("agent", m.content) not in seen_content:
-                    seen_content.add(key)
-                    deduped.append(m)
-            else:
-                if key not in seen_content:
-                    seen_content.add(key)
-                    deduped.append(m)
+            if key not in seen_content:
+                seen_content.add(key)
+                deduped.append(m)
 
         return [
             {

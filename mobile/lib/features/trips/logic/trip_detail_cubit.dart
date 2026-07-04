@@ -31,4 +31,15 @@ class TripDetailCubit extends Cubit<TripDetailState> {
   Future<void> deleteTrip(String tripId) async {
     await _api.deleteTrip(tripId);
   }
+
+  /// Cancel an entire trip — cancels all bookings, refunds payments,
+  /// and marks the trip as cancelled. Returns the response map with
+  /// {cancelled_bookings, refunded_payments} for displaying feedback.
+  ///
+  /// Does NOT update the local state — the screen handles navigation
+  /// and snackbar feedback after a successful cancellation.
+  Future<Map<String, dynamic>> cancelTrip(String tripId) async {
+    final response = await _api.cancelTrip(tripId);
+    return response.data;
+  }
 }

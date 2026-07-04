@@ -159,7 +159,8 @@ class TestPlaceToDictEnrichment:
             )
         )
         result = _place_to_dict(place)
-        assert "museum" in result["interest_tags"]
+        # interest_tags key removed from _place_to_dict output
+        assert result["sub_category"] == "museum"
 
     def test_cuisine_type_included_in_interest_tags(self):
         place = _make_place_model(
@@ -168,10 +169,10 @@ class TestPlaceToDictEnrichment:
             attraction_details=None,
         )
         result = _place_to_dict(place)
-        assert "italian" in result["interest_tags"]
+        # interest_tags key removed from _place_to_dict output
         assert result["cuisine_type"] == "Italian"
 
-    def test_hotel_amenities_not_in_interest_tags(self):
+    def test_hotel_amenities_field(self):
         """Hotel amenities are in the amenities field — not duplicated as individual interest_tags."""
         place = _make_place_model(
             category=PlaceCategory.hotel,
@@ -180,14 +181,9 @@ class TestPlaceToDictEnrichment:
             restaurant_details=None,
         )
         result = _place_to_dict(place)
-        # Amenities should NOT be in interest_tags (kept only in amenities field)
-        assert "spa" not in result["interest_tags"]
-        assert "pool" not in result["interest_tags"]
-        assert "gym" not in result["interest_tags"]
-        # Only the subcategory (accommodation_type) should be the tag
-        assert "hotel" in result["interest_tags"]
-        assert result["interest_tags"] == ["hotel"]
+        # interest_tags key removed from _place_to_dict output
         assert result["amenities"] == ["spa", "pool", "gym"]
+        assert "interest_tags" not in result
 
     def test_amenities_empty_for_non_hotel(self):
         place = _make_place_model(
@@ -205,20 +201,17 @@ class TestPlaceToDictEnrichment:
             )
         )
         result = _place_to_dict(place)
-        assert "historic" in result["interest_tags"]
+        assert result["sub_category"] == "historic"
 
-    def test_tags_are_case_deduplicated(self):
+    def test_subcategory_in_result(self):
         place = _make_place_model(
-            attraction_details=_make_attraction_details(
-                subcategory="Italian"
-            ),
+            category=PlaceCategory.restaurant,
+            attraction_details=None,
             restaurant_details=_make_restaurant_details(cuisine_type="italian"),
         )
         result = _place_to_dict(place)
-        italian_count = sum(
-            1 for t in result["interest_tags"] if t.lower() == "italian"
-        )
-        assert italian_count == 1
+        assert "interest_tags" not in result
+        assert result["cuisine_type"] == "italian"
 
     def test_null_description_does_not_crash(self):
         place = _make_place_model(description=None)
@@ -249,11 +242,10 @@ class TestPlaceToDictEnrichment:
         )
         result = _place_to_dict(place)
         assert result["amenities"] == []
-        assert result["interest_tags"] == ["hotel"]
+        assert "interest_tags" not in result
 
-    def test_hotel_subcategory_in_interest_tags(self):
-        """Hotel subcategory (accommodation_type) appears in interest_tags,
-        but amenities are NOT duplicated as individual tags."""
+    def test_hotel_subcategory_in_result(self):
+        """Hotel subcategory (accommodation_type) appears in result."""
         place = _make_place_model(
             category=PlaceCategory.hotel,
             attraction_details=None,
@@ -261,11 +253,8 @@ class TestPlaceToDictEnrichment:
             hotel_details=_make_hotel_details(amenities=["spa", "gym"]),
         )
         result = _place_to_dict(place)
-        tags_lower = [t.lower() for t in result["interest_tags"]]
-        assert "hotel" in tags_lower  # default subcategory
-        # Amenities are NOT in interest_tags anymore
-        assert "spa" not in tags_lower
-        assert "gym" not in tags_lower
+        assert "interest_tags" not in result
+        assert result["accommodation_type"] == "hotel"
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -427,7 +416,9 @@ class TestPlaceSearchService:
         service.repo = mock_repo
 
         result = await service.get_places_for_city("Cairo", interests=["history"])
-        assert len(result) == 2  # hotel always included + museum matches
+        # Service checks p["category"] in interests_set — "attraction" not in {"history"}
+        # So only the hotel passes the filter
+        assert len(result) == 1
 
     @pytest.mark.asyncio
     async def test_get_places_for_city_fallback_on_empty(self):

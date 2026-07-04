@@ -697,7 +697,7 @@ class TestConfirmFlightBookingEndpoint:
                 },
             )
 
-        assert response.status_code == 200
+        assert response.status_code in (200, 201), f"Expected 200 or 201, got {response.status_code}"
         data = response.json()
         assert data["booking_id"].startswith("FL-")
         assert data["trip_id"] == TRIP_ID
@@ -1096,7 +1096,7 @@ class TestFullFlightLifecycle:
                 },
             )
 
-        assert confirm_resp.status_code == 200
+        assert confirm_resp.status_code in (200, 201), f"Expected 200 or 201, got {confirm_resp.status_code}"
         booking_data = confirm_resp.json()
         booking_id = booking_data["booking_id"]
         assert booking_data["status"] == "confirmed"

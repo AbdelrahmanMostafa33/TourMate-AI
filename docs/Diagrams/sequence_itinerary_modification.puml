@@ -1,89 +1,76 @@
 @startuml Itinerary_Modification_Flow
-title AI Itinerary Modification (UC3 - nested)
+title Itinerary Modification (UC#3) — Analysis View
 
 actor Traveler
-participant "WebSocket\nManager" as WS
-participant "Orchestrator" as Orch
-participant "Edit\nClassifier" as EC
-participant "Preference\nReranker" as PR
-participant "Itinerary\nModifier" as IM
-participant "Validator" as Val
-participant "LLM\nService" as LLM
-participant "Place\nRetriever" as Ret
+participant "Mobile App" as App
+participant "Backend" as Backend
+participant "AI Service" as AI
+participant "Database" as DB
 
-== Edit Request via WebSocket ==
+== Request Change ==
 
-Traveler -> WS: "Make this trip more cultural"
-activate WS
+Traveler -> App: Request itinerary change
+activate App
 
-WS -> Orch: edit_message(trip_id, "Make this trip more cultural")
-activate Orch
+App -> Backend: Send modification request
+activate Backend
 
-Orch -> EC: classify_edit_type(payload)
-activate EC
+Backend -> AI: Interpret modification intent
+activate AI
+AI --> Backend: Intent understood
+deactivate AI
 
-EC -> LLM: classify("Make this trip more cultural")
-activate LLM
-LLM --> EC: {edit_type: "preference_rerank", mode: 1}
-deactivate LLM
+alt Preference adjustment
+  Backend -> AI: Regenerate with updated preferences
+  activate AI
+  AI --> Backend: Revised itinerary
+  deactivate AI
 
-EC --> Orch: {mode: 1, params: {preference: "cultural"}}
-deactivate EC
-
-== Mode 1: Preference Reranking (lightweight) ==
-
-Orch -> PR: rerank_candidates(trip_id, "cultural")
-activate PR
-
-PR -> PR: boost_cultural_scores(candidates)
-PR --> Orch: {reranked_places, new_order}
-deactivate PR
-
-== If Mode 2: Surgical Edit (ADD/REMOVE/SWAP) ==
-
-' alt Mode 2 path
-
-Orch -> IM: apply_delta_edit(trip_id, {action: "ADD", query: "museum"})
-activate IM
-
-IM -> Ret: retrieve_places("museum", city)
-activate Ret
-Ret --> IM: {candidates: [...]}
-deactivate Ret
-
-IM -> LLM: select_best_fit(candidates, current_itinerary)
-activate LLM
-LLM --> IM: {place_to_add, insert_position}
-deactivate LLM
-
-IM --> Orch: {modified_itinerary}
-deactivate IM
-
-' end alt
-
-== Validate Changes ==
-
-Orch -> Val: validate_itinerary(modified_itinerary)
-activate Val
-
-Val -> LLM: check_logical_flow, timing, feasibility
-activate LLM
-LLM --> Val: {valid: true, warnings: []}
-deactivate LLM
-
-Val --> Orch: {validated_itinerary}
-deactivate Val
-
-== Stream Result ==
-
-Orch -> WS: stream_edit_response(chunks...)
-activate Orch
-WS --> Traveler: Updated itinerary text\ndiff highlights
-deactivate Orch
-deactivate WS
-
-alt Mode 3: Full Pipeline Regeneration
-  Orch -> Orch: re-run complete graph\npipeline with new prefs
+else Specific activity change
+  Backend -> DB: Search for new places
+  activate DB
+  DB --> Backend: Matching places
+  deactivate DB
+  Backend -> AI: Select best replacement
+  activate AI
+  AI --> Backend: Selected place and position
+  deactivate AI
+  Backend -> Backend: Apply change to itinerary
 end
+
+Backend -> AI: Validate revised itinerary
+activate AI
+AI --> Backend: Itinerary validated
+deactivate AI
+
+Backend -> DB: Save updated itinerary
+activate DB
+DB --> Backend: Itinerary saved
+deactivate DB
+
+Backend --> App: Stream updated itinerary
+deactivate Backend
+
+App --> Traveler: Display revised itinerary
+deactivate App
+
+== Full Regeneration ==
+
+Traveler -> App: Request completely new plan
+activate App
+
+App -> Backend: Regenerate trip
+activate Backend
+
+Backend -> AI: Generate new itinerary\nwith revised preferences
+activate AI
+AI --> Backend: Completely new itinerary
+deactivate AI
+
+Backend --> App: New itinerary response
+deactivate Backend
+
+App --> Traveler: Display new itinerary
+deactivate App
 
 @enduml

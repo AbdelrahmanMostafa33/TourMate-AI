@@ -4,19 +4,25 @@ from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 from sqlalchemy.sql import func as sqlfunc
 from datetime import timedelta
+import logging
 import uuid
+
+
+logger = logging.getLogger(__name__)
 
 from app.core.database import get_db
 from app.core.security import get_current_user
 from app.models.trip import Trip
 from app.models.booking import Booking
-from app.models.enums import BookingStatus, TripStatus
+from app.models.enums import BookingStatus, BookingType, TripStatus
 from app.models.itinerary import Itinerary, Day, ItineraryStop
 from app.models.chat import Conversation, Message
 from app.models.profile import TripProfile
 from app.schemas.trip import TripCreate, TripResponse, TripSummary, TripStatusUpdate
 from app.schemas.profile import TripProfileCreate, TripProfileResponse
 from app.services.profile_service import get_trip_profile, upsert_trip_profile
+from app.services.booking_service import BookingService
+from app.services.flight_service import FlightService
 
 router = APIRouter()
 
@@ -288,6 +294,99 @@ async def get_itinerary(
 # ═════════════════════════════════════════════════════════════════════════════
 # PATCH /trips/{trip_id}/status
 # ═════════════════════════════════════════════════════════════════════════════
+
+# ═════════════════════════════════════════════════════════════════════════════
+# POST /trips/{trip_id}/cancel
+# ═════════════════════════════════════════════════════════════════════════════
+
+@router.post("/{trip_id}/cancel")
+async def cancel_trip(
+    trip_id:      str,
+    current_user: dict         = Depends(get_current_user),
+    db:           AsyncSession = Depends(get_db),
+):
+    """Cancel an entire trip — cancels all bookings, refunds all payments, and marks trip as cancelled.
+
+    Cancels both hotel and flight bookings for the trip, refunds any linked
+    payments (marks them as refunded), and transitions the trip status to
+    ``cancelled``.
+
+    Returns:
+        - success: bool
+        - trip_id: str
+        - status: "cancelled"
+        - cancelled_bookings: list of booking IDs
+        - refunded_payments: list of payment IDs
+
+    Raises:
+        404: Trip not found or doesn't belong to user
+        400: Trip is already cancelled
+    """
+    # 1. Load trip and verify ownership
+    result = await db.execute(
+        select(Trip).where(
+            Trip.trip_id == trip_id,
+            Trip.user_id == current_user["uid"],
+        )
+    )
+    trip = result.scalar_one_or_none()
+    if not trip:
+        raise HTTPException(status_code=404, detail="Trip not found")
+
+    if trip.status == TripStatus.cancelled:
+        raise HTTPException(status_code=400, detail="Trip is already cancelled")
+
+    # 2. Load all bookings for this trip with payments eager-loaded
+    result = await db.execute(
+        select(Booking)
+        .options(selectinload(Booking.payment))
+        .where(Booking.trip_id == trip_id)
+    )
+    bookings = list(result.scalars().all())
+
+    cancelled_booking_ids: list[str] = []
+    refunded_payment_ids: list[str] = []
+
+    # 3. Cancel each booking and refund payments
+    booking_svc = BookingService(db)
+    flight_svc = FlightService(db)
+
+    for booking in bookings:
+        try:
+            if booking.booking_type == BookingType.flight:
+                await flight_svc.cancel_flight_booking(booking.booking_id, current_user["uid"])
+            else:
+                await booking_svc.cancel_booking(booking.booking_id)
+
+            cancelled_booking_ids.append(booking.booking_id)
+
+            if booking.payment:
+                refunded_payment_ids.append(booking.payment.payment_id)
+        except ValueError as exc:
+            # Skip already-cancelled bookings, raise on unexpected errors
+            if "already cancelled" not in str(exc):
+                raise HTTPException(status_code=400, detail=f"Failed to cancel booking {booking.booking_id}: {exc}")
+            # Already cancelled — still consider it done
+            cancelled_booking_ids.append(booking.booking_id)
+
+    # 4. Update trip status
+    trip.status = TripStatus.cancelled
+
+    await db.commit()
+
+    logger.info(
+        "[TripsRoute] Cancelled trip %s — %d booking(s) cancelled, %d payment(s) refunded",
+        trip_id, len(cancelled_booking_ids), len(refunded_payment_ids),
+    )
+
+    return {
+        "success": True,
+        "trip_id": trip_id,
+        "status": TripStatus.cancelled.value,
+        "cancelled_bookings": cancelled_booking_ids,
+        "refunded_payments": refunded_payment_ids,
+    }
+
 
 @router.patch("/{trip_id}/status")
 async def update_trip_status(

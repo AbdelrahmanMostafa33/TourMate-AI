@@ -119,29 +119,18 @@ MIXED_PLACES = [
 class TestMapAccommodationToType:
     """Natural language → canonical accommodation type mapping."""
 
-    def test_resort_keyword(self):
-        assert map_accommodation_to_type(["beach resort"]) == "resort"
-
-    def test_hostel_keyword(self):
-        assert map_accommodation_to_type(["backpacker hostel"]) == "hostel"
-
-    def test_luxury_keyword(self):
-        assert map_accommodation_to_type(["boutique hotel"]) == "luxury"
-
-    def test_hotel_keyword(self):
-        assert map_accommodation_to_type(["hotel"]) == "hotel"
-
-    def test_empty_preferences(self):
-        assert map_accommodation_to_type([]) == ""
-
-    def test_all_inclusive_maps_to_resort(self):
-        assert map_accommodation_to_type(["all-inclusive resort"]) == "resort"
-
-    def test_premium_maps_to_luxury(self):
-        assert map_accommodation_to_type(["premium hotel"]) == "luxury"
-
-    def test_backpacker_maps_to_hostel(self):
-        assert map_accommodation_to_type(["backpacker dorm"]) == "hostel"
+    @pytest.mark.parametrize("preferences,expected", [
+        pytest.param(["beach resort"], "resort", id="resort_keyword"),
+        pytest.param(["backpacker hostel"], "hostel", id="hostel_keyword"),
+        pytest.param(["boutique hotel"], "luxury", id="luxury_keyword"),
+        pytest.param(["hotel"], "hotel", id="hotel_keyword"),
+        pytest.param([], "", id="empty_preferences"),
+        pytest.param(["all-inclusive resort"], "resort", id="all_inclusive_maps_to_resort"),
+        pytest.param(["premium hotel"], "luxury", id="premium_maps_to_luxury"),
+        pytest.param(["backpacker dorm"], "hostel", id="backpacker_maps_to_hostel"),
+    ])
+    def test_keyword_mapping(self, preferences, expected):
+        assert map_accommodation_to_type(preferences) == expected
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -152,57 +141,71 @@ class TestMapAccommodationToType:
 class TestAccommodationTypeEndToEnd:
     """Full flow: accommodation preference → mapping → retrieval filtering."""
 
-    def test_luxury_preference_filters_to_luxury_hotels(self):
-        """User says 'fancy resort' → maps to 'resort' → only resort hotels pass."""
-        prefs = {
-            "accommodation_preferences": ["fancy resort"],
-        }
-        filtered = _apply_filters(MIXED_PLACES, prefs, "Cairo")
-
+    def _assert_hotel_filtered_ids(self, filtered, expected_include, expected_exclude):
+        """Helper to assert which hotels pass the filter."""
         hotel_ids = [p["id"] for p in filtered if p["category"] == "hotel"]
-        assert "hotel_004" in hotel_ids  # Soma Bay Resort
-        assert "hotel_001" not in hotel_ids  # Marriott (luxury, not resort)
-        assert "hotel_002" not in hotel_ids  # Steigenberger (hotel)
-        assert "hotel_003" not in hotel_ids  # Hostel
+        for hid in expected_include:
+            assert hid in hotel_ids, f"Expected {hid} in filtered hotels"
+        for hid in expected_exclude:
+            assert hid not in hotel_ids, f"Expected {hid} to be filtered out"
 
-    def test_hostel_preference_filters_to_hostels_only(self):
-        """User says 'hostel' → maps to 'hostel' → only hostels pass."""
-        prefs = {
-            "accommodation_preferences": ["hostel"],
-        }
+    @pytest.mark.parametrize("preference,include,exclude", [
+        pytest.param(
+            ["fancy resort"],
+            ["hotel_004"],
+            ["hotel_001", "hotel_002", "hotel_003"],
+            id="resort_preference_filters_to_resort_only",
+        ),
+        pytest.param(
+            ["hostel"],
+            ["hotel_003"],
+            ["hotel_001", "hotel_002", "hotel_004"],
+            id="hostel_preference_filters_to_hostels_only",
+        ),
+        pytest.param(
+            ["five star hotel"],
+            ["hotel_001"],
+            ["hotel_002", "hotel_003", "hotel_004"],
+            id="luxury_preference_filters_to_luxury_only",
+        ),
+        pytest.param(
+            ["hotel"],
+            ["hotel_002"],
+            ["hotel_001", "hotel_003", "hotel_004"],
+            id="standard_hotel_preference_keeps_hotel_type_only",
+        ),
+        pytest.param(
+            ["boutique hotel"],
+            ["hotel_001"],
+            ["hotel_002", "hotel_003", "hotel_004"],
+            id="boutique_maps_to_luxury",
+        ),
+        pytest.param(
+            ["all-inclusive resort"],
+            ["hotel_004"],
+            ["hotel_001", "hotel_003"],
+            id="all_inclusive_maps_to_resort",
+        ),
+        pytest.param(
+            ["backpacker dorm"],
+            ["hotel_003"],
+            ["hotel_001", "hotel_002", "hotel_004"],
+            id="backpacker_maps_to_hostel",
+        ),
+        pytest.param(
+            ["premium hotel"],
+            ["hotel_001"],
+            ["hotel_002", "hotel_003", "hotel_004"],
+            id="premium_maps_to_luxury",
+        ),
+    ])
+    def test_accommodation_preference_filters_correctly(
+        self, preference, include, exclude,
+    ):
+        """User accommodation preference maps to correct type and filters accordingly."""
+        prefs = {"accommodation_preferences": preference}
         filtered = _apply_filters(MIXED_PLACES, prefs, "Cairo")
-
-        hotel_ids = [p["id"] for p in filtered if p["category"] == "hotel"]
-        assert "hotel_003" in hotel_ids  # Cairo Backpackers Hostel
-        assert "hotel_001" not in hotel_ids  # Luxury
-        assert "hotel_002" not in hotel_ids  # Hotel
-        assert "hotel_004" not in hotel_ids  # Resort
-
-    def test_luxury_hotel_preference_filters_to_luxury_only(self):
-        """User says 'five star hotel' → maps to 'luxury' → only luxury hotels pass."""
-        prefs = {
-            "accommodation_preferences": ["five star hotel"],
-        }
-        filtered = _apply_filters(MIXED_PLACES, prefs, "Cairo")
-
-        hotel_ids = [p["id"] for p in filtered if p["category"] == "hotel"]
-        assert "hotel_001" in hotel_ids  # Marriott (luxury)
-        assert "hotel_002" not in hotel_ids  # Steigenberger (hotel)
-        assert "hotel_003" not in hotel_ids  # Hostel
-        assert "hotel_004" not in hotel_ids  # Resort
-
-    def test_standard_hotel_preference_keeps_all_non_luxury(self):
-        """User says 'hotel' → maps to 'hotel' → hotels of type 'hotel' pass."""
-        prefs = {
-            "accommodation_preferences": ["hotel"],
-        }
-        filtered = _apply_filters(MIXED_PLACES, prefs, "Cairo")
-
-        hotel_ids = [p["id"] for p in filtered if p["category"] == "hotel"]
-        assert "hotel_002" in hotel_ids  # Steigenberger (hotel)
-        assert "hotel_001" not in hotel_ids  # Marriott (luxury)
-        assert "hotel_003" not in hotel_ids  # Hostel
-        assert "hotel_004" not in hotel_ids  # Resort
+        self._assert_hotel_filtered_ids(filtered, include, exclude)
 
     def test_no_accommodation_pref_keeps_all_hotels(self):
         """No accommodation preference → all hotels pass through."""
@@ -211,53 +214,6 @@ class TestAccommodationTypeEndToEnd:
 
         hotel_ids = [p["id"] for p in filtered if p["category"] == "hotel"]
         assert len(hotel_ids) == 4
-
-    def test_boutique_maps_to_luxury(self):
-        """'boutique hotel' → maps to 'luxury' → only luxury hotels pass."""
-        prefs = {
-            "accommodation_preferences": ["boutique hotel"],
-        }
-        filtered = _apply_filters(MIXED_PLACES, prefs, "Cairo")
-
-        hotel_ids = [p["id"] for p in filtered if p["category"] == "hotel"]
-        assert "hotel_001" in hotel_ids  # Marriott (luxury)
-        assert "hotel_002" not in hotel_ids  # Steigenberger (hotel)
-        assert "hotel_003" not in hotel_ids  # Hostel
-        assert "hotel_004" not in hotel_ids  # Resort
-
-    def test_all_inclusive_maps_to_resort(self):
-        """'all-inclusive' → maps to 'resort' → only resort hotels pass."""
-        prefs = {
-            "accommodation_preferences": ["all-inclusive resort"],
-        }
-        filtered = _apply_filters(MIXED_PLACES, prefs, "Cairo")
-
-        hotel_ids = [p["id"] for p in filtered if p["category"] == "hotel"]
-        assert "hotel_004" in hotel_ids  # Resort
-        assert "hotel_001" not in hotel_ids  # Luxury
-
-    def test_backpacker_maps_to_hostel(self):
-        """'backpacker' → maps to 'hostel' → only hostels pass."""
-        prefs = {
-            "accommodation_preferences": ["backpacker dorm"],
-        }
-        filtered = _apply_filters(MIXED_PLACES, prefs, "Cairo")
-
-        hotel_ids = [p["id"] for p in filtered if p["category"] == "hotel"]
-        assert "hotel_003" in hotel_ids  # Hostel
-        assert "hotel_001" not in hotel_ids  # Luxury
-        assert "hotel_002" not in hotel_ids  # Hotel
-        assert "hotel_004" not in hotel_ids  # Resort
-
-    def test_premium_maps_to_luxury(self):
-        """'premium' → maps to 'luxury' → only luxury hotels pass."""
-        prefs = {
-            "accommodation_preferences": ["premium hotel"],
-        }
-        filtered = _apply_filters(MIXED_PLACES, prefs, "Cairo")
-
-        hotel_ids = [p["id"] for p in filtered if p["category"] == "hotel"]
-        assert "hotel_001" in hotel_ids  # Marriott (luxury)
 
 
 # ═══════════════════════════════════════════════════════════════════════════

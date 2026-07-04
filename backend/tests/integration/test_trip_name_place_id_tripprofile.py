@@ -12,6 +12,7 @@ Fixes validated:
 Uses a fresh in-memory SQLite async database for each test.
 """
 
+import uuid
 import pytest
 from datetime import date, datetime
 
@@ -21,7 +22,8 @@ from sqlalchemy.orm import selectinload
 from app.models.trip import Trip
 from app.models.itinerary import Itinerary, Day
 from app.models.profile import TripProfile
-from app.models.enums import BudgetLevel, TravelStyle, TripPace
+from app.models.place import Place
+from app.models.enums import PlaceCategory, BudgetLevel, TravelStyle, TripPace
 from app.services.chat_service import ChatService
 
 
@@ -204,12 +206,30 @@ class TestTripName:
 # ═════════════════════════════════════════════════════════════════════════════
 
 
+async def _seed_test_places(db_session):
+    """Seed Place records needed for place_id FK resolution."""
+    for pid, name in [("place_003", "Pyramids of Giza"), ("hotel_001", "Marriott Mena House")]:
+        p = Place(
+            place_id=pid,
+            name=name,
+            category=PlaceCategory.attraction if "place" in pid else PlaceCategory.hotel,
+            city="Cairo",
+            country="Egypt",
+            lat=0.0,
+            lng=0.0,
+            rating=4.0,
+        )
+        db_session.add(p)
+    await db_session.flush()
+
+
 class TestPlaceId:
     """Verify place_id is populated from stop data."""
 
     @pytest.mark.asyncio
     async def test_place_id_from_stop_id(self, db_session):
         """Stops with 'id' field → place_id is saved."""
+        await _seed_test_places(db_session)
         svc = ChatService(db_session)
         result = await svc.create_trip_from_ai_result(
             user_id="user_pi_001",
@@ -415,6 +435,7 @@ class TestFullFlowVerification:
     @pytest.mark.asyncio
     async def test_trip_place_id_and_profile_all_present(self, db_session):
         """Trip, ItineraryStop, and TripProfile all have correct data."""
+        await _seed_test_places(db_session)
         svc = ChatService(db_session)
         result = await svc.create_trip_from_ai_result(
             user_id="user_full_001",

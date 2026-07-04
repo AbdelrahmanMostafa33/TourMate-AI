@@ -1,60 +1,95 @@
-@startuml TourMate_AI_High_Level
+@startuml TourMate_Use_Case_Diagram
 left to right direction
 skinparam packageStyle rectangle
+skinparam defaultTextAlignment center
+
+title TourMate AI — Use Case Diagram
 
 ' ═══════ ACTORS ═══════
 
 actor "Traveler" as Traveler
-actor "System Admin" as Admin
+actor "System Administrator" as Admin
 actor "Stripe" as Stripe
-actor "Firebase Auth" as Firebase
 actor "Amadeus" as Amadeus
-actor "Expedia" as Expedia
-actor "OSRM" as OSRM
-actor "AI Services" as AI
 
-' ═══════ HIGH-LEVEL USECASES ═══════
+' ═══════ SYSTEM BOUNDARY ═══════
 
 rectangle "TourMate AI System" {
 
-  usecase "UC1: Authenticate &\\nManage Account" as UC1
-  usecase "UC2: Manage Trips &\\nItineraries" as UC2
-  usecase "UC3: Chat with AI &\\nPlan Trip" as UC3
-  usecase "UC4: Explore &\\nDiscover Places" as UC4
-  usecase "UC5: Book Flights" as UC5
-  usecase "UC6: Book Hotels" as UC6
-  usecase "UC7: Manage Payments" as UC7
-  usecase "UC8: Review Places &\\nGive Feedback" as UC8
-  usecase "UC9: Save &\\nManage Places" as UC9
-  usecase "UC10: Upload &\\nAnalyze Images" as UC10
-  usecase "UC11: Monitor System\\nHealth" as UC11
+  ' ──── Account Management ────
 
+  rectangle "Account Management" as Account {
+    usecase "Register" as Reg
+    usecase "Log In" as Login
+    usecase "Manage Profile" as Profile
+  }
+
+  ' ──── Trip Planning ────
+
+  rectangle "Trip Planning" as Planning {
+    usecase "Chat with AI" as Chat
+    usecase "Plan Trip" as Plan
+    usecase "Modify Itinerary" as Modify
+    usecase "View Trips" as ViewTrips
+  }
+
+  ' ──── Bookings & Payments ────
+
+  rectangle "Bookings & Payments" as Booking {
+    usecase "Book Flights" as BookFlights
+    usecase "Book Hotels" as BookHotels
+    usecase "Cancel Booking" as Cancel
+    usecase "Manage Payments" as Pay
+  }
+
+  ' ──── Places & Media ────
+
+  rectangle "Places & Media" as Places {
+    usecase "Explore Places" as Explore
+    usecase "Review Places" as Review
+    usecase "Save Places" as Save
+    usecase "Upload Images" as Upload
+  }
+
+  ' ──── Administration ────
+
+  rectangle "Administration" as AdminGroup {
+    usecase "Monitor System\nHealth" as Monitor
+  }
 }
 
-' ═══════ TRAVELER ═══════
-Traveler --> UC1
-Traveler --> UC2
-Traveler --> UC3
-Traveler --> UC4
-Traveler --> UC5
-Traveler --> UC6
-Traveler --> UC7
-Traveler --> UC8
-Traveler --> UC9
-Traveler --> UC10
+' ═══════ TRAVELER CONNECTIONS ═══════
 
-' ═══════ ADMIN ═══════
-Admin --> UC11
+Traveler --> Reg
+Traveler --> Login
+Traveler --> Profile
+
+Traveler --> Chat
+Traveler --> Plan
+Traveler --> ViewTrips
+
+Traveler --> BookFlights
+Traveler --> BookHotels
+Traveler --> Cancel
+Traveler --> Pay
+
+Traveler --> Explore
+Traveler --> Review
+Traveler --> Save
+Traveler --> Upload
+
+' ═══════ ADMIN CONNECTIONS ═══════
+
+Admin --> Monitor
+
+' ═══════ RELATIONSHIPS ═══════
+
+Modify .left.> Plan : <<extends>>
+Upload .left.> Chat : <<extends>>
 
 ' ═══════ EXTERNAL SYSTEMS ═══════
-Firebase <-- UC1
-AI <-- UC3
-Amadeus <-- UC5
-Stripe <-- UC7
-OSRM <-- UC3
-AI <-- UC10
 
-' ═══════ WEBHOOK ═══════
-Stripe --> UC7 : webhook events
+Stripe <-- Pay
+Amadeus <-- BookFlights
 
 @enduml

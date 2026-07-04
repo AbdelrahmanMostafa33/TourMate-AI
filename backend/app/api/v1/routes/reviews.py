@@ -33,7 +33,7 @@ async def create_review(
     )
     if existing.scalar_one_or_none():
         raise HTTPException(
-            status_code=400,
+            status_code=status.HTTP_409_CONFLICT,
             detail="You have already reviewed this place. Use PUT to update.",
         )
 

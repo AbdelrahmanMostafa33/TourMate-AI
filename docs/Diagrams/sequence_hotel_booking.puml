@@ -1,74 +1,79 @@
 @startuml Hotel_Booking_Flow
-title Book Hotels (UC#6) — Simulated Booking via Chat
+title Book Hotels (UC#6) — Analysis View
 
 actor Traveler
-participant "Chat" as Chat
-participant "Booking\nService" as BkSvc
+participant "Mobile App" as App
+participant "Backend" as Backend
+participant "Database" as DB
 
-== AI Presents Hotel Options (in chat) ==
+== Explore Hotels ==
 
-Traveler -> Chat: "I approve the itinerary.
-What hotels do you recommend?"
-activate Chat
+Traveler -> App: Browse hotel options
+activate App
 
-Chat --> Traveler: "Here are hotel options...\n1. Hilton Cairo ($120/night)\n2. Marriott Downtown ($95/night)"
+App -> Backend: Request hotels for city
+activate Backend
 
-== Select Hotel & Book ==
+Backend -> DB: Query available hotels
+activate DB
+DB --> Backend: Hotel list with details
+deactivate DB
 
-Traveler -> Chat: "Book the Hilton Cairo, 2 nights"
-activate Chat
+Backend --> App: Hotel options\n{name, price, rating}
+deactivate Backend
 
-Chat -> BkSvc: create_booking(trip_id, place_id, dates)
-activate BkSvc
+App --> Traveler: Display hotels
+deactivate App
 
-BkSvc -> BkSvc: Generate simulated confirmation
-note right: No external hotel API called
-Confirmation number & provider
-details generated locally
+== Select and Book Hotel ==
 
-BkSvc --> Chat: {booking_id, confirmation: "BK-A3F9C2"}
-deactivate BkSvc
+Traveler -> App: Select hotel and book
+activate App
 
-Chat --> Traveler: "Hilton Cairo booked!
-Confirmation: BK-A3F9C2\nReady to proceed to payment?"
-deactivate Chat
+App -> Backend: Book selected hotel
+activate Backend
 
-Traveler -> Chat: "Yes, proceed to payment"
-activate Chat
-Chat --> Traveler: "Opening secure checkout..."
-note right: Payment handled in UC#7 — Manage Payments
-deactivate Chat
+Backend -> DB: Create booking record
+activate DB
 
-== Book All Accommodations at Once ==
+alt Booking created
+  DB --> Backend: Booking saved
+  deactivate DB
 
-Traveler -> Chat: "Book all accommodations for my trip"
-activate Chat
+  Backend --> App: Booking confirmed\nwith confirmation number
+  deactivate Backend
 
-Chat -> BkSvc: create_bookings_for_all_stops(trip_id)
-activate BkSvc
+  App --> Traveler: Hotel booked, proceed\nto payment
+  deactivate App
 
-BkSvc -> BkSvc: Generate simulated confirmations
-for each stop
+else Booking failed
+  DB --> Backend: Booking failed
+  deactivate DB
 
-BkSvc --> Chat: {bookings: [BK-A3F9C2, BK-B4G0D3]}
-deactivate BkSvc
+  Backend --> App: Booking failed
+  deactivate Backend
 
-Chat --> Traveler: "All accommodations booked!
-Trip moved to booking pending."
-deactivate Chat
+  App --> Traveler: Unable to book\nplease try again
+  deactivate App
+end
 
 == Cancel a Booking (before payment) ==
 
-Traveler -> Chat: "Cancel the Hilton booking"
-activate Chat
+Traveler -> App: Cancel hotel booking
+activate App
 
-Chat -> BkSvc: cancel_booking(booking_id)
-activate BkSvc
-BkSvc -> BkSvc: Mark booking as cancelled
-BkSvc --> Chat: {status: cancelled}
-deactivate BkSvc
+App -> Backend: Cancel booking\n{booking_id}
+activate Backend
 
-Chat --> Traveler: "Hilton Cairo booking cancelled."
-deactivate Chat
+Backend -> DB: Mark booking as cancelled
+activate DB
+DB --> Backend: Booking cancelled
+deactivate DB
+
+Backend --> App: Booking cancelled
+deactivate Backend
+
+App --> Traveler: Hotel booking cancelled
+deactivate App
 
 @enduml

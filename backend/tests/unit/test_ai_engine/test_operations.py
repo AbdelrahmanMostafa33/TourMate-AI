@@ -767,7 +767,7 @@ class TestExecAddCategory:
                     break
         assert added is not None
         assert added["name"] == "Islamic Art Museum"
-        assert "history" in added.get("interest_tags", [])
+        # interest_tags are not included in _exec_add_category stop construction
 
     def test_add_multiple_restaurants(self):
         """ADD_CATEGORY with count=2 should add 2 restaurant places."""
@@ -1478,17 +1478,19 @@ class TestBuildSubcategoryTexts:
         texts = _build_subcategory_texts(pool)
         assert len(texts) == 3
 
-    def test_merges_interest_tags_for_same_subcategory(self):
+    def test_merges_subcategory_text(self):
         pool = [
-            {"name": "A", "category": "attraction", "sub_category": "museums", "interest_tags": ["history"], "cuisine_type": ""},
-            {"name": "B", "category": "attraction", "sub_category": "museums", "interest_tags": ["art", "ancient"], "cuisine_type": ""},
+            {"name": "The Grand Egyptian Museum", "category": "attraction", "sub_category": "museums", "interest_tags": ["history"], "cuisine_type": ""},
+            {"name": "Museum of Islamic Art", "category": "attraction", "sub_category": "museums", "interest_tags": ["art", "ancient"], "cuisine_type": ""},
         ]
         texts = _build_subcategory_texts(pool)
         key = ("attraction", "museums")
         text = texts[key]
-        assert "history" in text
-        assert "art" in text
-        assert "ancient" in text
+        assert "category: attraction" in text
+        assert "type: museums" in text
+        # Name filtering removes stop words (the, of) and takes first 2 words
+        assert "grand egyptian" in text  # from "The Grand Egyptian Museum"
+        assert "museum islamic" in text  # from "Museum of Islamic Art"
 
     def test_includes_cuisine_type(self):
         pool = [

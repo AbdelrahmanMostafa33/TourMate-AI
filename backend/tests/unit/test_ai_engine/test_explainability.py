@@ -232,10 +232,12 @@ class TestExplainStopPlacement:
         assert any("history" in r.lower() for r in result)
 
     def test_fallback_when_no_why(self):
-        stop = _make_stop(why_recommended="", interest_tags=["history"])
+        stop = _make_stop(why_recommended="")
         result = explain_stop_placement(stop)
         combined = " ".join(result)
-        assert "history" in combined
+        # The fallback uses sub_category/category (not interest_tags) when no why_recommended
+        # sub_category="museum" and category="attraction" should appear
+        assert "museum" in combined or "attraction" in combined
 
     def test_indoor_stop_in_afternoon(self):
         stop = _make_stop(category="attraction", sub_category="shopping",

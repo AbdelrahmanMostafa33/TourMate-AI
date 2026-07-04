@@ -121,7 +121,7 @@ async def execute_actions(actions: list, trip: Trip, db: AsyncSession) -> list:
                     "type":          data.get("type", "attraction"),
                     "location_name": data.get("location_name"),
                     "lat":           data.get("lat"),
-                    "lng":           data.get("lng"),
+                    "lon":           data.get("lon"),
                 },
                 duration_minutes=int(data["duration_hours"] * 60) if data.get("duration_hours") else None,
                 order_in_day=data.get("order_in_day", 0),
@@ -1297,21 +1297,21 @@ async def get_history(
 
     messages = sorted(conversation.messages, key=lambda m: m.timestamp)
     # ── Deduplication (safety net) ────────────────────────────────────────
-    # Skip duplicate user messages that were created by an earlier bug in
-    # ``rebuild_conversation_state_from_db`` (mapped "agent" DB → "user"
-    # ChatMessage role, causing sync_redis_to_db to insert duplicates).
+    # Remove only exact (sender, content) duplicates that may have been created
+    # by an earlier bug in ``rebuild_conversation_state_from_db`` (mapped
+    # "agent" DB → "user" ChatMessage role, causing sync_redis_to_db to
+    # insert exact-duplicate user messages).
+    #
+    # We ONLY remove true duplicates (same sender + same content) and NEVER
+    # drop cross-sender matches — a user and AI could legitimately say the
+    # same text in different turns.
     seen_content: set = set()
     deduped = []
     for m in messages:
         key = (m.sender, m.content)
-        if m.sender == "user":
-            if ("agent", m.content) not in seen_content:
-                seen_content.add(key)
-                deduped.append(m)
-        else:
-            if key not in seen_content:
-                seen_content.add(key)
-                deduped.append(m)
+        if key not in seen_content:
+            seen_content.add(key)
+            deduped.append(m)
 
     return [
         {
@@ -1373,10 +1373,32 @@ async def clear_chat(
 
     conversation = trip.conversation
 
+    # ── 1. Delete DB messages ───────────────────────────────────────────────
     await db.execute(
         delete(Message).where(
             Message.conversation_id == conversation.conversation_id
         )
     )
+
+    # ── 2. Clear Redis conversation state ────────────────────────────────────
+    # Without this, the next call to sync_redis_to_db would re-insert all old
+    # messages into the DB (offset-based sync sees db_count=0 and treats all
+    # Redis history as new).
+    try:
+        from ai_engine.conversation.redis_memory import get_session_manager
+        redis_mgr = await get_session_manager()
+        if redis_mgr.is_connected:
+            # Delete the state stored under conversation_id (the effective session_id)
+            await redis_mgr.delete(conversation.conversation_id)
+            # Also delete any stale session stored as the old ai_session_id
+            if conversation.ai_session_id and conversation.ai_session_id != conversation.conversation_id:
+                await redis_mgr.delete(conversation.ai_session_id)
+    except Exception as redis_err:
+        logger.warning("[ChatRoutes] Failed to clear Redis session (non-fatal): %s", redis_err)
+
+    # ── 3. Reset conversation snapshot so next message starts fresh ──────────
+    conversation.state_snapshot = None
+    conversation.ai_session_id = None
+
     await db.commit()
     return {"message": "Chat cleared successfully"}

@@ -44,13 +44,23 @@ def _make_router_result(action, response="OK", **extracted):
 
 
 def _make_plan_result(city, days, **extra):
-    """Build a complete plan_trip InterpretationResult with all required fields."""
+    """Build a complete plan_trip InterpretationResult with all required fields.
+
+    NOTE: interests must be explicitly passed when the test user message
+    mentions specific interests. The orchestrator has a hallucination guard
+    that clears extracted interests if they aren't mentioned in the user's
+    message, which would break the plan_trip flow.
+
+    Pass ``interests=[...]`` AND include those interests in the user message.
+    """
+    # Pop interests from extra so it doesn't conflict with the explicit kwarg
+    interests = extra.pop("interests", [])
     return _make_router_result(
         "plan_trip", response="Generating your itinerary!",
         destination_city=city, duration_days=days,
         travel_dates="next month", group_size=2, traveler_group_type="solo",
         budget_level="moderate", travel_style="cultural", pace="moderate",
-        interests=["history", "food"], food_preferences=["local cuisine"],
+        interests=interests, food_preferences=["local cuisine"],
         accommodation_preferences=["hotel"], **extra,
     )
 
@@ -117,12 +127,12 @@ class TestGreetingPhase:
         self, mock_profile, mock_graph, mock_route, mock_get_manager, mock_manager
     ):
         mock_get_manager.return_value = mock_manager
-        mock_route.return_value = _make_plan_result("Paris", 5)
+        mock_route.return_value = _make_plan_result("Paris", 5, interests=["history"])
         mock_profile.return_value = {"user_id": "user1"}
         mock_graph.ainvoke.return_value = _make_mock_graph_result()
 
         from ai_engine.conversation.orchestrator import handle_chat
-        result = await handle_chat("user1", "Plan me a 5-day trip to Paris")
+        result = await handle_chat("user1", "Plan me a 5-day trip to Paris interested in history")
 
         assert result["response_type"] == "itinerary"
         assert result["itinerary"] is not None
@@ -150,12 +160,12 @@ class TestSlotFillingPhase:
         result1 = await handle_chat("user1", "I want to visit Cairo")
         assert result1["phase"] == "slot_filling"
 
-        # Second turn: complete info -> plan
-        mock_route.return_value = _make_plan_result("Cairo", 3)
+        # Second turn: complete info -> plan (interests included to pass hallucination guard)
+        mock_route.return_value = _make_plan_result("Cairo", 3, interests=["history"])
         mock_profile.return_value = {"user_id": "user1"}
         mock_graph.ainvoke.return_value = _make_mock_graph_result()
 
-        result2 = await handle_chat("user1", "3 days, moderate budget, cultural")
+        result2 = await handle_chat("user1", "3 days, moderate budget, cultural, interested in history")
         assert result2["response_type"] == "itinerary"
         assert result2["phase"] == "itinerary_review"
 
@@ -190,7 +200,7 @@ class TestItineraryReviewPhase:
     @patch("ai_engine.conversation.orchestrator.interpret_message")
     @patch("ai_engine.conversation.orchestrator.trip_graph", new_callable=AsyncMock)
     @patch("ai_engine.conversation.orchestrator.load_mock_profile")
-    async def test_review_approve_transitions_to_completed(
+    async def test_review_approve_transitions_to_flight_selection(
         self, mock_profile, mock_graph, mock_route, mock_get_manager, mock_manager
     ):
         mock_get_manager.return_value = mock_manager
@@ -200,15 +210,16 @@ class TestItineraryReviewPhase:
         from ai_engine.conversation.orchestrator import handle_chat
 
         # Generate itinerary first
-        mock_route.return_value = _make_plan_result("Paris", 3)
-        result1 = await handle_chat("user1", "Plan me a 3-day trip to Paris")
+        mock_route.return_value = _make_plan_result("Paris", 3, interests=["history"])
+        result1 = await handle_chat("user1", "Plan me a 3-day trip to Paris interested in history")
         assert result1["phase"] == "itinerary_review"
 
-        # Approve
+        # Approve — orchestrator now transitions to FLIGHT_SELECTION
         mock_route.return_value = _make_router_result("approve_itinerary", "Awesome! Have an amazing trip!")
         result2 = await handle_chat("user1", "Looks good, approve!")
 
         assert result2["response_type"] == "chat"
+        assert result2["phase"] == "flight_selection"
 
 
 # ── handle_chat_stream Tests ──────────────────────────────────────────────────
@@ -226,7 +237,7 @@ class TestHandleChatStream:
     ):
         # Given: a valid itinerary is generated
         mock_get_manager.return_value = mock_manager
-        mock_route.return_value = _make_plan_result("Cairo", 2)
+        mock_route.return_value = _make_plan_result("Cairo", 2, interests=["history"])
         mock_profile.return_value = {"user_id": "user1"}
         mock_graph.ainvoke.return_value = _make_mock_graph_result(is_valid=True)
 
@@ -236,7 +247,7 @@ class TestHandleChatStream:
         events = []
         async for chunk in handle_chat_stream(
             user_id="stream_user_1",
-            user_message="Plan me a 2-day trip to Cairo",
+            user_message="Plan me a 2-day trip to Cairo interested in history",
         ):
             events.append(chunk)
 
@@ -254,7 +265,12 @@ class TestHandleChatStream:
         assert event_types[-1] == "done", f"Last event should be 'done', got {event_types[-1]}"
 
         # And: the "result" event has the itinerary data
-        result_event = next(e for e in events if e["type"] == "result")
+        result_events = [e for e in events if e["type"] == "result"]
+        assert len(result_events) == 1, (
+            f"Expected exactly 1 'result' event, found {len(result_events)}. "
+            f"Event types: {[e['type'] for e in events]}"
+        )
+        result_event = result_events[0]
         result_data = result_event["data"]
         assert result_data["message"] != ""
         assert result_data["itinerary"] is not None
@@ -332,7 +348,7 @@ class TestHandleChatStream:
     ):
         # Given: a valid itinerary is generated
         mock_get_manager.return_value = mock_manager
-        mock_route.return_value = _make_plan_result("Paris", 3)
+        mock_route.return_value = _make_plan_result("Paris", 3, interests=["history"])
         mock_profile.return_value = {"user_id": "user1"}
         mock_graph.ainvoke.return_value = _make_mock_graph_result(is_valid=True)
 
@@ -342,12 +358,17 @@ class TestHandleChatStream:
         events = []
         async for chunk in handle_chat_stream(
             user_id="stream_user_4",
-            user_message="Plan me a 3-day trip to Paris",
+            user_message="Plan me a 3-day trip to Paris interested in history",
         ):
             events.append(chunk)
 
         # Then: the result event has phase == "itinerary_review"
-        result_event = next(e for e in events if e["type"] == "result")
+        result_events = [e for e in events if e["type"] == "result"]
+        assert len(result_events) == 1, (
+            f"Expected exactly 1 'result' event, found {len(result_events)}. "
+            f"Event types: {[e['type'] for e in events]}"
+        )
+        result_event = result_events[0]
         assert result_event["data"]["phase"] == "itinerary_review"
 
 

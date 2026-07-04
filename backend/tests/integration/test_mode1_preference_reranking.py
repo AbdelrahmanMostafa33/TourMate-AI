@@ -43,10 +43,14 @@ def _create_session_manager():
     storage = {}
     manager = AsyncMock()
 
-    async def fake_resume_or_create(user_id, session_id=None):
+    async def fake_resume_or_create(user_id, session_id=None, recovery_state=None):
         key = session_id or user_id
         if key not in storage:
-            storage[key] = ConversationState(user_id=user_id)
+            if recovery_state:
+                recovery_state["user_id"] = user_id
+                storage[key] = ConversationState.from_dict(recovery_state)
+            else:
+                storage[key] = ConversationState(user_id=user_id)
         return storage[key]
 
     async def fake_save(state):
@@ -298,19 +302,21 @@ class TestMode1PreferenceReranking:
     @patch("ai_engine.conversation.orchestrator.score_candidates")
     @patch("ai_engine.conversation.orchestrator.run_planning_agent")
     @patch("ai_engine.conversation.orchestrator.optimize_route")
+    @patch("ai_engine.conversation.orchestrator.classify_edit")
     @patch("ai_engine.conversation.orchestrator.validate_itinerary")
     async def test_more_entertaining_triggers_reranker(
         self,
-        mock_validation,
-        mock_optimization,
-        mock_planning,
-        mock_ranking,
-        mock_reranker_llm,     # interpret_preference_adjustment
-        mock_modifier,          # run_itinerary_modifier
-        mock_profile,
-        mock_graph,
-        mock_route,
-        mock_get_manager,
+        mock_validation,        # 1 - validate_itinerary (bottom)
+        mock_classify,          # 2 - classify_edit
+        mock_optimization,      # 3 - optimize_route
+        mock_planning,          # 4 - run_planning_agent
+        mock_ranking,           # 5 - score_candidates
+        mock_reranker_llm,      # 6 - interpret_preference_adjustment
+        mock_modifier,          # 7 - run_itinerary_modifier
+        mock_profile,           # 8 - load_mock_profile
+        mock_graph,             # 9 - trip_graph
+        mock_route,             # 10 - interpret_message
+        mock_get_manager,       # 11 - get_session_manager (top)
     ):
         """
         User says "more entertaining" after generating an itinerary.
@@ -351,7 +357,7 @@ class TestMode1PreferenceReranking:
             food_preferences=["local cuisine"],
             accommodation_preferences=["boutique hotel"],
         )
-        result1 = await handle_chat("user2", "Plan me a 2-day trip to Cairo")
+        result1 = await handle_chat("user2", "Plan me a 2-day trip to Cairo, interested in history and art")
         assert result1["response_type"] == "itinerary"
         assert result1["phase"] == "itinerary_review"
         assert mock_graph.ainvoke.call_count == 1  # full pipeline ran once
@@ -363,6 +369,12 @@ class TestMode1PreferenceReranking:
         assert len(state.candidate_places) == len(MOCK_PLACES)
 
         # ── Step 2: Set up mocks for modification ──
+
+        # Classify edit as preference edit so the modifier agent is tried first
+        mock_classify.return_value = {
+            "edit_type": "PREFERENCE",
+            "reasoning": "User requested a vibe change — trying modifier",
+        }
 
         # Mode 2: Modifier returns unchanged (same object identity)
         mock_modifier.return_value = state.itinerary  # same object → unchanged
@@ -436,19 +448,21 @@ class TestMode1PreferenceReranking:
     @patch("ai_engine.conversation.orchestrator.score_candidates")
     @patch("ai_engine.conversation.orchestrator.run_planning_agent")
     @patch("ai_engine.conversation.orchestrator.optimize_route")
+    @patch("ai_engine.conversation.orchestrator.classify_edit")
     @patch("ai_engine.conversation.orchestrator.validate_itinerary")
     async def test_reranker_failure_falls_through_to_pipeline(
         self,
-        mock_validation,
-        mock_optimization,
-        mock_planning,
-        mock_ranking,
-        mock_reranker_llm,
-        mock_modifier,
-        mock_profile,
-        mock_graph,
-        mock_route,
-        mock_get_manager,
+        mock_validation,        # 1 - validate_itinerary (bottom)
+        mock_classify,          # 2 - classify_edit
+        mock_optimization,      # 3 - optimize_route
+        mock_planning,          # 4 - run_planning_agent
+        mock_ranking,           # 5 - score_candidates
+        mock_reranker_llm,      # 6 - interpret_preference_adjustment
+        mock_modifier,          # 7 - run_itinerary_modifier
+        mock_profile,           # 8 - load_mock_profile
+        mock_graph,             # 9 - trip_graph
+        mock_route,             # 10 - interpret_message
+        mock_get_manager,       # 11 - get_session_manager (top)
     ):
         """
         When Mode 1 (reranker) fails, the system falls through to
@@ -477,8 +491,14 @@ class TestMode1PreferenceReranking:
             food_preferences=["local cuisine"],
             accommodation_preferences=["boutique hotel"],
         )
-        await handle_chat("user3", "Plan me a 2-day Cairo trip")
+        await handle_chat("user3", "Plan me a culturally focused 2-day trip to Cairo, interested in history and art")
         assert mock_graph.ainvoke.call_count == 1
+
+        # Classify edit as preference so modifier is tried first
+        mock_classify.return_value = {
+            "edit_type": "PREFERENCE",
+            "reasoning": "User requested a vibe change — trying modifier",
+        }
 
         # Modifier returns unchanged
         mock_modifier.return_value = storage["user3"].itinerary
@@ -510,11 +530,11 @@ class TestMode1PreferenceReranking:
     @patch("ai_engine.conversation.orchestrator.run_itinerary_modifier")
     async def test_modifier_succeeds_skips_reranker_and_pipeline(
         self,
-        mock_modifier,
-        mock_profile,
-        mock_graph,
-        mock_route,
-        mock_get_manager,
+        mock_modifier,          # 1 - run_itinerary_modifier (bottom)
+        mock_profile,           # 2 - load_mock_profile
+        mock_graph,             # 3 - trip_graph
+        mock_route,             # 4 - interpret_message
+        mock_get_manager,       # 5 - get_session_manager (top)
     ):
         """
         When Mode 2 (surgical modifier) succeeds, both Mode 1 and
@@ -542,7 +562,7 @@ class TestMode1PreferenceReranking:
             food_preferences=["local cuisine"],
             accommodation_preferences=["boutique hotel"],
         )
-        await handle_chat("user4", "Plan me a 2-day Cairo trip")
+        await handle_chat("user4", "Plan me a culturally focused 2-day trip to Cairo, interested in history and art")
         assert mock_graph.ainvoke.call_count == 1
 
         # Modifier returns a DIFFERENT itinerary object → success
@@ -581,12 +601,7 @@ class TestMode1PreferenceReranking:
 class TestFallbackChainLogging:
     """
     Verifies that _handle_modify_itinerary emits the correct log messages
-    at each stage of the 3-tier fallback chain.
-
-    Log messages checked:
-        - Mode 2 → Mode 1: "Modifier unchanged — trying preference re-ranking"
-        - Mode 1 → Mode 3: "Preference re-ranking failed or no adjustments"
-        - Mode 3 fallback: "Falling back to full pipeline regeneration"
+    during the 3-tier fallback chain (Mode 2 → Mode 1 → Mode 3).
     """
 
     @pytest.mark.asyncio
@@ -599,27 +614,26 @@ class TestFallbackChainLogging:
     @patch("ai_engine.conversation.orchestrator.score_candidates")
     @patch("ai_engine.conversation.orchestrator.run_planning_agent")
     @patch("ai_engine.conversation.orchestrator.optimize_route")
+    @patch("ai_engine.conversation.orchestrator.classify_edit")
     @patch("ai_engine.conversation.orchestrator.validate_itinerary")
     async def test_full_fallthrough_logs_all_three_modes(
         self,
-        mock_validation,
-        mock_optimization,
-        mock_planning,
-        mock_ranking,
-        mock_reranker_llm,
-        mock_modifier,
-        mock_profile,
-        mock_graph,
-        mock_route,
-        mock_get_manager,
+        mock_validation,        # 1 - validate_itinerary (bottom)
+        mock_classify,          # 2 - classify_edit
+        mock_optimization,      # 3 - optimize_route
+        mock_planning,          # 4 - run_planning_agent
+        mock_ranking,           # 5 - score_candidates
+        mock_reranker_llm,      # 6 - interpret_preference_adjustment
+        mock_modifier,          # 7 - run_itinerary_modifier
+        mock_profile,           # 8 - load_mock_profile
+        mock_graph,             # 9 - trip_graph
+        mock_route,             # 10 - interpret_message
+        mock_get_manager,       # 11 - get_session_manager (top)
         caplog,
     ):
         """
-        When both Mode 2 and Mode 1 fail, all three stages are logged:
-        1. Modifier tried (Mode 2)
-        2. "trying preference re-ranking" (entering Mode 1)
-        3. "failed or no adjustments" (Mode 1 → Mode 3)
-        4. "Falling back to full pipeline" (Mode 3)
+        When both Mode 2 and Mode 1 fail, the system falls through to
+        Mode 3 full pipeline regeneration, which is logged.
         """
         caplog.set_level(logging.INFO)
 
@@ -645,7 +659,7 @@ class TestFallbackChainLogging:
             food_preferences=["local cuisine"],
             accommodation_preferences=["boutique hotel"],
         )
-        await handle_chat("user_log1", "Plan me a 2-day Cairo trip")
+        await handle_chat("user_log1", "Plan me a culturally focused 2-day trip to Cairo, interested in history and art")
         assert mock_graph.ainvoke.call_count == 1
 
         # Clear logs from initial generation
@@ -653,6 +667,12 @@ class TestFallbackChainLogging:
 
         # Mode 2: modifier returns unchanged
         mock_modifier.return_value = storage["user_log1"].itinerary
+
+        # Classify edit as preference so modifier is tried first
+        mock_classify.return_value = {
+            "edit_type": "PREFERENCE",
+            "reasoning": "User requested a change — trying modifier",
+        }
 
         # Mode 1: reranker LLM returns EMPTY (no adjustments → failure)
         mock_reranker_llm.return_value = {}
@@ -668,26 +688,26 @@ class TestFallbackChainLogging:
         assert mock_graph.ainvoke.call_count == 2
         assert result["itinerary"] is not None
 
-        # ── Verify log sequencing ──
+        # ── Verify log messages ──
         log_messages = [rec.message for rec in caplog.records]
         log_text = "\n".join(log_messages)
 
-        # All three stages should be logged
-        assert "trying preference re-ranking" in log_text, (
-            "Mode 1 entry should be logged when modifier is unchanged"
+        # All three stages should be logged in order
+        assert "Modifier unchanged" in log_text, (
+            "Modifier unchanged message should be logged"
         )
-        assert "failed or no adjustments" in log_text, (
-            "Mode 1 → Mode 3 transition should be logged"
+        assert "Preference re-ranking failed or no adjustments" in log_text, (
+            "Preference re-ranking failure should be logged when no adjustments"
         )
         assert "Falling back to full pipeline" in log_text, (
-            "Mode 3 entry should be logged"
+            "Mode 3 fallback should be logged"
         )
 
-        # Verify ordering: reranker log BEFORE fallback log
-        idx_reranker = log_text.index("trying preference re-ranking")
+        # Verify ordering: modifier unchanged BEFORE fallback
+        idx_modifier = log_text.index("Modifier unchanged")
         idx_fallback = log_text.index("Falling back to full pipeline")
-        assert idx_reranker < idx_fallback, (
-            "Mode 1 attempt should be logged BEFORE Mode 3 fallback"
+        assert idx_modifier < idx_fallback, (
+            "Modifier unchanged should be logged BEFORE fallback"
         )
 
     @pytest.mark.asyncio
@@ -700,24 +720,25 @@ class TestFallbackChainLogging:
     @patch("ai_engine.conversation.orchestrator.score_candidates")
     @patch("ai_engine.conversation.orchestrator.run_planning_agent")
     @patch("ai_engine.conversation.orchestrator.optimize_route")
+    @patch("ai_engine.conversation.orchestrator.classify_edit")
     @patch("ai_engine.conversation.orchestrator.validate_itinerary")
     async def test_mode1_success_no_mode3_log(
         self,
-        mock_validation,
-        mock_optimization,
-        mock_planning,
-        mock_ranking,
-        mock_reranker_llm,
-        mock_modifier,
-        mock_profile,
-        mock_graph,
-        mock_route,
-        mock_get_manager,
+        mock_validation,        # 1 - validate_itinerary (bottom)
+        mock_classify,          # 2 - classify_edit
+        mock_optimization,      # 3 - optimize_route
+        mock_planning,          # 4 - run_planning_agent
+        mock_ranking,           # 5 - score_candidates
+        mock_reranker_llm,      # 6 - interpret_preference_adjustment
+        mock_modifier,          # 7 - run_itinerary_modifier
+        mock_profile,           # 8 - load_mock_profile
+        mock_graph,             # 9 - trip_graph
+        mock_route,             # 10 - interpret_message
+        mock_get_manager,       # 11 - get_session_manager (top)
         caplog,
     ):
         """
         When Mode 1 succeeds, Mode 3 fallback log should NOT appear.
-        Only the Mode 2 → Mode 1 transition is logged.
         """
         caplog.set_level(logging.INFO)
 
@@ -743,13 +764,19 @@ class TestFallbackChainLogging:
             food_preferences=["local cuisine"],
             accommodation_preferences=["boutique hotel"],
         )
-        await handle_chat("user_log2", "Plan me a 2-day trip to Cairo")
+        await handle_chat("user_log2", "Plan me a culturally focused 2-day trip to Cairo, interested in history and art")
         assert mock_graph.ainvoke.call_count == 1
 
         caplog.clear()
 
         # Mode 2: modifier returns unchanged
         mock_modifier.return_value = storage["user_log2"].itinerary
+
+        # Classify edit as preference so modifier is tried first
+        mock_classify.return_value = {
+            "edit_type": "PREFERENCE",
+            "reasoning": "User requested a change — trying modifier",
+        }
 
         # Mode 1: reranker LLM returns successful adjustments
         mock_reranker_llm.return_value = {
@@ -775,8 +802,10 @@ class TestFallbackChainLogging:
         # ── Verify logging ──
         log_text = "\n".join(rec.message for rec in caplog.records)
 
-        # Mode 2 → Mode 1 transition IS logged
-        assert "trying preference re-ranking" in log_text
+        # Rerank chain should have been attempted and succeeded
+        assert "RerankReplan" in log_text, (
+            "Rerank replan chain should have been attempted"
+        )
         # Mode 3 fallback is NOT logged (Mode 1 succeeded)
         assert "Falling back to full pipeline" not in log_text, (
             "Mode 3 log should NOT appear when Mode 1 succeeds"
@@ -788,21 +817,24 @@ class TestFallbackChainLogging:
     @patch("ai_engine.conversation.orchestrator.trip_graph", new_callable=AsyncMock)
     @patch("ai_engine.conversation.orchestrator.load_mock_profile")
     @patch("ai_engine.conversation.orchestrator.run_itinerary_modifier")
+    @patch("ai_engine.conversation.orchestrator.classify_edit")
     @patch("ai_engine.conversation.orchestrator.interpret_preference_adjustment")
     async def test_no_candidate_places_skips_mode1_logs_mode3(
         self,
-        mock_reranker_llm,
-        mock_modifier,
-        mock_profile,
-        mock_graph,
-        mock_route,
-        mock_get_manager,
+        mock_reranker_llm,      # 1 - interpret_preference_adjustment (bottom)
+        mock_classify,          # 2 - classify_edit
+        mock_modifier,          # 3 - run_itinerary_modifier
+        mock_profile,           # 4 - load_mock_profile
+        mock_graph,             # 5 - trip_graph
+        mock_route,             # 6 - interpret_message
+        mock_get_manager,       # 7 - get_session_manager (top)
         caplog,
     ):
         """
-        When candidate_places is None, Mode 1 is skipped entirely.
+        When candidate_places is None, Mode 1 rerank/replan is skipped.
         The system jumps from Mode 2 → Mode 3 directly.
-        The reranker LLM should NOT be called.
+        interpret_preference_adjustment is still called (hoisted before
+        the candidate_places check), but rerank_and_replan is not.
         """
         caplog.set_level(logging.INFO)
 
@@ -830,13 +862,22 @@ class TestFallbackChainLogging:
             food_preferences=["local cuisine"],
             accommodation_preferences=["boutique hotel"],
         )
-        await handle_chat("user_log3", "Plan me a 2-day Cairo trip")
+        await handle_chat("user_log3", "Plan me a culturally focused 2-day trip to Cairo, interested in history and art")
         assert mock_graph.ainvoke.call_count == 1
 
         # Verify state has NO candidate_places
         assert storage["user_log3"].candidate_places is None
 
         caplog.clear()
+
+        # Set reranker to return empty so adjustments is falsy → skip Mode 1
+        mock_reranker_llm.return_value = {}
+
+        # Classify edit as preference so modifier is tried first
+        mock_classify.return_value = {
+            "edit_type": "PREFERENCE",
+            "reasoning": "User requested a change — trying modifier",
+        }
 
         # Mode 2: modifier returns unchanged
         mock_modifier.return_value = storage["user_log3"].itinerary
@@ -855,17 +896,22 @@ class TestFallbackChainLogging:
         # ── Verify logging ──
         log_text = "\n".join(rec.message for rec in caplog.records)
 
-        # Mode 1 skip: the reranker log should NOT appear
-        assert "trying preference re-ranking" not in log_text, (
-            "Mode 1 should be skipped when no candidate_places available"
+        # Modifier unchanged is logged
+        assert "Modifier unchanged" in log_text, (
+            "Modifier unchanged should be logged"
+        )
+        # Re-ranking failed because no adjustments
+        assert "Preference re-ranking failed or no adjustments" in log_text, (
+            "Preference re-ranking failure should be logged"
         )
         # Mode 3 fallback IS logged
         assert "Falling back to full pipeline" in log_text, (
             "Mode 3 should be logged when it runs"
         )
 
-        # The reranker LLM should NOT have been called
-        mock_reranker_llm.assert_not_called()
+        # The reranker LLM IS called (hoisted before candidate_places check)
+        # but returns empty so the rerank chain is skipped
+        mock_reranker_llm.assert_called_once()
 
     @pytest.mark.asyncio
     @patch("ai_engine.conversation.orchestrator.get_session_manager")
@@ -875,11 +921,11 @@ class TestFallbackChainLogging:
     @patch("ai_engine.conversation.orchestrator.run_itinerary_modifier")
     async def test_modifier_success_no_mode1_nor_mode3_logs(
         self,
-        mock_modifier,
-        mock_profile,
-        mock_graph,
-        mock_route,
-        mock_get_manager,
+        mock_modifier,          # 1 - run_itinerary_modifier (bottom)
+        mock_profile,           # 2 - load_mock_profile
+        mock_graph,             # 3 - trip_graph
+        mock_route,             # 4 - interpret_message
+        mock_get_manager,       # 5 - get_session_manager (top)
         caplog,
     ):
         """
@@ -911,7 +957,7 @@ class TestFallbackChainLogging:
             food_preferences=["local cuisine"],
             accommodation_preferences=["boutique hotel"],
         )
-        await handle_chat("user_log4", "Plan me a 2-day Cairo trip")
+        await handle_chat("user_log4", "Plan me a culturally focused 2-day trip to Cairo, interested in history and art")
         assert mock_graph.ainvoke.call_count == 1
 
         caplog.clear()
@@ -942,9 +988,7 @@ class TestFallbackChainLogging:
 
         # ── Verify logging: neither Mode 1 nor Mode 3 logs appear ──
         log_text = "\n".join(rec.message for rec in caplog.records)
-        assert "trying preference re-ranking" not in log_text, (
-            "Mode 1 should NOT be logged when modifier succeeds"
-        )
+        # Mode 3 fallback should NOT appear when modifier succeeds
         assert "Falling back to full pipeline" not in log_text, (
             "Mode 3 should NOT be logged when modifier succeeds"
         )

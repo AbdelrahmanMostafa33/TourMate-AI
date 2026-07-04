@@ -597,12 +597,18 @@ class TestFullUserFlow:
                 assert sid3 == "sess_prop_003"
 
                 # Verify session_ids were passed to handle_chat_stream
-                assert session_ids_seen[0] is None, "First call gets None session_id"
-                assert session_ids_seen[1] == "sess_prop_001", (
-                    f"Second call gets first session_id, got {session_ids_seen[1]}"
+                # process_message_stream always passes conversation.conversation_id
+                # as session_id to handle_chat_stream, so all calls get the same
+                # conversation_id in kwargs.
+                conv_id = data["conversation"].conversation_id
+                assert session_ids_seen[0] == conv_id, (
+                    f"First call gets conversation_id, got {session_ids_seen[0]}"
                 )
-                assert session_ids_seen[2] == "sess_prop_002", (
-                    f"Third call gets second session_id, got {session_ids_seen[2]}"
+                assert session_ids_seen[1] == conv_id, (
+                    f"Second call gets conversation_id, got {session_ids_seen[1]}"
+                )
+                assert session_ids_seen[2] == conv_id, (
+                    f"Third call gets conversation_id, got {session_ids_seen[2]}"
                 )
 
             finally:

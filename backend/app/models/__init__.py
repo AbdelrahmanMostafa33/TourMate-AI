@@ -36,5 +36,8 @@ from app.models.feedback import Feedback
 # --- Saved places ---
 from app.models.saved_place import SavedPlace
 
+# --- System Log ---
+from app.models.system_log import EventLog
+
 # --- Image upload & features ---
 from app.models.image import Image, ImageFeature

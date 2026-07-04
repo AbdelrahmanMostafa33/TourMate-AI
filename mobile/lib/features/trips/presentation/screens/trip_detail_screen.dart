@@ -122,7 +122,7 @@ class _TripDetailScreenState extends State<TripDetailScreen> {
             ),
             onPressed: () => Navigator.pop(context),
           ),
-          const SizedBox(width: Spacing.xs),
+          const SizedBox(width: Spacing.sm),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -167,23 +167,40 @@ class _TripDetailScreenState extends State<TripDetailScreen> {
               ),
             ),
           ),
-          const SizedBox(width: Spacing.xs),
-          // Delete button
-          Material(
-            color: Colors.transparent,
-            child: InkWell(
-              borderRadius: BorderRadius.circular(RadiusTokens.lg),
-              onTap: () => _confirmDelete(context, trip),
-              child: Container(
-                padding: const EdgeInsets.all(Spacing.md),
-                decoration: BoxDecoration(
-                  color: tm.error.withValues(alpha: 0.06),
-                  borderRadius: BorderRadius.circular(RadiusTokens.lg),
+          const SizedBox(width: Spacing.sm),
+          // Contextual action: Cancel Trip when booking is confirmed, Delete otherwise
+          if (_canCancelTrip(trip))
+            Material(
+              color: Colors.transparent,
+              child: InkWell(
+                borderRadius: BorderRadius.circular(RadiusTokens.lg),
+                onTap: () => _confirmCancel(context, trip),
+                child: Container(
+                  padding: const EdgeInsets.all(Spacing.md),
+                  decoration: BoxDecoration(
+                    color: tm.warning.withValues(alpha: 0.08),
+                    borderRadius: BorderRadius.circular(RadiusTokens.lg),
+                  ),
+                  child: Icon(Icons.cancel_outlined, color: tm.warning, size: 18),
                 ),
-                child: Icon(Icons.delete_outline, color: tm.error, size: 18),
+              ),
+            )
+          else
+            Material(
+              color: Colors.transparent,
+              child: InkWell(
+                borderRadius: BorderRadius.circular(RadiusTokens.lg),
+                onTap: () => _confirmDelete(context, trip),
+                child: Container(
+                  padding: const EdgeInsets.all(Spacing.md),
+                  decoration: BoxDecoration(
+                    color: tm.error.withValues(alpha: 0.06),
+                    borderRadius: BorderRadius.circular(RadiusTokens.lg),
+                  ),
+                  child: Icon(Icons.delete_outline, color: tm.error, size: 18),
+                ),
               ),
             ),
-          ),
         ],
       ),
     );
@@ -1123,6 +1140,157 @@ class _TripDetailScreenState extends State<TripDetailScreen> {
       Navigator.pop(context, 'deleted');
     }
   }
+
+  /// Whether the Cancel Trip button should be shown for this trip.
+  /// Only visible once payment is confirmed and the booking is locked in
+  /// (booking_confirmed or active). Hides during planning, booking,
+  /// payment, already cancelled, or completed.
+  bool _canCancelTrip(TripDetailModel trip) {
+    final status = trip.status.toLowerCase();
+    // Only show after payment is confirmed / booking is locked in
+    return status == 'booking_confirmed' || status == 'active';
+  }
+
+  /// Show premium confirmation dialog before cancelling the trip.
+  Future<void> _confirmCancel(BuildContext context, TripDetailModel trip) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(RadiusTokens.xl3),
+        ),
+        backgroundColor: tm.brandWhite,
+        titlePadding: const EdgeInsets.fromLTRB(Spacing.xl3, Spacing.xl3, Spacing.xl3, 0),
+        contentPadding: const EdgeInsets.fromLTRB(Spacing.xl3, Spacing.md, Spacing.xl3, 0),
+        actionsPadding: const EdgeInsets.fromLTRB(Spacing.sm, Spacing.sm, Spacing.sm, Spacing.sm),
+        title: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(Spacing.sm),
+              decoration: BoxDecoration(
+                color: tm.warning.withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(RadiusTokens.md),
+              ),
+              child: Icon(Icons.cancel_outlined, size: 18, color: tm.warning),
+            ),
+            const SizedBox(width: Spacing.lg),
+            Text(
+              "Cancel Trip",
+              style: GoogleFonts.inter(
+                fontWeight: FontWeight.w700,
+                fontSize: 17,
+                color: tm.textPrimary,
+                letterSpacing: -0.2,
+              ),
+            ),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Are you sure you want to cancel your trip to ${trip.destination}?',
+              style: GoogleFonts.inter(
+                fontSize: 14,
+                color: tm.textSecondary,
+                height: 1.5,
+              ),
+            ),
+            const SizedBox(height: Spacing.md),
+            Container(
+              padding: const EdgeInsets.all(Spacing.md),
+              decoration: BoxDecoration(
+                color: tm.surface,
+                borderRadius: BorderRadius.circular(RadiusTokens.md),
+              ),
+              child: Row(
+                children: [
+                  Icon(Icons.info_outline, size: 16, color: tm.warning),
+                  const SizedBox(width: Spacing.md),
+                  Expanded(
+                    child: Text(
+                      'This will cancel all bookings and refund any payments.',
+                      style: GoogleFonts.inter(
+                        fontSize: 12,
+                        color: tm.textSecondary,
+                        height: 1.4,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            style: TextButton.styleFrom(
+              padding: Insets.message,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(RadiusTokens.lg),
+              ),
+            ),
+            child: Text(
+              "Keep Trip",
+              style: GoogleFonts.inter(color: tm.textTertiary, fontWeight: FontWeight.w600, fontSize: 14),
+            ),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: TextButton.styleFrom(
+              backgroundColor: tm.warning.withValues(alpha: 0.1),
+              padding: Insets.message,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(RadiusTokens.lg),
+              ),
+            ),
+            child: Text(
+              "Cancel Trip",
+              style: GoogleFonts.inter(
+                color: tm.warning,
+                fontWeight: FontWeight.w700,
+                fontSize: 14,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+    if (!context.mounted) return;
+
+    final cubit = context.read<TripDetailCubit>();
+    String? error;
+    try {
+      final result = await cubit.cancelTrip(trip.tripId);
+      final cancelledCount = (result['cancelled_bookings'] as List?)?.length ?? 0;
+      final refundedCount = (result['refunded_payments'] as List?)?.length ?? 0;
+
+      if (!context.mounted) return;
+
+      if (refundedCount > 0) {
+        AppSnackbar.success(
+          context,
+          'Trip cancelled. $cancelledCount booking(s) cancelled, $refundedCount payment(s) refunded.',
+        );
+      } else {
+        AppSnackbar.success(
+          context,
+          'Trip cancelled successfully.',
+        );
+      }
+
+      // Pop with 'cancelled' result so TripsScreen can react accordingly
+      Navigator.pop(context, 'cancelled');
+    } catch (e) {
+      error = e.toString();
+      if (!context.mounted) return;
+      AppSnackbar.error(context, error);
+    }
+  }
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
@@ -1308,7 +1476,7 @@ class _DayTimeline extends StatelessWidget {
               child: Row(
                 children: [
                   Icon(Icons.access_time, size: 14, color: tm.sapphireLight),
-                  const SizedBox(width: Spacing.xs),
+                  const SizedBox(width: Spacing.sm),
                   Text(
                     'Total: ${day.stops.fold(0, (int sum, s) => sum + (s.minutesFromPrevStop ?? 0))} min travel',
                     style: GoogleFonts.inter(fontSize: 11, color: tm.textTertiary),
@@ -1603,7 +1771,7 @@ class _StopTimelineCard extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           Icon(icon, size: 11, color: accentColor),
-          const SizedBox(width: Spacing.xs),
+          const SizedBox(width: Spacing.sm),
           Text(
             label,
             style: GoogleFonts.inter(

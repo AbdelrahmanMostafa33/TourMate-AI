@@ -1,45 +1,48 @@
 @startuml Auth_Flow
-title User Authentication (UC1)
+title User Authentication (UC1) — Analysis View
 
 actor Traveler
-participant "FastAPI App" as API
-participant "Auth Service" as AuthSvc
-participant "Firebase Auth" as Firebase
+participant "Mobile App" as App
+participant "Backend" as Backend
+participant "Authentication\\nProvider" as AuthProvider
 
 == Sign Up ==
 
-Traveler -> API: POST /api/v1/auth/signup\n{email, password, name}
-activate API
+Traveler -> App: Enter email, password, and name
+activate App
 
-API -> Firebase: createUserWithEmail(email, password)
-activate Firebase
-Firebase --> API: {uid, idToken}
-deactivate Firebase
+App -> Backend: POST /auth/signup
+activate Backend
 
-API -> AuthSvc: register_user(uid, email, name)
-activate AuthSvc
-AuthSvc --> API: {user_id, profile}
-deactivate AuthSvc
+Backend -> AuthProvider: Create user account
+activate AuthProvider
+AuthProvider --> Backend: User created
+deactivate AuthProvider
 
-API --> Traveler: 201 {access_token, user}
-deactivate API
+Backend -> Backend: Store user profile
+Backend --> App: Account created and logged in
+deactivate Backend
+
+App --> Traveler: Signed in successfully
+deactivate App
 
 == Login ==
 
-Traveler -> API: POST /api/v1/auth/login\n{email, password}
-activate API
+Traveler -> App: Enter email and password
+activate App
 
-API -> Firebase: signInWithEmail(email, password)
-activate Firebase
-Firebase --> API: {idToken, refreshToken}
-deactivate Firebase
+App -> Backend: POST /auth/login
+activate Backend
 
-API -> AuthSvc: verify_and_get_user(uid)
-activate AuthSvc
-AuthSvc --> API: {user, token_pair}
-deactivate AuthSvc
+Backend -> AuthProvider: Verify credentials
+activate AuthProvider
+AuthProvider --> Backend: Credentials verified
+deactivate AuthProvider
 
-API --> Traveler: 200 {access_token, refresh_token, user}
-deactivate API
+Backend --> App: Authentication token
+deactivate Backend
+
+App --> Traveler: Logged in
+deactivate App
 
 @enduml

@@ -716,11 +716,22 @@ class FlightService:
         if booking.status == BookingStatus.cancelled:
             raise ValueError(f"Flight booking {booking_id} is already cancelled")
 
+        old_status = booking.status.value
         booking.status = BookingStatus.cancelled
         booking.raw_response = {
             **(booking.raw_response or {}),
             "cancelled_at": datetime.utcnow().isoformat(),
+            "cancelled_from": old_status,
         }
+
+        # If there's a linked payment, mark it as refunded
+        if booking.payment:
+            booking.payment.status = PaymentStatus.refunded
+            booking.payment.raw_response = {
+                **(booking.payment.raw_response or {}),
+                "refunded_at": datetime.utcnow().isoformat(),
+                "reason": "booking_cancelled",
+            }
 
         logger.info("[FlightService] Cancelled flight booking %s", booking_id)
         return booking

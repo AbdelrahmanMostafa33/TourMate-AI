@@ -1,132 +1,114 @@
 @startuml Payment_Management_Flow
-title Manage Payments (UC#7) — Stripe Sandbox & Simulated Fallback
+title Manage Payments (UC#7) — Analysis View
 
 actor Traveler
-participant "Chat" as Chat
-participant "Booking\\nService" as BkSvc
-participant "Flight\\nService" as FltSvc
-participant "Stripe\\nSandbox" as Stripe
-participant "Stripe\\nWebhook" as WH
+participant "Mobile App" as App
+participant "Backend" as Backend
+participant "Payment Gateway" as Stripe
+participant "Database" as DB
 
-== Pay for a Single Booking (via Chat) ==
+== Pay for a Booking ==
 
-Traveler -> Chat: "Pay for my flight booking now"
-activate Chat
+Traveler -> App: Request to pay for booking
+activate App
 
-Chat -> BkSvc: initiate_payment(booking_id, amount)
-activate BkSvc
+App -> Backend: Initiate payment
+activate Backend
 
-alt Stripe configured (sandbox mode)
-  BkSvc -> Stripe: create_payment_intent(amount, currency)
+alt Payment gateway available
+  Backend -> Stripe: Create payment session
   activate Stripe
-  Stripe --> BkSvc: {client_secret, pi_id}
-  deactivate Stripe
-  BkSvc --> Chat: {client_secret, simulated: false}
-  deactivate BkSvc
-
-  Chat --> Traveler: "Secure checkout ready.\nComplete payment in the payment sheet."
-  deactivate Chat
-
-  Traveler -> Stripe: Complete Stripe Payment Sheet
-  activate Stripe
-  Stripe --> Traveler: {paymentIntent: succeeded}
+  Stripe --> Backend: Payment session created
   deactivate Stripe
 
-  Traveler -> Chat: "Payment completed"
-  activate Chat
+  Backend --> App: Ready for payment
+  deactivate Backend
 
-  Chat -> BkSvc: confirm_after_payment(booking_id, pi_id)
-  activate BkSvc
-  BkSvc -> Stripe: verify_payment_intent(pi_id)
+  App --> Traveler: Complete payment securely
+  deactivate App
+
+  Traveler -> Stripe: Submit payment details
   activate Stripe
-  Stripe --> BkSvc: {status: succeeded}
-  deactivate Stripe
 
-else Stripe unavailable (simulated fallback)
-  BkSvc --> Chat: {client_secret: simulated, simulated: true}
-  deactivate BkSvc
-  Chat --> Traveler: "Payment simulated (test mode)."
-  deactivate Chat
+  alt Payment successful
+    Stripe --> Traveler: Payment succeeded
+    deactivate Stripe
 
-  Chat -> BkSvc: confirm_after_payment(booking_id, simulated_pi)
-  activate BkSvc
-  note right: No Stripe verification —\nassumed successful
+    Traveler -> App: Confirm payment
+    activate App
+    App -> Backend: Confirm and verify payment
+    activate Backend
+
+    Backend -> Stripe: Verify payment status
+    activate Stripe
+    Stripe --> Backend: Payment verified
+    deactivate Stripe
+
+    Backend -> DB: Update booking and\ntrip status
+    activate DB
+    DB --> Backend: Status updated
+    deactivate DB
+
+    Backend --> App: Booking confirmed\nwith receipt
+    deactivate Backend
+    App --> Traveler: Booking confirmed
+    deactivate App
+
+  else Payment failed
+    Stripe --> Traveler: Payment failed
+    deactivate Stripe
+
+    Traveler -> App: Retry payment
+    activate App
+    App -> Backend: Initiate payment again
+    activate Backend
+    Backend --> App: New payment session
+    deactivate Backend
+    App --> Traveler: Retry checkout
+    deactivate App
+  end
+
+else Payment gateway unavailable
+  Backend --> App: Simulated payment mode
+  deactivate Backend
+
+  App --> Traveler: Payment simulated\n(test environment)
+  deactivate App
+
+  App -> Backend: Confirm payment
+  activate Backend
+  Backend -> DB: Confirm booking
+  activate DB
+  DB --> Backend: Booking confirmed
+  deactivate DB
+  Backend --> App: Booking confirmed
+  deactivate Backend
+  App --> Traveler: Booking confirmed
+  deactivate App
 end
 
-alt Flight booking
-  BkSvc -> FltSvc: confirm_flight_booking(priced_offer, traveler)
-  activate FltSvc
-  FltSvc -> Stripe: verify_payment_intent(pi_id)
-  activate Stripe
-  Stripe --> FltSvc: {status: succeeded}
-  deactivate Stripe
-  FltSvc -> FltSvc: Create Booking + Payment + Receipt
-  FltSvc --> BkSvc: {booking: confirmed}
-  deactivate FltSvc
-else Hotel booking
-  BkSvc -> BkSvc: confirm_booking(booking_id)
-  note right: Simulated — no external\nhotel API called
-end
+== Pay All Pending Bookings ==
 
-BkSvc -> BkSvc: Update trip status to booking_confirmed\n(all bookings paid)
-BkSvc --> Chat: {status: confirmed, receipt}
-deactivate BkSvc
+Traveler -> App: Pay all pending bookings
+activate App
 
-Chat --> Traveler: "Booking confirmed!\nReceipt: RCT-20260701-A1B2"
-deactivate Chat
+App -> Backend: Pay all bookings for trip
+activate Backend
 
-== Async Confirmation via Webhook ==
+Backend -> Stripe: Create payment for\ntotal amount
+activate Stripe
+Stripe --> Backend: Payment created
+deactivate Stripe
 
-Stripe -> WH: POST /api/v1/webhooks/stripe\n{payment_intent.succeeded}
-activate WH
+Backend -> DB: Confirm all bookings
+activate DB
+DB --> Backend: All bookings confirmed
+deactivate DB
 
-WH -> BkSvc: handle_payment_succeeded(pi_id)
-activate BkSvc
-BkSvc -> BkSvc: Update Payment → completed\nConfirm Booking
-BkSvc --> WH: {booking confirmed}
-deactivate BkSvc
+Backend --> App: All payments processed
+deactivate Backend
 
-WH --> Stripe: 200 OK
-deactivate WH
-
-== Pay All Pending Bookings (via Chat) ==
-
-Traveler -> Chat: "Pay for all my pending bookings"
-activate Chat
-
-Chat -> BkSvc: initiate_pay_all(trip_id)
-activate BkSvc
-
-alt Combined (flight + hotel)
-  BkSvc -> Stripe: create_payment_intent(total_amount)
-  activate Stripe
-  Stripe --> BkSvc: {client_secret, pi_id}
-  deactivate Stripe
-else Individual per booking
-  BkSvc -> Stripe: create_payment_intent(flight_amount)
-  BkSvc -> Stripe: create_payment_intent(hotel_amount)
-  activate Stripe
-  Stripe --> BkSvc: {client_secrets[]}
-  deactivate Stripe
-end
-
-BkSvc --> Chat: {payment_intents}
-deactivate BkSvc
-
-Chat --> Traveler: "All payments processed.\nTrip confirmed!"
-deactivate Chat
-
-== Payment Failure Recovery ==
-
-Traveler -> Chat: "My payment failed, can I retry?"
-activate Chat
-
-Chat -> BkSvc: initiate_payment(booking_id, amount)
-activate BkSvc
-BkSvc --> Chat: {client_secret}
-deactivate BkSvc
-
-Chat --> Traveler: "Ready to retry. Opening checkout..."
-deactivate Chat
+App --> Traveler: Trip fully confirmed
+deactivate App
 
 @enduml

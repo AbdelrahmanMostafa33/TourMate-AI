@@ -513,7 +513,7 @@ class TestPersonaUpdateViaStream:
                         select(Trip).where(Trip.trip_id == trip.trip_id)
                     )
                 ).scalar_one()
-                assert trip_r.status == TripStatus.active
+                assert trip_r.status == TripStatus.awaiting_booking
                 assert trip_r.approved_at is not None
 
             finally:
@@ -615,7 +615,7 @@ class TestPersonaUpdateViaStream:
                         select(Trip).where(Trip.trip_id == trip.trip_id)
                     )
                 ).scalar_one()
-                assert trip_r.status == TripStatus.active
+                assert trip_r.status == TripStatus.awaiting_booking
 
             finally:
                 manager.disconnect(ws_key)

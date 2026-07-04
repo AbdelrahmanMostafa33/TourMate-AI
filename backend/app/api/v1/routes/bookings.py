@@ -150,7 +150,7 @@ async def initiate_booking_payment(
         select(Trip).where(Trip.trip_id == booking.trip_id)
     )
     trip = trip_result.scalar_one_or_none()
-    if trip and trip.status in (TripStatus.booking_pending, TripStatus.payment_failed):
+    if trip and trip.status in (TripStatus.awaiting_booking, TripStatus.booking_pending, TripStatus.payment_failed):
         trip.status = TripStatus.payment_processing
         trip.updated_at = None
         await db.commit()

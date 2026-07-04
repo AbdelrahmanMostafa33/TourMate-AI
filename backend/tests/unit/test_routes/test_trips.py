@@ -5,8 +5,9 @@ from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 from datetime import date, datetime
 from app.models.trip import Trip
+from app.models.booking import Booking
 from app.models.itinerary import Itinerary, Day, ItineraryStop
-from app.models.enums import TripStatus, ItineraryStatus, StopStatus, TravelMode
+from app.models.enums import TripStatus, ItineraryStatus, StopStatus, TravelMode, BookingStatus, BookingType
 import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
@@ -423,3 +424,407 @@ def test_build_auto_message_no_budget():
     data = TripCreate(destination="Tokyo, Japan")
     msg = build_auto_message(data, delta=3)
     assert "Tokyo" in msg
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# ── Tests: POST /trips/{trip_id}/cancel
+# ═════════════════════════════════════════════════════════════════════════════
+
+@pytest.mark.asyncio
+@patch("app.api.v1.routes.trips.get_current_user")
+async def test_cancel_trip_trip_not_found(mock_auth):
+    """POST /trips/{trip_id}/cancel should raise 404 when trip not found."""
+    from fastapi import HTTPException
+    from app.api.v1.routes.trips import cancel_trip
+
+    mock_auth.return_value = make_current_user()
+
+    result = MagicMock()
+    result.scalar_one_or_none.return_value = None
+
+    db = AsyncMock()
+    db.execute.return_value = result
+
+    with pytest.raises(HTTPException) as exc_info:
+        await cancel_trip(
+            trip_id="nonexistent",
+            current_user=make_current_user(),
+            db=db,
+        )
+    assert exc_info.value.status_code == 404
+
+
+@pytest.mark.asyncio
+@patch("app.api.v1.routes.trips.get_current_user")
+async def test_cancel_trip_already_cancelled(mock_auth):
+    """POST /trips/{trip_id}/cancel should raise 400 when trip is already cancelled."""
+    from fastapi import HTTPException
+    from app.api.v1.routes.trips import cancel_trip
+
+    mock_auth.return_value = make_current_user()
+
+    trip = make_mock_trip()
+    trip.status = TripStatus.cancelled
+
+    result = MagicMock()
+    result.scalar_one_or_none.return_value = trip
+
+    db = AsyncMock()
+    db.execute.return_value = result
+
+    with pytest.raises(HTTPException) as exc_info:
+        await cancel_trip(
+            trip_id="trip_001",
+            current_user=make_current_user(),
+            db=db,
+        )
+    assert exc_info.value.status_code == 400
+    assert "already cancelled" in exc_info.value.detail.lower()
+
+
+@pytest.mark.asyncio
+@patch("app.api.v1.routes.trips.get_current_user")
+async def test_cancel_trip_with_hotel_booking_no_payment(mock_auth):
+    """Cancel trip with one hotel booking (no payment) — should cancel and revert status."""
+    from app.api.v1.routes.trips import cancel_trip
+
+    mock_auth.return_value = make_current_user()
+
+    trip = make_mock_trip()
+    trip.status = TripStatus.booking_confirmed
+
+    # Hotel booking with no payment
+    hotel_booking = MagicMock(spec=Booking)
+    hotel_booking.booking_id = "BK-HOTEL-001"
+    hotel_booking.booking_type = BookingType.hotel
+    hotel_booking.payment = None
+    hotel_booking.status = BookingStatus.confirmed
+
+    # execute returns trip first, then bookings list
+    trip_result = MagicMock()
+    trip_result.scalar_one_or_none.return_value = trip
+
+    bookings_result = MagicMock()
+    bookings_result.scalars.return_value.all.return_value = [hotel_booking]
+
+    db = AsyncMock()
+    db.execute.side_effect = [trip_result, bookings_result]
+
+    # Mock the service methods so we can verify they're called
+    with patch("app.api.v1.routes.trips.BookingService") as mock_booking_svc_cls:
+        mock_booking_svc = MagicMock()
+        mock_booking_svc_cls.return_value = mock_booking_svc
+        mock_booking_svc.cancel_booking = AsyncMock()
+
+        with patch("app.api.v1.routes.trips.FlightService") as mock_flight_svc_cls:
+            mock_flight_svc = MagicMock()
+            mock_flight_svc_cls.return_value = mock_flight_svc
+            mock_flight_svc.cancel_flight_booking = AsyncMock()
+
+            response = await cancel_trip(
+                trip_id="trip_001",
+                current_user=make_current_user(),
+                db=db,
+            )
+
+    # Verify hotel booking was cancelled
+    mock_booking_svc.cancel_booking.assert_called_once_with("BK-HOTEL-001")
+    mock_flight_svc.cancel_flight_booking.assert_not_called()
+
+    # Verify trip status was reverted
+    assert trip.status == TripStatus.cancelled
+
+    # Verify response
+    assert response["success"] is True
+    assert response["trip_id"] == "trip_001"
+    assert response["status"] == "cancelled"
+    assert response["cancelled_bookings"] == ["BK-HOTEL-001"]
+    assert response["refunded_payments"] == []
+
+    db.commit.assert_called_once()
+
+
+@pytest.mark.asyncio
+@patch("app.api.v1.routes.trips.get_current_user")
+async def test_cancel_trip_with_hotel_and_payment_refund(mock_auth):
+    """Cancel trip with hotel booking that has a linked payment — should refund payment."""
+    from app.api.v1.routes.trips import cancel_trip
+
+    mock_auth.return_value = make_current_user()
+
+    trip = make_mock_trip()
+    trip.status = TripStatus.booking_confirmed
+
+    # Hotel booking with linked payment
+    payment = MagicMock()
+    payment.payment_id = "PAY-001"
+
+    hotel_booking = MagicMock(spec=Booking)
+    hotel_booking.booking_id = "BK-HOTEL-001"
+    hotel_booking.booking_type = BookingType.hotel
+    hotel_booking.payment = payment
+    hotel_booking.status = BookingStatus.confirmed
+
+    trip_result = MagicMock()
+    trip_result.scalar_one_or_none.return_value = trip
+
+    bookings_result = MagicMock()
+    bookings_result.scalars.return_value.all.return_value = [hotel_booking]
+
+    db = AsyncMock()
+    db.execute.side_effect = [trip_result, bookings_result]
+
+    with patch("app.api.v1.routes.trips.BookingService") as mock_booking_svc_cls:
+        mock_booking_svc = MagicMock()
+        mock_booking_svc_cls.return_value = mock_booking_svc
+        mock_booking_svc.cancel_booking = AsyncMock()
+
+        with patch("app.api.v1.routes.trips.FlightService") as mock_flight_svc_cls:
+            mock_flight_svc = MagicMock()
+            mock_flight_svc_cls.return_value = mock_flight_svc
+            mock_flight_svc.cancel_flight_booking = AsyncMock()
+
+            response = await cancel_trip(
+                trip_id="trip_001",
+                current_user=make_current_user(),
+                db=db,
+            )
+
+    mock_booking_svc.cancel_booking.assert_called_once_with("BK-HOTEL-001")
+
+    assert response["cancelled_bookings"] == ["BK-HOTEL-001"]
+    assert response["refunded_payments"] == ["PAY-001"]
+    assert trip.status == TripStatus.cancelled
+
+
+@pytest.mark.asyncio
+@patch("app.api.v1.routes.trips.get_current_user")
+async def test_cancel_trip_with_flight_booking(mock_auth):
+    """Cancel trip with flight booking — should cancel flight and revert status."""
+    from app.api.v1.routes.trips import cancel_trip
+
+    mock_auth.return_value = make_current_user()
+
+    trip = make_mock_trip()
+    trip.status = TripStatus.booking_confirmed
+
+    flight_booking = MagicMock(spec=Booking)
+    flight_booking.booking_id = "BK-FLIGHT-001"
+    flight_booking.booking_type = BookingType.flight
+    flight_booking.payment = None
+    flight_booking.status = BookingStatus.confirmed
+
+    trip_result = MagicMock()
+    trip_result.scalar_one_or_none.return_value = trip
+
+    bookings_result = MagicMock()
+    bookings_result.scalars.return_value.all.return_value = [flight_booking]
+
+    db = AsyncMock()
+    db.execute.side_effect = [trip_result, bookings_result]
+
+    with patch("app.api.v1.routes.trips.BookingService") as mock_booking_svc_cls:
+        mock_booking_svc = MagicMock()
+        mock_booking_svc_cls.return_value = mock_booking_svc
+        mock_booking_svc.cancel_booking = AsyncMock()
+
+        with patch("app.api.v1.routes.trips.FlightService") as mock_flight_svc_cls:
+            mock_flight_svc = MagicMock()
+            mock_flight_svc_cls.return_value = mock_flight_svc
+            mock_flight_svc.cancel_flight_booking = AsyncMock()
+
+            response = await cancel_trip(
+                trip_id="trip_001",
+                current_user=make_current_user(),
+                db=db,
+            )
+
+    # Verify flight booking was cancelled
+    mock_flight_svc.cancel_flight_booking.assert_called_once_with(
+        "BK-FLIGHT-001", "user_001"
+    )
+    mock_booking_svc.cancel_booking.assert_not_called()
+
+    assert response["cancelled_bookings"] == ["BK-FLIGHT-001"]
+    assert response["refunded_payments"] == []
+    assert trip.status == TripStatus.cancelled
+
+
+@pytest.mark.asyncio
+@patch("app.api.v1.routes.trips.get_current_user")
+async def test_cancel_trip_with_both_hotel_and_flight(mock_auth):
+    """Cancel trip with both hotel and flight bookings — should cancel both and refund all payments."""
+    from app.api.v1.routes.trips import cancel_trip
+
+    mock_auth.return_value = make_current_user()
+
+    trip = make_mock_trip()
+    trip.status = TripStatus.booking_confirmed
+
+    # Hotel with payment
+    hotel_payment = MagicMock()
+    hotel_payment.payment_id = "PAY-HOTEL"
+    hotel_booking = MagicMock(spec=Booking)
+    hotel_booking.booking_id = "BK-HOTEL"
+    hotel_booking.booking_type = BookingType.hotel
+    hotel_booking.payment = hotel_payment
+    hotel_booking.status = BookingStatus.confirmed
+
+    # Flight with payment
+    flight_payment = MagicMock()
+    flight_payment.payment_id = "PAY-FLIGHT"
+    flight_booking = MagicMock(spec=Booking)
+    flight_booking.booking_id = "BK-FLIGHT"
+    flight_booking.booking_type = BookingType.flight
+    flight_booking.payment = flight_payment
+    flight_booking.status = BookingStatus.confirmed
+
+    trip_result = MagicMock()
+    trip_result.scalar_one_or_none.return_value = trip
+
+    bookings_result = MagicMock()
+    bookings_result.scalars.return_value.all.return_value = [
+        hotel_booking, flight_booking,
+    ]
+
+    db = AsyncMock()
+    db.execute.side_effect = [trip_result, bookings_result]
+
+    with patch("app.api.v1.routes.trips.BookingService") as mock_booking_svc_cls:
+        mock_booking_svc = MagicMock()
+        mock_booking_svc_cls.return_value = mock_booking_svc
+        mock_booking_svc.cancel_booking = AsyncMock()
+
+        with patch("app.api.v1.routes.trips.FlightService") as mock_flight_svc_cls:
+            mock_flight_svc = MagicMock()
+            mock_flight_svc_cls.return_value = mock_flight_svc
+            mock_flight_svc.cancel_flight_booking = AsyncMock()
+
+            response = await cancel_trip(
+                trip_id="trip_001",
+                current_user=make_current_user(),
+                db=db,
+            )
+
+    # Verify both services called with correct args
+    mock_booking_svc.cancel_booking.assert_called_once_with("BK-HOTEL")
+    mock_flight_svc.cancel_flight_booking.assert_called_once_with(
+        "BK-FLIGHT", "user_001"
+    )
+
+    # Verify response includes both bookings and payments
+    assert set(response["cancelled_bookings"]) == {"BK-HOTEL", "BK-FLIGHT"}
+    assert set(response["refunded_payments"]) == {"PAY-HOTEL", "PAY-FLIGHT"}
+    assert trip.status == TripStatus.cancelled
+
+
+@pytest.mark.asyncio
+@patch("app.api.v1.routes.trips.get_current_user")
+async def test_cancel_trip_skips_already_cancelled_booking(mock_auth):
+    """Cancel trip — should gracefully handle already-cancelled bookings without raising."""
+    from app.api.v1.routes.trips import cancel_trip
+
+    mock_auth.return_value = make_current_user()
+
+    trip = make_mock_trip()
+    trip.status = TripStatus.booking_confirmed
+
+    # One cancelled booking
+    cancelled_booking = MagicMock(spec=Booking)
+    cancelled_booking.booking_id = "BK-CANCEL"
+    cancelled_booking.booking_type = BookingType.hotel
+    cancelled_booking.payment = None
+    cancelled_booking.status = BookingStatus.cancelled
+
+    # One active booking
+    active_booking = MagicMock(spec=Booking)
+    active_booking.booking_id = "BK-ACTIVE"
+    active_booking.booking_type = BookingType.hotel
+    active_booking.payment = None
+    active_booking.status = BookingStatus.confirmed
+
+    trip_result = MagicMock()
+    trip_result.scalar_one_or_none.return_value = trip
+
+    bookings_result = MagicMock()
+    bookings_result.scalars.return_value.all.return_value = [
+        cancelled_booking, active_booking,
+    ]
+
+    db = AsyncMock()
+    db.execute.side_effect = [trip_result, bookings_result]
+
+    with patch("app.api.v1.routes.trips.BookingService") as mock_booking_svc_cls:
+        mock_booking_svc = MagicMock()
+        mock_booking_svc_cls.return_value = mock_booking_svc
+        # First call raises ValueError (already cancelled), second succeeds
+        mock_booking_svc.cancel_booking = AsyncMock(side_effect=[
+            ValueError("already cancelled"),
+            None,
+        ])
+
+        with patch("app.api.v1.routes.trips.FlightService") as mock_flight_svc_cls:
+            mock_flight_svc = MagicMock()
+            mock_flight_svc_cls.return_value = mock_flight_svc
+            mock_flight_svc.cancel_flight_booking = AsyncMock()
+
+            response = await cancel_trip(
+                trip_id="trip_001",
+                current_user=make_current_user(),
+                db=db,
+            )
+
+    # Both bookings should appear as cancelled (graceful handling)
+    assert set(response["cancelled_bookings"]) == {"BK-CANCEL", "BK-ACTIVE"}
+    assert response["trip_id"] == "trip_001"
+    assert trip.status == TripStatus.cancelled
+
+
+@pytest.mark.asyncio
+@patch("app.api.v1.routes.trips.get_current_user")
+async def test_cancel_trip_fails_on_unexpected_booking_error(mock_auth):
+    """Cancel trip — should raise 400 if a booking fails with an unexpected error."""
+    from fastapi import HTTPException
+    from app.api.v1.routes.trips import cancel_trip
+
+    mock_auth.return_value = make_current_user()
+
+    trip = make_mock_trip()
+    trip.status = TripStatus.booking_confirmed
+
+    hotel_booking = MagicMock(spec=Booking)
+    hotel_booking.booking_id = "BK-HOTEL"
+    hotel_booking.booking_type = BookingType.hotel
+    hotel_booking.payment = None
+    hotel_booking.status = BookingStatus.confirmed
+
+    trip_result = MagicMock()
+    trip_result.scalar_one_or_none.return_value = trip
+
+    bookings_result = MagicMock()
+    bookings_result.scalars.return_value.all.return_value = [hotel_booking]
+
+    db = AsyncMock()
+    db.execute.side_effect = [trip_result, bookings_result]
+
+    with patch("app.api.v1.routes.trips.BookingService") as mock_booking_svc_cls:
+        mock_booking_svc = MagicMock()
+        mock_booking_svc_cls.return_value = mock_booking_svc
+        mock_booking_svc.cancel_booking = AsyncMock(
+            side_effect=ValueError("Booking cannot be cancelled in its current state")
+        )
+
+        with patch("app.api.v1.routes.trips.FlightService") as mock_flight_svc_cls:
+            mock_flight_svc = MagicMock()
+            mock_flight_svc_cls.return_value = mock_flight_svc
+            mock_flight_svc.cancel_flight_booking = AsyncMock()
+
+            with pytest.raises(HTTPException) as exc_info:
+                await cancel_trip(
+                    trip_id="trip_001",
+                    current_user=make_current_user(),
+                    db=db,
+                )
+
+    assert exc_info.value.status_code == 400
+    assert "Failed to cancel booking" in exc_info.value.detail
