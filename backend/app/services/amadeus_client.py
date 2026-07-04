@@ -9,6 +9,10 @@ Provides three core operations:
 All methods raise ``ValueError`` with a clean message on API errors so the
 service layer can handle them gracefully (no raw SDK exceptions leak out).
 
+Rate-limit (HTTP 429) responses from Amadeus are raised as a dedicated
+``AmadeusRateLimitError`` so callers can distinguish "temporarily busy"
+from other API failures and respond to the client accordingly.
+
 Usage outside of a service::
 
     from app.services.amadeus_client import amadeus_client
@@ -24,12 +28,24 @@ from app.core.config import settings
 logger = logging.getLogger(__name__)
 
 
+class AmadeusRateLimitError(Exception):
+    """Raised when Amadeus returns HTTP 429 (Too Many Requests).
+
+    Callers (typically the route layer) should catch this separately from
+    ``ValueError`` and return HTTP 429 with a user-friendly "try again in a
+    moment" message, rather than a generic 400/500.
+    """
+    pass
+
+
 class AmadeusClient:
     """Synchronous (SDK-driven) Amadeus API client.
 
     The underlying ``amadeus.Client`` is instantiated once and reused for
     all calls.  All public methods catch ``amadeus.ResponseError`` and
-    re-raise as ``ValueError`` with a human-readable message.
+    re-raise as ``ValueError`` with a human-readable message — except for
+    HTTP 429 (rate limit) responses, which are raised as
+    ``AmadeusRateLimitError`` so callers can handle them distinctly.
 
     **Thread-safety:** The ``amadeus.Client`` is not thread-safe.  In a
     FastAPI async context this is fine as long as each request runs on a
@@ -95,6 +111,7 @@ class AmadeusClient:
 
         Raises:
             ValueError: If the Amadeus API returns an error.
+            AmadeusRateLimitError: If the Amadeus API returns HTTP 429.
         """
         if self._client is None:
             raise ValueError("Amadeus client is not initialised.")
@@ -107,6 +124,13 @@ class AmadeusClient:
             # The SDK returns a Location[] — slice to max_results
             return response.data[:max_results]
         except Exception as exc:
+            status_code = getattr(getattr(exc, "response", None), "status_code", None)
+            if status_code == 429:
+                logger.warning("[AmadeusClient] search_cities rate-limited (429)")
+                raise AmadeusRateLimitError(
+                    "City search service is temporarily busy due to high demand. "
+                    "Please try again in a moment."
+                ) from exc
             msg = self._format_error(exc)
             logger.error("[AmadeusClient] search_cities(%s) failed: %s", keyword, msg)
             raise ValueError(msg) from exc
@@ -140,7 +164,9 @@ class AmadeusClient:
             A list of raw Amadeus offer dicts (``response.data``).
 
         Raises:
-            ValueError: If the Amadeus API returns an error.
+            ValueError: If the Amadeus API returns a non-rate-limit error.
+            AmadeusRateLimitError: If the Amadeus API returns HTTP 429
+                (Too Many Requests) — e.g. more than ~3 requests/second.
         """
         if self._client is None:
             raise ValueError(
@@ -163,6 +189,19 @@ class AmadeusClient:
             response = self._client.shopping.flight_offers_search.get(**params)
             return response.data
         except Exception as exc:
+            # ── Distinguish rate-limit (429) from other API errors ──────────
+            # Amadeus rejects requests with HTTP 429 when more than ~3
+            # requests/second are sent. Without this check, the generic
+            # `except Exception` below would swallow the distinction and
+            # every Amadeus failure (429, malformed params, downtime, etc.)
+            # would look identical to the caller.
+            status_code = getattr(getattr(exc, "response", None), "status_code", None)
+            if status_code == 429:
+                logger.warning("[AmadeusClient] search_flights rate-limited (429)")
+                raise AmadeusRateLimitError(
+                    "Flight search service is temporarily busy due to high demand. "
+                    "Please try again in a moment."
+                ) from exc
             msg = self._format_error(exc)
             logger.error("[AmadeusClient] search_flights failed: %s", msg)
             raise ValueError(msg) from exc
