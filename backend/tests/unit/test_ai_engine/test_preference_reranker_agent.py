@@ -400,14 +400,18 @@ class TestInterpretPreferenceAdjustment:
 
     @pytest.mark.asyncio
     async def test_llm_returns_none_falls_back(self):
-        """LLM returns None (all fields empty) → empty dict fallback."""
-        # A PreferenceAdjustment with all-None fields → model_dump(exclude_none=True) → {}
-        mock_response = PreferenceAdjustment()  # all fields default to None
+        """LLM returns only rerank_reason (no other adjustments) graceful fallback."""
+        # The LLM may return a PreferenceAdjustment with only rerank_reason,
+        # meaning "no changes needed". This should produce a result with
+        # at minimum rerank_reason present.
+        mock_response = PreferenceAdjustment(
+            rerank_reason="No changes needed — current preferences already match the request.",
+        )
 
         with patch("ai_engine.agents.preference_reranker_agent.invoke_with_fallback", return_value=mock_response):
             result = await interpret_preference_adjustment("no changes needed")
 
-        assert result == {}
+        assert result == {"rerank_reason": "No changes needed — current preferences already match the request."}
 
     @pytest.mark.asyncio
     async def test_llm_exception_falls_back(self):

@@ -619,7 +619,7 @@ async def interpret_message(state: ConversationState, user_message: str) -> Inte
     # sounds like a modification request.
     if state.phase == ConversationPhase.ITINERARY_REVIEW and action != "modify_itinerary":
         msg_lower = user_message.lower()
-        modification_keywords = ["add ", "remove ", "delete ", "change ", "swap ", "switch ", "replace ", "update ", "modify ", "insert ", "include ", "exclude ", "put ", "drop ", "take out", "get rid of"]
+        modification_keywords = ["add ", "remove ", "delete ", "change ", "swap ", "switch ", "replace ", "update ", "modify ", "insert ", "include ", "exclude ", "put ", "drop ", "take out", "get rid of", "not", "don't", "instead", "different", "another", "reorder", "move ", "reschedule", "shorten", "extend", "replace", "prefer", "rather"]
         if any(kw in msg_lower for kw in modification_keywords):
             logger.info(
                 "[Interpreter] Safety override: '%s' → modify_itinerary (phase=%s, action=%s)",
@@ -636,6 +636,7 @@ async def interpret_message(state: ConversationState, user_message: str) -> Inte
     _specialized_phases = {
         ConversationPhase.FLIGHT_SELECTION,
         ConversationPhase.HOTEL_SELECTION,
+        ConversationPhase.ITINERARY_REVIEW,
         ConversationPhase.BOOKING,
         ConversationPhase.COMPLETED,
     }

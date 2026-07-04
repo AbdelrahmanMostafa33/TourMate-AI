@@ -46,7 +46,10 @@ You receive:
 itinerary reflect the user's request. Return a JSON object with ONLY the
 fields that need to change.
 
-**Available adjustments**:
+**Required (always include)**:
+- `rerank_reason`: One sentence explaining why these changes match the request
+
+**Optional adjustments** (include only what needs to change):
 - `interests_add`: List of new interests to add (e.g. ["entertainment",
   "nightlife", "shopping", "history", "nature", "food", "museums"])
 - `interests_remove`: List of interests to remove
@@ -59,7 +62,6 @@ fields that need to change.
 - `accommodation_preferences_add`: New accommodation types to add
 - `accommodation_preferences_remove`: Accommodation types to remove
 - `special_focus`: A short phrase describing the new focus
-- `rerank_reason`: One sentence explaining why these changes match the request
 
 **Examples**:
 - "more entertaining" → {"interests_add": ["entertainment", "nightlife"],
@@ -84,7 +86,9 @@ fields that need to change.
 
 **Rules**:
 - Only include fields that actually need to change
-- If the request doesn't imply any change, return an empty object {}
+- Always provide a rerank_reason explaining why the changes make sense
+- If the request doesn't imply any change, return rerank_reason alone set to
+  "No changes needed — current preferences already match the request."
 - Return ONLY valid JSON — no preamble, no markdown fences
 """
 
@@ -140,8 +144,7 @@ class PreferenceAdjustment(BaseModel):
         default=None,
         description="A short phrase describing the new focus",
     )
-    rerank_reason: Optional[str] = Field(
-        default=None,
+    rerank_reason: str = Field(
         description="One sentence explaining why these changes match the request",
     )
 
@@ -232,8 +235,13 @@ Determine the preference adjustments needed."""
             return {}
 
         # Convert to dict, dropping None fields to match caller expectations.
-        # The caller (orchestrator) treats {} as "no changes needed".
+        # rerank_reason is now required, so it will always be present.
         result = response.model_dump(exclude_none=True)
+
+        # Defensive: if rerank_reason is somehow missing (e.g. model quirk),
+        # inject a fallback so the caller never sees an empty dict.
+        if "rerank_reason" not in result:
+            result["rerank_reason"] = "Preferences adjusted based on user request."
 
         logger.info(
             "[PreferenceReranker] Interpreted '%s' → %s",
