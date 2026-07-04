@@ -32,7 +32,7 @@ class TestConversationPhase:
         assert ConversationPhase.COMPLETED.value == "completed"
 
     def test_phase_count(self):
-        assert len(ConversationPhase) == 8
+        assert len(ConversationPhase) == 9
 
 
 # ── TripSlots Tests ───────────────────────────────────────────────────────────

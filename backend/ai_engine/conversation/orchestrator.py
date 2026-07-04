@@ -85,7 +85,7 @@ from ai_engine.schemas.vision_schema import VisionFeatures
 from ai_engine.tools.profile_tool import load_trip_profile, load_mock_profile
 
 # LangSmith tracing
-from ai_engine.observability import traced
+from ai_engine.observability import traced, update_trace_metadata
 
 # Agent metrics (latency / error tracking per pipeline step)
 from ai_engine.evaluation.agent_metrics import agent_metrics
@@ -130,6 +130,20 @@ async def _process_message(
     token: Optional[str],
 ) -> dict:
     """Core routing logic shared by handle_chat and handle_chat_stream."""
+    # Attach conversation history to LangSmith trace for visibility
+    try:
+        if state and hasattr(state, 'history') and state.history:
+            summary = [
+                {"role": m.role, "content_snippet": (m.content or "")[:120]}
+                for m in state.history[-10:]
+            ]
+            update_trace_metadata({
+                "conversation_history": summary,
+                "phase": state.phase.value if state else "",
+                "turn_count": state.turn_count,
+            })
+    except Exception:
+        pass
     try:
         return await _process_message_inner(user_id, state, effective_message, image_features, token)
     except Exception:
@@ -178,6 +192,170 @@ async def _process_message_inner(
         if response.get("message"):
             state.add_assistant_message(response["message"])
         return response
+
+
+    # ── CASE 2: IMAGE_REVIEW phase — user responding to image analysis ──
+    if state.phase == ConversationPhase.IMAGE_REVIEW:
+        # User uploaded another image — replace pending and show new review
+        if image_features and image_features.confidence != "low":
+            state.pending_image_features = image_features.model_dump()
+            message = _build_image_review_message(image_features)
+            response = {
+                "response_type": "clarification",
+                "message": message,
+                "itinerary": None,
+                "image_features": image_features,
+            }
+            state.add_user_message(effective_message, metadata={"action": "image_review"})
+            state.add_assistant_message(response["message"])
+            return response
+
+        msg_lower = effective_message.lower().strip()
+
+        # ── Check for confirmation ────────────────────────────────────────
+        confirmation_keywords = (
+            "yes", "yeah", "yep", "sure", "ok", "okay",
+            "plan it", "plan", "go ahead", "let's do it", "let's go",
+            "sounds good", "looks good", "that sounds good", "that looks good",
+            "proceed", "continue", "correct", "right", "agree", "i agree",
+            "make it", "do it", "perfect", "absolutely", "definitely",
+        )
+        rejection_keywords = (
+            "no", "nope", "nah", "never mind", "forget it", "forget",
+            "no thanks", "no thank you", "not really", "not interested",
+            "start over", "reset", "cancel", "skip",
+        )
+
+        is_confirmed = any(
+            msg_lower == kw or msg_lower.startswith(kw + " ") or msg_lower.startswith(kw + ",")
+            or msg_lower.startswith(kw + ".") or msg_lower == kw + "!"
+            for kw in confirmation_keywords
+        )
+        is_rejected = any(
+            msg_lower == kw or msg_lower.startswith(kw + " ") or msg_lower.startswith(kw + ",")
+            or msg_lower.startswith(kw + ".") or msg_lower == kw + "!"
+            for kw in rejection_keywords
+        )
+
+        if is_confirmed:
+            # User confirmed — fuse pending features into slots
+            pending = state.pending_image_features
+            if pending:
+                _fuse_pending_image_features(state, pending)
+                logger.info(
+                    "[ConversationAgent] User confirmed image preferences — fused into slots"
+                )
+            state.pending_image_features = None
+
+            # ── Check what slots are already filled ──────────────────────
+            city = state.slots.destination_city
+            duration = state.slots.duration_days
+            state.slots.fill_defaults()
+
+            if state.slots.is_complete():
+                # All slots are filled — proceed directly to plan generation
+                state.transition_to(ConversationPhase.PLAN_GENERATION)
+                state.plan_started_at = datetime.now(timezone.utc).isoformat()
+                response = await _handle_plan_trip(
+                    user_id, effective_message, {}, image_features, token, state
+                )
+                state.add_user_message(effective_message, metadata={"action": "confirm_image"})
+                if response and response.get("message"):
+                    state.add_assistant_message(response["message"])
+                return response
+
+            state.transition_to(ConversationPhase.SLOT_FILLING)
+
+            if not city:
+                message = (
+                    "Great! I've noted your preferences from the photo. "
+                    "Now, where would you like to go? I can plan a trip to cities like "
+                    "Cairo, Luxor, Aswan, or anywhere else you're interested in."
+                )
+            elif not duration:
+                message = (
+                    "Great! I've noted your preferences from the photo, and "
+                    "I see you're interested in visiting " + str(city) + ". "
+                    "How many days would you like for your trip?"
+                )
+            else:
+                missing = state.slots.missing_required()
+                msg_parts = ["Great! I've noted your preferences from the photo."]
+                msg_parts.append(" Let's plan your trip to " + str(city))
+                if duration:
+                    day_word = "day" + ("s" if duration != 1 else "")
+                    msg_parts.append(" for " + str(duration) + " " + day_word)
+                msg_parts.append("!")
+                msg_parts.append(" Just a few more details: " + ", ".join(missing) + ".")
+                message = "".join(msg_parts)
+            response = {
+                "response_type": "clarification",
+                "message": message,
+                "itinerary": None,
+                "image_features": None,
+            }
+            state.add_user_message(effective_message, metadata={"action": "confirm_image"})
+            state.add_assistant_message(response["message"])
+            return response
+
+        elif is_rejected:
+            # User declined — discard image features and start fresh
+            state.pending_image_features = None
+            state.transition_to(ConversationPhase.SLOT_FILLING)
+            logger.info(
+                "[ConversationAgent] User declined image preferences — starting fresh"
+            )
+
+            message = (
+                "No problem! Let's start fresh. "
+                "Where would you like to go? I can plan a trip to cities like "
+                "Cairo, Luxor, Aswan, or anywhere else you're interested in."
+            )
+            response = {
+                "response_type": "clarification",
+                "message": message,
+                "itinerary": None,
+                "image_features": None,
+            }
+            state.add_user_message(effective_message, metadata={"action": "reject_image"})
+            state.add_assistant_message(response["message"])
+            return response
+
+        # ── Unclear response — ask again ──────────────────────────────────
+        pending = state.pending_image_features
+        if pending:
+            message = _build_image_review_retry_message(pending)
+        else:
+            message = (
+                "I'm not sure what you meant. Would you like me to plan a trip "
+                "based on your photo? Just say 'yes' or 'no thanks'."
+            )
+        response = {
+            "response_type": "clarification",
+            "message": message,
+            "itinerary": None,
+            "image_features": None,
+        }
+        state.add_user_message(effective_message, metadata={"action": "image_review"})
+        state.add_assistant_message(response["message"])
+        return response
+
+    # ── Fresh image upload in early phase → show review (intercept before interpreter) ──
+    if (image_features and image_features.confidence != "low"
+        and state.phase in (ConversationPhase.GREETING, ConversationPhase.SLOT_FILLING)):
+        state.pending_image_features = image_features.model_dump()
+        state.transition_to(ConversationPhase.IMAGE_REVIEW)
+        message = _build_image_review_message(image_features)
+        response = {
+            "response_type": "clarification",
+            "message": message,
+            "itinerary": None,
+            "image_features": image_features,
+        }
+        state.add_user_message(effective_message, metadata={"action": "image_uploaded"})
+        state.add_assistant_message(response["message"])
+        return response
+
 
     # ── STEP 1: Call message interpreter ──────────────────────────────────
     router_result = await interpret_message(state, effective_message)
@@ -1205,6 +1383,122 @@ async def _stream_text(text: str):
             yield {"type": "text", "content": content}
         if i < len(lines) - 1:
             yield {"type": "text", "content": "\n"}
+
+
+# ── Image Review Helpers ─────────────────────────────────────────────────────
+
+
+def _build_image_review_message(features) -> str:
+    """Build a detailed image review message showing what was extracted.
+
+    Shows interests, food_preferences, environment_type, and vibe.
+    Does NOT show pace, budget_level, or travel_style per user request.
+    """
+    bits = []
+    if features.interests:
+        bits.append(f"• You seem interested in: **{', '.join(features.interests[:5])}**")
+    if features.food_preferences:
+        bits.append(f"• You might enjoy: **{', '.join(features.food_preferences[:3])}** cuisine")
+    if features.environment_type:
+        bits.append(f"• The setting looks like: **{features.environment_type}**")
+    if features.vibe:
+        bits.append(f"• Overall vibe: *\"{features.vibe}\"*")
+
+    if not bits:
+        return (
+            "I've analyzed your photo, but I couldn't identify specific travel preferences "
+            "from it. Would you like to tell me what kind of trip you're looking for, "
+            "or would you like to try uploading a different photo?"
+        )
+
+    message = "I've analyzed your photo! Here's what stands out:\n\n"
+    message += "\n".join(bits)
+    message += (
+        "\n\nWould you like me to plan a trip based on these preferences? "
+        "Just say **'yes'** to go ahead, **'no thanks'** to start fresh, "
+        "or tell me what you'd like to change."
+    )
+    return message
+
+
+def _build_image_review_retry_message(pending: dict) -> str:
+    """Build a retry message when the user's response is unclear."""
+    bits = []
+    interests = pending.get("interests", [])
+    food_prefs = pending.get("food_preferences", [])
+    env = pending.get("environment_type")
+    vibe = pending.get("vibe")
+
+    if interests:
+        bits.append(f"interested in {', '.join(interests[:5])}")
+    if food_prefs:
+        bits.append(f"enjoying {', '.join(food_prefs[:3])} cuisine")
+    if env:
+        bits.append(f"a {env} setting")
+    if vibe:
+        bits.append(f'a "{vibe}" vibe')
+
+    hint = ", ".join(bits) if bits else "some preferences from your photo"
+
+    return (
+        f"I'm not sure if that's a yes or no. Based on your photo, I noticed you seem "
+        f"{hint}. "
+        f"Would you like me to plan a trip based on these preferences? "
+        f"Just say **'yes'** to go ahead, **'no thanks'** to start fresh, "
+        f"or tell me what you'd like to change."
+    )
+
+
+def _fuse_pending_image_features(state, pending: dict) -> None:
+    """Merge stored VisionFeatures dict into the conversation state slots.
+
+    This is called when the user confirms the image review, fusing the
+    extracted preferences (interests, food, travel_style, pace, budget)
+    into the trip slots so downstream planning uses them.
+    """
+    # ── Merge interests (union, no duplicates) ─────────────────────────────
+    img_interests = pending.get("interests", [])
+    if img_interests:
+        existing = state.slots.interests or []
+        existing_lower = {i.lower() for i in existing}
+        for interest in img_interests:
+            if interest.lower() not in existing_lower:
+                existing.append(interest)
+                existing_lower.add(interest.lower())
+        state.slots.interests = existing
+
+    # ── Merge food preferences (union, no duplicates) ──────────────────────
+    img_food = pending.get("food_preferences", [])
+    if img_food:
+        existing = state.slots.food_preferences or []
+        existing_lower = {f.lower() for f in existing}
+        for pref in img_food:
+            if pref.lower() not in existing_lower:
+                existing.append(pref)
+                existing_lower.add(pref.lower())
+        state.slots.food_preferences = existing
+
+    # ── Merge scalar fields (only if image provides a non-None value) ─────────
+    scalar_map = {
+        "travel_style": "travel_style",
+        "pace": "pace",
+        "budget_level": "budget_level",
+    }
+    for img_key, slot_attr in scalar_map.items():
+        val = pending.get(img_key)
+        if val is not None and not getattr(state.slots, slot_attr, None):
+            setattr(state.slots, slot_attr, val)
+
+    logger.info(
+        "[ImageReview] Fused pending image features: %d interests, %d food_prefs, "
+        "style=%s, pace=%s, budget=%s",
+        len(img_interests),
+        len(img_food),
+        pending.get("travel_style"),
+        pending.get("pace"),
+        pending.get("budget_level"),
+    )
+
 
 def _build_booking_data(state: ConversationState) -> dict:
     itinerary = state.itinerary or {}

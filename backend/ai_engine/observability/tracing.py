@@ -38,7 +38,7 @@ from __future__ import annotations
 
 import logging
 import os
-from typing import Callable, Optional
+from typing import Any, Callable, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -50,6 +50,31 @@ logger = logging.getLogger(__name__)
 def get_tracing_enabled() -> bool:
     """Check if LangSmith tracing is enabled via environment variables."""
     return os.environ.get("LANGCHAIN_TRACING_V2", "").lower() == "true"
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Attach dynamic metadata to the current LangSmith trace run
+# ══════════════════════════════════════════════════════════════════════════════
+
+def update_trace_metadata(extra: dict) -> None:
+    """Attach metadata to the currently active LangSmith trace run.
+
+    Safe to call even when tracing is disabled or langsmith is not
+    installed — silently no-ops in those conditions.
+
+    Args:
+        extra: Dict of metadata key/value pairs to merge into the
+               current trace run's metadata.
+    """
+    try:
+        from langsmith.run_trees import get_run_tree_context
+        ctx = get_run_tree_context()
+        if ctx and ctx.run and extra:
+            if ctx.run.metadata is None:
+                ctx.run.metadata = {}
+            ctx.run.metadata.update(extra)
+    except Exception:
+        logger.debug("[Tracing] Failed to update trace metadata", exc_info=True)
 
 
 # ══════════════════════════════════════════════════════════════════════════════

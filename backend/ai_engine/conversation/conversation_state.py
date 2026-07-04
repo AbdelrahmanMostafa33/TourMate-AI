@@ -65,6 +65,7 @@ class ConversationPhase(str, Enum):
     HOTEL_SELECTION   = "hotel_selection"
     BOOKING           = "booking"
     COMPLETED         = "completed"
+    IMAGE_REVIEW      = "image_review"
 
 
 # ── Trip Slots ────────────────────────────────────────────────────────────────
@@ -306,6 +307,7 @@ class ConversationState:
     version:      int = 0
     last_question_field: Optional[str] = None
     plan_started_at: Optional[str] = None
+    pending_image_features: Optional[Dict[str, Any]] = None
 
     def __post_init__(self):
         now = datetime.now(timezone.utc).isoformat()
@@ -334,6 +336,7 @@ class ConversationState:
             "version":      self.version,
             "last_question_field": self.last_question_field,
             "plan_started_at": self.plan_started_at,
+            "pending_image_features": self.pending_image_features,
         }
 
     @classmethod
@@ -357,6 +360,7 @@ class ConversationState:
             version      = data.get("version", 0),
             last_question_field = data.get("last_question_field"),
             plan_started_at = data.get("plan_started_at"),
+            pending_image_features = data.get("pending_image_features"),
         )
 
     # ── Mutations ────────────────────────────────────────────────────────────
