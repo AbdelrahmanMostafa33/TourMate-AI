@@ -443,19 +443,33 @@ async def process_message_stream(
                     actions = [{"type": "CREATE_TRIP", "data": result["itinerary"]}]
                     # Persist itinerary data for chat history reconstruction
                     response_metadata["itinerary_data"] = result["itinerary"]
-                    # Only send itinerary_data to Flutter and render as card if this is
-                    # the first itinerary for this conversation.  For follow-up messages
-                    # that merely carry the itinerary as AI context, persist the data
-                    # but skip the card event — Flutter's _attachItinerary replaces
-                    # the assistant message text with an empty string, erasing the
-                    # plain-text response.
-                    if conversation.conversation_id not in _conversations_with_itinerary_card:
+                    # ── UI INTENT PROTOCOL ─────────────────────────────────────
+                    # The orchestrator encodes explicit UI intent via `ui.actions`.
+                    # - "replace_itinerary_card": itinerary has changed and the card
+                    #   should be replaced (modifications, accommodation swaps, etc.)
+                    # - No action: itinerary is carried as AI context only, don't
+                    #   touch the card (hotel selection, flight selection responses)
+                    #
+                    # For the first-time card (no prior card in this conversation),
+                    # always send itinerary_data regardless of UI actions.
+                    #
+                    # This replaces the previous _conversations_with_itinerary_card-only
+                    # guard which suppressed ALL subsequent itinerary_data events —
+                    # including legitimate modifications.
+                    ui = result.get("ui") or {}
+                    ui_actions = ui.get("actions", []) if isinstance(ui, dict) else []
+                    should_replace = "replace_itinerary_card" in ui_actions
+                    is_first_card = conversation.conversation_id not in _conversations_with_itinerary_card
+
+                    if should_replace or is_first_card:
                         await manager.send(ws_key, {
                             "type": "itinerary_data",
                             "data": result["itinerary"],
                         })
                         rendered_cards.append("itinerary")
-                        _conversations_with_itinerary_card.add(conversation.conversation_id)
+                        if is_first_card:
+                            _conversations_with_itinerary_card.add(conversation.conversation_id)
+
                     # Also forward accommodation_suggestions as hotel_options for card rendering
                     accommodation = result["itinerary"].get("accommodation_suggestions", [])
                     if accommodation:

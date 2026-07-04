@@ -40,6 +40,33 @@ def _coerce_int(value) -> int | None:
         return None
 
 
+def _coerce_list(value) -> list[str] | None:
+    """Coerce a value to a list of strings.
+
+    Handles the common LLM bug where ``Optional[List[str]]`` fields are
+    returned as a JSON-encoded string (e.g. ``'["history"]'``) instead of
+    a native list (``["history"]``).
+    """
+    if value is None:
+        return None
+    if isinstance(value, list):
+        return [str(item) for item in value if item is not None]
+    if isinstance(value, str):
+        value = value.strip()
+        # Try parsing as JSON array (most common LLM bug)
+        if value.startswith("[") and value.endswith("]"):
+            try:
+                import json
+                parsed = json.loads(value)
+                if isinstance(parsed, list):
+                    return [str(item) for item in parsed if item is not None]
+            except json.JSONDecodeError:
+                pass
+        # Treat bare string as single-element list
+        return [value]
+    return None
+
+
 # ── Structured Output Schema (Pydantic) ──────────────────────────────────────
 
 class ExtractedSlots(BaseModel):
@@ -74,7 +101,7 @@ class ExtractedSlots(BaseModel):
         default=None,
         description="Traveler group type: 'solo', 'couple', 'family', 'friends', or 'business'",
     )
-    special_requests: Optional[List[str]] = Field(
+    special_requests: Optional[Annotated[List[str], BeforeValidator(_coerce_list)]] = Field(
         default=None,
         description="Any special requirements or requests (e.g. ['add Grand Egyptian Museum'])",
     )
@@ -90,15 +117,15 @@ class ExtractedSlots(BaseModel):
         default=None,
         description="Pace: 'relaxed', 'moderate', or 'packed'",
     )
-    interests: Optional[List[str]] = Field(
+    interests: Optional[Annotated[List[str], BeforeValidator(_coerce_list)]] = Field(
         default=None,
         description="List of interests (e.g. ['history', 'food', 'architecture'])",
     )
-    food_preferences: Optional[List[str]] = Field(
+    food_preferences: Optional[Annotated[List[str], BeforeValidator(_coerce_list)]] = Field(
         default=None,
         description="Food preferences (e.g. ['local cuisine', 'vegetarian'])",
     )
-    accommodation_preferences: Optional[List[str]] = Field(
+    accommodation_preferences: Optional[Annotated[List[str], BeforeValidator(_coerce_list)]] = Field(
         default=None,
         description=(
             "Accommodation preferences using natural language that maps to accommodation types. "
@@ -447,10 +474,88 @@ async def interpret_message(state: ConversationState, user_message: str) -> Inte
 
     interpreter_output: Optional[InterpreterOutput] = None
     try:
-        interpreter_output = await invoke_with_fallback("router", messages, structured_output=InterpreterOutput)
+        interpreter_output = await invoke_with_fallback(
+            "router", messages, structured_output=InterpreterOutput
+        )
     except Exception as e:
-        logger.error("Message interpreter LLM failed: %s", e)
-        interpreter_output = None
+        # ── Schema validation error → retry with manual JSON parsing ──
+        # Groq's function-calling API validates tool call parameters before
+        # Pydantic's BeforeValidator gets a chance to run. When the LLM
+        # returns a list field as a JSON-encoded string (e.g.
+        # interests='["history"]' instead of interests=["history"]), the
+        # Groq API rejects it with a 400 error.
+        #
+        # Solution: fall back to plain-text JSON output, which bypasses
+        # Groq's strict tool-calling validation. The BeforeValidator on
+        # list fields (see ExtractedSlots) then handles the coercion
+        # during Pydantic model_validate.
+        msg_lower = str(e).lower()
+        is_schema_error = any(
+            kw in msg_lower
+            for kw in ("tool call validation failed", "did not match schema",
+                       "tool_use_failed", "invalid_request_error")
+        )
+        if is_schema_error:
+            logger.warning(
+                "[Interpreter] Schema validation error — falling back to manual JSON parsing"
+            )
+            try:
+                # Append a JSON response instruction so the LLM knows to
+                # output raw JSON instead of conversational text.
+                import json as _json_module
+                import re as _re_module
+
+                json_prompt = (
+                    "\n\nIMPORTANT: Respond with ONLY valid JSON matching this exact schema. "
+                    "Do NOT include markdown fences, explanation, or any text "
+                    "outside the JSON object.\n"
+                    "Schema: "
+                    "{\"action\": (str), "
+                    "\"extracted\": {"  # … all ExtractedSlots fields
+                    "\"destination_city\": (str|null), "
+                    "\"destination_country\": (str|null), "
+                    "\"duration_days\": (str|null), "
+                    "\"interests\": (list[str]|null), "
+                    "\"food_preferences\": (list[str]|null), "
+                    "\"accommodation_preferences\": (list[str]|null), "
+                    "…other fields null},"
+                    "\"response\": (str)}"
+                )
+                fallback_messages = list(messages) + [
+                    SystemMessage(content=json_prompt)
+                ]
+                raw_response = await invoke_with_fallback(
+                    "router", fallback_messages
+                )
+                raw_text = raw_response.content
+                # Strip markdown fences if present
+                if raw_text.startswith("```"):
+                    raw_text = _re_module.sub(
+                        r"^```(?:json)?\s*\n?", "", raw_text
+                    )
+                    raw_text = _re_module.sub(
+                        r"\n?```\s*$", "", raw_text
+                    )
+                raw_text = raw_text.strip()
+                parsed_json = _json_module.loads(raw_text)
+                interpreter_output = InterpreterOutput.model_validate(
+                    parsed_json
+                )
+                logger.info(
+                    "[Interpreter] Manual JSON parsing succeeded — "
+                    "action=%s, interests=%s",
+                    interpreter_output.action,
+                    interpreter_output.extracted.interests,
+                )
+            except Exception as fallback_err:
+                logger.error(
+                    "[Interpreter] Manual JSON parsing also failed: %s",
+                    fallback_err,
+                )
+                interpreter_output = None
+        else:
+            logger.error("Message interpreter LLM failed: %s", e)
+            interpreter_output = None
 
     if interpreter_output:
         action = _normalize_action(interpreter_output.action)

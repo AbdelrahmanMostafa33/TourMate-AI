@@ -48,6 +48,13 @@ class ChatRepository {
     }
   }
 
+  /// Update the WebSocket connection to point to an existing trip.
+  /// Called after trip creation so reconnections go to the trip's chat
+  /// instead of creating a fresh new chat.
+  void updateConnectionToTrip(String tripId) {
+    _ws.updateConnectionToTrip(tripId);
+  }
+
   void sendMessage(String message, {Uint8List? imageBytes}) {
     _ws.sendMessage(message, imageBytes: imageBytes);
   }

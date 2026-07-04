@@ -130,7 +130,23 @@ class ChatWebSocketService {
     if (imageBytes != null) {
       payload["image"] = base64Encode(imageBytes);
     }
+    debugPrint('[WS] 📤 sendMessage: channel=${_channel != null ? "alive" : "NULL"}, message="${message.length > 80 ? "${message.substring(0, 80)}..." : message}"');
+    if (_channel == null) {
+      debugPrint('[WS] ❌ sendMessage FAILED — _channel is null, message dropped');
+    }
     _channel?.sink.add(jsonEncode(payload));
+  }
+
+  /// Update the connection parameters to point to an existing trip's chat.
+  /// Called after a new chat creates a trip, so that if the WebSocket
+  /// reconnects, it connects to the trip's existing conversation instead
+  /// of creating another fresh one.
+  void updateConnectionToTrip(String tripId) {
+    debugPrint('[WS] updateConnectionToTrip: tripId=$tripId');
+    _lastParams = _ConnectionParams(
+      isNewChat: false,
+      tripId: tripId,
+    );
   }
 
   /// Explicitly disconnect. Disables automatic reconnection.

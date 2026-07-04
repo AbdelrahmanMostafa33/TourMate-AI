@@ -436,6 +436,7 @@ async def _process_message_inner(
                         "itinerary": state.itinerary,
                         "image_features": None,
                         "action": "approve_itinerary",
+                        "ui": {"actions": ["replace_itinerary_card"]},
                     }
                 else:
                     response = {
@@ -694,12 +695,13 @@ async def handle_chat_stream(user_id, user_message, image_bytes=None, token=None
             "message": response.get("message", ""),
             "phase": phase_value,
             "session_id": state.session_id,
+            "ui": response.get("ui"),
         }
         if response.get("action"):
             result_data["action"] = response["action"]
 
         # Itinerary data
-        if response.get("itinerary"):
+        if response.get("itinerary") and response.get("response_type") != "chat":
             result_data["itinerary"] = response["itinerary"]
 
         # Common optional fields
@@ -1151,6 +1153,7 @@ async def _run_hotel_selection_and_present(
                 "itinerary": state.itinerary,
                 "image_features": image_features,
                 "agent_messages": hotel_agent_msgs,
+                "ui": {"actions": ["replace_itinerary_card"]},
             }
         else:
             return {
@@ -1398,6 +1401,7 @@ def _itinerary_response(
         "itinerary": modified,
         "image_features": image_features,
         "pool_state": state.get_pool_state(),
+        "ui": {"actions": ["replace_itinerary_card"]},
     }
     if agent_messages:
         response["agent_messages"] = agent_messages
@@ -1425,7 +1429,9 @@ def _modifier_blocked_response(
         "image_features": image_features,
         "pool_state": state.get_pool_state(),
         "agent_messages": msgs,
+        "ui": {"actions": ["replace_itinerary_card"]},
     }
+
 
 async def _apply_modifier_edit(
     state: ConversationState,
@@ -2558,4 +2564,5 @@ async def _handle_plan_trip(user_id, user_message, extracted, image_features, to
             "explanation": explanation,
             "agent_metrics": agent_metrics_summary,
             "pool_state": state.get_pool_state() if state else None,
-        }
+    
+        "ui": {"actions": ["replace_itinerary_card"]},    }

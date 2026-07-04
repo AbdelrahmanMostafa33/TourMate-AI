@@ -550,7 +550,8 @@ class ChatCubit extends Cubit<ChatState> {
   }
 
   /// Compute a signature for an itinerary to detect duplicates.
-  /// Uses destination + duration + sorted stop IDs across all days.
+  /// Uses destination + duration + sorted stop IDs across all days
+  /// AND hotel IDs from accommodationSuggestions to detect accommodation changes.
   String _computeItinerarySignature(ItineraryData itinerary) {
     final stopIds = <String>[];
     for (final day in itinerary.days) {
@@ -559,7 +560,14 @@ class ChatCubit extends Cubit<ChatState> {
       }
     }
     stopIds.sort();
-    return '${itinerary.destination}|${itinerary.durationDays}|${stopIds.join(",")}';
+    // Include hotel suggestion IDs from the top-level accommodationSuggestions
+    // to detect accommodation changes (new hotels added, hotels swapped, etc.)
+    final hotelIds = itinerary.accommodationSuggestions
+        .map((h) => h.id)
+        .where((id) => id.isNotEmpty)
+        .toList()
+      ..sort();
+    return '${itinerary.destination}|${itinerary.durationDays}|${stopIds.join(",")}|hotels:${hotelIds.join(",")}';
   }
 
   /// Check if an itinerary is a duplicate of what's already rendered.
@@ -795,6 +803,11 @@ class ChatCubit extends Cubit<ChatState> {
           // Store trip_id for later navigation
           _bookingTripId = tripId;
 
+          // Update WS connection params so reconnections go to the
+          // trip-specific endpoint instead of creating a new chat.
+          _repo.updateConnectionToTrip(tripId);
+          debugPrint('[ChatCubit] Updated WS connection to trip $tripId');
+
           // Notify parent (e.g. MainShell) to refresh the trips list.
           onTripCreated?.call();
         }
@@ -803,16 +816,17 @@ class ChatCubit extends Cubit<ChatState> {
       case "trip_approved":
         // The trip was approved (status → awaiting_booking/booking_pending).
         // The UI can read bookingTripId to navigate to the trip detail page.
-        debugPrint('[ChatCubit] trip_approved event received, tripId=$_bookingTripId');
-
-        // Lock the itinerary signature so subsequent phase transitions (e.g.
-        // after the booking flow) don't re-render the same itinerary card.
-        // Before approval, the signature is null so modifications always get
-        // a fresh card (duplicate suppression only applies post-approval).
-        if (_messages.isNotEmpty && !_messages.last.isUser && _messages.last.itinerary != null) {
-          _renderedItinerarySignature = _computeItinerarySignature(_messages.last.itinerary!);
-          debugPrint('[ChatCubit] 🛑 Locked itinerary signature after approval: $_renderedItinerarySignature');
-        }
+        debugPrint('[ChatCubit] trip_approved event received, tripId=$_bookingTripId');          // Lock the itinerary signature so subsequent phase transitions (e.g.
+          // after the booking flow) don't re-render the same itinerary card.
+          // Before approval, the signature is null so modifications always get
+          // a fresh card (duplicate suppression only applies post-approval).
+          // Note: _attachItinerary always replaces text with card even when the
+          // signature matches — the locked signature only prevents creating
+          // DUPLICATE messages, not replacing text with the card.
+          if (_messages.isNotEmpty && !_messages.last.isUser && _messages.last.itinerary != null) {
+            _renderedItinerarySignature = _computeItinerarySignature(_messages.last.itinerary!);
+            debugPrint('[ChatCubit] 🛑 Locked itinerary signature after approval: $_renderedItinerarySignature');
+          }
 
         if (_messages.isNotEmpty && !_messages.last.isUser) {
           final last = _messages.last;
@@ -839,7 +853,10 @@ class ChatCubit extends Cubit<ChatState> {
             debugPrint('[ChatCubit] 🔍 flight_booking value type=${fb.runtimeType}, null? ${fb == null}, value=$fb');
           }
 
-          // Parse itinerary if present — suppress duplicates from phase transitions
+          // Parse itinerary if present — always attach to replace streamed text
+          // with the card, even if the itinerary is a duplicate.  Duplicate suppression
+          // only prevents CREATING a second card/message — it must NOT leave the
+          // streamed text visible when a structured itinerary exists.
           final itinerary = _tryParseItinerary(resultPayload["itinerary"]);
           if (itinerary != null) {
             if (!_isDuplicateItinerary(itinerary)) {
@@ -847,7 +864,11 @@ class ChatCubit extends Cubit<ChatState> {
               _renderedItinerarySignature = _computeItinerarySignature(itinerary);
               debugPrint('[ChatCubit] ✅ Attached itinerary card from result event (${itinerary.destination}, ${itinerary.days.length} days)');
             } else {
-              debugPrint('[ChatCubit] Suppressed duplicate itinerary in result event (phase transition)');
+              // Duplicate detected — still attach to replace streamed text with
+              // the card.  The duplicate check prevents creating a NEW message,
+              // but the existing streaming text must be replaced by the card.
+              debugPrint('[ChatCubit] Duplicate itinerary — still attaching to replace streamed text');
+              _attachItinerary(itinerary);
             }
           }
 
@@ -895,13 +916,16 @@ class ChatCubit extends Cubit<ChatState> {
           // The AI engine sends the same itinerary with every response
           // even during FLIGHT_SELECTION/HOTEL_SELECTION phases — we only
           // want to render the card once (when it first arrives).
+          // Even when duplicate, still attach to replace streamed text with card.
           if (!_isDuplicateItinerary(itinerary)) {
             _attachItinerary(itinerary);
             _renderedItinerarySignature = _computeItinerarySignature(itinerary);
             final stopCount = itinerary.days.fold<int>(0, (sum, d) => sum + d.stops.length);
             debugPrint('[ChatCubit] ✅ Attached itinerary card (${itinerary.destination}, ${itinerary.days.length} days, $stopCount stops)');
           } else {
-            debugPrint('[ChatCubit] Suppressed duplicate itinerary card (phase transition)');
+            // Even for duplicates, attach to replace streamed text with the card
+            debugPrint('[ChatCubit] Duplicate itinerary_data — still attaching to replace text');
+            _attachItinerary(itinerary);
           }
           final currentIsTyping = state.maybeWhen(
             connected: (_, isTyping, _, _) => isTyping,
