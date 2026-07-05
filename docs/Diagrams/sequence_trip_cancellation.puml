@@ -1,49 +1,107 @@
 @startuml Trip_Cancellation_Flow
-title Cancel Trip — Coordinated Cancellation & Refund
+title Cancel Trip (UC#9) — Coordinated Cancellation & Refund
 
 actor Traveler
 participant "Mobile App" as App
-participant "Backend" as Backend
+participant "Backend\n(BookingService)" as Backend
+participant "Stripe API" as Stripe
 participant "Database" as DB
 
 == Cancel Entire Trip ==
 
-Traveler -> App: Request to cancel entire trip
+Traveler -> App: "Cancel my trip"
 activate App
 
-App -> Backend: Cancel trip\n{trip_id}
+App -> Backend: Cancel trip {trip_id}
 activate Backend
 
-Backend -> DB: Load all bookings\nwith payments
+Backend -> DB: Load trip with all bookings + payments
 activate DB
-DB --> Backend: Bookings + payments
+DB --> Backend: Trip, [bookings + linked payments]
 deactivate DB
 
-alt Has hotel booking
-  Backend -> Backend: Cancel hotel booking
-  note right
-    Marks booking as cancelled
-    Refunds linked payment
-  end note
-end
-
-alt Has flight booking
-  Backend -> Backend: Cancel flight booking
-  note right
-    Marks booking as cancelled
-    Refunds linked payment
-  end note
-end
-
-Backend -> DB: Update trip status\nto cancelled
+Backend -> DB: Update trip status → cancelled
 activate DB
 DB --> Backend: Status updated
 deactivate DB
 
-Backend --> App: Trip cancelled\n{cancelled_bookings, refunded_payments}
+== Cancel Hotel Booking ==
+
+Backend -> Backend: cancel_booking(hotel_booking_id)
+note right
+  - Marks booking as cancelled
+  - Sets cancelled_at, cancelled_from
+  - Includes raw_response metadata
+end note
+
+Backend -> DB: Update booking status → cancelled
+activate DB
+DB --> Backend: Booking cancelled
+deactivate DB
+
+alt Has linked payment
+  Backend -> Backend: Mark payment → refunded
+  Backend -> DB: Update payment status
+  activate DB
+  DB --> Backend: Payment refunded
+  deactivate DB
+
+  Backend -> Stripe: Create refund for PaymentIntent
+  activate Stripe
+  Stripe --> Backend: Refund created
+  deactivate Stripe
+end
+
+== Cancel Flight Booking ==
+
+Backend -> Backend: cancel_booking(flight_booking_id)
+Backend -> DB: Update booking status → cancelled
+activate DB
+DB --> Backend: Flight booking cancelled
+deactivate DB
+
+alt Has linked payment
+  Backend -> Backend: Mark payment → refunded
+  Backend -> Stripe: Refund flight PaymentIntent
+  activate Stripe
+  Stripe --> Backend: Refund created
+  deactivate Stripe
+end
+
+== Return Result ==
+
+Backend --> App: Trip cancelled\n{cancelled_bookings: [bk1, bk2],\n refunded_payments: [pm1, pm2]}
 deactivate Backend
 
-App --> Traveler: Trip cancelled successfully\nBookings cancelled, payments refunded
+App --> Traveler: "Trip cancelled successfully.\nHotel and flight bookings cancelled.\nPayments refunded."
 deactivate App
+
+== Cancel Single Booking (not full trip) ==
+
+Traveler -> App: "Cancel just the hotel"
+activate App
+
+App -> Backend: Cancel booking {booking_id}
+activate Backend
+
+Backend -> DB: Load booking + payment
+activate DB
+DB --> Backend: Booking
+deactivate DB
+
+Backend -> Backend: Mark booking → cancelled
+Backend -> Backend: Mark linked payment → refunded
+
+Backend --> App: Single booking cancelled + refunded
+deactivate Backend
+
+App --> Traveler: "Hotel booking cancelled.\nPayment refunded to your card."
+deactivate App
+
+Note right of Backend
+  Cancelling a single booking does NOT
+  cancel the entire trip — other bookings
+  remain active.
+end note
 
 @enduml

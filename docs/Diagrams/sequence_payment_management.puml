@@ -2,113 +2,153 @@
 title Manage Payments (UC#7) — Analysis View
 
 actor Traveler
-participant "Mobile App" as App
-participant "Backend" as Backend
-participant "Payment Gateway" as Stripe
-participant "Database" as DB
+participant "Mobile App\n(Stripe PaymentSheet)" as App
+participant "Backend\n(BookingService)" as Backend
+participant "Stripe API\n(Sandbox)" as Stripe
+participant "Stripe Webhook" as Webhook
+participant "PostgreSQL DB" as DB
 
-== Pay for a Booking ==
+== Pay for a Booking (Async Stripe PaymentSheet Flow) ==
 
-Traveler -> App: Request to pay for booking
+Traveler -> App: "Pay for hotel booking"
 activate App
 
-App -> Backend: Initiate payment
+App -> Backend: initiate_payment(booking_id, {amount, currency})
 activate Backend
 
-alt Payment gateway available
-  Backend -> Stripe: Create payment session
-  activate Stripe
-  Stripe --> Backend: Payment session created
-  deactivate Stripe
-
-  Backend --> App: Ready for payment
-  deactivate Backend
-
-  App --> Traveler: Complete payment securely
-  deactivate App
-
-  Traveler -> Stripe: Submit payment details
-  activate Stripe
-
-  alt Payment successful
-    Stripe --> Traveler: Payment succeeded
-    deactivate Stripe
-
-    Traveler -> App: Confirm payment
-    activate App
-    App -> Backend: Confirm and verify payment
-    activate Backend
-
-    Backend -> Stripe: Verify payment status
-    activate Stripe
-    Stripe --> Backend: Payment verified
-    deactivate Stripe
-
-    Backend -> DB: Update booking and\ntrip status
-    activate DB
-    DB --> Backend: Status updated
-    deactivate DB
-
-    Backend --> App: Booking confirmed\nwith receipt
-    deactivate Backend
-    App --> Traveler: Booking confirmed
-    deactivate App
-
-  else Payment failed
-    Stripe --> Traveler: Payment failed
-    deactivate Stripe
-
-    Traveler -> App: Retry payment
-    activate App
-    App -> Backend: Initiate payment again
-    activate Backend
-    Backend --> App: New payment session
-    deactivate Backend
-    App --> Traveler: Retry checkout
-    deactivate App
-  end
-
-else Payment gateway unavailable
-  Backend --> App: Simulated payment mode
-  deactivate Backend
-
-  App --> Traveler: Payment simulated\n(test environment)
-  deactivate App
-
-  App -> Backend: Confirm payment
-  activate Backend
-  Backend -> DB: Confirm booking
-  activate DB
-  DB --> Backend: Booking confirmed
-  deactivate DB
-  Backend --> App: Booking confirmed
-  deactivate Backend
-  App --> Traveler: Booking confirmed
-  deactivate App
-end
-
-== Pay All Pending Bookings ==
-
-Traveler -> App: Pay all pending bookings
-activate App
-
-App -> Backend: Pay all bookings for trip
-activate Backend
-
-Backend -> Stripe: Create payment for\ntotal amount
+Backend -> Stripe: PaymentIntent.create()\n(automatic_payment_methods)
 activate Stripe
-Stripe --> Backend: Payment created
+
+alt Stripe available
+  Stripe --> Backend: {id: pi_xxx, client_secret: xxx,\n status: requires_payment_method}
+else Stripe unavailable / not configured
+  Backend -> Backend: Generate simulated pi_xxx + client_secret
+  note right: Falls back gracefully\nwhen STRIPE_SECRET_KEY is unset
+end
 deactivate Stripe
 
-Backend -> DB: Confirm all bookings
+Backend -> DB: Create Payment record\n(status: pending)
 activate DB
-DB --> Backend: All bookings confirmed
+DB --> Backend: Payment saved
 deactivate DB
 
-Backend --> App: All payments processed
+Backend --> App: {client_secret, stripe_payment_intent_id}
 deactivate Backend
 
-App --> Traveler: Trip fully confirmed
+App -> App: Initialize Stripe PaymentSheet\nwith client_secret
+
+App --> Traveler: Payment sheet presented\n(enter card details securely)
+
+== User Completes Payment in App ==
+
+Traveler -> App: Submit card details\n(Stripe PaymentSheet UI)
+activate App
+
+App -> Stripe: PaymentSheet.confirm()\n(card tokenization via Stripe SDK)
+activate Stripe
+
+alt Payment succeeded
+  Stripe --> App: PaymentIntent.status = succeeded
+  deactivate Stripe
+
+  App -> Backend: confirm_payment_and_booking()\n(booking_id, stripe_payment_intent_id)
+  activate Backend
+
+  Backend -> Stripe: PaymentIntent.retrieve() to verify
+  activate Stripe
+  Stripe --> Backend: status = succeeded (verified)
+  deactivate Stripe
+
+  Backend -> DB: Update Payment → completed\nUpdate Booking → confirmed\nCreate Receipt
+  activate DB
+  DB --> Backend: Payment confirmed
+  deactivate DB
+
+  Backend --> App: Booking confirmed with receipt
+  deactivate Backend
+
+  App --> Traveler: "Booking confirmed!\nReceipt #RCT-2026-xxxx"
+  deactivate App
+
+else Payment failed
+  Stripe --> App: PaymentIntent.status = requires_payment_method
+  deactivate Stripe
+
+  App --> Traveler: "Payment failed — try again"
+  App -> Backend: initiate_payment() again (retry)
+  note right: Failed payments are recoverable —\nbooking stays in pending status
+  Backend --> App: New client_secret for retry
+  App --> Traveler: Retry checkout
+end
+
+== Webhook: Stripe Reports Payment Succeeded (Fallback) ==
+
+Stripe -> Webhook: POST /api/v1/webhooks/stripe\n(payment_intent.succeeded)
+activate Webhook
+
+Webhook -> Backend: handle_webhook_payment_succeeded(\n  stripe_payment_intent_id)
+activate Backend
+
+Backend -> DB: Update Payment → completed\nUpdate Booking → confirmed (idempotent)
+Backend -> DB: Create Receipt if not exists
+
+Backend -> DB: Check all bookings for trip
+alt All bookings confirmed
+  Backend -> DB: Trip status → booking_confirmed
+else Pending bookings remain
+  Backend -> DB: Trip stays in payment_processing
+end
+deactivate Backend
+
+Webhook --> Stripe: 200 OK
+deactivate Webhook
+
+== Webhook: Stripe Reports Payment Failed ==
+
+Stripe -> Webhook: POST /api/v1/webhooks/stripe\n(payment_intent.payment_failed)
+activate Webhook
+
+Webhook -> Backend: handle_webhook_payment_failed(\n  stripe_payment_intent_id)
+activate Backend
+note right: Idempotent — skips if already processed
+Backend -> DB: Mark Payment → failed
+Backend -> DB: Trip status → payment_failed
+Backend --> Webhook: processed
+deactivate Backend
+
+Webhook --> Stripe: 200 OK
+deactivate Webhook
+
+== Pay All Pending Bookings (Batch) ==
+
+Traveler -> App: "Pay all pending bookings"
+activate App
+
+App -> Backend: Pay all for trip {trip_id}
+activate Backend
+
+Backend -> DB: List pending bookings for trip
+activate DB
+DB --> Backend: [pending bookings]
+deactivate DB
+
+Backend -> Backend: Loop: initiate_payment() for each
+Backend --> App: Multiple PaymentSheets (one per booking)
+
+alt Pay individually
+  App --> Traveler: Complete each payment sheet
+else Pay as one
+  Backend -> Stripe: Single PaymentIntent for total
+  Stripe --> Backend: client_secret for combined amount
+  Backend --> App: One PaymentSheet for all
+  deactivate Backend
+  App --> Traveler: Pay total amount
+end
+
+Backend -> DB: Confirm all bookings
+Backend -> DB: Trip status → booking_confirmed
+
+App --> Traveler: "All bookings confirmed!"
 deactivate App
 
 @enduml

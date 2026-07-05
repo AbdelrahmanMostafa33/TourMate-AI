@@ -20,8 +20,8 @@ System_Ext(amadeus, "Amadeus API", "Flight offers\nsearch & booking")
 ' System_Ext(expedia, "Expedia Rapid API", "Hotel availability\n& booking")
 ' Hotel bookings are simulated — no external API call
 System_Ext(osrm, "OSRM Server", "Travel time matrix\nroute optimization")
-System_Ext(gemini, "Gemini 2.5 Flash", "LLM: itinerary planning\nvision, embeddings")
-System_Ext(groq, "Groq Llama 3.x", "LLM: fast inference\npreference extraction")
+System_Ext(gemini, "Gemini 2.5 Flash", "LLM: itinerary planning\nvision, itinerary editing")
+System_Ext(groq, "Groq Llama 3.3 70B", "LLM: Unified Router\nintent classification, validation,\npreference reranking")
 System_Ext(langsmith, "LangSmith", "Observability &\ntracing")
 
 ' ═══════════════════════════════ LAYER: BACKEND HOST ═══════════════════════════════
@@ -119,17 +119,20 @@ Rel(orchestrator, msg_interp, "classifies intent")
 Rel(orchestrator, langgraph, "runs pipeline")
 Rel(orchestrator, redis_mgr, "save/load state")
 
-' LangGraph → Agents
-Rel(langgraph, planning, "calls agent")
-Rel(langgraph, hotel, "calls agent")
-Rel(langgraph, flight_agent, "calls agent")
-Rel(langgraph, modifier, "calls agent")
-Rel(langgraph, scorer, "calls agent")
-Rel(langgraph, route_opt, "calls agent")
-Rel(langgraph, validator, "calls agent")
-Rel(langgraph, vision, "calls agent")
-Rel(langgraph, pool, "calls service")
-Rel(langgraph, profiling, "calls service")
+' LangGraph Pipeline Agents (6 nodes in graph)
+Rel(langgraph, planning, "planner node")
+Rel(langgraph, route_opt, "optimizer node")
+Rel(langgraph, scorer, "ranking node")
+Rel(langgraph, validator, "validator node")
+Rel(validator, planning, "retry if invalid")
+
+' Post-Approval Agents (called from Orchestrator, NOT from LangGraph)
+Rel(orchestrator, hotel, "calls post-approval")
+Rel(orchestrator, flight_agent, "calls during flight_selection")
+Rel(orchestrator, modifier, "calls during itinerary_review edits")
+Rel(orchestrator, vision, "calls on image upload")
+Rel(orchestrator, pool, "calls for pool enrichment")
+Rel(orchestrator, profiling, "updates after approval")
 
 ' AI Engine → Redis
 Rel(redis_mgr, redis, "persists session", "JSON")
@@ -144,8 +147,9 @@ Rel(flight_svc, amadeus, "search / book flights", "HTTPS REST")
 Rel(route_opt, osrm, "travel time matrix", "HTTP")
 Rel(planning, gemini, "generate itinerary", "HTTPS")
 Rel(vision, gemini, "analyze image", "HTTPS")
-Rel(modifier, groq, "fast edit classification", "HTTPS")
-Rel(scorer, groq, "preference extraction", "HTTPS")
+Rel(modifier, gemini, "surgical edit application", "HTTPS")
+' Scorer scores data from TripState (loaded by retriever), not direct DB
+Rel(scorer, postgres, "multi-signal scoring: popularity + embedding + rating + proximity", "asyncpg")
 Rel(tracing, langsmith, "trace runs", "HTTPS")
 
 ' Database connections

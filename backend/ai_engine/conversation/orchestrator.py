@@ -868,6 +868,7 @@ async def handle_chat_stream(user_id, user_message, image_bytes=None, token=None
         or response.get("validation")
         or response.get("flight_search_results")
         or response.get("flight_booking")
+        or response.get("image_features")
     ):
         result_data = {
             "message": response.get("message", ""),
@@ -879,13 +880,13 @@ async def handle_chat_stream(user_id, user_message, image_bytes=None, token=None
             result_data["action"] = response["action"]
 
         # Itinerary data
-        if response.get("itinerary") and response.get("response_type") != "chat":
+        if response.get("itinerary"):
             result_data["itinerary"] = response["itinerary"]
 
         # Common optional fields
         for field in ("profile", "explanation", "agent_messages", "agent_metrics", "validation", "pool_state", "image_features"):
             if response.get(field):
-                result_data[field] = response[field]
+                result_data[field] = response[field].model_dump() if hasattr(response[field], "model_dump") else response[field]
 
         # Booking data (flight + hotel selection for Flutter)
         if response.get("booking_data"):
@@ -1689,9 +1690,19 @@ def _itinerary_response(
         candidate_places=state.candidate_places,
         filtered_places=state.filtered_places,
     )
+    destination = modified.get("destination", "your trip")
+    days_list = modified.get("days", [])
+    total_stops = sum(len(d.get("stops", [])) for d in days_list)
+    num_days = len(days_list)
+    # Concise message for modifications — the itinerary card will show the full
+    # plan with all stops and details.  If the card doesn't render, this brief
+    # summary still gives the user useful context.
+    short_msg = f"Your {num_days}-day {destination} itinerary has been updated!"
+    if total_stops:
+        short_msg += f" ({total_stops} stop{'s' if total_stops > 1 else ''})"
     response = {
         "response_type": "itinerary",
-        "message": _format_itinerary(modified),
+        "message": short_msg,
         "itinerary": modified,
         "image_features": image_features,
         "pool_state": state.get_pool_state(),

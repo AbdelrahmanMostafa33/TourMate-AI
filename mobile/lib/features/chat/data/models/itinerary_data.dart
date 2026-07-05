@@ -47,6 +47,15 @@ String? _parseStringOrNull(dynamic value) {
   return text.isEmpty ? null : text;
 }
 
+/// Safely extract a list from a dynamic value, logging unexpected types.
+List<dynamic> _parseList(dynamic value) {
+  if (value is List) return value;
+  if (value == null) return [];
+  // ignore: avoid_print
+  print('[ItineraryData] ⚠️ Expected List but got ${value.runtimeType}');
+  return [];
+}
+
 /// Safely extract a photo URL from various backend shapes:
 ///   - null / absent → null
 ///   - a List → first element (string or map with url/photo_url key)
@@ -97,25 +106,33 @@ class ItineraryData {
   });
 
   factory ItineraryData.fromJson(Map<String, dynamic> json) {
+    // ── Parse days (must be List; bail cleanly if unexpected type) ──
     final daysList = <ItineraryDay>[];
-    for (final rawDay in json['days'] as List<dynamic>? ?? []) {
+    final rawDays = _parseList(json['days']);
+    for (final rawDay in rawDays) {
       final dayMap = _asJsonMap(rawDay);
       if (dayMap == null) continue;
       try {
         daysList.add(ItineraryDay.fromJson(dayMap));
-      } catch (_) {
+      } catch (e) {
+        // ignore: avoid_print
+        print('[ItineraryData] ⚠️ Failed to parse day: $e');
         // Skip malformed day entries instead of failing the whole card.
       }
     }
 
+    // ── Parse accommodation suggestions (same defensive approach) ──
     final accommodations = <AccommodationSuggestion>[];
-    for (final rawHotel
-        in json['accommodation_suggestions'] as List<dynamic>? ?? []) {
+    final rawHotels = _parseList(json['accommodation_suggestions']);
+    for (final rawHotel in rawHotels) {
       final hotelMap = _asJsonMap(rawHotel);
       if (hotelMap == null) continue;
       try {
         accommodations.add(AccommodationSuggestion.fromJson(hotelMap));
-      } catch (_) {}
+      } catch (e) {
+        // ignore: avoid_print
+        print('[ItineraryData] ⚠️ Failed to parse accommodation: $e');
+      }
     }
 
     return ItineraryData(

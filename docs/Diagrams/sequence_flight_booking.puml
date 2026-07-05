@@ -1,5 +1,5 @@
 @startuml Flight_Booking_Flow
-title Flight Booking (UC#5) — Analysis View
+title Flight Booking (UC#5) — FLIGHT_SELECTION Phase
 
 actor Traveler
 participant "Mobile App" as App
@@ -7,12 +7,12 @@ participant "Backend" as Backend
 participant "Amadeus API" as Amadeus
 participant "Database" as DB
 
-== Search Flights ==
+== FLIGHT_SELECTION: Search Flights ==
 
-Traveler -> App: Request to book a flight
+Traveler -> App: Provide departure city and dates
 activate App
 
-App -> Backend: Search flights\n{departure, destination, dates}
+App -> Backend: Search flights\n{departure, destination, dates, cabin_class}
 activate Backend
 
 Backend -> Amadeus: Query available flight offers
@@ -20,47 +20,46 @@ activate Amadeus
 Amadeus --> Backend: Available flights with pricing
 deactivate Amadeus
 
-Backend --> App: Flight options
+Backend --> App: Flight options listed
 deactivate Backend
 
 App --> Traveler: Display available flights
 deactivate App
 
-== Select and Book Flight ==
+== FLIGHT_SELECTION: Select and Confirm ==
 
 Traveler -> App: Select a specific flight
 activate App
 
-App -> Backend: Book selected flight
+App -> Backend: Confirm flight selection
 activate Backend
 
-Backend -> Amadeus: Confirm flight booking
+Backend -> Amadeus: Price the offer (test environment)
 activate Amadeus
 
-alt Booking confirmed
-  Amadeus --> Backend: Booking successful
+alt Pricing confirmed
+  Amadeus --> Backend: Priced offer
   deactivate Amadeus
 
-  Backend -> DB: Store booking record
-  activate DB
-  DB --> Backend: Booking saved
-  deactivate DB
-
-  Backend --> App: Booking confirmed with price
+  Backend -> Backend: Store flight offer in session
+  Backend --> App: Flight selected, proceed to hotels
   deactivate Backend
 
-  App --> Traveler: Flight booked, proceed\nto payment
+  App --> Traveler: "Flight saved! Now, let's find you accommodation"
   deactivate App
 
-else Booking unavailable
-  Amadeus --> Backend: Booking failed
+else Pricing unavailable (test env fallback)
+  Amadeus --> Backend: Pricing failed
   deactivate Amadeus
 
-  Backend --> App: Booking failed
+  Backend -> Backend: Use raw offer (simulation fallback)
+  Backend --> App: Flight noted, proceed to hotels
   deactivate Backend
 
-  App --> Traveler: No longer available
+  App --> Traveler: Flight noted, moving to hotels
   deactivate App
 end
+
+Note right of Backend: Transition to HOTEL_SELECTION phase
 
 @enduml

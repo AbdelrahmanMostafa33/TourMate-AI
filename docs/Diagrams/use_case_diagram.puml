@@ -37,7 +37,9 @@ rectangle "TourMate AI System" {
 
   rectangle "Bookings & Payments" as Booking {
     usecase "Book Flights" as BookFlights
+    usecase "Search Flights" as SearchFlights
     usecase "Book Hotels" as BookHotels
+    usecase "Select Hotel" as SelectHotel
     usecase "Cancel Booking" as Cancel
     usecase "Manage Payments" as Pay
   }
@@ -70,6 +72,8 @@ Traveler --> ViewTrips
 
 Traveler --> BookFlights
 Traveler --> BookHotels
+Traveler --> SearchFlights
+Traveler --> SelectHotel
 Traveler --> Cancel
 Traveler --> Pay
 
@@ -86,6 +90,8 @@ Admin --> Monitor
 
 Modify .left.> Plan : <<extends>>
 Upload .left.> Chat : <<extends>>
+SearchFlights .left.> BookFlights : <<extends>>
+SelectHotel .left.> BookHotels : <<extends>>
 
 ' ═══════ EXTERNAL SYSTEMS ═══════
 

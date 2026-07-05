@@ -345,12 +345,18 @@ You should see the FastAPI Swagger UI with all available routes grouped by:
 - **Auth** — `/api/v1/auth/...`
 - **Users** — `/api/v1/users/...`
 - **Trips** — `/api/v1/trips/...`
-- **Chat** — `/api/v1/...`
+- **Chat** — `/api/v1/chat/...`
 - **Places** — `/api/v1/places/...`
 - **Reviews** — `/api/v1/reviews/...`
 - **Saved Places** — `/api/v1/saved-places/...`
-- **Recommendations** — `/api/v1/recommendations/...`
+- **Bookings** — `/api/v1/bookings/...`
+- **Flights** — `/api/v1/flights/...`
+- **Itinerary** — `/api/v1/itinerary/...`
 - **Images** — `/api/v1/images/...`
+- **Feedback** — `/api/v1/feedback/...`
+- **Admin** — `/api/v1/admin/...`
+- **Webhooks** — `/api/v1/webhooks/...`
+- **Health** — `/health`
 
 ### Check database tables were created
 
@@ -382,68 +388,93 @@ backend/
 │   │   ├── places.py           # Place search & exploration
 │   │   ├── reviews.py          # Place reviews
 │   │   ├── saved_places.py     # Saved places
-│   │   ├── recommendations.py  # AI recommendations
 │   │   ├── images.py           # Image management
 │   │   ├── bookings.py         # Booking simulation
+│   │   ├── flights.py          # Flight search (Amadeus)
+│   │   ├── itinerary.py        # Itinerary view & approval
 │   │   ├── feedback.py         # User feedback
+│   │   ├── admin.py            # Admin endpoints
+│   │   ├── webhooks.py         # Stripe webhook handler
 │   │   └── health.py           # Health check
 │   ├── core/                   # Config, database engine, security
 │   │   ├── config.py           # Settings (env vars)
 │   │   ├── database.py         # Async SQLAlchemy engine
 │   │   ├── firebase.py         # Firebase token verification
-│   │   └── security.py         # Auth dependency
+│   │   ├── security.py         # Auth dependency
+│   │   └── dependencies.py     # Shared dependencies (get_current_user, get_db)
 │   ├── external/               # External API clients
-│   │   ├── llm_client.py       # Gemini LLM wrappers
-│   │   ├── groq_client.py      # Legacy (now uses llm_client)
+│   │   ├── llm_client.py       # Legacy LLM client wrapper
 │   │   └── osrm_client.py      # OSRM routing/distance matrix
 │   ├── models/                 # SQLAlchemy ORM models
 │   ├── schemas/                # Pydantic request/response
-│   ├── services/               # Business logic layer
+│   ├── services/               # Business logic layer (chat, flight, booking, etc.)
 │   ├── repositories/           # Database query abstraction
 │   ├── ws/                     # WebSocket manager
 │   └── main.py                 # App entry point & lifespan
 │
 ├── ai_engine/                  # LangGraph AI engine (separate layer)
 │   ├── agents/                 # Specialized AI agents
-│   │   ├── retrieval_agent.py  # DB-based place filtering
-│   │   ├── ranking_agent.py    # Multi-signal scoring + diversity
-│   │   ├── planning_agent.py   # LLM itinerary generation
-│   │   ├── optimization_agent.py # 2-opt + OSRM routing
-│   │   ├── validation_agent.py # Feasibility + quality checks
-│   │   ├── preference_agent.py # Structured preference extraction
-│   │   └── orchestrator.py     # Agent coordination
-│   ├── chat/                   # Conversation handling
-│   │   ├── conversation_agent.py # Main chat processing + state machine
-│   │   └── unified_router.py   # Single LLM call routing (structured output)
+│   │   ├── planning_agent.py           # LLM itinerary generation (Gemini 2.5 Flash)
+│   │   ├── hotel_agent.py              # Hotel selection (rule-based + LLM)
+│   │   ├── itinerary_modifier_agent.py # Surgical ADD/REMOVE/SWAP of stops
+│   │   ├── edit_classifier_agent.py    # Routes edits to correct workflow
+│   │   ├── preference_reranker_agent.py # Vibe-change reinterpretation
+│   │   └── flight_selection_agent.py   # Conversational flight search & selection
 │   ├── graph/                  # LangGraph pipeline
 │   │   ├── state.py            # TripState + TripProfile TypedDicts
 │   │   ├── nodes.py            # Agent node wrappers
 │   │   ├── edges.py            # Conditional routing logic
 │   │   └── graph_builder.py    # Graph assembly & compilation
-│   ├── memory/                 # Session & conversation state
-│   │   ├── redis_memory.py     # Redis-backed session persistence
-│   │   └── conversation_state.py # State machine (GREETING → SLOT_FILLING → PLAN_GENERATION → REVIEW)
+│   ├── conversation/           # Conversation handling
+│   │   ├── orchestrator.py           # Main chat processing + routing
+│   │   ├── message_interpreter.py    # Unified Router (single LLM call with structured output)
+│   │   ├── conversation_state.py     # State machine (GREETING → SLOT_FILLING → PLAN_GENERATION → ITINERARY_REVIEW → FLIGHT_SELECTION → HOTEL_SELECTION → BOOKING → COMPLETED)
+│   │   └── redis_memory.py           # Redis-backed session persistence
 │   ├── profiling/              # Behavioral profiling
-│   │   ├── behavioral_profile.py # Profile-to-text helpers
-│   │   └── profile_updater.py  # Profile refinement
-│   ├── tools/                  # External integrations
+│   │   ├── profile_updater.py          # Profile refinement from user choices
+│   │   ├── preference_tracker.py       # Tracks preference changes over time
+│   │   └── persona_updater.py          # Updates traveler persona from trip history
+│   ├── tools/                  # Tool functions used by agents
 │   │   ├── places_tool.py      # Place search (DB-backed)
 │   │   ├── routing_tool.py     # OSRM routing + matrix
-│   │   ├── weather_tool.py     # Weather data
 │   │   ├── profile_tool.py     # Profile loading (real + mock)
 │   │   ├── haversine.py        # Distance calculations
+│   │   ├── json_utils.py       # Safe JSON deserialization
 │   │   └── slot_normalizer.py  # Deterministic slot normalization
+│   ├── schemas/                # Pydantic models for structured output
+│   │   ├── planning_schema.py  # ItineraryPlan schema
+│   │   └── vision_schema.py    # VisionFeatures schema
 │   ├── vision/                 # Image analysis pipeline
-│   │   ├── image_analyzer.py   # Travel image understanding (Gemini)
+│   │   ├── image_analyzer.py   # Travel image understanding (Gemini 2.5 Flash VLM)
 │   │   ├── feature_extractor.py # Visual feature extraction
 │   │   └── multimodal_fusion.py # Image + profile fusion
+│   ├── services/               # AI engine internal services
+│   │   ├── place_retriever.py  # DB-based place filtering by preferences
+│   │   ├── candidate_scorer.py # Multi-signal scoring + diversity optimization
+│   │   ├── route_optimizer.py  # 2-opt + OSRM routing + day rebalancing
+│   │   ├── itinerary_validator.py # Programmatic + LLM quality checks
+│   │   ├── pool_manager.py     # Candidate pool coverage & enrichment
+│   │   ├── embedding_service.py # Async embedding generation & similarity
+│   │   ├── operations.py       # Category detection & semantic filtering
+│   │   └── place_extractor.py  # Suggests new places for missing categories
 │   ├── evaluation/             # Agent metrics & explainability
+│   │   ├── agent_metrics.py    # Latency/error tracking per pipeline step
+│   │   ├── explainability.py   # Human-readable pipeline decision summaries
+│   │   ├── feasibility_checker.py # Time/distance feasibility checks
+│   │   └── itinerary_metrics.py # Itinerary quality metrics
 │   ├── observability/          # LangSmith tracing
-│   │   └── tracing.py          # @traced decorator + setup
+│   │   ├── tracing.py          # @traced decorator + setup
+│   │   └── metrics.py          # Performance metrics collection
 │   ├── prompts/                # LLM prompt templates
-│   ├── exceptions/             # AI engine exceptions
-│   ├── llm_config.py           # Multi-provider LLM registry + key rotation
-│   └── constants.py            # Model names, session config
+│   │   └── vision_prompt.py    # Vision analysis prompt
+│   ├── llm/                    # LLM configuration & key management
+│   │   ├── config.py           # AGENT_LLM_REGISTRY — provider/model mapping
+│   │   ├── invoke.py           # invoke_with_fallback — multi-key retry
+│   │   ├── key_manager.py      # API key rotation for rate-limit resilience
+│   │   └── token_tracker.py    # Per-pipeline-run token consumption tracking
+
+│   ├── constants.py            # Model names, session config, timeouts
+│   └── __init__.py             # Exports build_trip_graph, handle_chat, analyze_travel_image
 │
 ├── tests/                      # Test suite
 │   ├── unit/test_ai_engine/    # AI engine unit tests (17+ files)
@@ -452,7 +483,7 @@ backend/
 │   ├── integration/            # Integration tests
 │   └── e2e/                    # End-to-end tests
 │
-├── alembic/                    # Database migrations (10+ versions)
+├── alembic/                    # Database migrations (31+ versions)
 ├── seed_places.py              # City-agnostic POI seed script (usage: python seed_places.py <city>)
 ├── .env                        # Your local environment variables (not in Git)
 ├── firebase-credentials.json   # Firebase service account (not in Git)
@@ -465,13 +496,16 @@ backend/
 The itinerary generation follows this pipeline:
 
 ```
-User Message → Unified Router (LLM decision)
+User Message → Unified Router (Groq Llama 3.3 70B) — intent + slots + response in one call
     ↓
-Conversation Agent (state machine)
+Conversation Orchestrator (state machine + routing)
     ↓
-LangGraph Pipeline:
-  load_profile → preference → retrieval → ranking → planner → optimizer → validator
-                                                          ↑_______________↓ (retry if invalid)
+LangGraph Pipeline (6 nodes):
+  load_profile → retrieval → ranking → planner(Gemini 2.5 Flash) → optimizer(OSRM+2-opt) → validator(Groq Llama 3.3 70B)
+                                                                            ↑_______________________↓ (retry up to 2× if invalid)
+
+Post-Approval (outside graph, called from orchestrator):
+  User approves → FLIGHT_SELECTION (Amadeus) → HOTEL_SELECTION (Hotel Agent) → BOOKING → COMPLETED
 ```
 
 ---

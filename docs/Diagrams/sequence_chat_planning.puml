@@ -7,7 +7,7 @@ participant "Backend" as Backend
 participant "AI Service" as AI
 participant "Database" as DB
 
-== Start Conversation ==
+== GREETING / SLOT_FILLING Phase ==
 
 Traveler -> App: Open chat and describe trip
 activate App
@@ -30,19 +30,19 @@ end
 AI --> Backend: Trip requirements understood
 deactivate AI
 
-== Generate Itinerary ==
+== PLAN_GENERATION Phase ==
 
 Backend -> DB: Retrieve places matching\nuser preferences
 activate DB
 DB --> Backend: Place candidates
 deactivate DB
 
-Backend -> AI: Generate personalized\nitinerary
+Backend -> AI: Generate personalized\nitinerary (Gemini 2.5 Flash)
 activate AI
 AI --> Backend: Day-by-day itinerary
 deactivate AI
 
-Backend -> Backend: Validate itinerary
+Backend -> Backend: Validate itinerary (Groq Llama 3.3 70B)
 Backend -> DB: Store generated itinerary
 activate DB
 DB --> Backend: Itinerary saved
@@ -54,9 +54,9 @@ deactivate Backend
 App --> Traveler: Display itinerary
 deactivate App
 
-== Approve Itinerary ==
+== ITINERARY_REVIEW Phase ==
 
-Traveler -> App: Approve the itinerary
+Traveler -> App: Approve the itinerary or request changes
 activate App
 
 App -> Backend: Confirm approval
@@ -67,10 +67,58 @@ activate DB
 DB --> Backend: Status updated
 deactivate DB
 
-Backend --> App: Moving to booking phase
+Backend --> App: Transition to FLIGHT_SELECTION
 deactivate Backend
 
-App --> Traveler: Ready for flight and\nhotel booking
+App --> Traveler: "Would you like to book a flight?"
 deactivate App
+
+== FLIGHT_SELECTION Phase ==
+
+Traveler -> App: Provide departure city / skip flights
+activate App
+
+App -> Backend: Flight request
+activate Backend
+
+Backend -> Backend: Search flights via Amadeus
+Backend --> App: Flight options listed
+deactivate Backend
+
+App --> Traveler: Select or skip flights
+deactivate App
+
+== HOTEL_SELECTION Phase ==
+
+Backend -> Backend: Run hotel selection agent
+Backend --> App: Hotel options with ratings & amenities
+deactivate Backend
+
+Traveler -> App: Pick a hotel or change type
+activate App
+App -> Backend: Confirm hotel selection
+activate Backend
+Backend --> App: Hotel saved
+deactivate Backend
+deactivate App
+
+== BOOKING Phase ==
+
+Backend --> App: "Pay now or do it later?"
+
+alt Pay now
+  App --> Traveler: Proceed to payment in app
+  Traveler -> App: Complete payment (Stripe)
+  App -> Backend: Payment confirmed
+  activate Backend
+  Backend -> DB: Update bookings and\ntrip status
+  DB --> Backend: Status updated
+  deactivate Backend
+  App --> Traveler: Booking confirmed
+else Do it later
+  App --> Traveler: Trip finalized, book later
+end
+
+Backend -> Backend: Transition to COMPLETED
 
 @enduml

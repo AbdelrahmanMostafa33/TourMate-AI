@@ -538,8 +538,31 @@ async def process_message_stream(
                 # Save the rendered_cards list so Flutter knows what to render
                 response_metadata["rendered_cards"] = rendered_cards
 
-                # Capture image_features for DB persistence later
+                # Persist photo_analysis data in card_data for chat history
                 image_features_from_result = result.get("image_features")
+                if image_features_from_result:
+                    # Check signal from dict (VisionFeatures was model_dump()'d by orchestrator)
+                    if image_features_from_result.get("confidence") in ("high", "medium") \
+                       and image_features_from_result.get("interests", []):
+                        response_metadata["image_features"] = image_features_from_result
+                        rendered_cards.append("photo_analysis")
+                        logger.info(
+                            "[ChatRoutes] Added photo_analysis to rendered_cards: %s",
+                            image_features_from_result.get("interests", [])[:3],
+                        )
+
+                        # ── Forward image_features to Flutter for live card rendering ──
+                        await manager.send(ws_key, {
+                            "type": "result",
+                            "data": {
+                                "image_features": image_features_from_result,
+                                "message": result.get("message", ""),
+                            },
+                        })
+                        logger.info(
+                            "[ChatRoutes] Forwarded image_features to Flutter: %s",
+                            image_features_from_result.get("interests", [])[:3],
+                        )
 
             elif event_type == "done":
                 await manager.send(ws_key, {"type": "done", "data": None})
@@ -757,17 +780,23 @@ async def process_message_stream(
 
 
     # ── Persist image features to DB (non-critical) ──────────────────────
-    if image_features_from_result and image_features_from_result.has_signal:
-        try:
-            img_svc = ImageService(db)
-            await img_svc.create_image_with_features(
-                trip_id=trip.trip_id,
-                vision_features=image_features_from_result,
-            )
-            await db.commit()
-        except Exception as img_err:
-            logger.warning("[ChatRoutes] Failed to persist image features (non-fatal): %s", img_err)
-            await db.rollback()
+    if image_features_from_result and isinstance(image_features_from_result, dict):
+        signal = (
+            image_features_from_result.get("confidence") in ("high", "medium")
+            and image_features_from_result.get("interests", [])
+        )
+        if signal:
+            try:
+                from ai_engine.schemas.vision_schema import VisionFeatures
+                img_svc = ImageService(db)
+                await img_svc.create_image_with_features(
+                    trip_id=trip.trip_id,
+                    vision_features=VisionFeatures(**image_features_from_result),
+                )
+                await db.commit()
+            except Exception as img_err:
+                logger.warning("[ChatRoutes] Failed to persist image features (non-fatal): %s", img_err)
+                await db.rollback()
 
     await db.commit()
 
@@ -988,8 +1017,30 @@ async def websocket_new_chat(
                         # Save the rendered_cards list so Flutter knows what to render
                         response_metadata_new["rendered_cards"] = rendered_cards_new
 
-                        # Capture image_features for DB persistence later
+                        # Persist photo_analysis data in card_data for chat history
                         image_features_from_result = result.get("image_features")
+                        if image_features_from_result:
+                            if image_features_from_result.get("confidence") in ("high", "medium") \
+                               and image_features_from_result.get("interests", []):
+                                response_metadata_new["image_features"] = image_features_from_result
+                                rendered_cards_new.append("photo_analysis")
+                                logger.info(
+                                    "[ChatRoutes] Added photo_analysis to rendered_cards (new chat): %s",
+                                    image_features_from_result.get("interests", [])[:3],
+                                )
+
+                                # ── Forward to Flutter for live card rendering ──
+                                await manager.send(ws_key, {
+                                    "type": "result",
+                                    "data": {
+                                        "image_features": image_features_from_result,
+                                        "message": result.get("message", ""),
+                                    },
+                                })
+                                logger.info(
+                                    "[ChatRoutes] Forwarded image_features to Flutter (new chat): %s",
+                                    image_features_from_result.get("interests", [])[:3],
+                                )
 
                     elif event_type == "done":
                         await manager.send(ws_key, {"type": "done"})
@@ -1034,18 +1085,24 @@ async def websocket_new_chat(
                         pending_messages = []
 
                         # ── Persist image features if available ──────────────
-                        if image_features_from_result and image_features_from_result.has_signal:
-                            try:
-                                img_svc = ImageService(db)
-                                await img_svc.create_image_with_features(
-                                    trip_id=trip.trip_id,
-                                    vision_features=image_features_from_result,
-                                )
-                            except Exception as img_err:
-                                logger.warning(
-                                    "[ChatRoutes] Failed to persist image features (non-fatal): %s",
-                                    img_err,
-                                )
+                        if image_features_from_result and isinstance(image_features_from_result, dict):
+                            signal = (
+                                image_features_from_result.get("confidence") in ("high", "medium")
+                                and image_features_from_result.get("interests", [])
+                            )
+                            if signal:
+                                try:
+                                    from ai_engine.schemas.vision_schema import VisionFeatures
+                                    img_svc = ImageService(db)
+                                    await img_svc.create_image_with_features(
+                                        trip_id=trip.trip_id,
+                                        vision_features=VisionFeatures(**image_features_from_result),
+                                    )
+                                except Exception as img_err:
+                                    logger.warning(
+                                        "[ChatRoutes] Failed to persist image features (non-fatal): %s",
+                                        img_err,
+                                    )
 
                         # ── Persist state snapshot right after trip creation ───────
                         #    This captures the initial phase/slots from the AI

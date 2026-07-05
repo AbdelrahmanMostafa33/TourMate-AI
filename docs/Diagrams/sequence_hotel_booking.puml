@@ -1,61 +1,72 @@
 @startuml Hotel_Booking_Flow
-title Book Hotels (UC#6) — Analysis View
+title Book Hotels (UC#6) — HOTEL_SELECTION Phase
 
 actor Traveler
 participant "Mobile App" as App
 participant "Backend" as Backend
+participant "Hotel Agent" as HotelAgent
 participant "Database" as DB
 
-== Explore Hotels ==
+== HOTEL_SELECTION: Agent Picks Hotels ==
 
-Traveler -> App: Browse hotel options
-activate App
+Note right of Backend: Hotel Agent runs with finalized stops\nRule-based + LLM hybrid ranking
 
-App -> Backend: Request hotels for city
-activate Backend
+Backend -> HotelAgent: run_hotel_selection(itinerary, places, profile)
+activate HotelAgent
 
-Backend -> DB: Query available hotels
+HotelAgent -> DB: Query hotels matching\naccommodation type, budget, proximity
 activate DB
-DB --> Backend: Hotel list with details
+DB --> HotelAgent: Matching hotels
 deactivate DB
 
-Backend --> App: Hotel options\n{name, price, rating}
+HotelAgent -> HotelAgent: Rank by rating, amenities,\nproximity to stops, reviews
+HotelAgent --> Backend: Top 3-5 hotel suggestions
+deactivate HotelAgent
+
+Backend --> App: Hotel options with\nratings, amenities, maps, prices
 deactivate Backend
 
-App --> Traveler: Display hotels
+App --> Traveler: Display hotel options
 deactivate App
 
-== Select and Book Hotel ==
+== HOTEL_SELECTION: User Picks ==
 
-Traveler -> App: Select hotel and book
+Traveler -> App: Select a hotel (by number or name)
 activate App
 
-App -> Backend: Book selected hotel
+App -> Backend: Confirm hotel selection
 activate Backend
 
-Backend -> DB: Create booking record
+Backend -> Backend: Store selected_hotel in itinerary
+Backend --> App: Hotel confirmed
+deactivate Backend
+
+App --> Traveler: "Would you like to proceed to payment?"
+deactivate App
+
+== BOOKING Phase ==
+
+Traveler -> App: "Pay now" or "Do it later"
+activate App
+
+App -> Backend: Initiate booking
+activate Backend
+
+Backend -> DB: Create simulated booking record\n(with generated confirmation number)
 activate DB
+DB --> Backend: Booking saved
+deactivate Backend
+deactivate DB
 
-alt Booking created
-  DB --> Backend: Booking saved
-  deactivate DB
-
-  Backend --> App: Booking confirmed\nwith confirmation number
-  deactivate Backend
-
-  App --> Traveler: Hotel booked, proceed\nto payment
-  deactivate App
-
-else Booking failed
-  DB --> Backend: Booking failed
-  deactivate DB
-
-  Backend --> App: Booking failed
-  deactivate Backend
-
-  App --> Traveler: Unable to book\nplease try again
-  deactivate App
+alt Pay now
+  Backend --> App: Booking created, proceed to payment
+  App --> Traveler: Complete via Stripe in app
+else Do it later
+  Backend --> App: Booking noted, finalize later
+  App --> Traveler: Trip finalized
 end
+
+Backend -> Backend: Transition to COMPLETED
 
 == Cancel a Booking (before payment) ==
 

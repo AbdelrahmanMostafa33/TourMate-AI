@@ -201,6 +201,25 @@ class _ChatViewState extends State<_ChatView>
     cubit.sendMessage('approve');
   }
 
+  /// Called when the user taps "Plan My Trip" on the Photo Analysis Card.
+  void _onPlanTrip(ChatCubit cubit) {
+    cubit.sendMessage('yes');
+  }
+
+  /// Called when the user taps "Modify" on the Photo Analysis Card.
+  /// Pre-fills the input field so the user can type their adjustments.
+  void _onModifyPreferences() {
+    _inputController.text = 'I want to modify my preferences: ';
+    _inputController.selection = TextSelection.fromPosition(
+      TextPosition(offset: _inputController.text.length),
+    );
+  }
+
+  /// Called when the user taps "Start Fresh" on the Photo Analysis Card.
+  void _onStartFresh(ChatCubit cubit) {
+    cubit.sendMessage('no thanks');
+  }
+
   /// Called when the user taps a specific hotel option.
   /// Sends the hotel name so the backend's message interpreter extracts
   /// ``selected_hotel_name`` and routes to select_hotel action.
@@ -573,7 +592,7 @@ class _ChatViewState extends State<_ChatView>
                                 }
                                 return MessageBubble(
                                 key: ValueKey(
-                                  'msg-$i-${messages[i].itinerary != null}-$refreshToken',
+                                  'msg-$i-${messages[i].hasCard}-$refreshToken',
                                 ),
                                 msg: messages[i],
                                 onApproveItinerary: () => _sendApprove(cubit),
@@ -581,6 +600,9 @@ class _ChatViewState extends State<_ChatView>
                                 onSelectFlight: (flight) => _selectFlight(cubit, flight),
                                 onBookingPayNow: () => _onBookingPayNow(cubit),
                                 onBookingLater: () => _onBookingLater(cubit),
+                                onPlanTrip: () => _onPlanTrip(cubit),
+                                onModifyPreferences: _onModifyPreferences,
+                                onStartFresh: () => _onStartFresh(cubit),
                               );
                               },
                             ),

@@ -1,48 +1,107 @@
 @startuml Auth_Flow
-title User Authentication (UC1) — Analysis View
+title User Authentication (UC#1) — Analysis View
 
 actor Traveler
 participant "Mobile App" as App
-participant "Backend" as Backend
-participant "Authentication\\nProvider" as AuthProvider
+participant "Backend\n(FastAPI)" as Backend
+participant "Firebase Auth" as Firebase
+participant "PostgreSQL DB" as DB
 
 == Sign Up ==
 
-Traveler -> App: Enter email, password, and name
+Traveler -> App: Enter email, password, name
 activate App
 
-App -> Backend: POST /auth/signup
+App -> App: Sign up with Firebase Auth SDK
+
+App -> Firebase: Create account with email & password
+activate Firebase
+Firebase --> App: Account created, ID token returned
+deactivate Firebase
+
+App -> Backend: POST /auth/register\n{Firebase ID token, full_name, phone}
 activate Backend
 
-Backend -> AuthProvider: Create user account
-activate AuthProvider
-AuthProvider --> Backend: User created
-deactivate AuthProvider
+Backend -> Firebase: verify_token(token) → uid, email
+activate Firebase
+Firebase --> Backend: uid + email verified
+deactivate Firebase
 
-Backend -> Backend: Store user profile
-Backend --> App: Account created and logged in
+Backend -> DB: Create user record\n{user_id=firebase_uid, email, name}
+activate DB
+DB --> Backend: User created
+deactivate DB
+
+Backend --> App: UserResponse + sync profile
 deactivate Backend
 
 App --> Traveler: Signed in successfully
 deactivate App
 
-== Login ==
+== Login (Auto-Register on First Login) ==
 
 Traveler -> App: Enter email and password
 activate App
 
-App -> Backend: POST /auth/login
+App -> Firebase: Sign in with email & password
+activate Firebase
+Firebase --> App: ID token returned
+deactivate Firebase
+
+App -> Backend: POST /auth/login\n{Firebase ID token}
 activate Backend
 
-Backend -> AuthProvider: Verify credentials
-activate AuthProvider
-AuthProvider --> Backend: Credentials verified
-deactivate AuthProvider
+Backend -> Firebase: verify_token(token) → uid, email
+activate Firebase
+Firebase --> Backend: uid + email verified
+deactivate Firebase
 
-Backend --> App: Authentication token
+alt User exists
+  Backend -> DB: SELECT user WHERE user_id=uid
+  activate DB
+  DB --> Backend: Existing user
+  deactivate DB
+else New user (auto-register)
+  Backend -> DB: INSERT user with uid, email
+  activate DB
+  DB --> Backend: User created
+  deactivate DB
+end
+
+Backend --> App: UserResponse (auto-login)
 deactivate Backend
 
 App --> Traveler: Logged in
+deactivate App
+
+== Token Refresh (Auto) ==
+
+App -> Firebase: onIdTokenChanged listener
+activate Firebase
+Firebase --> App: New ID token (before expiry)
+deactivate Firebase
+
+App -> Backend: Attach new token to next request\n(Authorization: Bearer <token>)
+activate Backend
+Backend -> Firebase: verify_token(token)
+Firebase --> Backend: uid confirmed
+Backend --> App: 200 OK (token valid)
+deactivate Backend
+
+Note right of App: Token refresh is automatic —\nFirebase SDK handles it transparently
+
+== Session Close ==
+
+Traveler -> App: Sign out
+activate App
+
+App -> Firebase: Sign out
+activate Firebase
+Firebase --> App: Session ended
+deactivate Firebase
+
+App -> Backend: Clear local state
+App --> Traveler: Signed out
 deactivate App
 
 @enduml

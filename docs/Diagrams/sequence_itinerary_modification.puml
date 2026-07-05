@@ -3,46 +3,99 @@ title Itinerary Modification (UC#3) — Analysis View
 
 actor Traveler
 participant "Mobile App" as App
-participant "Backend" as Backend
-participant "AI Service" as AI
+participant "Backend\n(Orchestrator)" as Backend
+participant "Edit Classifier\n(Groq Llama 3.3 70B)" as Classifier
+participant "Preference Reranker\n(Groq Llama 3.3 70B)" as Reranker
+participant "Itinerary Modifier\n(Gemini 2.5 Flash)" as Modifier
 participant "Database" as DB
 
-== Request Change ==
+== Step 1: Classify the Edit ==
 
-Traveler -> App: Request itinerary change
+Traveler -> App: Request itinerary change\n(e.g. "add more museums", "remove stop X")
 activate App
 
 App -> Backend: Send modification request
 activate Backend
 
-Backend -> AI: Interpret modification intent
-activate AI
-AI --> Backend: Intent understood
-deactivate AI
+Backend -> Classifier: classify_edit(request, itinerary)
+activate Classifier
 
-alt Preference adjustment
-  Backend -> AI: Regenerate with updated preferences
-  activate AI
-  AI --> Backend: Revised itinerary
-  deactivate AI
+Note right of Classifier
+  EditClassifyAgent returns:
+  - edit_type: ADD_PLACE | REMOVE | REPLACE
+    CHANGE_PREFERENCES | REGENERATE | ADD_CATEGORY ...
+  - target_day, target_category
+  - confidence, reasoning
+end note
 
-else Specific activity change
-  Backend -> DB: Search for new places
+Classifier --> Backend: EditClassification
+deactivate Classifier
+
+== Step 2: Route to Correct Handler ==
+
+alt Surgical edit (REMOVE, ADD, SWAP, REORDER, CHANGE_HOTEL)
+  Backend -> Backend: Route to _handle_surgical_edit()
+
+  Backend -> Modifier: run_itinerary_modifier()\n(delta operations via Gemini)
+  activate Modifier
+
+  Note right of Modifier
+    Compact context sent to LLM:
+    - itinerary summary
+    - available places pool
+    - user's modification request
+
+    LLM returns a single delta operation:
+    REMOVE / SWAP / EXCHANGE / ADD
+    ADD_CATEGORY / CHANGE_HOTEL
+    REORDER / RE_THEME
+
+    operations.py applies the delta
+    deterministically to the itinerary JSON
+  end note
+
+  Modifier -> DB: Hybrid search for ADD operations
   activate DB
-  DB --> Backend: Matching places
+  DB --> Modifier: Matching places from DB
   deactivate DB
-  Backend -> AI: Select best replacement
-  activate AI
-  AI --> Backend: Selected place and position
-  deactivate AI
-  Backend -> Backend: Apply change to itinerary
+
+  Modifier --> Backend: Modified itinerary\n(with _modifier_note)
+  deactivate Modifier
+
+else Preference shift (CHANGE_BUDGET, CHANGE_PACE, CHANGE_INTERESTS)
+  Backend -> Backend: Route to _handle_preference_change()
+
+  Backend -> Reranker: interpret_preference_adjustment()\n(Groq Llama 3.3 70B)
+  activate Reranker
+
+  Note right of Reranker
+    Receives current preferences + request.
+    Returns structured adjustments:
+    - interests_add/remove
+    - budget_level, pace, travel_style
+    - rerank_reason
+  end note
+
+  Reranker --> Backend: PreferenceAdjustment dict
+  deactivate Reranker
+
+  Backend -> Backend: apply_preference_adjustments()\n→ updated TripProfile
+
+  Backend -> Backend: Re-rank existing candidate places\n(no new retrieval — Mode 1)
+
+  Backend -> Backend: Re-run planner with updated preferences\n(skip retrieval & ranking)
+
+else Full regeneration (new destination, major overhaul)
+  Backend -> Backend: Route to _handle_regenerate()
+
+  Backend -> Backend: Clear pipeline state\n→ re-run full LangGraph pipeline
+  Note right
+    Same flow as PLAN_GENERATION:
+    retrieve → rank → plan → optimize → validate
+  end note
 end
 
-Backend -> AI: Validate revised itinerary
-activate AI
-AI --> Backend: Itinerary validated
-deactivate AI
-
+Backend -> Backend: Validate revised itinerary
 Backend -> DB: Save updated itinerary
 activate DB
 DB --> Backend: Itinerary saved
@@ -54,23 +107,25 @@ deactivate Backend
 App --> Traveler: Display revised itinerary
 deactivate App
 
-== Full Regeneration ==
+== Example: Specific Activity Change ==
 
-Traveler -> App: Request completely new plan
+Traveler -> App: "Replace stop X with a nearby museum"
 activate App
 
-App -> Backend: Regenerate trip
+App -> Backend: "Replace Al-Azhar Park with a museum"
 activate Backend
 
-Backend -> AI: Generate new itinerary\nwith revised preferences
-activate AI
-AI --> Backend: Completely new itinerary
-deactivate AI
+Backend -> Classifier: classify_edit(...)
+Classifier --> Backend: {edit_type: REPLACE_PLACE,\n target_category: museum}
 
-Backend --> App: New itinerary response
+Backend -> Modifier: run_itinerary_modifier(request, pool)
+Modifier -> Modifier: SWAP operation:\nremove place_id=X\nadd best matching museum from pool
+Modifier --> Backend: Itinerary with Al-Azhar Park → museum X
+
+Backend --> App: Updated itinerary
 deactivate Backend
 
-App --> Traveler: Display new itinerary
+App --> Traveler: "Replaced Al-Azhar Park with\n the Museum of Islamic Art"
 deactivate App
 
 @enduml

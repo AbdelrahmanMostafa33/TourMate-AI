@@ -1,49 +1,67 @@
 import 'dart:typed_data';
-import 'itinerary_data.dart';
-import 'hotel_option.dart';
-import 'booking_data.dart';
-import 'flight_options_payload.dart';
+import '../../logic/chat_segment.dart';
 
+/// A single message in the chat, holding a list of [ChatSegment]s.
+///
+/// A message can have any combination of text and card segments, in any
+/// order.  This replaces the previous union-type approach where each card
+/// type was a separate nullable field — adding a new card type now only
+/// requires adding a [CardSegment] without changing this model.
 class ChatMessage {
-  final String text;
   final bool isUser;
+  final List<ChatSegment> segments;
   final bool isStreaming;
-  final ItineraryData? itinerary;
   final Uint8List? imageBytes;
-  final HotelOptionsPayload? hotelOptions;
-  final BookingData? bookingData;
-  final FlightOptionsPayload? flightOptions;
 
-  ChatMessage({
-    required this.text,
+  const ChatMessage({
     required this.isUser,
+    this.segments = const [],
     this.isStreaming = false,
-    this.itinerary,
     this.imageBytes,
-    this.hotelOptions,
-    this.bookingData,
-    this.flightOptions,
   });
 
-  ChatMessage copyWith({
-    String? text,
-    bool? isUser,
-    bool? isStreaming,
-    ItineraryData? itinerary,
+  /// Convenience: plain text message (no cards).
+  factory ChatMessage.text(String text, {
+    bool isUser = false,
+    bool isStreaming = false,
     Uint8List? imageBytes,
-    HotelOptionsPayload? hotelOptions,
-    BookingData? bookingData,
-    FlightOptionsPayload? flightOptions,
   }) {
     return ChatMessage(
-      text: text ?? this.text,
-      isUser: isUser ?? this.isUser,
-      isStreaming: isStreaming ?? this.isStreaming,
-      itinerary: itinerary ?? this.itinerary,
-      imageBytes: imageBytes ?? this.imageBytes,
-      hotelOptions: hotelOptions ?? this.hotelOptions,
-      bookingData: bookingData ?? this.bookingData,
-      flightOptions: flightOptions ?? this.flightOptions,
+      isUser: isUser,
+      segments: [TextSegment(text: text, isStreaming: isStreaming)],
+      isStreaming: isStreaming,
+      imageBytes: imageBytes,
     );
   }
+
+  /// Convenience: card-only message (no text).
+  factory ChatMessage.card(String cardType, Map<String, dynamic> data, {bool isUser = false}) {
+    return ChatMessage(
+      isUser: isUser,
+      segments: [CardSegment(cardType: cardType, rawData: data)],
+    );
+  }
+
+  ChatMessage copyWith({
+    List<ChatSegment>? segments,
+    bool? isUser,
+    bool? isStreaming,
+    Uint8List? imageBytes,
+  }) {
+    return ChatMessage(
+      isUser: isUser ?? this.isUser,
+      segments: segments ?? List.from(this.segments),
+      isStreaming: isStreaming ?? this.isStreaming,
+      imageBytes: imageBytes ?? this.imageBytes,
+    );
+  }
+
+  /// The combined text of all [TextSegment]s (for display/search).
+  String get combinedText => segments
+      .whereType<TextSegment>()
+      .map((s) => s.text)
+      .join();
+
+  /// Whether any segment is a [CardSegment].
+  bool get hasCard => segments.any((s) => s is CardSegment);
 }

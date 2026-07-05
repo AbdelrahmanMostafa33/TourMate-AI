@@ -60,16 +60,22 @@ flowchart TB
         end
     end
 
-    subgraph Agents["🤖 Pipeline Agents"]
+    subgraph Agents["🤖 Pipeline Agents (LangGraph Graph)"]
         direction TB
 
         A1["1. Profile Loader\n───\n→ token, trip_id\n← profile"]
         A2["2. Place Retriever\n───\n→ destination_city, profile\n← filtered_places, matched_interest_subcats\n← agent_messages"]
         A3["3. Candidate Scorer\n───\n→ filtered_places, profile, duration_days\n→ matched_interest_subcats\n← candidate_places, agent_messages"]
-        A4["4. Planning Agent\n───\n→ candidate_places, profile, destination_city\n→ duration_days, user_message\n→ validation (retry feedback)\n← draft_itinerary, planning_attempts\n← agent_messages"]
-        A5["5. Route Optimizer\n───\n→ draft_itinerary\n← optimized_itinerary, agent_messages"]
-        A7["6. Itinerary Validator\n───\n→ optimized_itinerary, user_message, profile\n← is_valid, validation, agent_messages"]
-        A6["7. Hotel Selector\n(post-approval)\n───\n→ optimized_itinerary, candidate_places, profile\n← accommodation_suggestions, agent_messages"]
+        A4["4. Planning Agent (Gemini 2.5 Flash)\n───\n→ candidate_places, profile, destination_city\n→ duration_days, user_message\n→ validation (retry feedback)\n← draft_itinerary, planning_attempts\n← agent_messages"]
+        A5["5. Route Optimizer (OSRM + 2-opt)\n───\n→ draft_itinerary\n← optimized_itinerary, agent_messages"]
+        A6["6. Itinerary Validator (Groq Llama 3.3 70B)\n───\n→ optimized_itinerary, user_message, profile\n← is_valid, validation, agent_messages"]
+    end
+
+    subgraph PostApproval["✅ Post-Approval (Orchestrator)"]
+        direction TB
+
+        FA["Flight Selection Agent\n───\n→ origin, destination, dates\n← Amadeus flight offers\n← selected flight booking"]
+        HA["Hotel Selector\n───\n→ optimized_itinerary, candidate_places, profile\n← accommodation_suggestions"]
     end
 
     subgraph Edges["🔁 LangGraph Edges (Routing)"]
@@ -81,10 +87,10 @@ flowchart TB
     end
 
     subgraph External["🌐 External Services"]
-        ES1["(Mock/Firebase) Profile DB"]
+        ES1["Firebase Auth + PostgreSQL (Profile DB)"]
         ES2["PostgreSQL Places DB"]
-        ES3["(Mock) OSRM Routing"]
-        ES4["LLM (OpenAI/Groq/Claude)"]
+        ES3["OSRM Routing Server"]
+        ES4["LLM: Gemini 2.5 Flash (planning, vision)\nGroq Llama 3.3 70B (router, validator, reranker)"]
     end
 
     %% ── Data flow: Profile → State ──────────────────────────────────
@@ -108,14 +114,10 @@ flowchart TB
     A4 -- "writes planning_attempts" --> ATT
     A5 -- "reads draft_itinerary" ----> DRAFT
     A5 -- "writes optimized_itinerary" --> OPT
-    A7 -- "reads optimized_itinerary" ----> OPT
-    A7 -- "reads user_message" ----> MSG
-    A7 -- "writes is_valid" --> IS_VAL
-    A7 -- "writes validation" --> VAL
     A6 -- "reads optimized_itinerary" ----> OPT
-    A6 -- "reads candidate_places" ----> CAND
-    A6 -- "writes accommodation_suggestions" --> OPT
-
+    A6 -- "reads user_message" ----> MSG
+    A6 -- "writes is_valid" --> IS_VAL
+    A6 -- "writes validation" --> VAL
     PROF --> A1
     A1 --> A2
     ES2 --> A2
@@ -124,11 +126,14 @@ flowchart TB
     ES4 --> A4
     A4 --> A5
     ES3 --> A5
-    A5 --> A7
-    ES4 --> A7
-    A7 -. retry .-> A4
     A5 --> A6
     ES4 --> A6
+    A6 -. retry .-> A4
+
+    %% Post-approval connections (called from orchestrator)
+    OPT -.->|user approves| FA
+    FA -.->|flight selected or skipped| HA
+    HA -.->|accommodation selected| OPT
 
     %% ── Edge routing ─────────────────────────────────────────────────
     A2 -.-> E1
@@ -140,8 +145,8 @@ flowchart TB
     A4 -.-> E3
     E3 -.-> A5
     A5 -.-> E4
-    E4 -.-> A7
-    A7 -.-> E5
+    E4 -.-> A6
+    A6 -.-> E5
     E5 -.->|is_valid| END
     E5 -.->|retries left| A4
     E5 -.->|exhausted| END
@@ -151,4 +156,5 @@ flowchart TB
     style TripState fill:#e1f5fe,stroke:#01579b
     style TripProfile fill:#f3e5f5,stroke:#7b1fa2
     style Agents fill:#e8f5e9,stroke:#2e7d32
+    style PostApproval fill:#fff8e1,stroke:#f57f17
 ```

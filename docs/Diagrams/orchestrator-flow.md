@@ -19,7 +19,7 @@ sequenceDiagram
     participant CSco as 📊 Candidate Scorer
     participant PA as 🤖 Planning Agent<br/>(Gemini 2.5 Flash)
     participant RO as 🗺 Route Optimizer<br/>(OSRM + 2-opt)
-    participant IV as ✅ Itinerary Validator<br/>(Groq Llama 3.1 8B)
+    participant IV as ✅ Itinerary Validator<br/>(Groq Llama 3.3 70B)
     participant EX as 🌐 External (LLM / DB / OSRM)
 
     Note over U,EX: ─── PHASE 1: USER INPUT & ROUTING ───
@@ -116,7 +116,7 @@ sequenceDiagram
         RO->>RO: Nearest-neighbor + 2-opt reorder
         RO-->>IV: state["optimized_itinerary"]
 
-        Note over IV,O: Node 6: Itinerary Validator (Groq Llama 3.1 8B)
+        Note over IV,O: Node 6: Itinerary Validator (Groq Llama 3.3 70B)
         IV->>IV: Programmatic checks (time, distance)
         IV->>EX: LLM quality evaluation
         EX-->>IV: {is_valid, score, issues}
@@ -211,10 +211,10 @@ sequenceDiagram
 
 | Phase | What Happens |
 |---|---|
-| **1. Input & Routing** | User message → Redis session load → Unified Router (single LLM call) → action classification |
+| **1. Input & Routing** | User message → Redis session load → Unified Router (single LLM call) → action classification (GREETING phase) |
 | **2. Slot Filling** | If missing required info → ask clarification → loop until complete |
 | **3. Pipeline Kickoff** | Build profile from slots/DB → fuse image features → build TripState |
-| **4. LangGraph Pipeline (6 nodes)** | Profile Loader → Place Retriever → Candidate Scorer → Planning Agent (Gemini 2.5 Flash) → Route Optimizer (OSRM + 2-opt) → Itinerary Validator (Groq Llama 3.1 8B) |
-| **5. Result Processing** | Format message → save itinerary to state → save to Redis |
-| **6. Response** | Return/stream response with itinerary, validation, metrics |
-| **7. Post-Approval** | Approve → FLIGHT_SELECTION (search/select flights or skip) → HOTEL_SELECTION (hotel agent runs, user picks) → BOOKING (pay now via Flutter / do it later) → COMPLETED |
+| **4. LangGraph Pipeline (6 nodes)** | Profile Loader → Place Retriever → Candidate Scorer → Planning Agent (Gemini 2.5 Flash) → Route Optimizer (OSRM + 2-opt) → Itinerary Validator (Groq Llama 3.3 70B) |
+| **5. Result Processing** | set_itinerary → transition to ITINERARY_REVIEW → user can approve or request modifications |
+| **6. Response** | Return/stream response with itinerary, validation, metrics (ITINERARY_REVIEW phase) |
+| **7. Post-Approval** | User approves → FLIGHT_SELECTION (search/select flights or skip) → HOTEL_SELECTION (hotel agent runs, user picks) → BOOKING (pay now via Flutter / do it later) → COMPLETED |

@@ -66,8 +66,17 @@
 ## 10. Trip Lifecycle Management
 
 1. Users shall be able to create, view, update, and cancel trips throughout their lifecycle.
-2. Trip status shall progress naturally through stages: planning → itinerary ready → booking → confirmed → in progress → completed.
-3. Users shall explicitly approve itineraries before advancing to the booking phase.
+2. The conversation shall progress through the following phases in order:
+   - **greeting** — User connects; system greets and asks how to help
+   - **slot_filling** — System collects required trip details (destination, duration, interests)
+   - **plan_generation** — LangGraph pipeline runs to produce a personalized itinerary
+   - **itinerary_review** — Itinerary is displayed; user can approve, request changes, or ask questions
+   - **flight_selection** — After itinerary approval, system searches for flights (Amadeus) and user selects or skips
+   - **hotel_selection** — Hotel Agent picks matching accommodations; user browses and selects
+   - **booking** — User chooses to pay now or finalize later; bookings are created
+   - **completed** — Trip is finalized; conversation is terminal (read-only Q&A about the trip)
+
+3. Users shall explicitly approve itineraries before advancing to the flight selection phase.
 4. Failed payments shall be recoverable, allowing users to retry without losing progress.
 
 ## 11. Conversation Flow & Context Management
