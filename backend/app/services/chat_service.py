@@ -861,6 +861,8 @@ class ChatService:
                                     "why_recommended": snapshot.get("why_recommended", ""),
                                     "rating": snapshot.get("rating"),
                                     "address": snapshot.get("address", ""),
+                                    "lat": snapshot.get("lat"),
+                                    "lon": snapshot.get("lon"),
                                 })
                         days_list.append(entry)
 
