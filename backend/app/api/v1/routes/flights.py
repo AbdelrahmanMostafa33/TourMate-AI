@@ -14,6 +14,10 @@ Endpoints:
   - ``GET    /flights/{booking_id}``           — Get flight booking details (auth)
   - ``GET    /flights/trip/{trip_id}``         — List flight bookings for a trip (auth)
   - ``POST   /flights/{booking_id}/cancel``    — Cancel a flight booking (auth)
+
+Amadeus rate-limit responses (HTTP 429) are surfaced distinctly as HTTP 429
+with a user-friendly message, rather than being folded into the generic
+HTTP 400 path used for other Amadeus/business-logic errors.
 """
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -38,6 +42,7 @@ from app.schemas.flight import (
     FlightBookConfirmRequest,
 )
 from app.services.flight_service import FlightService
+from app.services.amadeus_client import AmadeusRateLimitError
 
 router = APIRouter()
 
@@ -83,6 +88,8 @@ async def search_cities(
     svc = FlightService(db)
     try:
         results = await svc.search_cities(query=q, max_results=max)
+    except AmadeusRateLimitError as exc:
+        raise HTTPException(status_code=429, detail=str(exc))
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     return results
@@ -114,6 +121,8 @@ async def smart_search_flights(
     svc = FlightService(db)
     try:
         result = await svc.smart_search(data, trip_id=trip_id)
+    except AmadeusRateLimitError as exc:
+        raise HTTPException(status_code=429, detail=str(exc))
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     return result
@@ -141,10 +150,17 @@ async def search_flights(
     Set ``return_date`` to ``null`` explicitly for one-way flights.
 
     Returns a list of parsed flight offers with pricing and availability.
+
+    Raises:
+        HTTPException(429): If Amadeus rejects the request due to rate
+            limiting (more than ~3 requests/second).
+        HTTPException(400): For other search/validation errors.
     """
     svc = FlightService(db)
     try:
         results = await svc.search_flights(data, trip_id=trip_id)
+    except AmadeusRateLimitError as exc:
+        raise HTTPException(status_code=429, detail=str(exc))
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     return results
@@ -173,6 +189,8 @@ async def initiate_flight_booking(
     svc = FlightService(db)
     try:
         result = await svc.initiate_flight_booking(data)
+    except AmadeusRateLimitError as exc:
+        raise HTTPException(status_code=429, detail=str(exc))
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     return result
@@ -202,6 +220,8 @@ async def confirm_flight_booking(
         booking = await svc.confirm_flight_booking(
             current_user["uid"], data,
         )
+    except AmadeusRateLimitError as exc:
+        raise HTTPException(status_code=429, detail=str(exc))
     except ValueError as exc:
         if str(exc) == "PAYMENT_RECEIVED_BOOKING_FAILED":
             raise HTTPException(

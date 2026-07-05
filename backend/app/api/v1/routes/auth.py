@@ -25,7 +25,7 @@ async def register(
     existing = result.scalar_one_or_none()
 
     if existing:
-        raise HTTPException(status_code=400, detail="User already exists")
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="User already exists")
 
     new_user = User(
         user_id      = firebase_uid,
