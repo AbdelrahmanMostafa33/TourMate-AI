@@ -49,7 +49,7 @@ class PaymentResponse(BaseModel):
     status:                PaymentStatus
     transaction_reference: Optional[str]
     raw_response:          Optional[dict] = None
-    paid_at:               datetime
+    paid_at:               Optional[datetime] = None
     created_at:            datetime
     updated_at:            Optional[datetime] = None
     receipt:               Optional[ReceiptResponse] = None

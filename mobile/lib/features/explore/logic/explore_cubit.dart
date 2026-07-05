@@ -1,5 +1,3 @@
-import 'dart:async';
-
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -15,9 +13,6 @@ class ExploreCubit extends Cubit<ExploreState> {
 
   /// Internal mapping: place_id → saved_place_id (used for unsave)
   Map<String, String> _savedPlaceIdMap = {};
-
-  /// Debounce timer for semantic search
-  Timer? _searchDebounce;
 
   /// Current search query
   String _currentQuery = '';
@@ -36,7 +31,6 @@ class ExploreCubit extends Cubit<ExploreState> {
 
   @override
   Future<void> close() {
-    _searchDebounce?.cancel();
     return super.close();
   }
 
@@ -271,91 +265,87 @@ class ExploreCubit extends Cubit<ExploreState> {
   }
 
   /// Search places using semantic search (embeddings).
-  /// Debounced to avoid excessive API calls while typing.
-  void searchPlaces(String query) {
+  /// Only called when the user explicitly submits (button tap or keyboard action).
+  Future<void> searchPlaces(String query) async {
     _currentQuery = query.trim();
-    _searchDebounce?.cancel();
 
     if (_currentQuery.isEmpty) {
-      // If query is empty, reload normal results with current filters
       clearSearch();
       return;
-    }    // Debounce: wait 500ms after user stops typing
-      _searchDebounce = Timer(const Duration(milliseconds: 500), () async {
-        // Save to recent history only when search actually executes
-        _addRecentSearch(_currentQuery);
+    }
 
-        String? city;
-        String? cat;
-        Set<String> saved = {};
-        List<PlaceModel> currentPlaces = [];
-        int currentTotal = 0;
-        state.maybeWhen(
-          loaded: (p, t, _, _, c, ct, s) {
-            currentPlaces = p;
-            currentTotal = t;
-            city = c;
-            cat = ct;
-            saved = s;
-          },
-          orElse: () {},
-        );
-        // Show shimmer overlay on existing results instead of full spinner
-        emit(ExploreState.loaded(
-          places: currentPlaces,
-          total: currentTotal,
-          isLoadingMore: false,
-          isLoadingResults: true,
-          selectedCity: city,
-          selectedCategory: cat,
-          savedPlaceIds: saved,
-        ));
-        try {
-          final result = await _repo.semanticSearch(
-            query: _currentQuery,
-            city: city,
-            category: cat,
-          );
-          result.when(
-            success: (data) => emit(ExploreState.loaded(
-              places: data.places,
-              total: data.total,
-              isLoadingMore: false,
-              isLoadingResults: false,
-              selectedCity: city,
-              selectedCategory: cat,
-              savedPlaceIds: saved,
-            )),
-            failure: (_) {
-              emit(ExploreState.loaded(
-                places: currentPlaces,
-                total: currentTotal,
-                isLoadingMore: false,
-                isLoadingResults: false,
-                selectedCity: city,
-                selectedCategory: cat,
-                savedPlaceIds: saved,
-              ));
-            },
-          );
-        } catch (e) {
-          emit(ExploreState.loaded(
-            places: currentPlaces,
-            total: currentTotal,
-            isLoadingMore: false,
-            isLoadingResults: false,
-            selectedCity: city,
-            selectedCategory: cat,
-            savedPlaceIds: saved,
-          ));
-        }
-      });
+    // Save to recent history
+    _addRecentSearch(_currentQuery);
+
+String? city;
+String? cat;
+Set<String> saved = {};
+List<PlaceModel> currentPlaces = [];
+int currentTotal = 0;
+state.maybeWhen(
+  loaded: (p, t, _, _, c, ct, s) {
+    currentPlaces = p;
+    currentTotal = t;
+    city = c;
+    cat = ct;
+    saved = s;
+  },
+  orElse: () {},
+);
+// Show shimmer overlay on existing results instead of full spinner
+emit(ExploreState.loaded(
+  places: currentPlaces,
+  total: currentTotal,
+  isLoadingMore: false,
+  isLoadingResults: true,
+  selectedCity: city,
+  selectedCategory: cat,
+  savedPlaceIds: saved,
+));
+try {
+  final result = await _repo.semanticSearch(
+    query: _currentQuery,
+    city: city,
+    category: cat,
+  );
+  result.when(
+    success: (data) => emit(ExploreState.loaded(
+      places: data.places,
+      total: data.total,
+      isLoadingMore: false,
+      isLoadingResults: false,
+      selectedCity: city,
+      selectedCategory: cat,
+      savedPlaceIds: saved,
+    )),
+    failure: (_) {
+      emit(ExploreState.loaded(
+        places: currentPlaces,
+        total: currentTotal,
+        isLoadingMore: false,
+        isLoadingResults: false,
+        selectedCity: city,
+        selectedCategory: cat,
+        savedPlaceIds: saved,
+      ));
+    },
+  );
+} catch (e) {
+  emit(ExploreState.loaded(
+    places: currentPlaces,
+    total: currentTotal,
+    isLoadingMore: false,
+    isLoadingResults: false,
+    selectedCity: city,
+    selectedCategory: cat,
+    savedPlaceIds: saved,
+  ));
+}
   }
 
   /// Clear search and reload normal results.
   void clearSearch() {
     _currentQuery = '';
-    _searchDebounce?.cancel();
     // Re-fetch current filters
     String? city;
     String? cat;

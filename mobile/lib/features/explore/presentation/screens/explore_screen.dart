@@ -304,13 +304,19 @@ class _ExploreBodyState extends State<_ExploreBody> {
               child: TextField(
                 controller: _searchController,
                 focusNode: _searchFocusNode,
-                onChanged: (query) {
-                  final isNotEmpty = query.trim().isNotEmpty;
-                  if (isNotEmpty != _isSearchActive) {
-                    setState(() => _isSearchActive = isNotEmpty);
-                  }
-                  cubit.searchPlaces(query);
+                onChanged: (_) {
+                  // Just update UI state when text changes, don't search yet
+                  setState(() => _isSearchActive = _searchController.text.trim().isNotEmpty);
                 },
+                onSubmitted: (query) {
+                  final trimmed = query.trim();
+                  if (trimmed.isNotEmpty) {
+                    setState(() => _isSearchActive = true);
+                    cubit.searchPlaces(trimmed);
+                    _searchFocusNode.unfocus();
+                  }
+                },
+                textInputAction: TextInputAction.search,
                 style: GoogleFonts.inter(fontSize: 14, color: tm.textPrimary),
                 decoration: InputDecoration(
                   hintText: 'Search naturally...',
@@ -341,7 +347,26 @@ class _ExploreBodyState extends State<_ExploreBody> {
                   child: Icon(Icons.close, size: 16, color: tm.textSecondary),
                 ),
               ),
-            const SizedBox(width: Spacing.md),
+            // Search button — triggers the actual search
+            GestureDetector(
+              onTap: () {
+                final query = _searchController.text.trim();
+                if (query.isNotEmpty) {
+                  setState(() => _isSearchActive = true);
+                  cubit.searchPlaces(query);
+                  _searchFocusNode.unfocus();
+                }
+              },
+              child: Container(
+                margin: const EdgeInsets.only(right: Spacing.md),
+                padding: const EdgeInsets.all(Spacing.sm),
+                decoration: BoxDecoration(
+                  color: tm.deepRoyalBlue,
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(Icons.search, size: 16, color: tm.brandWhite),
+              ),
+            ),
           ],
         ),
       ),

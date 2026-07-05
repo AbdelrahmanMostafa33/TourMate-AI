@@ -9,6 +9,7 @@ import '../../../../core/network/service_locator.dart';
 import '../../../../core/network/api_services.dart';
 import '../../../../core/widgets/app_snackbar.dart';
 import '../../../../core/widgets/premium_widgets.dart';
+import '../../../bookings/data/models/booking_models.dart';
 import '../../../chat/presentation/screens/chat_screen.dart';
 import '../../data/models/trip_detail_model.dart';
 import '../../data/models/trip_profile_data.dart';
@@ -51,7 +52,7 @@ class _TripDetailScreenState extends State<TripDetailScreen> {
                 message: message,
                 onRetry: () => context.read<TripDetailCubit>().fetchTripDetail(widget.tripId),
               ),
-              loaded: (trip, profile) => _buildContent(context, trip, profile),
+              loaded: (trip, profile, bookings) => _buildContent(context, trip, profile, bookings),
             );
           },
         ),
@@ -61,7 +62,7 @@ class _TripDetailScreenState extends State<TripDetailScreen> {
 
 
 
-  Widget _buildContent(BuildContext context, TripDetailModel trip, TripProfileData? profile) {
+  Widget _buildContent(BuildContext context, TripDetailModel trip, TripProfileData? profile, List<BookingResponse> bookings) {
     return Column(
       children: [
         // ── Header ─────────────────────────────────────
@@ -73,15 +74,15 @@ class _TripDetailScreenState extends State<TripDetailScreen> {
         // ── Trip Preferences ─────────────────────────────
         _buildTripPreferences(profile),
 
-        // ── Tabs: Itinerary | Map ────────────────────────
-        if (trip.itineraries.isNotEmpty) ...[
+        // ── Tabs: Itinerary | Map | Bookings ──────────────
+        if (trip.itineraries.isNotEmpty || bookings.isNotEmpty) ...[
           Expanded(
             child: DefaultTabController(
-              length: 2,
+              length: 3,
               child: Column(
                 children: [
                   _buildTabBar(),
-                  Expanded(child: _buildTabContent(trip)),
+                  Expanded(child: _buildTabContent(trip, bookings)),
                 ],
               ),
             ),
@@ -655,18 +656,30 @@ class _TripDetailScreenState extends State<TripDetailScreen> {
                 ],
               ),
             ),
+            Tab(
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.receipt_long_outlined, size: 16),
+                  const SizedBox(width: Spacing.sm),
+                  const Text('Booking'),
+                ],
+              ),
+            ),
           ],
         ),
       ),
     );
   }
 
-  Widget _buildTabContent(TripDetailModel trip) {
+  Widget _buildTabContent(TripDetailModel trip, List<BookingResponse> bookings) {
     return TabBarView(
       physics: const BouncingScrollPhysics(),
       children: [
         _buildItineraryTab(trip),
         _buildMapTab(trip),
+        _buildBookingTab(bookings),
       ],
     );
   }
@@ -685,11 +698,332 @@ class _TripDetailScreenState extends State<TripDetailScreen> {
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
+  // BOOKING TAB
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  Widget _buildBookingTab(List<BookingResponse> bookings) {
+    if (bookings.isEmpty) {
+      return Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 80,
+              height: 80,
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  colors: [
+                    tm.sapphire.withValues(alpha: 0.08),
+                    tm.sapphire.withValues(alpha: 0.02),
+                  ],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
+                shape: BoxShape.circle,
+                border: Border.all(color: tm.sapphire.withValues(alpha: 0.12)),
+              ),
+              child: Icon(Icons.receipt_long_outlined, size: 36, color: tm.sapphire.withValues(alpha: 0.6)),
+            ),
+            const SizedBox(height: Spacing.xl4),
+            Text(
+              'No bookings yet',
+              style: GoogleFonts.inter(fontSize: 18, fontWeight: FontWeight.w700, color: tm.textPrimary),
+            ),
+            const SizedBox(height: Spacing.md),
+            Text(
+              'Bookings will appear here once you\'ve confirmed\nhotel, flight, or other arrangements.',
+              style: GoogleFonts.inter(fontSize: 13, color: tm.textTertiary, height: 1.4),
+              textAlign: TextAlign.center,
+            ),
+          ],
+        ),
+      );
+    }
+
+    // Separate bookings by type
+    final flightBookings = bookings.where((b) => b.bookingType == 'flight').toList();
+    final hotelBookings = bookings.where((b) => b.bookingType == 'hotel').toList();
+
+    return ListView(
+      padding: const EdgeInsets.all(Spacing.xl3),
+      children: [
+        // ── Flights Section ──────────────────────────────
+        if (flightBookings.isNotEmpty) ...[
+          _buildSectionHeader(Icons.flight_takeoff_rounded, 'Flights'),
+          const SizedBox(height: Spacing.md),
+          ...flightBookings.map((b) => _buildBookingCard(b)),
+          const SizedBox(height: Spacing.xl3),
+        ],
+
+        // ── Hotels Section ───────────────────────────────
+        if (hotelBookings.isNotEmpty) ...[
+          _buildSectionHeader(Icons.bed_outlined, 'Hotels'),
+          const SizedBox(height: Spacing.md),
+          ...hotelBookings.map((b) => _buildBookingCard(b)),
+          const SizedBox(height: Spacing.xl3),
+        ],
+      ],
+    );
+  }
+
+  Widget _buildSectionHeader(IconData icon, String title) {
+    return Row(
+      children: [
+        Container(
+          padding: const EdgeInsets.all(Spacing.sm),
+          decoration: BoxDecoration(
+            gradient: const LinearGradient(
+              colors: [Color(0xFF0F172A), Color(0xFF1E3A8A)],
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+            ),
+            borderRadius: BorderRadius.circular(RadiusTokens.md),
+          ),
+          child: Icon(icon, size: 16, color: tm.sapphireLight),
+        ),
+        const SizedBox(width: Spacing.md),
+        Text(
+          title,
+          style: GoogleFonts.inter(
+            fontSize: 16,
+            fontWeight: FontWeight.w700,
+            color: tm.textPrimary,
+            letterSpacing: -0.2,
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildBookingCard(BookingResponse booking) {
+    final isFlight = booking.bookingType == 'flight';
+
+    // Status chip styling
+    Color statusColor;
+    switch (booking.status.toLowerCase()) {
+      case 'confirmed':
+        statusColor = const Color(0xFF059669);
+        break;
+      case 'pending':
+        statusColor = const Color(0xFFD97706);
+        break;
+      case 'cancelled':
+        statusColor = const Color(0xFFDC2626);
+        break;
+      case 'completed':
+        statusColor = const Color(0xFF2563EB);
+        break;
+      default:
+        statusColor = tm.textTertiary;
+    }
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: Spacing.xl3),
+      child: Container(
+        decoration: BoxDecoration(
+          color: tm.brandWhite,
+          borderRadius: BorderRadius.circular(RadiusTokens.xl3),
+          border: Border.all(color: tm.borderLight),
+          boxShadow: [
+            BoxShadow(
+              color: tm.deepNavy.withValues(alpha: 0.04),
+              blurRadius: 8,
+              offset: const Offset(0, 2),
+            ),
+          ],
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: Padding(
+          padding: const EdgeInsets.all(Spacing.xl3),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Header row: icon + label + status
+              Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(Spacing.sm),
+                    decoration: BoxDecoration(
+                      color: isFlight
+                          ? tm.sapphire.withValues(alpha: 0.08)
+                          : const Color(0xFF059669).withValues(alpha: 0.08),
+                      borderRadius: BorderRadius.circular(RadiusTokens.md),
+                    ),
+                    child: Icon(
+                      isFlight ? Icons.flight_rounded : Icons.bed_outlined,
+                      size: 20,
+                      color: isFlight ? tm.sapphire : const Color(0xFF059669),
+                    ),
+                  ),
+                  const SizedBox(width: Spacing.md),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          isFlight ? 'Flight Booking' : 'Hotel Booking',
+                          style: GoogleFonts.inter(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w700,
+                            color: tm.textPrimary,
+                          ),
+                        ),
+                        if (booking.provider != null)
+                          Text(
+                            _capitalizeProvider(booking.provider!),
+                            style: GoogleFonts.inter(
+                              fontSize: 12,
+                              color: tm.textTertiary,
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: Spacing.lg, vertical: Spacing.xxs),
+                    decoration: BoxDecoration(
+                      color: statusColor.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(RadiusTokens.lg),
+                      border: Border.all(color: statusColor.withValues(alpha: 0.3)),
+                    ),
+                    child: Text(
+                      _capitalizeStatus(booking.status),
+                      style: GoogleFonts.inter(
+                        fontSize: 11,
+                        color: statusColor,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+
+              const SizedBox(height: Spacing.xl3),
+              Container(height: 1, color: tm.divider),
+              const SizedBox(height: Spacing.xl3),
+
+              // Details rows
+              if (booking.confirmationNumber != null) ...[
+                _buildDetailRow(Icons.confirmation_number_outlined, 'Confirmation', booking.confirmationNumber!),
+                const SizedBox(height: Spacing.sm),
+              ],
+
+              if (booking.startDatetime != null) ...[
+                _buildDetailRow(
+                  isFlight ? Icons.flight_takeoff : Icons.login_rounded,
+                  isFlight ? 'Departure' : 'Check-in',
+                  _formatBookingDate(booking.startDatetime!),
+                ),
+                const SizedBox(height: Spacing.sm),
+              ],
+
+              if (booking.endDatetime != null) ...[
+                _buildDetailRow(
+                  isFlight ? Icons.flight_land : Icons.logout_rounded,
+                  isFlight ? 'Arrival' : 'Check-out',
+                  _formatBookingDate(booking.endDatetime!),
+                ),
+                const SizedBox(height: Spacing.sm),
+              ],
+
+              if (booking.totalCost != null) ...[
+                _buildDetailRow(
+                  Icons.attach_money_rounded,
+                  'Total',
+                  '\$${booking.totalCost!.toStringAsFixed(2)}${booking.currency != null ? ' ${booking.currency}' : ''}',
+                ),
+                const SizedBox(height: Spacing.sm),
+              ],
+
+              if (booking.bookingDate != null) ...[
+                _buildDetailRow(Icons.date_range_outlined, 'Booked on', _formatBookingDate(booking.bookingDate!)),
+                const SizedBox(height: Spacing.sm),
+              ],
+
+              if (booking.payment != null) ...[
+                _buildDetailRow(
+                  Icons.payment_outlined,
+                  'Payment',
+                  booking.payment!.status == 'completed' ? 'Paid' : booking.payment!.status,
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDetailRow(IconData icon, String label, String value) {
+    return Row(
+      children: [
+        Icon(icon, size: 14, color: tm.sapphireLight),
+        const SizedBox(width: Spacing.md),
+        SizedBox(
+          width: 100,
+          child: Text(
+            label,
+            style: GoogleFonts.inter(
+              fontSize: 12,
+              color: tm.textTertiary,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        ),
+        Expanded(
+          child: Text(
+            value,
+            style: GoogleFonts.inter(
+              fontSize: 13,
+              color: tm.textPrimary,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  String _capitalizeStatus(String status) {
+    return status.split('_').map((w) => w.isEmpty ? '' : '${w[0].toUpperCase()}${w.substring(1)}').join(' ');
+  }
+
+  String _capitalizeProvider(String provider) {
+    switch (provider.toLowerCase()) {
+      case 'booking_com':
+        return 'Booking.com';
+      case 'airbnb':
+        return 'Airbnb';
+      case 'amadeus':
+        return 'Amadeus';
+      default:
+        return provider.replaceAll('_', ' ').split(' ').map((w) => w.isEmpty ? '' : '${w[0].toUpperCase()}${w.substring(1)}').join(' ');
+    }
+  }
+
+  String _formatBookingDate(String dateStr) {
+    try {
+      final dt = DateTime.parse(dateStr);
+      final months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+      final hour = dt.hour > 12 ? dt.hour - 12 : (dt.hour == 0 ? 12 : dt.hour);
+      final amPm = dt.hour >= 12 ? 'PM' : 'AM';
+      return '${months[dt.month - 1]} ${dt.day}, ${dt.year} · $hour:${dt.minute.toString().padLeft(2, '0')} $amPm';
+    } catch (_) {
+      return dateStr;
+    }
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════
   // MAP TAB
   // ═══════════════════════════════════════════════════════════════════════════
 
   Widget _buildMapTab(TripDetailModel trip) {
-    final stops = trip.stopsWithCoords;
+    // Only show itinerary stops — filter out hotel/accommodation stops
+    // (they appear as cards in the hotel tab, not on the trip map)
+    final stops = trip.stopsWithCoords.where((s) {
+      final cat = (s.category ?? '').toLowerCase();
+      return cat != 'hotel' && cat != 'accommodation';
+    }).toList();
 
     if (stops.isEmpty) {
       return Center(

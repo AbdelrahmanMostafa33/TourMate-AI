@@ -1010,8 +1010,19 @@ class BookingService:
         trip_id: str,
         status: Optional[BookingStatus] = None,
     ) -> list[Booking]:
-        """List all bookings for a trip, optionally filtered by status."""
-        stmt = select(Booking).where(Booking.trip_id == trip_id)
+        """List all bookings for a trip, optionally filtered by status.
+
+        Uses ``selectinload`` for the ``payment`` relationship to avoid
+        ``MissingGreenlet`` errors in async sessions when FastAPI serializes
+        the response via Pydantic after the session closes.
+        """
+        stmt = (
+            select(Booking)
+            .options(
+                selectinload(Booking.payment).selectinload(Payment.receipt),
+            )
+            .where(Booking.trip_id == trip_id)
+        )
         if status:
             stmt = stmt.where(Booking.status == status)
         stmt = stmt.order_by(Booking.created_at.desc())

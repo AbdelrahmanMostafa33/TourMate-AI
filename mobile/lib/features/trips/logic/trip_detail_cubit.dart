@@ -1,5 +1,7 @@
+import 'dart:developer' as dev;
 import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../../../core/network/api_services.dart';
+import '../../bookings/data/models/booking_models.dart';
 import '../data/models/trip_profile_data.dart';
 import 'trip_detail_state.dart';
 
@@ -8,7 +10,7 @@ class TripDetailCubit extends Cubit<TripDetailState> {
 
   TripDetailCubit(this._api) : super(const TripDetailState.initial());
 
-  /// Fetch full trip detail and trip profile by ID — one time, no polling.
+  /// Fetch full trip detail, trip profile, and bookings by ID.
   Future<void> fetchTripDetail(String tripId) async {
     emit(const TripDetailState.loading());
     try {
@@ -20,7 +22,20 @@ class TripDetailCubit extends Cubit<TripDetailState> {
         profile = await _api.getTripProfile(tripId);
       } catch (_) {}
 
-      emit(TripDetailState.loaded(trip: trip, profile: profile));
+      // Bookings are optional — failures are silently ignored,
+      // but we log the error for debugging.
+      List<BookingResponse> bookings = [];
+      try {
+        bookings = await _api.listTripBookings(tripId, null);
+      } catch (e) {
+        dev.log('[TripDetailCubit] Failed to fetch bookings: $e');
+      }
+
+      emit(TripDetailState.loaded(
+        trip: trip,
+        profile: profile,
+        bookings: bookings,
+      ));
     } catch (e) {
       emit(TripDetailState.error(e.toString()));
     }
