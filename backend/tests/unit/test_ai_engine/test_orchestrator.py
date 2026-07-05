@@ -221,6 +221,37 @@ class TestItineraryReviewPhase:
         assert result2["response_type"] == "chat"
         assert result2["phase"] == "flight_selection"
 
+    @pytest.mark.asyncio
+    @patch("ai_engine.conversation.orchestrator.get_session_manager")
+    @patch("ai_engine.conversation.orchestrator.interpret_message")
+    @patch("ai_engine.conversation.orchestrator.trip_graph", new_callable=AsyncMock)
+    @patch("ai_engine.conversation.orchestrator.load_mock_profile")
+    async def test_review_chat_response_keeps_card_render_action(
+        self, mock_profile, mock_graph, mock_route, mock_get_manager, mock_manager
+    ):
+        mock_get_manager.return_value = mock_manager
+        mock_profile.return_value = {"user_id": "user1"}
+        mock_graph.ainvoke.return_value = _make_mock_graph_result()
+
+        from ai_engine.conversation.orchestrator import handle_chat
+
+        mock_route.return_value = _make_plan_result("Cairo", 2, interests=["history"])
+        result1 = await handle_chat(
+            "user_card_review",
+            "Plan me a 2-day trip to Cairo interested in history",
+        )
+        assert result1["phase"] == "itinerary_review"
+
+        mock_route.return_value = _make_router_result(
+            "answer_question",
+            "Your itinerary has been updated. See it below.",
+        )
+        result2 = await handle_chat("user_card_review", "show me the itinerary again")
+
+        assert result2["response_type"] == "chat"
+        assert result2["itinerary"] is not None
+        assert result2["ui"]["actions"] == ["replace_itinerary_card"]
+
 
 # ── handle_chat_stream Tests ──────────────────────────────────────────────────
 

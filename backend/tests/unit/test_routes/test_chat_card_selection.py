@@ -38,6 +38,22 @@ def test_itinerary_response_does_not_emit_hotel_options_until_hotel_phase():
     assert [card["card_type"] for card in cards] == ["itinerary"]
 
 
+def test_replace_ui_action_emits_itinerary_card_for_chat_response():
+    cards, _ = _build_cards_from_ai_result(
+        {
+            "response_type": "chat",
+            "phase": "itinerary_review",
+            "message": "Your itinerary is updated. See it below.",
+            "itinerary": _itinerary_with_hotels(),
+            "ui": {"actions": ["replace_itinerary_card"]},
+        },
+        include_itinerary=True,
+    )
+
+    assert [card["card_type"] for card in cards] == ["itinerary"]
+    assert cards[0]["presentation"] == "replace"
+
+
 def test_hotel_phase_emits_hotel_options_without_resending_itinerary_card():
     cards, _ = _build_cards_from_ai_result(
         {

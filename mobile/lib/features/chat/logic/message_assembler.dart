@@ -41,7 +41,8 @@ class MessageAssembler {
       // ── New protocol events ──────────────────────────────────────
       ResponseStartedEvent() => _onResponseStarted(),
       TextDeltaEvent(:final text) => _onToken(text),
-      CardEvent(:final cardType, :final data) => _onCard(cardType, data),
+      CardEvent(:final cardType, :final data, :final presentation) =>
+        _onCard(cardType, data, presentation: presentation),
       ResponseCompletedEvent() => _onResponseCompleted(),
 
       // ── Legacy events ────────────────────────────────────────────
@@ -154,7 +155,11 @@ class MessageAssembler {
     return _onDone();
   }
 
-  List<ChatSegment>? _onCard(String cardType, Map<String, dynamic> data) {
+  List<ChatSegment>? _onCard(
+    String cardType,
+    Map<String, dynamic> data, {
+    String presentation = 'append',
+  }) {
     if (_isFinalized) return null; // ignore late cards after finalization
 
     _hasNonTextSegment = true;
@@ -163,6 +168,13 @@ class MessageAssembler {
     _flushBuffer();
 
     final card = CardSegment(cardType: cardType, rawData: data);
+
+    if (presentation == 'replace') {
+      _segments.removeWhere(
+        (segment) => segment is CardSegment && segment.cardType == cardType,
+      );
+      _renderedCards.removeWhere((hash) => hash.startsWith('${cardType}_'));
+    }
 
     // Deduplicate: skip if we've already rendered this exact card.
     if (_renderedCards.contains(card.identityHash)) {

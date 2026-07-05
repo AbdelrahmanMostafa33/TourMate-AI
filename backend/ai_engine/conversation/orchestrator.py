@@ -699,12 +699,19 @@ async def _process_message_inner(
         message = router_result.response
         if image_acknowledgment:
             message = f"{image_acknowledgment} {message}"
+        include_itinerary = state.phase == ConversationPhase.ITINERARY_REVIEW
         response = {
             "response_type": "chat",
             "message": message,
-            "itinerary": state.itinerary if state.phase == ConversationPhase.ITINERARY_REVIEW else None,
+            "itinerary": state.itinerary if include_itinerary else None,
             "image_features": image_features,
         }
+        # When the LLM misroutes a modification (e.g. "remove outdoors") as
+        # answer_question, the itinerary data is still present but the card
+        # would be suppressed because response_type is "chat" not "itinerary".
+        # Adding the replace_itinerary_card action ensures the card renders.
+        if include_itinerary and state.itinerary:
+            response["ui"] = {"actions": ["replace_itinerary_card"]}
 
     # ── DEFAULT ACTION ─────────────────────────────────────────────────────
     else:

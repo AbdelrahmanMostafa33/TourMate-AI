@@ -105,6 +105,12 @@ def _should_include_itinerary_card(result: dict, include_itinerary: bool) -> boo
     )
 
 
+def _itinerary_card_presentation(result: dict, default: str) -> str:
+    if "replace_itinerary_card" in _ui_actions(result):
+        return "replace"
+    return default
+
+
 def _build_cards_from_ai_result(
     result: dict,
     *,
@@ -121,7 +127,7 @@ def _build_cards_from_ai_result(
         cards.append({
             "card_type": ChatCardType.ITINERARY.value,
             "data": itinerary,
-            "presentation": itinerary_presentation,
+            "presentation": _itinerary_card_presentation(result, itinerary_presentation),
         })
 
     accommodation = itinerary.get("accommodation_suggestions", []) if isinstance(itinerary, dict) else []

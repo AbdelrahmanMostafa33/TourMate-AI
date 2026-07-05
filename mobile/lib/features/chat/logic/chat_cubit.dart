@@ -447,11 +447,11 @@ class ChatCubit extends Cubit<ChatState> {
         _updateOrCreateAssistantMessage();
         break;
 
-      case events.CardEvent(:final cardType, :final data):
+      case events.CardEvent(:final cardType, :final data, :final presentation):
         // Route new protocol card event through the existing
         // _handleCardData dispatcher (same logic as legacy
         // CardDataEvent).
-        _handleCardData(cardType, data);
+        _handleCardData(cardType, data, presentation: presentation);
         break;
 
       case events.ResponseCompletedEvent():
@@ -536,7 +536,11 @@ class ChatCubit extends Cubit<ChatState> {
     _emitConnected(isTyping: true, bumpRefresh: true);
   }
 
-  void _handleCardData(String cardType, Map<String, dynamic> data) {
+  void _handleCardData(
+    String cardType,
+    Map<String, dynamic> data, {
+    String presentation = 'append',
+  }) {
     debugPrint(
         '[ChatCubit][DEBUG][card_data] Received cardType=$cardType, data keys=${data.keys.take(10).toList()}');
 
@@ -553,7 +557,7 @@ class ChatCubit extends Cubit<ChatState> {
 
     switch (cardType) {
       case 'itinerary':
-        _handleItineraryCard(data);
+        _handleItineraryCard(data, presentation: presentation);
         break;
       case 'booking':
         _handleBookingCard(data);
@@ -572,7 +576,10 @@ class ChatCubit extends Cubit<ChatState> {
     }
   }
 
-  void _handleItineraryCard(Map<String, dynamic> rawData) {
+  void _handleItineraryCard(
+    Map<String, dynamic> rawData, {
+    String presentation = 'append',
+  }) {
     debugPrint(
         '[ChatCubit][DEBUG][itinerary_card] rawData keys: ${rawData.keys.take(15).toList()}');
     debugPrint(
@@ -603,8 +610,15 @@ class ChatCubit extends Cubit<ChatState> {
     debugPrint(
         '[ChatCubit][DEBUG][itinerary_card] PARSED OK: destination=${itinerary.destination}, days=${itinerary.days.length}, stops=${itinerary.days.fold(0, (sum, d) => sum + d.stops.length)}');
 
-    final result = _assembler.onEvent(
-        events.CardDataEvent(cardType: 'itinerary', data: rawData));
+    if (presentation == 'replace') {
+      _removeExistingCards('itinerary');
+    }
+
+    final result = _assembler.onEvent(events.CardEvent(
+      cardType: 'itinerary',
+      data: rawData,
+      presentation: presentation,
+    ));
     debugPrint(
         '[ChatCubit][DEBUG][itinerary_card] _assembler.onEvent result is null: ${result == null}');
     if (result != null) {
@@ -619,6 +633,26 @@ class ChatCubit extends Cubit<ChatState> {
         bumpRefresh: true);
     debugPrint(
         '[ChatCubit][DEBUG][itinerary_card] Card rendering complete — emitted with bumpRefresh: true');
+  }
+
+  void _removeExistingCards(String cardType) {
+    for (var i = _messages.length - 1; i >= 0; i--) {
+      final msg = _messages[i];
+      if (msg.isUser) continue;
+
+      final filteredSegments = msg.segments
+          .where((segment) =>
+              !(segment is CardSegment && segment.cardType == cardType))
+          .toList();
+
+      if (filteredSegments.length == msg.segments.length) continue;
+
+      if (filteredSegments.isEmpty) {
+        _messages.removeAt(i);
+      } else {
+        _messages[i] = msg.copyWith(segments: filteredSegments);
+      }
+    }
   }
 
   void _handleBookingCard(Map<String, dynamic> rawData) {
