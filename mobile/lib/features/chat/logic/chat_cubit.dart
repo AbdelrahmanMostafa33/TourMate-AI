@@ -72,6 +72,11 @@ class ChatCubit extends Cubit<ChatState> {
   /// Tracks the signature of the most recently rendered itinerary card.
   String? _renderedItinerarySignature;
 
+  /// Card types already rendered in the current response session.
+  /// Used to deduplicate when the backend emits both new protocol and
+  /// legacy events for the same card (e.g. CARD + itinerary_data).
+  final Set<String> _processedCardTypes = {};
+
   ChatCubit(this._repo)
       : _assembler = MessageAssembler(),
         super(const ChatState.initial()) {
@@ -227,6 +232,7 @@ class ChatCubit extends Cubit<ChatState> {
     emit(ChatState.connected(
         messages: List.from(_messages), isTyping: true));
     _assembler.reset();
+    _processedCardTypes.clear();
     _repo.sendMessage(message, imageBytes: imageBytes);
 
     // Safety net: force-stop loading after 10 min
@@ -293,6 +299,7 @@ class ChatCubit extends Cubit<ChatState> {
     _flightBookingData = null;
     _selectedHotelInfo = null;
     _renderedItinerarySignature = null;
+    _processedCardTypes.clear();
     _reconnectingSince = null;
     onTripApproved = null;
     onTripCreated = null;
@@ -408,6 +415,7 @@ class ChatCubit extends Cubit<ChatState> {
 
     // ── Route typed event ─────────────────────────────────────────────
     switch (typed) {
+      // ── Legacy streaming events ─────────────────────────────────
       case events.TokenEvent():
         _assembler.onEvent(typed);
         _updateOrCreateAssistantMessage();
@@ -421,6 +429,37 @@ class ChatCubit extends Cubit<ChatState> {
         _finalizeAssistantMessage();
         break;
 
+      // ── New protocol events ─────────────────────────────────────
+      case events.ResponseStartedEvent():
+        // Prepare for a new assistant response without resetting
+        // the assembler if it was already reset by sendMessage().
+        // RESPONSE_STARTED may arrive before or after sendMessage
+        // resets the assembler; either way, the assembler handles
+        // re-entrant reset safely.
+        // Also reset the card dedup tracker for the new response.
+        _processedCardTypes.clear();
+        _assembler.onEvent(typed);
+        break;
+
+      case events.TextDeltaEvent():
+        // Same path as legacy TokenEvent — feed to assembler.
+        _assembler.onEvent(typed);
+        _updateOrCreateAssistantMessage();
+        break;
+
+      case events.CardEvent(:final cardType, :final data):
+        // Route new protocol card event through the existing
+        // _handleCardData dispatcher (same logic as legacy
+        // CardDataEvent).
+        _handleCardData(cardType, data);
+        break;
+
+      case events.ResponseCompletedEvent():
+        // Same finalisation path as legacy DoneEvent.
+        _finalizeAssistantMessage();
+        break;
+
+      // ── Shared events ───────────────────────────────────────────
       case events.ProgressEvent(
           :final agent, :final status, :final message):
         _handleProgress(agent, status, message);
@@ -433,7 +472,10 @@ class ChatCubit extends Cubit<ChatState> {
       case events.TripCreatedEvent(:final tripId):
         _bookingTripId = tripId;
         _repo.updateConnectionToTrip(tripId);
-        _assembler.reset();
+        // ⚠️ Do NOT reset the assembler here.  trip_created is a
+        // metadata/lifecycle event that arrives mid-stream; resetting
+        // the assembler would discard the current response's segments
+        // and cause the UI to lose rendered text/cards.
         onTripCreated?.call();
         break;
 
@@ -497,6 +539,18 @@ class ChatCubit extends Cubit<ChatState> {
   void _handleCardData(String cardType, Map<String, dynamic> data) {
     debugPrint(
         '[ChatCubit][DEBUG][card_data] Received cardType=$cardType, data keys=${data.keys.take(10).toList()}');
+
+    // Deduplicate: skip if this card type has already been rendered
+    // in the current response session.  This prevents double rendering
+    // when the backend emits both new protocol CARD events and legacy
+    // card events (e.g. itinerary_data) for the same data.
+    if (_processedCardTypes.contains(cardType)) {
+      debugPrint(
+          '[ChatCubit] ⚠️ Duplicate card skipped (cubit level): $cardType');
+      return;
+    }
+    _processedCardTypes.add(cardType);
+
     switch (cardType) {
       case 'itinerary':
         _handleItineraryCard(data);
@@ -756,14 +810,52 @@ class ChatCubit extends Cubit<ChatState> {
       }
     }
 
-    // Text segment
-    if (msg.content.isNotEmpty) {
-      segments.add(TextSegment(text: msg.content));
-    }
-
-    // Card segments from card_data metadata
     final meta = msg.cardData;
-    if (meta != null && meta.isNotEmpty) {
+
+    // ── New canonical segment format ─────────────────────────────────
+    // card_data now stores a ChatHistoryPayload with a canonical segments
+    // list that exactly matches what was rendered live, so Flutter can
+    // reconstruct cards without guessing from side metadata.
+    if (meta != null && meta['protocol'] == 'tourmate.chat') {
+      final rawSegments = meta['segments'] as List<dynamic>? ?? [];
+      for (final raw in rawSegments) {
+        if (raw is! Map) continue;
+        final segType = raw['type'] as String?;
+        switch (segType) {
+          case 'text':
+            final text = raw['text'] as String? ?? '';
+            if (text.isNotEmpty) {
+              segments.add(TextSegment(text: text));
+            }
+          case 'card':
+            final cardType = raw['card_type'] as String?;
+            final data = raw['data'] as Map<String, dynamic>?;
+            if (cardType != null && data != null) {
+              segments.add(CardSegment(
+                cardType: cardType,
+                rawData: Map<String, dynamic>.from(data),
+              ));
+              // Restore booking metadata from card data
+              if (cardType == 'booking') {
+                final rawHotel = data['hotel'] as Map<String, dynamic>?;
+                if (rawHotel != null) {
+                  _selectedHotelInfo = rawHotel;
+                }
+                _bookingTripId = tripId;
+              }
+            }
+        }
+      }
+
+      // Restore auxiliary data (flight_booking, etc.)
+      final auxiliary = meta['auxiliary'] as Map<String, dynamic>?;
+      if (auxiliary != null && auxiliary['flight_booking'] is Map) {
+        _flightBookingData =
+            Map<String, dynamic>.from(auxiliary['flight_booking'] as Map);
+      }
+    }
+    // ── Legacy format fallback ────────────────────────────────────────
+    else if (meta != null && meta.isNotEmpty) {
       final renderedCards =
           (meta['rendered_cards'] as List?)?.cast<String>() ?? [];
 
@@ -811,6 +903,18 @@ class ChatCubit extends Cubit<ChatState> {
       if (meta['flight_booking'] is Map) {
         _flightBookingData =
             Map<String, dynamic>.from(meta['flight_booking'] as Map);
+      }
+    }
+
+    // Text segment (after cards for correct ordering in canonical format,
+    // or as fallback for legacy format where text comes first).
+    if (msg.content.isNotEmpty &&
+        segments.whereType<TextSegment>().isEmpty) {
+      // Only add text if no text segment was already added from canonical
+      // segments (which already include text segments).
+      // Legacy format: text is stored separately in msg.content, so add it.
+      if (meta == null || meta['protocol'] != 'tourmate.chat') {
+        segments.insert(0, TextSegment(text: msg.content));
       }
     }
 

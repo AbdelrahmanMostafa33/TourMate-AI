@@ -87,6 +87,7 @@ def _build_gemini_llm(config: LLMConfig, api_key: str | None = None) -> BaseChat
         temperature=config.temperature,
         max_tokens=config.max_tokens,
         google_api_key=api_key,
+        timeout=60.0,
         max_retries=0,  # invoke_with_fallback handles retry externally
     )
 
@@ -104,6 +105,7 @@ def _build_groq_llm(config: LLMConfig, api_key: str | None = None) -> BaseChatMo
         temperature=config.temperature,
         max_tokens=config.max_tokens,
         groq_api_key=api_key,
+        timeout=30.0,
         max_retries=0,  # invoke_with_fallback handles retry externally
     )
 

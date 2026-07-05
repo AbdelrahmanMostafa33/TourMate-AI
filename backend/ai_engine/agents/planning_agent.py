@@ -469,7 +469,65 @@ Generate the itinerary now.
                 if full.get("cuisine_type"):
                     stop["cuisine_type"] = full["cuisine_type"]
 
+    # ── Post-hydration ID fixup ──────────────────────────────────────────
+    # The LLM sometimes hallucinates UUIDs instead of using the real
+    # place IDs from the candidate pool (e.g. outputs
+    # "1379e966-..." instead of "lo-000DB74A").  When a stop's ID
+    # isn't found in place_index, we do a name-based fallback match
+    # against all available places.  This prevents hallucinated UUIDs
+    # from polluting the DB's place_id column.
+    #
+    # Build a name→place lookup from all_available for the fallback.
+    name_index: dict[str, dict] = {}
+    for p in all_available:
+        pname = (p.get("name") or "").strip().lower()
+        if pname:
+            # Prefer the first occurrence so the match is deterministic
+            name_index.setdefault(pname, p)
 
+    fixed_count = 0
+    for day in itinerary.get("days", []):
+        for stop in day.get("stops", []):
+            stop_id = stop.get("id")
+            if not stop_id or stop_id in place_index:
+                continue  # already valid
+            # Hallucinated ID — try name match
+            stop_name = (stop.get("name") or "").strip().lower()
+            match = name_index.get(stop_name)
+            if match:
+                old_id = stop_id
+                stop["id"] = match["id"]
+                # Reattach all metadata from the match
+                stop["category"] = match.get("category", stop.get("category", ""))
+                stop["sub_category"] = match.get("sub_category", stop.get("sub_category", ""))
+                stop["lat"] = match.get("lat", stop.get("lat", 0.0))
+                stop["lon"] = match.get("lon", stop.get("lon", 0.0))
+                stop["photos"] = match.get("photos", [])[:1]
+                stop["address"] = match.get("address", "")
+                stop["maps_link"] = match.get("maps_link", "")
+                if match.get("cuisine_type"):
+                    stop["cuisine_type"] = match["cuisine_type"]
+                else:
+                    stop.pop("cuisine_type", None)
+                fixed_count += 1
+                logger.info(
+                    "[Planner] Fixed hallucinated stop ID: …%s → %s (name='%s')",
+                    old_id[-8:] if len(old_id) > 8 else old_id,
+                    match["id"],
+                    match.get("name", "?"),
+                )
+            else:
+                logger.warning(
+                    "[Planner] Cannot fix stop ID …%s — no name match in pool for '%s'",
+                    stop_id[-8:] if len(stop_id) > 8 else stop_id,
+                    stop.get("name", "?"),
+                )
+
+    if fixed_count:
+        logger.info(
+            "[Planner] Fixed %d hallucinated stop ID(s) via name match",
+            fixed_count,
+        )
 
     # Store successful itinerary in workflow state.
     # Hotels are NOT enriched here — that's handled by the Hotel Agent.

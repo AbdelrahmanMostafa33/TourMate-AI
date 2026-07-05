@@ -82,6 +82,23 @@ def _is_request_too_large_error(exc: Exception) -> bool:
     )
 
 
+def _is_timeout_error(exc: Exception) -> bool:
+    """Check whether an exception is a timeout / deadline-exceeded error.
+
+    These are treated as retryable — a different API key or provider
+    may respond faster.
+    """
+    msg = str(exc).lower()
+    return any(
+        kw in msg
+        for kw in (
+            "timeout", "timed out", "deadline exceeded",
+            "read timed out", "connection timed out",
+            "timeout exceeded",
+        )
+    )
+
+
 def _is_schema_validation_error(exc: Exception) -> bool:
     """Check whether an exception is a 400 schema/tool call validation error.
 
@@ -239,6 +256,18 @@ async def invoke_with_fallback(
                 if on_retry:
                     await on_retry(attempt + 1, max_retries, f"Server busy, waiting {backoff:.1f}s...")
                 await asyncio.sleep(backoff)
+                continue
+
+            # Timeout / Deadline Exceeded — try next key
+            # A different API key or provider may respond faster
+            if _is_timeout_error(exc):
+                tried_keys.add(api_key)
+                logger.warning(
+                    "[Fallback] Key …%s timed out on '%s' (attempt %d/%d, trying next key)",
+                    api_key[-4:], agent_role, attempt + 1, max_retries,
+                )
+                if on_retry:
+                    await on_retry(attempt + 1, max_retries, "API timed out, switching to next key")
                 continue
 
             # 400 Schema/Tool Call Validation Error — retry with same key

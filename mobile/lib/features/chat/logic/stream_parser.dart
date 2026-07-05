@@ -3,6 +3,12 @@ import 'chat_event.dart';
 
 /// Parses raw WebSocket messages into typed [TypedWsEvent]s.
 ///
+/// Supports two wire formats transparently:
+///   1. **New protocol envelope** (detected by `protocol: "tourmate.chat"`)
+///      — all events arrive inside a versioned envelope with strong typing.
+///   2. **Legacy ad-hoc events** — individual `type` / `data` top-level keys
+///      for backward compatibility during the transition period.
+///
 /// Design principles:
 ///   - **Fail-gracefully**: malformed events return `null` instead of crashing.
 ///   - **Deterministic**: same input always yields same output.
@@ -20,109 +26,190 @@ class StreamParser {
   /// them without crashing the stream.
   static TypedWsEvent? parse(Map<String, dynamic> raw) {
     try {
-      final type = raw['type'] as String?;
-      if (type == null) return null;
+      // ── Detect protocol ────────────────────────────────────────────
+      // New protocol envelope: all events have "protocol": "tourmate.chat".
+      final isNewProtocol = raw['protocol'] == 'tourmate.chat';
 
-      switch (type) {
-        // ── Streaming ───────────────────────────────────────────────
-        case 'token':
-          final text = raw['data'] as String? ?? '';
-          if (text.isEmpty) return null;
-          return TokenEvent(text: text);
-
-        case 'typing':
-          return const TypingEvent();
-
-        case 'done':
-          return const DoneEvent();
-
-        // ── Pipeline progress ───────────────────────────────────────
-        case 'progress':
-          final data = raw['data'] as Map<String, dynamic>?;
-          if (data == null) return null;
-          return ProgressEvent(
-            agent: data['agent'] as String? ?? '',
-            status: data['status'] as String? ?? 'running',
-            message: data['message'] as String? ?? '',
-          );
-
-        // ── Structured card data ────────────────────────────────────
-        case 'itinerary_data':
-          final data = raw['data'];
-          if (data is! Map) return null;
-          return CardDataEvent(cardType: 'itinerary', data: Map.from(data));
-
-        case 'booking_data':
-          final data = raw['data'];
-          if (data is! Map) return null;
-          return CardDataEvent(cardType: 'booking', data: Map.from(data));
-
-        case 'flight_options':
-          final data = raw['data'];
-          if (data is! Map) return null;
-          return CardDataEvent(cardType: 'flight_options', data: Map.from(data));
-
-        case 'hotel_options':
-          final data = raw['data'];
-          if (data is! Map) return null;
-          return CardDataEvent(cardType: 'hotel_options', data: Map.from(data));
-
-        case 'result':
-          // The backend forwards `result` events *only* for image_features
-          // (see process_message_stream in routes/chat.py).
-          // Extract image_features as a card if present.
-          final data = raw['data'] as Map<String, dynamic>?;
-          if (data == null) return null;
-          final imageFeatures = data['image_features'] as Map<String, dynamic>?;
-          if (imageFeatures != null && imageFeatures.isNotEmpty) {
-            return CardDataEvent(
-              cardType: 'image_features',
-              data: Map.from(imageFeatures),
-            );
-          }
-          return null; // no actionable data in this result
-
-        // ── Lifecycle ───────────────────────────────────────────────
-        case 'trip_created':
-          return TripCreatedEvent(
-            tripId: raw['trip_id'] as String? ?? '',
-            itineraryId: raw['itinerary_id'] as String?,
-          );
-
-        case 'trip_approved':
-          return const TripApprovedEvent();
-
-        case 'itinerary_updated':
-          return const RefreshEvent();
-
-        // ── Backend-internal signaling ─────────────────────────────
-        case 'phase':
-          // Phase transitions (e.g. "flight_selection", "completed") are
-          // backend-internal; forwarded to client but not consumed by UI.
-          return null;
-
-        case 'actions':
-          // Server-side action execution results forwarded but not
-          // consumed by Flutter UI (they trigger itinerary_updated).
-          return null;
-
-        case 'pong':
-          // Heartbeat response from the server — silently ignore.
-          return null;
-
-        // ── Errors ──────────────────────────────────────────────────
-        case 'error':
-          final msg = raw['data'] as String? ?? 'Unknown error';
-          return ErrorEvent(message: msg);
-
-        default:
-          // Unknown event type — log and skip
-          debugPrint('[StreamParser] ⚠️ Unknown event type: $type');
-          return null;
+      if (isNewProtocol) {
+        return _parseEnvelope(raw);
       }
+
+      // ── Legacy ad-hoc events ───────────────────────────────────────
+      return _parseLegacy(raw);
     } catch (e) {
       debugPrint('[StreamParser] ❌ Failed to parse event: $e');
       return null;
+    }
+  }
+
+  // ── New protocol envelope parser ─────────────────────────────────────
+
+  /// Parse a versioned protocol envelope.
+  ///
+  /// Format:
+  /// ```json
+  /// {
+  ///   "protocol": "tourmate.chat",
+  ///   "version": 1,
+  ///   "type": "assistant.text.delta",
+  ///   "sequence": 1,
+  ///   "data": { ... }
+  /// }
+  /// ```
+  static TypedWsEvent? _parseEnvelope(Map<String, dynamic> raw) {
+    final eventType = raw['type'] as String?;
+    final data = raw['data'] as Map<String, dynamic>? ?? {};
+    final responseId = raw['response_id'] as String?;
+
+    switch (eventType) {
+      // ── Response lifecycle ───────────────────────────────────────
+      case 'assistant.response.started':
+        return ResponseStartedEvent(responseId: responseId);
+
+      case 'assistant.text.delta':
+        final text = data['text'] as String?;
+        if (text == null || text.isEmpty) return null;
+        return TextDeltaEvent(text: text);
+
+      case 'assistant.response.completed':
+        return ResponseCompletedEvent(
+          status: data['status'] as String? ?? 'ok',
+          message: data['message'] as String? ?? '',
+        );
+
+      // ── Structured cards ─────────────────────────────────────────
+      case 'chat.card':
+        final cardType = data['card_type'] as String?;
+        final cardData = data['data'] as Map<String, dynamic>?;
+        if (cardType == null || cardData == null) return null;
+        return CardEvent(
+          cardType: cardType,
+          data: Map.from(cardData),
+          presentation: data['presentation'] as String? ?? 'append',
+        );
+
+      // ── Pipeline progress ────────────────────────────────────────
+      case 'pipeline.progress':
+        return ProgressEvent(
+          agent: data['agent'] as String? ?? '',
+          status: data['status'] as String? ?? 'running',
+          message: data['message'] as String? ?? '',
+        );
+
+      // ── Lifecycle events ─────────────────────────────────────────
+      case 'trip.created':
+        return TripCreatedEvent(
+          tripId: data['trip_id'] as String? ?? '',
+          itineraryId: data['itinerary_id'] as String?,
+        );
+
+      case 'trip.approved':
+        return const TripApprovedEvent();
+
+      case 'itinerary.updated':
+        return const RefreshEvent();
+
+      // ── Errors ───────────────────────────────────────────────────
+      case 'chat.error':
+        return ErrorEvent(message: data['message'] as String? ?? 'Unknown error');
+
+      default:
+        debugPrint('[StreamParser] ⚠️ Unknown envelope event type: $eventType');
+        return null;
+    }
+  }
+
+  // ── Legacy parser ────────────────────────────────────────────────────
+
+  /// Parse legacy ad-hoc events (no protocol envelope).
+  static TypedWsEvent? _parseLegacy(Map<String, dynamic> raw) {
+    final type = raw['type'] as String?;
+    if (type == null) return null;
+
+    switch (type) {
+      // ── Streaming ───────────────────────────────────────────────
+      case 'token':
+        final text = raw['data'] as String? ?? '';
+        if (text.isEmpty) return null;
+        return TokenEvent(text: text);
+
+      case 'typing':
+        return const TypingEvent();
+
+      case 'done':
+        return const DoneEvent();
+
+      // ── Pipeline progress ───────────────────────────────────────
+      case 'progress':
+        final data = raw['data'] as Map<String, dynamic>?;
+        if (data == null) return null;
+        return ProgressEvent(
+          agent: data['agent'] as String? ?? '',
+          status: data['status'] as String? ?? 'running',
+          message: data['message'] as String? ?? '',
+        );
+
+      // ── Structured cards (legacy) ───────────────────────────────
+      case 'itinerary_data':
+        final data = raw['data'];
+        if (data is! Map) return null;
+        return CardDataEvent(cardType: 'itinerary', data: Map.from(data));
+
+      case 'booking_data':
+        final data = raw['data'];
+        if (data is! Map) return null;
+        return CardDataEvent(cardType: 'booking', data: Map.from(data));
+
+      case 'flight_options':
+        final data = raw['data'];
+        if (data is! Map) return null;
+        return CardDataEvent(cardType: 'flight_options', data: Map.from(data));
+
+      case 'hotel_options':
+        final data = raw['data'];
+        if (data is! Map) return null;
+        return CardDataEvent(cardType: 'hotel_options', data: Map.from(data));
+
+      case 'result':
+        // Legacy `result` events may carry image_features.
+        final data = raw['data'] as Map<String, dynamic>?;
+        if (data == null) return null;
+        final imageFeatures = data['image_features'] as Map<String, dynamic>?;
+        if (imageFeatures != null && imageFeatures.isNotEmpty) {
+          return CardDataEvent(
+            cardType: 'image_features',
+            data: Map.from(imageFeatures),
+          );
+        }
+        return null;
+
+      // ── Lifecycle (legacy) ──────────────────────────────────────
+      case 'trip_created':
+        return TripCreatedEvent(
+          tripId: raw['trip_id'] as String? ?? '',
+          itineraryId: raw['itinerary_id'] as String?,
+        );
+
+      case 'trip_approved':
+        return const TripApprovedEvent();
+
+      case 'itinerary_updated':
+        return const RefreshEvent();
+
+      // ── Backend-internal signaling ──────────────────────────────
+      case 'phase':
+      case 'actions':
+      case 'pong':
+        return null;
+
+      // ── Errors ──────────────────────────────────────────────────
+      case 'error':
+        final msg = raw['data'] as String? ?? 'Unknown error';
+        return ErrorEvent(message: msg);
+
+      default:
+        debugPrint('[StreamParser] ⚠️ Unknown legacy event type: $type');
+        return null;
     }
   }
 }

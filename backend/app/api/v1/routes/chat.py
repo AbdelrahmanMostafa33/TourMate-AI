@@ -60,11 +60,97 @@ from app.models.trip import Trip
 from app.models.itinerary import Itinerary, Day, ItineraryStop
 from app.models.chat import Conversation, Message
 from app.models.profile import TripProfile
+from app.schemas.chat_protocol import (
+    ChatCardType,
+    ChatEventType,
+    build_event,
+    build_history_payload,
+    card_segment,
+    text_segment,
+)
 from app.services.chat_service import ChatService
 from app.services.image_service import ImageService
 from app.ws.manager import manager
 
 router = APIRouter()
+
+
+def _has_image_signal(image_features: Optional[dict]) -> bool:
+    return bool(
+        image_features
+        and image_features.get("confidence") in ("high", "medium")
+        and image_features.get("interests", [])
+    )
+
+
+def _build_cards_from_ai_result(
+    result: dict,
+    *,
+    include_itinerary: bool,
+    itinerary_presentation: str = "append",
+) -> tuple[list[dict], dict]:
+    """Convert an AI result dict into explicit UI cards + auxiliary metadata."""
+    cards: list[dict] = []
+    auxiliary: dict = {}
+
+    itinerary = result.get("itinerary")
+    phase = result.get("phase")
+    if itinerary and include_itinerary:
+        cards.append({
+            "card_type": ChatCardType.ITINERARY.value,
+            "data": itinerary,
+            "presentation": itinerary_presentation,
+        })
+
+    accommodation = itinerary.get("accommodation_suggestions", []) if isinstance(itinerary, dict) else []
+    should_show_hotels = bool(accommodation) and (
+        include_itinerary or phase == "hotel_selection"
+    )
+    if should_show_hotels:
+        cards.append({
+            "card_type": ChatCardType.HOTEL_OPTIONS.value,
+            "data": {"options": accommodation, "message": None},
+            "presentation": "append",
+        })
+
+    if result.get("booking_data"):
+        cards.append({
+            "card_type": ChatCardType.BOOKING.value,
+            "data": result["booking_data"],
+            "presentation": "append",
+        })
+
+    if result.get("flight_search_results"):
+        cards.append({
+            "card_type": ChatCardType.FLIGHT_OPTIONS.value,
+            "data": {
+                "offers": result["flight_search_results"],
+                "message": None,
+            },
+            "presentation": "append",
+        })
+
+    image_features = result.get("image_features")
+    if _has_image_signal(image_features):
+        cards.append({
+            "card_type": ChatCardType.IMAGE_FEATURES.value,
+            "data": image_features,
+            "presentation": "append",
+        })
+
+    if result.get("flight_booking"):
+        auxiliary["flight_booking"] = result["flight_booking"]
+
+    return cards, auxiliary
+
+
+def _response_segments_for_complete(text: str, cards: list[dict]) -> list[dict]:
+    segments = []
+    if text:
+        segments.append(text_segment(text))
+    for card in cards:
+        segments.append(card_segment(card["card_type"], card["data"]))
+    return segments
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -372,11 +458,24 @@ async def process_message_stream(
     profile_from_ai = None
     pool_state_from_ai = None
     image_features_from_result = None
-    # Collect structured card data for this response so chat history can
-    # reconstruct cards exactly as they appeared during live chat.
-    response_metadata: dict = {}
+    # Collect canonical segment list for chat history reconstruction.
+    # All segments (text + card) that Flutter renders live are also stored
+    # here so REST history returns exactly the same data.
+    response_segments: list[dict] = []
+    response_cards: list[dict] = []
+    response_auxiliary: dict = {}
 
     initial_pool_state = await svc.load_pool_for_trip(trip.trip_id)
+
+    # ── Protocol event sequence counter ───────────────────────────────────
+    _seq = 0
+
+    # ── Send RESPONSE_STARTED ────────────────────────────────────────────
+    _seq += 1
+    await manager.send(ws_key, build_event(
+        ChatEventType.RESPONSE_STARTED,
+        sequence=_seq,
+    ))
 
     try:
         from ai_engine.conversation.orchestrator import handle_chat_stream
@@ -404,7 +503,13 @@ async def process_message_stream(
             elif event_type == "text":
                 content        = chunk.get("content", "")
                 full_response += content
-                await manager.send(ws_key, {"type": "token", "data": content})
+                # NEW PROTOCOL: TEXT_DELTA
+                _seq += 1
+                await manager.send(ws_key, build_event(
+                    ChatEventType.TEXT_DELTA,
+                    sequence=_seq,
+                    data={"text": content},
+                ))
 
             elif event_type == "progress":
                 await manager.send(ws_key, chunk)
@@ -432,163 +537,85 @@ async def process_message_stream(
                     else:
                         approve_action = {"type": "APPROVE_ITINERARY"}
 
-                # ── Build rendered_cards list for chat history ─────────────────
-                #    This explicitly tells Flutter which card types to render.
-                #    Structured data may be persisted for reference (e.g. flight_booking
-                #    for Pay Now) without being listed here, so text messages that
-                #    carry itinerary/booking data as AI context don't get cards.
-                rendered_cards: list = []
+                # ── Build cards from AI result using the shared helper ────
+                cards, auxiliary = _build_cards_from_ai_result(
+                    result,
+                    include_itinerary=True,
+                    itinerary_presentation="append",
+                )
+                response_auxiliary.update(auxiliary)
 
-                if result.get("itinerary"):
-                    actions = [{"type": "CREATE_TRIP", "data": result["itinerary"]}]
-                    # Persist itinerary data for chat history reconstruction
-                    response_metadata["itinerary_data"] = result["itinerary"]
-                    # ── UI INTENT PROTOCOL ─────────────────────────────────────
-                    # The orchestrator encodes explicit UI intent via `ui.actions`.
-                    # - "replace_itinerary_card": itinerary has changed and the card
-                    #   should be replaced (modifications, accommodation swaps, etc.)
-                    # - No action: itinerary is carried as AI context only, don't
-                    #   touch the card (hotel selection, flight selection responses)
-                    #
-                    # For the first-time card (no prior card in this conversation),
-                    # always send itinerary_data regardless of UI actions.
-                    #
-                    # This replaces the previous _conversations_with_itinerary_card-only
-                    # guard which suppressed ALL subsequent itinerary_data events —
-                    # including legitimate modifications.
-                    ui = result.get("ui") or {}
-                    ui_actions = ui.get("actions", []) if isinstance(ui, dict) else []
-                    should_replace = "replace_itinerary_card" in ui_actions
-                    is_first_card = conversation.conversation_id not in _conversations_with_itinerary_card
+                # Track globally for persistence at end of stream
+                response_cards = cards
 
-                    if should_replace or is_first_card:
-                        await manager.send(ws_key, {
-                            "type": "itinerary_data",
-                            "data": result["itinerary"],
-                        })
-                        rendered_cards.append("itinerary")
-                        if is_first_card:
-                            _conversations_with_itinerary_card.add(conversation.conversation_id)
-                    # ── DEBUG: Log what we're sending to Flutter ─────────────────
-                    itin = result["itinerary"]
-                    itin_dest = itin.get("destination", "?")
-                    itin_days = itin.get("days", [])
-                    itin_total_stops = sum(len(d.get("stops", [])) for d in itin_days)
-                    itin_stop_names = []
-                    for d in itin_days[:3]:
-                        for s in (d.get("stops", []) or [])[:4]:
-                            itin_stop_names.append(s.get("name", "?"))
-                    has_accommodation = bool(itin.get("accommodation_suggestions", []))
-                    logger.info(
-                        "[ChatRoutes][DEBUG][itinerary_data] SENDING to ws_key=%s "
-                        "destination=%s days=%d total_stops=%d "
-                        "accommodation=%s stop_names=%s",
-                        ws_key, itin_dest, len(itin_days), itin_total_stops,
-                        has_accommodation, itin_stop_names,
-                    )
-                    # Always send itinerary_data to Flutter so it renders a card.
-                    await manager.send(ws_key, {
-                        "type": "itinerary_data",
-                        "data": result["itinerary"],
-                    })
-                    rendered_cards.append("itinerary")
+                for card in cards:
+                    card_type = card["card_type"]
+                    card_data = card["data"]
+                    presentation = card.get("presentation", "append")
 
-                    # Also forward accommodation_suggestions as hotel_options for card rendering
-                    accommodation = result["itinerary"].get("accommodation_suggestions", [])
-                    if accommodation:
-                        await manager.send(ws_key, {
-                            "type": "hotel_options",
-                            "data": {"options": accommodation, "message": None},
-                        })
-                        # Persist hotel_options so chat history can reconstruct the card.
-                        # Always mark as rendered — it may arrive without an itinerary card
-                        # (e.g. during hotel_selection phase after itinerary is already shown).
-                        response_metadata["hotel_options"] = {"options": accommodation, "message": None}
-                        rendered_cards.append("hotel")
-                    if result.get("profile"):
-                        profile_from_ai = result["profile"]
-                    if result.get("pool_state"):
-                        pool_state_from_ai = result["pool_state"]
-
-                # Send structured booking_data to Flutter for booking card rendering
-                if result.get("booking_data"):
-                    await manager.send(ws_key, {
-                        "type": "booking_data",
-                        "data": result["booking_data"],
-                    })
-                    response_metadata["booking_data"] = result["booking_data"]
-                    rendered_cards.append("booking")
-
-                # Send structured flight_search_results as flight_options for card rendering
-                if result.get("flight_search_results"):
-                    offers = result["flight_search_results"]
-                    if offers and len(offers) > 0:
-                        first = offers[0]
-                        has_raw = "raw_offer" in first
-                        raw_type = type(first.get("raw_offer")).__name__ if has_raw else "N/A"
-                        logger.info(
-                            "[FlightOptions] Sending %d offers. First offer keys=%s, has_raw_offer=%s, raw_type=%s",
-                            len(offers),
-                            list(first.keys()),
-                            has_raw,
-                            raw_type,
-                        )
-                        if has_raw and first["raw_offer"] is not None:
-                            logger.info(
-                                "[FlightOptions] raw_offer has %d keys: %s",
-                                len(first["raw_offer"]),
-                                list(first["raw_offer"].keys())[:20],
-                            )
-                    await manager.send(ws_key, {
-                        "type": "flight_options",
-                        "data": {
-                            "offers": offers,
-                            "message": None,
+                    # ── NEW PROTOCOL: CARD event ─────────────────────────
+                    _seq += 1
+                    await manager.send(ws_key, build_event(
+                        ChatEventType.CARD,
+                        sequence=_seq,
+                        data={
+                            "card_type": card_type,
+                            "data": card_data,
+                            "presentation": presentation,
                         },
-                    })
-                    response_metadata["flight_options"] = {
-                        "offers": offers,
-                        "message": None,
-                    }
-                    rendered_cards.append("flight")
+                    ))
 
-                # Capture flight_booking data (with raw_offer) for persistence
-                # so Pay Now works from chat history even without a cached draft.
-                # flight_booking is NOT added to rendered_cards — it's just data.
+                    # ── Per-card-type logic (legacy sends removed) ────────
+                    #    Only the new protocol CARD event above is sent to the
+                    #    client.  This section handles side-effects: tracking
+                    #    itinerary actions for DB persistence, and diagnostic logs.
+                    if card_type == ChatCardType.ITINERARY.value:
+                        # Track itinerary action for DB persistence
+                        actions = [{"type": "CREATE_TRIP", "data": card_data}]
+                        # Remember that this conversation has received its first
+                        # itinerary card (used by websocket_chat pre-population).
+                        _conversations_with_itinerary_card.add(conversation.conversation_id)
+                        logger.info(
+                            "[ChatRoutes] Itinerary card via protocol: ws_key=%s dest=%s days=%d stops=%d",
+                            ws_key,
+                            card_data.get("destination", "?"),
+                            len(card_data.get("days", [])),
+                            sum(len(d.get("stops", [])) for d in card_data.get("days", [])),
+                        )
+
+                    elif card_type == ChatCardType.FLIGHT_OPTIONS.value:
+                        offers = card_data.get("offers", [])
+                        if offers:
+                            logger.info(
+                                "[FlightOptions] Sending %d offers via protocol CARD event",
+                                len(offers),
+                            )
+
+                    elif card_type == ChatCardType.IMAGE_FEATURES.value:
+                        logger.info(
+                            "[ChatRoutes] Forwarded image_features via protocol card: %s",
+                            card_data.get("interests", [])[:3],
+                        )
+
+                # ── Capture profile / pool from result ────────────────────
+                if result.get("profile"):
+                    profile_from_ai = result["profile"]
+                if result.get("pool_state"):
+                    pool_state_from_ai = result["pool_state"]
+
+                # ── Capture flight_booking for persistence (not a card) ───
                 if result.get("flight_booking"):
-                    response_metadata["flight_booking"] = result["flight_booking"]
+                    response_auxiliary["flight_booking"] = result["flight_booking"]
 
-                # Save the rendered_cards list so Flutter knows what to render
-                response_metadata["rendered_cards"] = rendered_cards
+                # ── Build canonical segments for persistence ──────────────
+                response_segments = _response_segments_for_complete(full_response, cards)
 
-                # Persist photo_analysis data in card_data for chat history
+                # Capture image_features_from_result for DB persistence
                 image_features_from_result = result.get("image_features")
-                if image_features_from_result:
-                    # Check signal from dict (VisionFeatures was model_dump()'d by orchestrator)
-                    if image_features_from_result.get("confidence") in ("high", "medium") \
-                       and image_features_from_result.get("interests", []):
-                        response_metadata["image_features"] = image_features_from_result
-                        rendered_cards.append("photo_analysis")
-                        logger.info(
-                            "[ChatRoutes] Added photo_analysis to rendered_cards: %s",
-                            image_features_from_result.get("interests", [])[:3],
-                        )
-
-                        # ── Forward image_features to Flutter for live card rendering ──
-                        await manager.send(ws_key, {
-                            "type": "result",
-                            "data": {
-                                "image_features": image_features_from_result,
-                                "message": result.get("message", ""),
-                            },
-                        })
-                        logger.info(
-                            "[ChatRoutes] Forwarded image_features to Flutter: %s",
-                            image_features_from_result.get("interests", [])[:3],
-                        )
 
             elif event_type == "done":
-                await manager.send(ws_key, {"type": "done", "data": None})
+                # Don't forward 'done' yet — wait until persistence completes.
+                pass
 
     except Exception as exc:
         logger.exception("[ChatRoutes] AI engine streaming failed: %s", exc)
@@ -597,8 +624,17 @@ async def process_message_stream(
         actions        = []
         ai_session_id  = None
         approve_action = None
-        await manager.send(ws_key, {"type": "token", "data": full_response})
-        await manager.send(ws_key, {"type": "done", "data": None})
+        # Send negative event to client in protocol format
+        _seq += 1
+        await manager.send(ws_key, build_event(
+            ChatEventType.TEXT_DELTA,
+            sequence=_seq,
+            data={"text": full_response},
+        ))
+
+    # ── At this point, the stream is consumed. Do persistence, then send ──
+    #    completion to the client.
+    #    This fixes the race where 'done' arrived before the DB was updated.
 
     # ── Handle APPROVE_TRIP action ───────────────────────────────────────
     was_approved = False
@@ -755,9 +791,13 @@ async def process_message_stream(
             stops_created,
         )
 
-    # ── Save AI response to DB (with structured card_data for history) ──
+    # ── Save AI response to DB (with canonical segments for history) ──
     if full_response:
-        card_data_for_db = response_metadata if response_metadata else None
+        card_data_for_db = build_history_payload(
+            text=full_response,
+            cards=response_cards,
+            auxiliary=response_auxiliary if response_auxiliary else None,
+        ) if response_segments else None
         await svc.save_agent_message(
             conversation.conversation_id,
             full_response,
@@ -830,14 +870,39 @@ async def process_message_stream(
         was_approved, stops_created,
     )
 
+    # ── Send RESPONSE_COMPLETED (after all persistence is done) ──────────
+    _seq += 1
+    completed_data = {
+        "status": "ok",
+        "segments": response_segments,
+    }
+    await manager.send(ws_key, build_event(
+        ChatEventType.RESPONSE_COMPLETED,
+        sequence=_seq,
+        data=completed_data,
+    ))
+
     # ── Notify Flutter that trip was approved (after commit) ──────────────
     if was_approved:
-        await manager.send(ws_key, {"type": "trip_approved"})
+        _seq += 1
+        await manager.send(ws_key, build_event(
+            ChatEventType.TRIP_APPROVED,
+            sequence=_seq,
+        ))
 
     # ── Notify Flutter of actions ─────────────────────────────────────────
     if updated_actions:
-        await manager.send(ws_key, {"type": "actions", "data": updated_actions})
-        await manager.send(ws_key, {"type": "itinerary_updated"})
+        _seq += 1
+        await manager.send(ws_key, build_event(
+            ChatEventType.ACTIONS_APPLIED,
+            sequence=_seq,
+            data={"actions": updated_actions},
+        ))
+        _seq += 1
+        await manager.send(ws_key, build_event(
+            ChatEventType.ITINERARY_UPDATED,
+            sequence=_seq,
+        ))
 
     return ai_session_id
 
@@ -933,9 +998,18 @@ async def websocket_new_chat(
             profile_data_from_ai = None
             pool_state_from_ai = None
             image_features_from_result = None
-            # Collect structured card data for this response so chat history can
-            # reconstruct cards exactly as they appeared during live chat.
-            response_metadata_new: dict = {}
+            # Collect canonical segment list for chat history reconstruction
+            response_segments_new: list[dict] = []
+            response_cards_new: list[dict] = []
+            response_auxiliary_new: dict = {}
+            _new_seq = 0
+
+            # ── Send RESPONSE_STARTED ────────────────────────────────────
+            _new_seq += 1
+            await manager.send(ws_key, build_event(
+                ChatEventType.RESPONSE_STARTED,
+                sequence=_new_seq,
+            ))
 
             try:
                 from ai_engine.conversation.orchestrator import handle_chat_stream
@@ -956,7 +1030,12 @@ async def websocket_new_chat(
                     elif event_type == "text":
                         content        = chunk.get("content", "")
                         full_response += content
-                        await manager.send(ws_key, {"type": "token", "data": content})
+                        _new_seq += 1
+                        await manager.send(ws_key, build_event(
+                            ChatEventType.TEXT_DELTA,
+                            sequence=_new_seq,
+                            data={"text": content},
+                        ))
 
                     elif event_type == "progress":
                         await manager.send(ws_key, chunk)
@@ -969,128 +1048,93 @@ async def websocket_new_chat(
                         result_message = result.get("message", "")
                         if result_message:
                             full_response = result_message
-                        # ── Build rendered_cards list for chat history ─────────────────
-                        rendered_cards_new: list = []
 
-                        if result.get("itinerary"):
-                            actions = [{"type": "CREATE_TRIP", "data": result["itinerary"]}]
-                            # ── DEBUG: Log what we're sending to Flutter (new chat) ──
-                            itin = result["itinerary"]
-                            itin_dest = itin.get("destination", "?")
-                            itin_days = itin.get("days", [])
-                            itin_total_stops = sum(len(d.get("stops", [])) for d in itin_days)
-                            itin_stop_names = []
-                            for d in itin_days[:3]:
-                                for s in (d.get("stops", []) or [])[:4]:
-                                    itin_stop_names.append(s.get("name", "?"))
-                            logger.info(
-                                "[ChatRoutes][DEBUG][itinerary_data][new_chat] SENDING to ws_key=%s "
-                                "destination=%s days=%d total_stops=%d "
-                                "stop_names=%s",
-                                ws_key, itin_dest, len(itin_days), itin_total_stops,
-                                itin_stop_names,
-                            )
-                            # Send structured itinerary data to Flutter for card rendering
-                            await manager.send(ws_key, {
-                                "type": "itinerary_data",
-                                "data": result["itinerary"],
-                            })
-                            # Persist itinerary data — for a NEW chat this is always
-                            # the first (and only) itinerary card for this conversation.
-                            response_metadata_new["itinerary_data"] = result["itinerary"]
-                            rendered_cards_new.append("itinerary")
-                            # Also forward accommodation_suggestions as hotel_options for card rendering
-                            accommodation = result["itinerary"].get("accommodation_suggestions", [])
-                            if accommodation:
-                                await manager.send(ws_key, {
-                                    "type": "hotel_options",
-                                    "data": {"options": accommodation, "message": None},
-                                })
-                                response_metadata_new["hotel_options"] = {"options": accommodation, "message": None}
-                                rendered_cards_new.append("hotel")
-                        # Send structured booking_data to Flutter for booking card rendering
-                        if result.get("booking_data"):
-                            await manager.send(ws_key, {
-                                "type": "booking_data",
-                                "data": result["booking_data"],
-                            })
-                            response_metadata_new["booking_data"] = result["booking_data"]
-                            rendered_cards_new.append("booking")
-                        # Send structured flight_search_results as flight_options for card rendering
-                        if result.get("flight_search_results"):
-                            offers2 = result["flight_search_results"]
-                            if offers2 and len(offers2) > 0:
-                                first2 = offers2[0]
-                                has_raw2 = "raw_offer" in first2
-                                raw_type2 = type(first2.get("raw_offer")).__name__ if has_raw2 else "N/A"
-                                logger.info(
-                                    "[FlightOptions][new_chat] Sending %d offers. First offer has_raw_offer=%s, raw_type=%s, keys=%s",
-                                    len(offers2),
-                                    has_raw2,
-                                    raw_type2,
-                                    list(first2.keys()),
-                                )
-                            await manager.send(ws_key, {
-                                "type": "flight_options",
-                                "data": {
-                                    "offers": offers2,
-                                    "message": None,
+                        # ── Build cards from AI result using the shared helper ────
+                        cards, auxiliary = _build_cards_from_ai_result(
+                            result,
+                            include_itinerary=True,
+                            itinerary_presentation="append",
+                        )
+                        response_auxiliary_new.update(auxiliary)
+
+                        # Track globally for persistence
+                        response_cards_new = cards
+
+                        for card in cards:
+                            card_type = card["card_type"]
+                            card_data = card["data"]
+                            presentation = card.get("presentation", "append")
+
+                            # ── NEW PROTOCOL: CARD event ─────────────────
+                            _new_seq += 1
+                            await manager.send(ws_key, build_event(
+                                ChatEventType.CARD,
+                                sequence=_new_seq,
+                                data={
+                                    "card_type": card_type,
+                                    "data": card_data,
+                                    "presentation": presentation,
                                 },
-                            })
-                            response_metadata_new["flight_options"] = {
-                                "offers": offers2,
-                                "message": None,
-                            }
-                            rendered_cards_new.append("flight")
+                            ))
+
+                            # ── Per-card-type logic (legacy sends removed) ────────
+                            #    Only the new protocol CARD event above is sent.
+                            #    This section handles side-effects and logs.
+                            if card_type == ChatCardType.ITINERARY.value:
+                                actions = [{"type": "CREATE_TRIP", "data": card_data}]
+                                logger.info(
+                                    "[ChatRoutes] Itinerary card via protocol (new chat): "
+                                    "ws_key=%s dest=%s days=%d stops=%d",
+                                    ws_key,
+                                    card_data.get("destination", "?"),
+                                    len(card_data.get("days", [])),
+                                    sum(len(d.get("stops", [])) for d in card_data.get("days", [])),
+                                )
+
+                            elif card_type == ChatCardType.FLIGHT_OPTIONS.value:
+                                offers2 = card_data.get("offers", [])
+                                if offers2:
+                                    logger.info(
+                                        "[FlightOptions][new_chat] Sending %d offers via protocol CARD event",
+                                        len(offers2),
+                                    )
+
+                            elif card_type == ChatCardType.IMAGE_FEATURES.value:
+                                logger.info(
+                                    "[ChatRoutes] Forwarded image_features via protocol card (new chat): %s",
+                                    card_data.get("interests", [])[:3],
+                                )
+
+                        # ── Capture profile / pool from result ────────────
                         if result.get("profile"):
                             profile_data_from_ai = result["profile"]
                         if result.get("pool_state"):
                             pool_state_from_ai = result["pool_state"]
 
-                        # Capture flight_booking data (with raw_offer) for persistence
-                        # so Pay Now works from chat history even without a cached draft.
-                        # flight_booking is NOT added to rendered_cards — it's just data.
+                        # ── Capture flight_booking for persistence ────────
                         if result.get("flight_booking"):
-                            response_metadata_new["flight_booking"] = result["flight_booking"]
+                            response_auxiliary_new["flight_booking"] = result["flight_booking"]
 
-                        # Save the rendered_cards list so Flutter knows what to render
-                        response_metadata_new["rendered_cards"] = rendered_cards_new
+                        # ── Build canonical segments for persistence ──────
+                        response_segments_new = _response_segments_for_complete(full_response, cards)
 
-                        # Persist photo_analysis data in card_data for chat history
+                        # Capture image_features_from_result for DB persistence
                         image_features_from_result = result.get("image_features")
-                        if image_features_from_result:
-                            if image_features_from_result.get("confidence") in ("high", "medium") \
-                               and image_features_from_result.get("interests", []):
-                                response_metadata_new["image_features"] = image_features_from_result
-                                rendered_cards_new.append("photo_analysis")
-                                logger.info(
-                                    "[ChatRoutes] Added photo_analysis to rendered_cards (new chat): %s",
-                                    image_features_from_result.get("interests", [])[:3],
-                                )
-
-                                # ── Forward to Flutter for live card rendering ──
-                                await manager.send(ws_key, {
-                                    "type": "result",
-                                    "data": {
-                                        "image_features": image_features_from_result,
-                                        "message": result.get("message", ""),
-                                    },
-                                })
-                                logger.info(
-                                    "[ChatRoutes] Forwarded image_features to Flutter (new chat): %s",
-                                    image_features_from_result.get("interests", [])[:3],
-                                )
 
                     elif event_type == "done":
-                        await manager.send(ws_key, {"type": "done"})
+                        pass
 
             except Exception as exc:
                 logger.exception("[ChatRoutes] AI engine streaming failed in websocket_new_chat: %s", exc)
                 error_response = ChatService.build_error_response()
                 full_response  = error_response["message"]
                 actions        = []
-                await manager.send(ws_key, {"type": "token", "data": full_response})
-                await manager.send(ws_key, {"type": "done"})
+                _new_seq += 1
+                await manager.send(ws_key, build_event(
+                    ChatEventType.TEXT_DELTA,
+                    sequence=_new_seq,
+                    data={"text": full_response},
+                ))
 
             for action in actions:
                 if action.get("type") == "CREATE_TRIP" and not trip:
@@ -1111,8 +1155,13 @@ async def websocket_new_chat(
                         # Mark this conversation as having an itinerary card
                         # so subsequent process_message_stream calls (follow-ups)
                         # don't render duplicate itinerary cards.
-                        if conversation and "itinerary" in rendered_cards_new:
-                            _conversations_with_itinerary_card.add(conversation.conversation_id)
+                        if conversation:
+                            has_itinerary_card = any(
+                                c.get("card_type") == ChatCardType.ITINERARY.value
+                                for c in response_cards_new
+                            )
+                            if has_itinerary_card:
+                                _conversations_with_itinerary_card.add(conversation.conversation_id)
 
                         for msg in pending_messages:
                             await svc.save_message(
@@ -1165,11 +1214,15 @@ async def websocket_new_chat(
 
                         await db.commit()
 
-                        await manager.send(ws_key, {
-                            "type":         "trip_created",
-                            "trip_id":      trip.trip_id,
-                            "itinerary_id": created["itinerary"].itinerary_id,
-                        })
+                        _new_seq += 1
+                        await manager.send(ws_key, build_event(
+                            ChatEventType.TRIP_CREATED,
+                            sequence=_new_seq,
+                            data={
+                                "trip_id": trip.trip_id,
+                                "itinerary_id": created["itinerary"].itinerary_id,
+                            },
+                        ))
 
                         profile_data = await get_profile_data(user_id, trip.trip_id, db)
 
@@ -1200,7 +1253,11 @@ async def websocket_new_chat(
             pending_messages.append({"role": "assistant", "content": full_response})
 
             if conversation and full_response:
-                card_data_for_db = response_metadata_new if response_metadata_new else None
+                card_data_for_db = build_history_payload(
+                    text=full_response,
+                    cards=response_cards_new,
+                    auxiliary=response_auxiliary_new if response_auxiliary_new else None,
+                ) if response_segments_new else None
                 await svc.save_agent_message(
                     conversation.conversation_id,
                     full_response,
@@ -1209,8 +1266,28 @@ async def websocket_new_chat(
                 await db.commit()
 
             if updated_actions:
-                await manager.send(ws_key, {"type": "actions", "data": updated_actions})
-                await manager.send(ws_key, {"type": "itinerary_updated"})
+                _new_seq += 1
+                await manager.send(ws_key, build_event(
+                    ChatEventType.ACTIONS_APPLIED,
+                    sequence=_new_seq,
+                    data={"actions": updated_actions},
+                ))
+                _new_seq += 1
+                await manager.send(ws_key, build_event(
+                    ChatEventType.ITINERARY_UPDATED,
+                    sequence=_new_seq,
+                ))
+
+            # ── Send RESPONSE_COMPLETED ──────────────────────────────────
+            _new_seq += 1
+            await manager.send(ws_key, build_event(
+                ChatEventType.RESPONSE_COMPLETED,
+                sequence=_new_seq,
+                data={
+                    "status": "ok",
+                    "segments": response_segments_new,
+                },
+            ))
 
             history_list.append({"role": "user",      "content": effective_message})
             history_list.append({"role": "assistant", "content": full_response})
@@ -1423,8 +1500,9 @@ async def get_history(
             seen_content.add(key)
             deduped.append(m)
 
-    return [
-        {
+    result_messages = []
+    for m in deduped:
+        entry = {
             "message_id":      m.message_id,
             "conversation_id": m.conversation_id,
             "sender":          m.sender,
@@ -1433,8 +1511,57 @@ async def get_history(
             "card_data":       m.card_data,
             "timestamp":       m.timestamp,
         }
-        for m in deduped
-    ]
+
+        # ── Upgrade legacy card_data to canonical segments format ───────
+        #    If card_data is an old-style dict (has "rendered_cards" key),
+        #    convert it to the protocol format.  New responses already store
+        #    canonical segments via build_history_payload().
+        if m.card_data and isinstance(m.card_data, dict) and "rendered_cards" in m.card_data:
+            try:
+                legacy = m.card_data
+                text = m.content or ""
+                cards = []
+
+                # Rebuild card list from legacy keys
+                itinerary_data = legacy.get("itinerary_data")
+                if itinerary_data:
+                    cards.append({"card_type": ChatCardType.ITINERARY.value, "data": itinerary_data})
+
+                hotel_data = legacy.get("hotel_options")
+                if hotel_data:
+                    cards.append({"card_type": ChatCardType.HOTEL_OPTIONS.value, "data": hotel_data})
+
+                booking_data = legacy.get("booking_data")
+                if booking_data:
+                    cards.append({"card_type": ChatCardType.BOOKING.value, "data": booking_data})
+
+                flight_data = legacy.get("flight_options")
+                if flight_data:
+                    cards.append({"card_type": ChatCardType.FLIGHT_OPTIONS.value, "data": flight_data})
+
+                image_data = legacy.get("image_features")
+                if image_data:
+                    cards.append({"card_type": ChatCardType.IMAGE_FEATURES.value, "data": image_data})
+
+                auxiliary = {}
+                flight_booking = legacy.get("flight_booking")
+                if flight_booking:
+                    auxiliary["flight_booking"] = flight_booking
+
+                entry["card_data"] = build_history_payload(
+                    text=text,
+                    cards=cards,
+                    auxiliary=auxiliary if auxiliary else None,
+                )
+            except Exception as convert_err:
+                logger.warning(
+                    "[ChatRoutes] Failed to convert legacy card_data for msg %s: %s",
+                    m.message_id, convert_err,
+                )
+
+        result_messages.append(entry)
+
+    return result_messages
 
 
 # ═════════════════════════════════════════════════════════════════════════════

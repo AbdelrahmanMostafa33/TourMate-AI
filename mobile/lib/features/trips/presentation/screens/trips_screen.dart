@@ -19,18 +19,6 @@ class TripsScreen extends StatefulWidget {
 }
 
 class _TripsScreenState extends State<TripsScreen> {
-  TourMateColors get tm => context.tm;
-
-  @override
-  void initState() {
-    super.initState();
-
-    /// 👇 Initial load
-    Future.microtask(() {
-      if (mounted) context.read<TripsCubit>().getTrips();
-    });
-  }
-
   @override
   Widget build(BuildContext context) {
     return BlocProvider.value(
