@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../../../app/app_theme.dart';
 import '../../../../core/theme/design_tokens.dart';
+import '../../../../core/widgets/expandable_recommendation.dart';
 import '../../data/models/itinerary_data.dart';
 
 class ItineraryCard extends StatelessWidget {
@@ -360,14 +361,12 @@ class _StopTimelineItem extends StatelessWidget {
                         ],
                       ),
 
-                      // Why recommended
+                      // Why recommended — with lightbulb icon, styled container, and expandable text
                       if (stop.whyRecommended.isNotEmpty) ...[
                         const SizedBox(height: Spacing.sm),
-                        Text(
-                          stop.whyRecommended,
-                          style: GoogleFonts.inter(fontSize: 12, color: tm.textSecondary, height: 1.4),
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
+                        ExpandableRecommendation(
+                          text: stop.whyRecommended,
+                          maxLinesCollapsed: 3,
                         ),
                       ],
 

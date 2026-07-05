@@ -79,6 +79,7 @@ class ExploreCubit extends Cubit<ExploreState> {
   void removeRecentSearch(String query) {
     _recentSearches.remove(query);
     _persistRecentSearches();
+    _emitIfLoaded();
   }
 
   /// Clear all recent searches.

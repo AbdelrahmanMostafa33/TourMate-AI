@@ -607,9 +607,6 @@ class ChatCubit extends Cubit<ChatState> {
       return;
     }
 
-    debugPrint(
-        '[ChatCubit][DEBUG][itinerary_card] PARSED OK: destination=${itinerary.destination}, days=${itinerary.days.length}, stops=${itinerary.days.fold(0, (sum, d) => sum + d.stops.length)}');
-
     if (presentation == 'replace') {
       _removeExistingCards('itinerary');
     }

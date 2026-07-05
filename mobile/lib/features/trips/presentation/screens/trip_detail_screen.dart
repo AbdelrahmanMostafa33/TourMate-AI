@@ -5,6 +5,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:latlong2/latlong.dart' as latlong;
 import '../../../../app/app_theme.dart';
 import '../../../../core/theme/design_tokens.dart';
+import '../../../../core/widgets/expandable_recommendation.dart';
 import '../../../../core/network/service_locator.dart';
 import '../../../../core/network/api_services.dart';
 import '../../../../core/widgets/app_snackbar.dart';
@@ -2014,18 +2015,12 @@ class _StopTimelineCard extends StatelessWidget {
                               ],
                             ),
 
-                            // AI notes
+                            // AI notes — expandable recommendation
                             if (stop.aiNotes != null && stop.aiNotes!.isNotEmpty) ...[
                               const SizedBox(height: Spacing.sm),
-                              Text(
-                                stop.aiNotes!,
-                                style: GoogleFonts.inter(
-                                  fontSize: 12,
-                                  color: tm.textSecondary,
-                                  height: 1.4,
-                                ),
-                                maxLines: 3,
-                                overflow: TextOverflow.ellipsis,
+                              ExpandableRecommendation(
+                                text: stop.aiNotes!,
+                                maxLinesCollapsed: 3,
                               ),
                             ],
 
