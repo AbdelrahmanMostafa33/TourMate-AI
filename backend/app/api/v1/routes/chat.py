@@ -469,6 +469,29 @@ async def process_message_stream(
                         rendered_cards.append("itinerary")
                         if is_first_card:
                             _conversations_with_itinerary_card.add(conversation.conversation_id)
+                    # ── DEBUG: Log what we're sending to Flutter ─────────────────
+                    itin = result["itinerary"]
+                    itin_dest = itin.get("destination", "?")
+                    itin_days = itin.get("days", [])
+                    itin_total_stops = sum(len(d.get("stops", [])) for d in itin_days)
+                    itin_stop_names = []
+                    for d in itin_days[:3]:
+                        for s in (d.get("stops", []) or [])[:4]:
+                            itin_stop_names.append(s.get("name", "?"))
+                    has_accommodation = bool(itin.get("accommodation_suggestions", []))
+                    logger.info(
+                        "[ChatRoutes][DEBUG][itinerary_data] SENDING to ws_key=%s "
+                        "destination=%s days=%d total_stops=%d "
+                        "accommodation=%s stop_names=%s",
+                        ws_key, itin_dest, len(itin_days), itin_total_stops,
+                        has_accommodation, itin_stop_names,
+                    )
+                    # Always send itinerary_data to Flutter so it renders a card.
+                    await manager.send(ws_key, {
+                        "type": "itinerary_data",
+                        "data": result["itinerary"],
+                    })
+                    rendered_cards.append("itinerary")
 
                     # Also forward accommodation_suggestions as hotel_options for card rendering
                     accommodation = result["itinerary"].get("accommodation_suggestions", [])
@@ -951,6 +974,22 @@ async def websocket_new_chat(
 
                         if result.get("itinerary"):
                             actions = [{"type": "CREATE_TRIP", "data": result["itinerary"]}]
+                            # ── DEBUG: Log what we're sending to Flutter (new chat) ──
+                            itin = result["itinerary"]
+                            itin_dest = itin.get("destination", "?")
+                            itin_days = itin.get("days", [])
+                            itin_total_stops = sum(len(d.get("stops", [])) for d in itin_days)
+                            itin_stop_names = []
+                            for d in itin_days[:3]:
+                                for s in (d.get("stops", []) or [])[:4]:
+                                    itin_stop_names.append(s.get("name", "?"))
+                            logger.info(
+                                "[ChatRoutes][DEBUG][itinerary_data][new_chat] SENDING to ws_key=%s "
+                                "destination=%s days=%d total_stops=%d "
+                                "stop_names=%s",
+                                ws_key, itin_dest, len(itin_days), itin_total_stops,
+                                itin_stop_names,
+                            )
                             # Send structured itinerary data to Flutter for card rendering
                             await manager.send(ws_key, {
                                 "type": "itinerary_data",

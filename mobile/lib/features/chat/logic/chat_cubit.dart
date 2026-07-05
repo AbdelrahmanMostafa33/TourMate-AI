@@ -495,6 +495,8 @@ class ChatCubit extends Cubit<ChatState> {
   }
 
   void _handleCardData(String cardType, Map<String, dynamic> data) {
+    debugPrint(
+        '[ChatCubit][DEBUG][card_data] Received cardType=$cardType, data keys=${data.keys.take(10).toList()}');
     switch (cardType) {
       case 'itinerary':
         _handleItineraryCard(data);
@@ -517,14 +519,40 @@ class ChatCubit extends Cubit<ChatState> {
   }
 
   void _handleItineraryCard(Map<String, dynamic> rawData) {
+    debugPrint(
+        '[ChatCubit][DEBUG][itinerary_card] rawData keys: ${rawData.keys.take(15).toList()}');
+    debugPrint(
+        '[ChatCubit][DEBUG][itinerary_card] has "days": ${rawData.containsKey("days")}, days type: ${rawData["days"]?.runtimeType}');
+    if (rawData["days"] is List) {
+      final daysList = rawData["days"] as List;
+      debugPrint(
+          '[ChatCubit][DEBUG][itinerary_card] days length: ${daysList.length}');
+      for (final day in daysList) {
+        final dayMap = day as Map;
+        final stops = dayMap["stops"] as List? ?? [];
+        debugPrint(
+            '[ChatCubit][DEBUG][itinerary_card]   Day ${dayMap["day_number"]}: ${stops.length} stops, first few: ${stops.take(3).map((s) => (s is Map ? s["name"] : "?")).toList()}');
+      }
+    }
+    final hasAccommodation = rawData.containsKey("accommodation_suggestions") &&
+        rawData["accommodation_suggestions"] is List &&
+        (rawData["accommodation_suggestions"] as List).isNotEmpty;
+    debugPrint(
+        '[ChatCubit][DEBUG][itinerary_card] has accommodation: $hasAccommodation');
+
     final itinerary = _tryParseItinerary(rawData);
     if (itinerary == null) {
       debugPrint('[ChatCubit] ⚠️ itinerary_data parsing returned null');
       return;
     }
 
+    debugPrint(
+        '[ChatCubit][DEBUG][itinerary_card] PARSED OK: destination=${itinerary.destination}, days=${itinerary.days.length}, stops=${itinerary.days.fold(0, (sum, d) => sum + d.stops.length)}');
+
     final result = _assembler.onEvent(
         events.CardDataEvent(cardType: 'itinerary', data: rawData));
+    debugPrint(
+        '[ChatCubit][DEBUG][itinerary_card] _assembler.onEvent result is null: ${result == null}');
     if (result != null) {
       _updateOrCreateAssistantMessage();
       _renderedItinerarySignature = _computeItinerarySignature(itinerary);
@@ -535,6 +563,8 @@ class ChatCubit extends Cubit<ChatState> {
           orElse: () => false,
         ),
         bumpRefresh: true);
+    debugPrint(
+        '[ChatCubit][DEBUG][itinerary_card] Card rendering complete — emitted with bumpRefresh: true');
   }
 
   void _handleBookingCard(Map<String, dynamic> rawData) {
