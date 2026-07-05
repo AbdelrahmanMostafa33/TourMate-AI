@@ -811,6 +811,20 @@ class ChatService:
         slots_data = {}
         itinerary_data = None
 
+        # ── Prefer phase from state_snapshot ────────────────────────────────
+        # The state_snapshot is saved by the AI engine after every message and
+        # reflects the exact internal phase (e.g. "itinerary_review" after the
+        # itinerary is generated, but BEFORE the user has "approved" it).
+        # Relying solely on trip.status here is WRONG because trip.status stays
+        # "planning" until the user explicitly approves — causing the rebuilt
+        # state to get phase="slot_filling" even when the AI had already
+        # generated an itinerary (see discussion in PR #XXX).
+        _snapshot_phase = None
+        if conversation and conversation.state_snapshot:
+            _snapshot_phase = conversation.state_snapshot.get("phase")
+        if _snapshot_phase:
+            phase = _snapshot_phase
+
         if trip:
             # Destination from trip
             if trip.destination:
@@ -879,17 +893,19 @@ class ChatService:
                 if profile.accommodation_preferences:
                     slots_data["accommodation_preferences"] = profile.accommodation_preferences
 
-            # Determine phase based on trip status
-            if trip.status == "planning":
-                phase = "slot_filling"
-            elif trip.status in ("itinerary_draft",):
-                phase = "itinerary_review"
-            elif trip.status in ("awaiting_booking", "booking_pending", "payment_processing"):
-                phase = "booking"
-            elif trip.status in ("booking_confirmed", "active", "completed"):
-                phase = "completed"
-            else:
-                phase = "itinerary_review" if itinerary_data else "slot_filling"
+            # Determine phase based on trip status (ONLY used when no
+            # state_snapshot is available — see _snapshot_phase above)
+            if not _snapshot_phase:
+                if trip.status == "planning":
+                    phase = "slot_filling"
+                elif trip.status in ("itinerary_draft",):
+                    phase = "itinerary_review"
+                elif trip.status in ("awaiting_booking", "booking_pending", "payment_processing"):
+                    phase = "booking"
+                elif trip.status in ("booking_confirmed", "active", "completed"):
+                    phase = "completed"
+                else:
+                    phase = "itinerary_review" if itinerary_data else "slot_filling"
 
         # 5. Build the complete state dict
         from datetime import datetime, timezone

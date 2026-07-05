@@ -119,6 +119,55 @@ def _track_pipeline_metrics() -> Iterator[None]:
     finally:
         agent_metrics.print_summary()
 
+
+def _log_itinerary_presence(
+    response: dict | None,
+    *,
+    phase: str,
+    source: str,
+    user_id: str = "",
+) -> None:
+    """Log whether the itinerary is included or excluded in a response.
+
+    Logs at INFO level with structured fields so log-parsing tools can
+    filter and aggregate itinerary-inclusion patterns across phases.
+    """
+    if not response:
+        logger.info(
+            "[ItineraryLog] source=%s response=None — no response to inspect",
+            source,
+        )
+        return
+
+    itinerary_present = response.get("itinerary") is not None
+    itinerary_is_dict = isinstance(response.get("itinerary"), dict)
+    response_type = response.get("response_type", "?")
+    action = response.get("action", "")
+    has_ui = bool(response.get("ui"))
+
+    if itinerary_is_dict:
+        reason = "itinerary_present"
+        days = len(response["itinerary"].get("days", []))
+        stops = sum(len(d.get("stops", [])) for d in response["itinerary"].get("days", []))
+        detail = f"days={days} stops={stops}"
+    else:
+        reason = "itinerary_absent"
+        detail = "(key is None or missing)"
+
+    logger.info(
+        "[ItineraryLog] source=%s phase=%s response_type=%s action=%s "
+        "itinerary_present=%s itinerary_is_dict=%s has_ui=%s reason=%s %s",
+        source,
+        phase,
+        response_type,
+        action or "-",
+        itinerary_present,
+        itinerary_is_dict,
+        has_ui,
+        reason,
+        detail,
+    )
+
 # ── Shared Core ────────────────────────────────────────────────────────────────
 
 @traced(name="process_message", tags=["conversation", "routing"], metadata={"component": "orchestrator"})
@@ -145,15 +194,29 @@ async def _process_message(
     except Exception:
         pass
     try:
-        return await _process_message_inner(user_id, state, effective_message, image_features, token)
+        response = await _process_message_inner(user_id, state, effective_message, image_features, token)
+        _log_itinerary_presence(
+            response,
+            phase=state.phase.value if state else "?",
+            source="process_message",
+            user_id=user_id,
+        )
+        return response
     except Exception:
         logger.exception("[ConversationAgent] Unexpected error processing message for user %s", user_id)
-        return {
+        error_response = {
             "response_type": "chat",
             "message": "I ran into an unexpected issue. Please try again.",
             "itinerary": None,
             "image_features": None,
         }
+        _log_itinerary_presence(
+            error_response,
+            phase=state.phase.value if state else "?",
+            source="process_message_error",
+            user_id=user_id,
+        )
+        return error_response
 
 async def _process_message_inner(
     user_id: str,
@@ -792,6 +855,13 @@ async def handle_chat(
             response["session_id"] = state.session_id
             response["phase"] = state.phase.value
 
+        _log_itinerary_presence(
+            response,
+            phase=state.phase.value if state else "?",
+            source="handle_chat",
+            user_id=user_id,
+        )
+
         return response
 
 async def handle_chat_stream(user_id, user_message, image_bytes=None, token=None, session_id=None, initial_pool_state=None, recovery_state=None):
@@ -881,6 +951,13 @@ async def handle_chat_stream(user_id, user_message, image_bytes=None, token=None
         phase_value = state.phase.value
 
     yield {"type": "phase", "data": {"phase": phase_value}}
+
+    _log_itinerary_presence(
+        response,
+        phase=phase_value,
+        source="handle_chat_stream",
+        user_id=user_id,
+    )
 
     message = _display_message_for_response(response, phase_value)
     async for chunk in _stream_text(message):

@@ -1,6 +1,10 @@
 import sys
 import os
+import logging
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..'))
+
+logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s %(message)s")
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager

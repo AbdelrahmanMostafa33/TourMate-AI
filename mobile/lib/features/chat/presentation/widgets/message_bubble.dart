@@ -211,32 +211,6 @@ class MessageBubble extends StatelessWidget {
                 height: 1.4,
               ),
             ),
-          if (isStreaming)
-            Padding(
-              padding: const EdgeInsets.only(top: 6),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Container(
-                    width: 8,
-                    height: 8,
-                    decoration: BoxDecoration(
-                      color: tm.deepRoyalBlue,
-                      shape: BoxShape.circle,
-                    ),
-                  ),
-                  const SizedBox(width: 6),
-                  Text(
-                    'Thinking',
-                    style: GoogleFonts.inter(
-                      fontSize: 12,
-                      color: tm.deepRoyalBlue,
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                ],
-              ),
-            ),
         ],
       ),
     );
