@@ -370,20 +370,24 @@ async def _process_message_inner(
     # the downstream safety check (which guards against None) catches it.
     # Only check current-turn extraction (router_result.extracted), NOT
     # state.slots.interests which includes interests from prior turns.
-    extracted_interests = router_result.extracted.get("interests")
-    if extracted_interests and effective_message:
-        msg_lower = effective_message.lower()
-        user_mentioned = any(
-            interest.lower() in msg_lower
-            for interest in extracted_interests
-        )
-        if not user_mentioned:
-            logger.info(
-                "[ConversationAgent] Cleared hallucinated interests=%s "
-                "from message: %.60s",
-                extracted_interests, effective_message,
+    # CRITICAL: Only run this guard during GREETING/SLOT_FILLING where interests
+    # haven't been confirmed yet. Once past those phases, interests have been
+    # used to generate the itinerary and must NOT be cleared.
+    if state.phase in (ConversationPhase.GREETING, ConversationPhase.SLOT_FILLING):
+        extracted_interests = router_result.extracted.get("interests")
+        if extracted_interests and effective_message:
+            msg_lower = effective_message.lower()
+            user_mentioned = any(
+                interest.lower() in msg_lower
+                for interest in extracted_interests
             )
-            state.slots.interests = None
+            if not user_mentioned:
+                logger.info(
+                    "[ConversationAgent] Cleared hallucinated interests=%s "
+                    "from message: %.60s",
+                    extracted_interests, effective_message,
+                )
+                state.slots.interests = None
 
     # ── STEP 2: Fuse image features into slots if available ───────────────
     image_acknowledgment = None
@@ -454,6 +458,23 @@ async def _process_message_inner(
             logger.info(
                 "[ConversationAgent] Booking phase override: '%s' → approve_itinerary",
                 effective_message[:60],
+            )
+            action = "approve_itinerary"
+
+    # Safety net: if LLM misroutes approve/confirm during review phases,
+    # force the correct action so the user isn't asked about interests.
+    if state.phase in (ConversationPhase.ITINERARY_REVIEW, ConversationPhase.FLIGHT_SELECTION, ConversationPhase.HOTEL_SELECTION) and action not in ("approve_itinerary", "modify_itinerary"):
+        msg_lower = effective_message.lower().strip()
+        approve_keywords = ["approve", "confirm", "looks good", "they all look good",
+                           "looks great", "i approve", "i confirm", "looks perfect",
+                           "all good"]
+        if any(msg_lower == kw or msg_lower.startswith(kw + " ") or msg_lower.startswith(kw + ".")
+               or msg_lower == kw + "!" or msg_lower.startswith(kw + ",")
+               for kw in approve_keywords):
+            logger.info(
+                "[ConversationAgent] Itinerary review override: '%s' => approve_itinerary "
+                "(was %s, phase=%s)",
+                effective_message[:60], action, state.phase.value,
             )
             action = "approve_itinerary"
 
@@ -854,7 +875,7 @@ async def handle_chat_stream(user_id, user_message, image_bytes=None, token=None
 
     yield {"type": "phase", "data": {"phase": phase_value}}
 
-    message = response.get("message", "I'm here to help!") if response else "I'm here to help!"
+    message = _display_message_for_response(response, phase_value)
     async for chunk in _stream_text(message):
         yield chunk
 
@@ -871,7 +892,8 @@ async def handle_chat_stream(user_id, user_message, image_bytes=None, token=None
         or response.get("image_features")
     ):
         result_data = {
-            "message": response.get("message", ""),
+            "message": message,
+            "response_type": response.get("response_type"),
             "phase": phase_value,
             "session_id": state.session_id,
             "ui": response.get("ui"),
@@ -1371,6 +1393,111 @@ async def _run_hotel_selection_and_present(
         "image_features": image_features,
         "agent_messages": hotel_agent_msgs,
     }
+
+
+def _card_backed_itinerary_response(response: dict) -> bool:
+    """Return True when the itinerary should be rendered as a UI card."""
+    if not response.get("itinerary"):
+        return False
+    ui = response.get("ui") or {}
+    actions = ui.get("actions", []) if isinstance(ui, dict) else []
+    return (
+        response.get("response_type") == "itinerary"
+        or "replace_itinerary_card" in actions
+    )
+
+
+def _image_features_have_signal(features) -> bool:
+    if not features:
+        return False
+    if hasattr(features, "model_dump"):
+        features = features.model_dump()
+    if not isinstance(features, dict):
+        return False
+    return (
+        features.get("confidence") in ("high", "medium")
+        and bool(features.get("interests"))
+    )
+
+
+def _itinerary_summary(itinerary: dict, *, updated: bool = False) -> str:
+    destination = itinerary.get("destination") or "your destination"
+    days = itinerary.get("days", [])
+    day_count = len(days) or itinerary.get("duration_days")
+    stop_count = sum(len(day.get("stops", [])) for day in days)
+
+    day_label = f"{day_count}-day " if day_count else ""
+    prefix = "Your updated" if updated else "Here is your"
+    message = f"{prefix} {day_label}{destination} itinerary."
+    if stop_count:
+        message += f" Review the {stop_count} planned stops in the card below."
+    else:
+        message += " Review the card below."
+    return message
+
+
+def _extract_warning_note(message: str) -> str:
+    """Keep important failure notes while stripping detailed card-like text."""
+    lower = message.lower()
+    for marker in (
+        "i couldn't apply that change",
+        "i could not apply that change",
+        "note:",
+        "warning:",
+    ):
+        idx = lower.find(marker)
+        if idx >= 0:
+            return message[idx:].strip()
+    return ""
+
+
+def _looks_like_detailed_itinerary_text(message: str) -> bool:
+    lower = message.lower()
+    markers = ("day ", "where to stay", "chosen hotel", "personalized")
+    return len(message) > 300 or ("\n" in message and any(marker in lower for marker in markers))
+
+
+def _display_message_for_response(response: Optional[dict], phase_value: str) -> str:
+    """Return the text that should be streamed beside structured UI cards."""
+    if not response:
+        return "I'm here to help!"
+
+    message = response.get("message") or "I'm here to help!"
+    itinerary = response.get("itinerary") if isinstance(response.get("itinerary"), dict) else None
+    response_type = response.get("response_type")
+
+    if response.get("booking_data"):
+        if response_type == "booking_confirmed":
+            return "Your trip is confirmed. You can proceed to payment through the app."
+        return "Your trip is all set. Choose whether to pay now or book later."
+
+    flight_results = response.get("flight_search_results") or []
+    if flight_results:
+        count = len(flight_results)
+        option_label = "option" if count == 1 else "options"
+        return f"I found {count} flight {option_label}. Choose one from the card below."
+
+    if itinerary and phase_value == ConversationPhase.HOTEL_SELECTION.value:
+        hotels = itinerary.get("accommodation_suggestions", [])
+        if hotels:
+            count = len(hotels)
+            option_label = "option" if count == 1 else "options"
+            return f"I found {count} hotel {option_label}. Choose one from the card below."
+
+    if itinerary and _card_backed_itinerary_response(response):
+        warning = _extract_warning_note(message)
+        if warning:
+            return f"I kept the itinerary card below unchanged. {warning}"
+        if not _looks_like_detailed_itinerary_text(message):
+            return message
+        updated = "updated" in message.lower()
+        return _itinerary_summary(itinerary, updated=updated)
+
+    if _image_features_have_signal(response.get("image_features")):
+        return "I analyzed your photo and found travel preferences you can review below."
+
+    return message
+
 
 async def _stream_text(text: str):
     lines = text.split("\n")

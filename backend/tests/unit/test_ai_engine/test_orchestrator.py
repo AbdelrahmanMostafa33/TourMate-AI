@@ -372,6 +372,63 @@ class TestHandleChatStream:
         assert result_event["data"]["phase"] == "itinerary_review"
 
 
+class TestStructuredResponseDisplayMessage:
+    """Regression tests for avoiding text/card duplication in the UI stream."""
+
+    def test_itinerary_response_streams_summary_not_full_markdown(self):
+        from ai_engine.conversation.orchestrator import _display_message_for_response
+
+        response = {
+            "response_type": "itinerary",
+            "message": "Day 1\n- Pyramids\n- Museum\nWhere to Stay\nHotel A",
+            "itinerary": {
+                "destination": "Cairo",
+                "days": [
+                    {
+                        "day_number": 1,
+                        "stops": [
+                            {"name": "Pyramids"},
+                            {"name": "Museum"},
+                        ],
+                    }
+                ],
+            },
+            "ui": {"actions": ["replace_itinerary_card"]},
+        }
+
+        message = _display_message_for_response(response, "itinerary_review")
+
+        assert message == "Here is your 1-day Cairo itinerary. Review the 2 planned stops in the card below."
+        assert "Pyramids" not in message
+        assert "Where to Stay" not in message
+
+    def test_flight_options_response_streams_summary(self):
+        from ai_engine.conversation.orchestrator import _display_message_for_response
+
+        response = {
+            "response_type": "chat",
+            "message": "Here are the available flights:\n1. Airline A\n2. Airline B",
+            "flight_search_results": [{"id": "f1"}, {"id": "f2"}],
+        }
+
+        assert _display_message_for_response(response, "flight_selection") == (
+            "I found 2 flight options. Choose one from the card below."
+        )
+
+    def test_plain_chat_response_is_unchanged(self):
+        from ai_engine.conversation.orchestrator import _display_message_for_response
+
+        response = {
+            "response_type": "chat",
+            "message": "Where will you be flying from?",
+            "itinerary": {"destination": "Cairo", "days": []},
+        }
+
+        assert _display_message_for_response(response, "flight_selection") == (
+            "Where will you be flying from?"
+        )
+
+
 # ── _enrich_candidate_pool_by_category Tests ──────────────────────────────
 
 class TestEnrichCandidatePoolByCategory:

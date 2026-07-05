@@ -83,6 +83,28 @@ def _has_image_signal(image_features: Optional[dict]) -> bool:
     )
 
 
+def _ui_actions(result: dict) -> set[str]:
+    ui = result.get("ui") or {}
+    actions = ui.get("actions", []) if isinstance(ui, dict) else []
+    return {str(action) for action in actions}
+
+
+def _should_include_itinerary_card(result: dict, include_itinerary: bool) -> bool:
+    if not include_itinerary or not result.get("itinerary"):
+        return False
+
+    response_type = result.get("response_type")
+    # Legacy tests/mocks may not include response_type yet; keep those streams
+    # compatible while production responses use response_type for precision.
+    if response_type is None:
+        return True
+
+    return (
+        response_type == "itinerary"
+        or "replace_itinerary_card" in _ui_actions(result)
+    )
+
+
 def _build_cards_from_ai_result(
     result: dict,
     *,
@@ -95,7 +117,7 @@ def _build_cards_from_ai_result(
 
     itinerary = result.get("itinerary")
     phase = result.get("phase")
-    if itinerary and include_itinerary:
+    if itinerary and _should_include_itinerary_card(result, include_itinerary):
         cards.append({
             "card_type": ChatCardType.ITINERARY.value,
             "data": itinerary,
@@ -103,9 +125,7 @@ def _build_cards_from_ai_result(
         })
 
     accommodation = itinerary.get("accommodation_suggestions", []) if isinstance(itinerary, dict) else []
-    should_show_hotels = bool(accommodation) and (
-        include_itinerary or phase == "hotel_selection"
-    )
+    should_show_hotels = bool(accommodation) and phase == "hotel_selection"
     if should_show_hotels:
         cards.append({
             "card_type": ChatCardType.HOTEL_OPTIONS.value,

@@ -4,7 +4,7 @@ Unit tests for app.core.security and app.core.firebase.
 Tests cover:
     - security.get_current_user()       — auth dependency
     - security.get_optional_user()      — optional auth dependency
-    - firebase.verify_token()           — Firebase token verification with clock-skew fallback
+    - firebase.verify_token()           — Firebase token verification with clock-skew tolerance
 """
 
 import pytest
@@ -30,30 +30,24 @@ class TestVerifyToken:
 
         result = verify_token("valid_token")
         assert result == {"uid": "test_uid", "email": "test@example.com"}
-        mock_auth.verify_id_token.assert_called_once_with("valid_token")
+        mock_auth.verify_id_token.assert_called_once_with(
+            "valid_token", clock_skew_seconds=60
+        )
 
     @patch("app.core.firebase.auth")
     def test_expired_token_returns_none(self, mock_auth):
-        """An expired token with no clock-skew fallback returns None."""
+        """An expired token returns None."""
         mock_auth.verify_id_token.side_effect = Exception("Token expired")
 
         from app.core.firebase import verify_token
 
-        # No clock-skew fallback because FIREBASE_PROJECT_ID is set via settings
-        # We patch settings to raise so the fallback is skipped
-        with patch("app.core.firebase._FIREBASE_PROJECT_ID", ""):
-            result = verify_token("expired_token")
+        result = verify_token("expired_token")
         assert result is None
 
     @patch("app.core.firebase.auth")
-    @patch("app.core.firebase.google_jwt")
-    @patch("app.core.firebase._FIREBASE_PROJECT_ID", "test-project")
-    def test_clock_skew_fallback_succeeds(self, mock_google_jwt, mock_auth):
-        """When Firebase raises 'used too early', fall back to google_jwt.decode."""
-        mock_auth.verify_id_token.side_effect = Exception(
-            "Firebase ID token has incorrect 'iat' (used too early)"
-        )
-        mock_google_jwt.decode.return_value = {
+    def test_clock_skew_inside_tolerance_returns_decoded(self, mock_auth):
+        """A token with minor clock skew is verified successfully with tolerance."""
+        mock_auth.verify_id_token.return_value = {
             "uid": "skew_user",
             "email": "skew@example.com",
         }
@@ -62,36 +56,20 @@ class TestVerifyToken:
 
         result = verify_token("skewed_token")
         assert result == {"uid": "skew_user", "email": "skew@example.com"}
-        mock_google_jwt.decode.assert_called_once()
+        mock_auth.verify_id_token.assert_called_once_with(
+            "skewed_token", clock_skew_seconds=60
+        )
 
     @patch("app.core.firebase.auth")
-    @patch("app.core.firebase.google_jwt")
-    @patch("app.core.firebase._FIREBASE_PROJECT_ID", "test-project")
-    def test_clock_skew_fallback_fails_returns_none(self, mock_google_jwt, mock_auth):
-        """When both Firebase and google_jwt.decode fail, return None."""
+    def test_clock_skew_exceeds_tolerance_returns_none(self, mock_auth):
+        """When clock skew exceeds the 60-second tolerance, return None."""
         mock_auth.verify_id_token.side_effect = Exception(
             "Firebase ID token used too late"
         )
-        mock_google_jwt.decode.side_effect = Exception("JWT decode failed")
 
         from app.core.firebase import verify_token
 
-        result = verify_token("double_fail_token")
-        assert result is None
-
-    @patch("app.core.firebase.auth")
-    @patch("app.core.firebase.google_jwt")
-    @patch("app.core.firebase._FIREBASE_PROJECT_ID", "test-project")
-    def test_clock_skew_claims_none_returns_none(self, mock_google_jwt, mock_auth):
-        """When google_jwt.decode returns None (silent failure), return None."""
-        mock_auth.verify_id_token.side_effect = Exception(
-            "Firebase ID token used too early"
-        )
-        mock_google_jwt.decode.return_value = None
-
-        from app.core.firebase import verify_token
-
-        result = verify_token("null_claims_token")
+        result = verify_token("extreme_skew_token")
         assert result is None
 
     @patch("app.core.firebase.auth")
