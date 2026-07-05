@@ -128,12 +128,12 @@ return error(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeWhen<TResult extends Object?>({TResult Function()?  initial,TResult Function()?  loading,TResult Function( TripDetailModel trip,  TripProfileData? profile)?  loaded,TResult Function( String message)?  error,required TResult orElse(),}) {final _that = this;
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>({TResult Function()?  initial,TResult Function()?  loading,TResult Function( TripDetailModel trip,  TripProfileData? profile,  List<BookingResponse> bookings)?  loaded,TResult Function( String message)?  error,required TResult orElse(),}) {final _that = this;
 switch (_that) {
 case _Initial() when initial != null:
 return initial();case _Loading() when loading != null:
 return loading();case _Loaded() when loaded != null:
-return loaded(_that.trip,_that.profile);case _Error() when error != null:
+return loaded(_that.trip,_that.profile,_that.bookings);case _Error() when error != null:
 return error(_that.message);case _:
   return orElse();
 
@@ -152,12 +152,12 @@ return error(_that.message);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult when<TResult extends Object?>({required TResult Function()  initial,required TResult Function()  loading,required TResult Function( TripDetailModel trip,  TripProfileData? profile)  loaded,required TResult Function( String message)  error,}) {final _that = this;
+@optionalTypeArgs TResult when<TResult extends Object?>({required TResult Function()  initial,required TResult Function()  loading,required TResult Function( TripDetailModel trip,  TripProfileData? profile,  List<BookingResponse> bookings)  loaded,required TResult Function( String message)  error,}) {final _that = this;
 switch (_that) {
 case _Initial():
 return initial();case _Loading():
 return loading();case _Loaded():
-return loaded(_that.trip,_that.profile);case _Error():
+return loaded(_that.trip,_that.profile,_that.bookings);case _Error():
 return error(_that.message);case _:
   throw StateError('Unexpected subclass');
 
@@ -175,12 +175,12 @@ return error(_that.message);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>({TResult? Function()?  initial,TResult? Function()?  loading,TResult? Function( TripDetailModel trip,  TripProfileData? profile)?  loaded,TResult? Function( String message)?  error,}) {final _that = this;
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>({TResult? Function()?  initial,TResult? Function()?  loading,TResult? Function( TripDetailModel trip,  TripProfileData? profile,  List<BookingResponse> bookings)?  loaded,TResult? Function( String message)?  error,}) {final _that = this;
 switch (_that) {
 case _Initial() when initial != null:
 return initial();case _Loading() when loading != null:
 return loading();case _Loaded() when loaded != null:
-return loaded(_that.trip,_that.profile);case _Error() when error != null:
+return loaded(_that.trip,_that.profile,_that.bookings);case _Error() when error != null:
 return error(_that.message);case _:
   return null;
 
@@ -257,11 +257,18 @@ String toString() {
 
 
 class _Loaded implements TripDetailState {
-  const _Loaded({required this.trip, this.profile});
+  const _Loaded({required this.trip, this.profile, final  List<BookingResponse> bookings = const []}): _bookings = bookings;
   
 
  final  TripDetailModel trip;
  final  TripProfileData? profile;
+ final  List<BookingResponse> _bookings;
+@JsonKey() List<BookingResponse> get bookings {
+  if (_bookings is EqualUnmodifiableListView) return _bookings;
+  // ignore: implicit_dynamic_type
+  return EqualUnmodifiableListView(_bookings);
+}
+
 
 /// Create a copy of TripDetailState
 /// with the given fields replaced by the non-null parameter values.
@@ -273,16 +280,16 @@ _$LoadedCopyWith<_Loaded> get copyWith => __$LoadedCopyWithImpl<_Loaded>(this, _
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is _Loaded&&(identical(other.trip, trip) || other.trip == trip)&&(identical(other.profile, profile) || other.profile == profile));
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is _Loaded&&(identical(other.trip, trip) || other.trip == trip)&&(identical(other.profile, profile) || other.profile == profile)&&const DeepCollectionEquality().equals(other._bookings, _bookings));
 }
 
 
 @override
-int get hashCode => Object.hash(runtimeType,trip,profile);
+int get hashCode => Object.hash(runtimeType,trip,profile,const DeepCollectionEquality().hash(_bookings));
 
 @override
 String toString() {
-  return 'TripDetailState.loaded(trip: $trip, profile: $profile)';
+  return 'TripDetailState.loaded(trip: $trip, profile: $profile, bookings: $bookings)';
 }
 
 
@@ -293,7 +300,7 @@ abstract mixin class _$LoadedCopyWith<$Res> implements $TripDetailStateCopyWith<
   factory _$LoadedCopyWith(_Loaded value, $Res Function(_Loaded) _then) = __$LoadedCopyWithImpl;
 @useResult
 $Res call({
- TripDetailModel trip, TripProfileData? profile
+ TripDetailModel trip, TripProfileData? profile, List<BookingResponse> bookings
 });
 
 
@@ -310,11 +317,12 @@ class __$LoadedCopyWithImpl<$Res>
 
 /// Create a copy of TripDetailState
 /// with the given fields replaced by the non-null parameter values.
-@pragma('vm:prefer-inline') $Res call({Object? trip = null,Object? profile = freezed,}) {
+@pragma('vm:prefer-inline') $Res call({Object? trip = null,Object? profile = freezed,Object? bookings = null,}) {
   return _then(_Loaded(
 trip: null == trip ? _self.trip : trip // ignore: cast_nullable_to_non_nullable
 as TripDetailModel,profile: freezed == profile ? _self.profile : profile // ignore: cast_nullable_to_non_nullable
-as TripProfileData?,
+as TripProfileData?,bookings: null == bookings ? _self._bookings : bookings // ignore: cast_nullable_to_non_nullable
+as List<BookingResponse>,
   ));
 }
 
