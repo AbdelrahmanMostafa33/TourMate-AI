@@ -36,7 +36,13 @@ EditType = Literal[
 
 
 class EditClassification(BaseModel):
-    """Structured classification of an itinerary edit request."""
+    """Structured classification of an itinerary edit request.
+
+    For preference-change edit types (CHANGE_INTERESTS, CHANGE_BUDGET,
+    CHANGE_PACE, CHANGE_PREFERENCES), the model SHOULD also populate
+    the optional adjustment fields so the orchestrator can skip the
+    separate ``interpret_preference_adjustment`` LLM call.
+    """
 
     edit_type: EditType = Field(
         description=(
@@ -67,6 +73,44 @@ class EditClassification(BaseModel):
     reasoning: str = Field(
         default="",
         description="One sentence explaining the classification",
+    )
+
+    # ── Preference adjustment fields (optional — only for preference edits) ──
+    # When edit_type is CHANGE_INTERESTS / CHANGE_PREFERENCES / CHANGE_BUDGET /
+    # CHANGE_PACE, the classifier SHOULD populate these fields so the orchestrator
+    # can apply adjustments directly without a second LLM call.
+
+    interests_add: Optional[list[str]] = Field(
+        default=None,
+        description="New interests to add (e.g. ['entertainment', 'nightlife', 'nature']). Only for preference edits.",
+    )
+    interests_remove: Optional[list[str]] = Field(
+        default=None,
+        description="Interests to remove (e.g. ['history', 'shopping']). Only for preference edits.",
+    )
+    budget_level: Optional[str] = Field(
+        default=None,
+        description="New budget level: 'budget', 'moderate', or 'luxury'. Only for budget edits.",
+    )
+    travel_style: Optional[str] = Field(
+        default=None,
+        description="New travel style: 'cultural', 'adventure', 'relaxation', 'romantic', 'family', 'solo'. Only for preference edits.",
+    )
+    pace: Optional[str] = Field(
+        default=None,
+        description="New pace: 'relaxed', 'moderate', or 'packed'. Only for pace edits.",
+    )
+    food_preferences_add: Optional[list[str]] = Field(
+        default=None,
+        description="New food interests to add. Only for preference edits.",
+    )
+    food_preferences_remove: Optional[list[str]] = Field(
+        default=None,
+        description="Food interests to remove. Only for preference edits.",
+    )
+    rerank_reason: Optional[str] = Field(
+        default=None,
+        description="One sentence explaining why the adjustment matches the user request. Only for preference edits.",
     )
 
 
@@ -100,6 +144,40 @@ Rules:
 - Extract target_day when a day number is mentioned
 - Extract target_category when a place type is mentioned (museum, restaurant, hotel, etc.)
 - Set requested_count when the user asks for multiple additions
+
+**When the edit type is CHANGE_INTERESTS, CHANGE_PREFERENCES, CHANGE_BUDGET, or
+CHANGE_PACE, you MUST also populate the corresponding adjustment fields** so
+that a separate LLM call can be avoided.  Examples:
+- \"make it more nature instead of history\" → {
+    edit_type: CHANGE_INTERESTS,
+    interests_add: [\"nature\"],
+    interests_remove: [\"history\"],
+    rerank_reason: \"Adding nature and removing history to refocus the itinerary\"
+  }
+- \"more entertaining\" → {
+    edit_type: CHANGE_INTERESTS,
+    interests_add: [\"entertainment\", \"nightlife\"],
+    rerank_reason: \"Adding entertainment and nightlife interests\"
+  }
+- \"cheaper\" → {
+    edit_type: CHANGE_BUDGET,
+    budget_level: \"budget\",
+    rerank_reason: \"Lowering budget to budget level\"
+  }
+- \"faster pace\" → {
+    edit_type: CHANGE_PACE,
+    pace: \"packed\",
+    rerank_reason: \"Increasing pace to packed\"
+  }
+- \"more cultural\" → {
+    edit_type: CHANGE_PREFERENCES,
+    interests_add: [\"history\", \"museums\", \"art\"],
+    travel_style: \"cultural\",
+    rerank_reason: \"Adding cultural interests and setting travel style to cultural\"
+  }
+
+For non-preference edit types (surgical, regenerate, unknown), leave the
+adjustment fields unset (null) — they will be ignored.
 """
 
 

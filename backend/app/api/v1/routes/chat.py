@@ -512,6 +512,9 @@ async def process_message_stream(
         sequence=_seq,
     ))
 
+    stream_succeeded = True
+    stream_generation = manager.get_generation(ws_key)
+
     try:
         from ai_engine.conversation.orchestrator import handle_chat_stream
 
@@ -540,17 +543,23 @@ async def process_message_stream(
                 full_response += content
                 # NEW PROTOCOL: TEXT_DELTA
                 _seq += 1
-                await manager.send(ws_key, build_event(
+                if not await manager.send(ws_key, build_event(
                     ChatEventType.TEXT_DELTA,
                     sequence=_seq,
                     data={"text": content},
-                ))
+                )):
+                    stream_succeeded = False
+                    break
 
             elif event_type == "progress":
-                await manager.send(ws_key, chunk)
+                if not await manager.send(ws_key, chunk):
+                    stream_succeeded = False
+                    break
 
             elif event_type == "phase":
-                await manager.send(ws_key, chunk)
+                if not await manager.send(ws_key, chunk):
+                    stream_succeeded = False
+                    break
 
                 phase = chunk.get("data", {}).get("phase")
                 if phase == "completed":
@@ -590,7 +599,7 @@ async def process_message_stream(
 
                     # ── NEW PROTOCOL: CARD event ─────────────────────────
                     _seq += 1
-                    await manager.send(ws_key, build_event(
+                    if not await manager.send(ws_key, build_event(
                         ChatEventType.CARD,
                         sequence=_seq,
                         data={
@@ -598,7 +607,9 @@ async def process_message_stream(
                             "data": card_data,
                             "presentation": presentation,
                         },
-                    ))
+                    )):
+                        stream_succeeded = False
+                        break
 
                     # ── Per-card-type logic (legacy sends removed) ────────
                     #    Only the new protocol CARD event above is sent to the
@@ -666,6 +677,16 @@ async def process_message_stream(
             sequence=_seq,
             data={"text": full_response},
         ))
+
+    # ── If the stream failed (client disconnected), skip persistence ─────
+    #    to avoid corrupting state for the reconnected session.
+    if not stream_succeeded:
+        logger.info(
+            "[ChatRoutes] Stream failed for key=%s — skipping persistence "
+            "(gen=%d, current=%d)",
+            ws_key, stream_generation, manager.get_generation(ws_key),
+        )
+        return ai_session_id
 
     # ── At this point, the stream is consumed. Do persistence, then send ──
     #    completion to the client.
@@ -1046,6 +1067,9 @@ async def websocket_new_chat(
                 sequence=_new_seq,
             ))
 
+            stream_succeeded_new = True
+            stream_generation_new = manager.get_generation(ws_key)
+
             try:
                 from ai_engine.conversation.orchestrator import handle_chat_stream
 
@@ -1066,17 +1090,23 @@ async def websocket_new_chat(
                         content        = chunk.get("content", "")
                         full_response += content
                         _new_seq += 1
-                        await manager.send(ws_key, build_event(
+                        if not await manager.send(ws_key, build_event(
                             ChatEventType.TEXT_DELTA,
                             sequence=_new_seq,
                             data={"text": content},
-                        ))
+                        )):
+                            stream_succeeded_new = False
+                            break
 
                     elif event_type == "progress":
-                        await manager.send(ws_key, chunk)
+                        if not await manager.send(ws_key, chunk):
+                            stream_succeeded_new = False
+                            break
 
                     elif event_type == "phase":
-                        await manager.send(ws_key, chunk)
+                        if not await manager.send(ws_key, chunk):
+                            stream_succeeded_new = False
+                            break
 
                     elif event_type == "result":
                         result         = chunk.get("data", {})
@@ -1102,7 +1132,7 @@ async def websocket_new_chat(
 
                             # ── NEW PROTOCOL: CARD event ─────────────────
                             _new_seq += 1
-                            await manager.send(ws_key, build_event(
+                            if not await manager.send(ws_key, build_event(
                                 ChatEventType.CARD,
                                 sequence=_new_seq,
                                 data={
@@ -1110,7 +1140,9 @@ async def websocket_new_chat(
                                     "data": card_data,
                                     "presentation": presentation,
                                 },
-                            ))
+                            )):
+                                stream_succeeded_new = False
+                                break
 
                             # ── Per-card-type logic (legacy sends removed) ────────
                             #    Only the new protocol CARD event above is sent.
@@ -1312,6 +1344,15 @@ async def websocket_new_chat(
                     ChatEventType.ITINERARY_UPDATED,
                     sequence=_new_seq,
                 ))
+
+            # ── Skip RESPONSE_COMPLETED if stream failed ─────────────────
+            if not stream_succeeded_new:
+                logger.info(
+                    "[ChatRoutes] New-chat stream failed for key=%s — "
+                    "skipping completion (gen=%d, current=%d)",
+                    ws_key, stream_generation_new, manager.get_generation(ws_key),
+                )
+                break
 
             # ── Send RESPONSE_COMPLETED ──────────────────────────────────
             _new_seq += 1

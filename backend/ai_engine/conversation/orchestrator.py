@@ -13,7 +13,7 @@ import logging
 import re
 from collections import OrderedDict
 from datetime import datetime, timezone, timedelta
-from typing import Optional, Iterator
+from typing import Any, Optional, Iterator, Dict
 
 from ai_engine.constants import PLAN_GENERATION_TIMEOUT_MINUTES
 
@@ -324,6 +324,12 @@ async def _process_message_inner(
                     user_id, effective_message, {}, image_features, token, state
                 )
                 state.add_user_message(effective_message, metadata={"action": "confirm_image"})
+                # Enrich with preference data for the pre-itinerary message
+                if response and response.get("itinerary") and isinstance(response.get("itinerary"), dict):
+                    _prefs = _build_preference_summary(state.slots)
+                    if _prefs:
+                        response["preference_summary"] = _prefs
+
                 if response and response.get("message"):
                     state.add_assistant_message(response["message"])
                 return response
@@ -837,6 +843,12 @@ async def _process_message_inner(
             "itinerary": None,
             "image_features": image_features,
         }
+
+    # Enrich itinerary responses with preference data for the pre-itinerary message
+    if response and response.get("itinerary") and isinstance(response.get("itinerary"), dict):
+        _prefs = _build_preference_summary(state.slots)
+        if _prefs:
+            response["preference_summary"] = _prefs
 
     if response and response.get("message"):
         state.add_assistant_message(response["message"])
@@ -1624,7 +1636,23 @@ def _image_features_have_signal(features) -> bool:
     )
 
 
-def _itinerary_summary(itinerary: dict, *, updated: bool = False) -> str:
+def _build_preference_summary(slots) -> dict:
+    """Build a compact summary of user preferences for display in the pre-itinerary message."""
+    summary: Dict[str, Any] = {}
+    if slots.interests:
+        summary["interests"] = slots.interests[:5]
+    if slots.travel_style:
+        summary["travel_style"] = slots.travel_style
+    if slots.pace:
+        summary["pace"] = slots.pace
+    if slots.budget_level:
+        summary["budget_level"] = slots.budget_level
+    if slots.food_preferences:
+        summary["food_preferences"] = slots.food_preferences[:3]
+    return summary
+
+
+def _itinerary_summary(itinerary: dict, *, updated: bool = False, preference_summary: dict | None = None) -> str:
     destination = itinerary.get("destination") or "your destination"
     days = itinerary.get("days", [])
     day_count = len(days) or itinerary.get("duration_days")
@@ -1633,6 +1661,31 @@ def _itinerary_summary(itinerary: dict, *, updated: bool = False) -> str:
     day_label = f"{day_count}-day " if day_count else ""
     prefix = "Your updated" if updated else "Here is your"
     message = f"{prefix} {day_label}{destination} itinerary."
+
+    # Add a preference summary that explains what the itinerary was based on
+    if preference_summary and not updated:
+        pref_parts = []
+        interests = preference_summary.get("interests", [])
+        style = preference_summary.get("travel_style", "")
+        pace = preference_summary.get("pace", "")
+        budget = preference_summary.get("budget_level", "")
+
+        if interests:
+            pref_parts.append(f"based on your interest in {', '.join(interests)}")
+        if style:
+            pref_parts.append(f"{style} style")
+        if pace:
+            pref_parts.append(f"at a {pace} pace")
+        if budget:
+            pref_parts.append(f"with a {budget} budget")
+
+        food_prefs = preference_summary.get("food_preferences", [])
+        if food_prefs:
+            pref_parts.append(f"with a taste for {', '.join(food_prefs)}")
+
+        if pref_parts:
+            message += f" I designed this {', '.join(pref_parts)}."
+
     if stop_count:
         message += f" Review the {stop_count} planned stops in the card below."
     else:
@@ -1708,7 +1761,7 @@ def _display_message_for_response(response: Optional[dict], phase_value: str) ->
         if not _looks_like_detailed_itinerary_text(message):
             return message
         updated = "updated" in message.lower()
-        return _itinerary_summary(itinerary, updated=updated)
+        return _itinerary_summary(itinerary, updated=updated, preference_summary=response.get("preference_summary"))
 
     if _image_features_have_signal(response.get("image_features")):
         return "I analyzed your photo and found travel preferences you can review below."
@@ -2776,6 +2829,61 @@ def _format_itinerary(itinerary: dict, approved: bool = False) -> str:
     return "\n".join(lines)
 
 @traced(name="modify_itinerary", tags=["conversation", "modify"], metadata={"component": "orchestrator"})
+
+def _extract_adjustments_from_classification(classification: dict) -> dict:
+    """Extract preference adjustment fields from the edit classification.
+
+    When the classifier detected a preference edit (CHANGE_INTERESTS,
+    CHANGE_BUDGET, CHANGE_PACE, CHANGE_PREFERENCES), it may have already
+    populated the adjustment fields. Returns a dict in the same format as
+    `interpret_preference_adjustment`, or an empty dict if no adjustments
+    were found.
+    """
+    edit_type = (classification.get("edit_type") or "").upper()
+    if edit_type not in ("CHANGE_INTERESTS", "CHANGE_BUDGET", "CHANGE_PACE", "CHANGE_PREFERENCES"):
+        return {}
+
+    adjustments: dict[str, Any] = {}
+
+    interests_add = classification.get("interests_add")
+    interests_remove = classification.get("interests_remove")
+    if interests_add:
+        adjustments["interests_add"] = interests_add
+    if interests_remove:
+        adjustments["interests_remove"] = interests_remove
+
+    budget = classification.get("budget_level")
+    if budget:
+        adjustments["budget_level"] = budget
+
+    style = classification.get("travel_style")
+    if style:
+        adjustments["travel_style"] = style
+
+    pace = classification.get("pace")
+    if pace:
+        adjustments["pace"] = pace
+
+    food_add = classification.get("food_preferences_add")
+    food_remove = classification.get("food_preferences_remove")
+    if food_add:
+        adjustments["food_preferences_add"] = food_add
+    if food_remove:
+        adjustments["food_preferences_remove"] = food_remove
+
+    rerank_reason = classification.get("rerank_reason")
+    if rerank_reason:
+        adjustments["rerank_reason"] = rerank_reason
+
+    if adjustments:
+        logger.info(
+            "[EditClassifier] Using built-in adjustments: %s",
+            adjustments,
+        )
+
+    return adjustments
+
+
 async def _handle_modify_itinerary(
     user_id: str,
     state: ConversationState,
@@ -2842,24 +2950,37 @@ async def _handle_modify_itinerary(
     # matching places are available for reranking and delta edits.
     await _maybe_enrich_pools(state, effective_message, classification)
 
-    # ── Shared preference adjustment (hoisted — single call, not 3) ──
-    # All three branches below may need adjustments. Compute once and reuse.
+    # ── Shared preference adjustment ─────────────────────────────────
+    # The edit classifier already includes adjustment fields for preference
+    # edits (interests_add/remove, budget_level, pace, etc.). Use those
+    # directly to save one LLM call. Only call interpret_preference_adjustment
+    # as a fallback when the classifier didn't supply them.
     if _might_need_preference_update(classification):
-        adjustments = await interpret_preference_adjustment(
-            effective_message, current_preferences=preferences
-        )
+        adjustments = _extract_adjustments_from_classification(classification)
+        if not adjustments:
+            adjustments = await interpret_preference_adjustment(
+                effective_message, current_preferences=preferences
+            )
     else:
         adjustments = {}
 
     if need_db and db_reason == "preference_shift":
         if adjustments:
-            reranked = await _rerank_and_replan(
-                user_id=user_id,
-                state=state,
-                adjustments=adjustments,
-                effective_message=effective_message,
-                image_features=image_features,
-            )
+            try:
+                reranked = await asyncio.wait_for(
+                    _rerank_and_replan(
+                        user_id=user_id,
+                        state=state,
+                        adjustments=adjustments,
+                        effective_message=effective_message,
+                        image_features=image_features,
+                    ), timeout=35.0
+                )
+            except asyncio.TimeoutError:
+                logger.warning(
+                    "[RerankReplan] Timeout (35s) for rerank — falling back to modifier agent"
+                )
+                reranked = None
             if reranked:
                 return _itinerary_response(
                     state,
@@ -2904,13 +3025,21 @@ async def _handle_modify_itinerary(
                         agent_messages + ["[AccommodationSwap] Updated accommodation — stops preserved"],
                     )
             else:
-                reranked = await _rerank_and_replan(
-                    user_id=user_id,
-                    state=state,
-                    adjustments=adjustments,
-                    effective_message=effective_message,
-                    image_features=image_features,
-                )
+                try:
+                    reranked = await asyncio.wait_for(
+                        _rerank_and_replan(
+                            user_id=user_id,
+                            state=state,
+                            adjustments=adjustments,
+                            effective_message=effective_message,
+                            image_features=image_features,
+                        ), timeout=35.0
+                    )
+                except asyncio.TimeoutError:
+                    logger.warning(
+                        "[RerankReplan] Timeout (35s) for rerank — falling back to modifier agent"
+                    )
+                    reranked = None
                 if reranked:
                     return _itinerary_response(
                         state,
@@ -2951,13 +3080,21 @@ async def _handle_modify_itinerary(
                     agent_messages + ["[AccommodationSwap] Updated accommodation — stops preserved"],
                 )
         else:
-            reranked = await _rerank_and_replan(
-                user_id=user_id,
-                state=state,
-                adjustments=adjustments,
-                effective_message=effective_message,
-                image_features=image_features,
-            )
+            try:
+                reranked = await asyncio.wait_for(
+                    _rerank_and_replan(
+                        user_id=user_id,
+                        state=state,
+                        adjustments=adjustments,
+                        effective_message=effective_message,
+                        image_features=image_features,
+                    ), timeout=35.0
+                )
+            except asyncio.TimeoutError:
+                logger.warning(
+                    "[RerankReplan] Timeout (35s) for rerank — falling back to modifier agent"
+                )
+                reranked = None
             if reranked:
                 return _itinerary_response(
                     state,
@@ -3208,18 +3345,26 @@ async def _rerank_and_replan(
             # Hotels are NOT selected during re-ranking — they are selected
             # after the user approves the itinerary to avoid wasting hotel
             # selections when the user makes multiple modifications.
-            rerank_state = await validate_itinerary(rerank_state)
+            # Try validation with a short timeout so a slow validator
+            # doesn't block the user, but a fast one still catches issues.
+            try:
+                rerank_state = await asyncio.wait_for(
+                    validate_itinerary(rerank_state), timeout=10.0
+                )
+            except asyncio.TimeoutError:
+                logger.warning("[RerankReplan] Validation timed out (10s) — proceeding without it")
+            except Exception as exc:
+                logger.warning("[RerankReplan] Validation error: %s — proceeding without it", exc)
 
             optimized = rerank_state.get("optimized_itinerary")
-            is_valid = rerank_state.get("is_valid")
-            if not optimized or not is_valid:
-                logger.warning("[RerankReplan] Validation failed or no optimized itinerary")
+            if not optimized:
+                logger.warning("[RerankReplan] No optimized itinerary after planning")
                 return None
 
             logger.info("[RerankReplan] Success: %d days, %d total stops, valid=%s",
                         len(optimized.get("days", [])),
                         sum(len(d.get("stops", [])) for d in optimized.get("days", [])),
-                        is_valid)
+                        rerank_state.get("is_valid"))
             return {
                 "itinerary": optimized,
                 "candidate_places": rerank_state.get("candidate_places"),
