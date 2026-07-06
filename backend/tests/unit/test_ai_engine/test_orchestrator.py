@@ -83,6 +83,32 @@ def _make_mock_graph_result(is_valid=True):
     }
 
 
+def _make_flight_state(phase=ConversationPhase.FLIGHT_SELECTION):
+    """Build conversation state with an existing flight search/selection."""
+    state = ConversationState(user_id="flight_user")
+    state.phase = phase
+    state.itinerary = {
+        "destination": "Dubai",
+        "days": [],
+        "accommodation_suggestions": [{"name": "Hotel A"}],
+    }
+    state.slots.destination_city = "Dubai"
+    state.slots.duration_days = 5
+    state.slots.travel_dates = "2026-07-20"
+    state.slots.group_size = 2
+    state.slots.origin_city = "Cairo"
+    state.slots.is_round_trip = True
+    state.slots.return_date = "2026-07-25"
+    state.slots.flight_search_results = [{"airline_name": "Test Air", "flight_number": "TA1"}]
+    state.slots.selected_flight_offer = {
+        "airline_name": "Test Air",
+        "flight_number": "TA1",
+        "total_price": 100,
+        "currency": "USD",
+    }
+    return state
+
+
 # ── GREETING Phase Tests ──────────────────────────────────────────────────────
 
 class TestGreetingPhase:
@@ -252,6 +278,220 @@ class TestItineraryReviewPhase:
         assert result2["itinerary"] is not None
         assert result2["ui"]["actions"] == ["replace_itinerary_card"]
 
+
+# ── Flight Selection Edit Tests ───────────────────────────────────────────────
+
+class TestFlightSelectionEdits:
+    """Regression tests for mid-conversation flight edits."""
+
+    @pytest.mark.asyncio
+    @patch("ai_engine.conversation.orchestrator.search_flights_for_trip", new_callable=AsyncMock)
+    async def test_explicit_return_date_beats_duration_default(self, mock_search):
+        mock_search.return_value = []
+
+        from ai_engine.conversation.orchestrator import _handle_search_flights
+
+        state = _make_flight_state()
+        router = _make_router_result(
+            "search_flights",
+            origin_city="Cairo",
+            return_date="2026-08-10",
+        )
+
+        await _handle_search_flights(state, "change return date to Aug 10", router, None)
+
+        assert state.slots.return_date == "2026-08-10"
+        assert mock_search.await_args.kwargs["return_date"] == "2026-08-10"
+
+    @pytest.mark.asyncio
+    @patch("ai_engine.conversation.orchestrator.search_flights_for_trip", new_callable=AsyncMock)
+    async def test_one_way_search_clears_stale_return_date(self, mock_search):
+        mock_search.return_value = []
+
+        from ai_engine.conversation.orchestrator import _handle_search_flights
+
+        state = _make_flight_state()
+        router = _make_router_result(
+            "search_flights",
+            origin_city="Cairo",
+            is_round_trip=False,
+        )
+
+        await _handle_search_flights(state, "make it one-way", router, None)
+
+        assert state.slots.is_round_trip is False
+        assert state.slots.return_date is None
+        assert mock_search.await_args.kwargs["return_date"] is None
+
+    @pytest.mark.asyncio
+    @patch("ai_engine.conversation.orchestrator.search_flights_for_trip", new_callable=AsyncMock)
+    async def test_round_trip_switch_ignores_stale_one_way_return_date(self, mock_search):
+        mock_search.return_value = []
+
+        from ai_engine.conversation.orchestrator import _handle_search_flights
+
+        state = _make_flight_state()
+        state.slots.is_round_trip = False
+        state.slots.return_date = "2026-09-30"
+        router = _make_router_result(
+            "search_flights",
+            origin_city="Cairo",
+            is_round_trip=True,
+        )
+
+        await _handle_search_flights(state, "make it round trip instead", router, None)
+
+        assert state.slots.is_round_trip is True
+        assert state.slots.return_date == "2026-07-25"
+        assert mock_search.await_args.kwargs["return_date"] == "2026-07-25"
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "phase",
+        [ConversationPhase.HOTEL_SELECTION, ConversationPhase.BOOKING],
+    )
+    @patch("ai_engine.conversation.orchestrator.search_flights_for_trip", new_callable=AsyncMock)
+    @patch("ai_engine.conversation.orchestrator.interpret_message")
+    async def test_flight_change_after_selection_returns_to_flight_search(
+        self,
+        mock_interpret,
+        mock_search,
+        phase,
+    ):
+        mock_interpret.return_value = _make_router_result(
+            "select_hotel",
+            "Sure",
+            is_round_trip=False,
+        )
+        mock_search.return_value = []
+
+        from ai_engine.conversation.orchestrator import _process_message_inner
+
+        state = _make_flight_state(phase)
+        response = await _process_message_inner(
+            "flight_user",
+            state,
+            "actually make it one-way",
+            None,
+            None,
+        )
+
+        assert state.phase == ConversationPhase.FLIGHT_SELECTION
+        assert state.slots.selected_flight_offer is None
+        assert state.slots.is_round_trip is False
+        assert state.slots.return_date is None
+        assert mock_search.await_args.kwargs["return_date"] is None
+        assert response["message"].startswith("Got it - switching to one-way.")
+
+    @pytest.mark.asyncio
+    @patch("ai_engine.conversation.orchestrator.search_flights_for_trip", new_callable=AsyncMock)
+    @patch("ai_engine.conversation.orchestrator.interpret_message")
+    async def test_return_date_change_during_flight_selection_reruns_search(
+        self,
+        mock_interpret,
+        mock_search,
+    ):
+        mock_interpret.return_value = _make_router_result(
+            "select_flight",
+            "OK",
+            return_date="2026-08-10",
+        )
+        mock_search.return_value = []
+
+        from ai_engine.conversation.orchestrator import _process_message_inner
+
+        state = _make_flight_state(ConversationPhase.FLIGHT_SELECTION)
+        state.slots.selected_flight_offer = None
+
+        response = await _process_message_inner(
+            "flight_user",
+            state,
+            "change my return date to Aug 10",
+            None,
+            None,
+        )
+
+        assert state.phase == ConversationPhase.FLIGHT_SELECTION
+        assert state.slots.return_date == "2026-08-10"
+        assert mock_search.await_args.kwargs["return_date"] == "2026-08-10"
+        assert response["message"].startswith(
+            "Got it - updating the return date to 2026-08-10."
+        )
+
+    def test_extract_departure_from_range_iso_to_range(self):
+        """Direct unit test: '2026-07-28 to 2026-07-31' extracts '2026-07-28'."""
+        from ai_engine.conversation.orchestrator import _extract_departure_from_range
+
+        result = _extract_departure_from_range("2026-07-28 to 2026-07-31")
+        assert result == "2026-07-28", f"Expected '2026-07-28', got {result!r}"
+
+        # Also verify single dates pass through unchanged
+        single = _extract_departure_from_range("2026-07-28")
+        assert single == "2026-07-28", f"Expected unchanged, got {single!r}"
+
+        # Verify empty returns None
+        assert _extract_departure_from_range(None) is None
+        assert _extract_departure_from_range("") is None
+
+    @pytest.mark.asyncio
+    @patch("ai_engine.conversation.orchestrator.search_flights_for_trip", new_callable=AsyncMock)
+    async def test_travel_dates_range_stripped_to_departure_date(self, mock_search):
+        """When the LLM emits travel_dates as a range, the departure date is extracted."""
+        mock_search.return_value = []
+
+        from ai_engine.conversation.orchestrator import _handle_search_flights
+
+        state = _make_flight_state()
+        router = _make_router_result(
+            "search_flights",
+            origin_city="Cairo",
+            travel_dates="2026-07-28 to 2026-07-31",
+            return_date="2026-07-31",
+        )
+
+        await _handle_search_flights(state, "the return date will be 31 july", router, None)
+
+        assert mock_search.await_args.kwargs["departure_date"] == "2026-07-28"
+        assert mock_search.await_args.kwargs["return_date"] == "2026-07-31"
+
+    @pytest.mark.asyncio
+    @patch("ai_engine.conversation.orchestrator.search_flights_for_trip", new_callable=AsyncMock)
+    async def test_travel_dates_range_with_dash_stripped_correctly(self, mock_search):
+        """Range with em-dash or hyphen is handled (e.g. 'July 28 - August 1')."""
+        mock_search.return_value = []
+
+        from ai_engine.conversation.orchestrator import _handle_search_flights
+
+        state = _make_flight_state()
+        state.slots.travel_dates = None
+        router = _make_router_result(
+            "search_flights",
+            origin_city="Cairo",
+            travel_dates="July 28 to August 1",
+        )
+
+        await _handle_search_flights(state, "change dates to july 28 through aug 1", router, None)
+
+        assert mock_search.await_args.kwargs["departure_date"] is not None
+
+    @pytest.mark.asyncio
+    @patch("ai_engine.conversation.orchestrator.search_flights_for_trip", new_callable=AsyncMock)
+    async def test_single_date_not_affected_by_range_stripping(self, mock_search):
+        """A single date without a range is passed through unchanged."""
+        mock_search.return_value = []
+
+        from ai_engine.conversation.orchestrator import _handle_search_flights
+
+        state = _make_flight_state()
+        router = _make_router_result(
+            "search_flights",
+            origin_city="Cairo",
+            travel_dates="2026-07-28",
+        )
+
+        await _handle_search_flights(state, "depart on july 28", router, None)
+
+        assert mock_search.await_args.kwargs["departure_date"] == "2026-07-28"
 
 # ── handle_chat_stream Tests ──────────────────────────────────────────────────
 

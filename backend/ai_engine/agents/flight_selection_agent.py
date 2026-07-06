@@ -178,7 +178,12 @@ async def search_flights_for_trip(
 
 
 def _parse_offer(offer: dict, idx: int) -> dict:
-    """Parse a raw Amadeus offer dict into a clean format for display."""
+    """Parse a raw Amadeus offer dict into a clean format for display.
+
+    For round-trip offers, ``itineraries[0]`` is the outbound (departure) and
+    ``itineraries[1]`` is the inbound (return).  Only the outbound is shown
+    in the primary fields; the return is stored in ``return_segments``.
+    """
     airline_code = offer["validatingAirlineCodes"][0]
     itinerary = offer["itineraries"][0]
     segment = itinerary["segments"][0]
@@ -191,6 +196,30 @@ def _parse_offer(offer: dict, idx: int) -> dict:
     arrival_at = datetime.fromisoformat(
         last_segment["arrival"]["at"].replace("Z", "+00:00")
     )
+
+    # ── Parse return (inbound) segment for round-trip offers ────────────────
+    return_segments: list[dict] = []
+    itineraries = offer.get("itineraries", [])
+    if len(itineraries) > 1:
+        return_itinerary = itineraries[1]
+        for seg in return_itinerary["segments"]:
+            seg_dep = datetime.fromisoformat(
+                seg["departure"]["at"].replace("Z", "+00:00")
+            )
+            seg_arr = datetime.fromisoformat(
+                seg["arrival"]["at"].replace("Z", "+00:00")
+            )
+            return_segments.append({
+                "airline_code": seg["carrierCode"],
+                "flight_number": f"{seg['carrierCode']}{seg['number']}",
+                "origin_iata": seg["departure"]["iataCode"],
+                "destination_iata": seg["arrival"]["iataCode"],
+                "departure_at": seg_dep.isoformat(),
+                "arrival_at": seg_arr.isoformat(),
+                "departure_at_formatted": seg_dep.strftime("%b %d, %H:%M"),
+                "arrival_at_formatted": seg_arr.strftime("%b %d, %H:%M"),
+                "duration": return_itinerary.get("duration", ""),
+            })
 
     cabin_class = (
         offer["travelerPricings"][0]
@@ -242,6 +271,7 @@ def _parse_offer(offer: dict, idx: int) -> dict:
         "price_per_adult": price_per_adult,
         "stops": len(itinerary["segments"]) - 1,
         "duration": itinerary.get("duration", ""),
+        "return_segments": return_segments,
         "raw_offer": offer,
     }
 

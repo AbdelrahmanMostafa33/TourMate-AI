@@ -7,6 +7,7 @@ class HotelOption {
   final String id;
   final String name;
   final String accommodationType;
+  final String subCategory;
   final double lat;
   final double lon;
   final String description;
@@ -22,6 +23,7 @@ class HotelOption {
     required this.id,
     required this.name,
     this.accommodationType = '',
+    this.subCategory = '',
     required this.lat,
     required this.lon,
     this.description = '',
@@ -39,6 +41,7 @@ class HotelOption {
       id: (json['id'] ?? '').toString(),
       name: (json['name'] ?? '').toString(),
       accommodationType: (json['accommodation_type'] ?? json['type'] ?? '').toString(),
+      subCategory: (json['sub_category'] ?? '').toString(),
       lat: (json['lat'] as num?)?.toDouble() ?? 0.0,
       lon: (json['lon'] as num?)?.toDouble() ?? 0.0,
       description: (json['description'] ?? json['why_recommended'] ?? '').toString(),
@@ -76,11 +79,13 @@ class HotelOptionsPayload {
   final String? tripId;
   final List<HotelOption> options;
   final String? message;
+  final List<String> accommodationPreferences;
 
   HotelOptionsPayload({
     this.tripId,
     required this.options,
     this.message,
+    this.accommodationPreferences = const [],
   });
 
   factory HotelOptionsPayload.fromJson(Map<String, dynamic> json) {
@@ -95,10 +100,31 @@ class HotelOptionsPayload {
         }
       }
     }
+    // Parse accommodation_preferences - could be a list or comma-separated string
+    final rawPrefs = json['accommodation_preferences'];
+    List<String> prefs = [];
+    if (rawPrefs is List) {
+      prefs = rawPrefs.map((e) => e.toString()).toList();
+    } else if (rawPrefs is String && rawPrefs.isNotEmpty) {
+      prefs = rawPrefs.split(',').map((e) => e.trim()).where((e) => e.isNotEmpty).toList();
+    }
     return HotelOptionsPayload(
       tripId: json['trip_id']?.toString(),
       options: optionsList,
       message: json['message']?.toString(),
+      accommodationPreferences: prefs,
     );
+  }
+
+  /// A human-readable label for the accommodation preference, e.g. "Resort" or "5-star Hotel"
+  String get preferenceLabel {
+    if (accommodationPreferences.isEmpty) return '';
+    // Format: capitalize first letter, join with " & "
+    return accommodationPreferences
+        .map((p) => p.isEmpty
+            ? ''
+            : '${p[0].toUpperCase()}${p.substring(1)}')
+        .where((p) => p.isNotEmpty)
+        .join(' & ');
   }
 }

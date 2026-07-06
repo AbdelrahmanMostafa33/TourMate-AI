@@ -135,7 +135,11 @@ def _build_cards_from_ai_result(
     if should_show_hotels:
         cards.append({
             "card_type": ChatCardType.HOTEL_OPTIONS.value,
-            "data": {"options": accommodation, "message": None},
+            "data": {
+                "options": accommodation,
+                "message": None,
+                "accommodation_preferences": result.get("accommodation_preferences"),
+            },
             "presentation": "append",
         })
 
@@ -152,6 +156,11 @@ def _build_cards_from_ai_result(
             "data": {
                 "offers": result["flight_search_results"],
                 "message": None,
+                "trip_type": result.get("trip_type"),
+                "departure_date": result.get("departure_date"),
+                "return_date": result.get("return_date"),
+                "cabin_class": result.get("cabin_class"),
+                "duration_days": result.get("duration_days"),
             },
             "presentation": "append",
         })

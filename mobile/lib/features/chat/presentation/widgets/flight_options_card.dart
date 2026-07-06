@@ -17,6 +17,30 @@ class FlightOptionsCard extends StatelessWidget {
     this.onSelectFlight,
   });
 
+  /// Build a trip info string like "Round-trip · 3 options · Jul 28 → Jul 31"
+  String get _tripInfo {
+    final parts = <String>[];
+    if (payload.tripType != null && payload.tripType!.isNotEmpty) {
+      parts.add(payload.tripType!.replaceAll('-', ' ').split(' ').map((w) => w.isNotEmpty ? '${w[0].toUpperCase()}${w.substring(1)}' : '').join(' '));
+    }
+    parts.add('${payload.offers.length} option${payload.offers.length > 1 ? 's' : ''} found');
+    if (payload.departureDate != null && payload.departureDate!.isNotEmpty) {
+      final dep = payload.departureDate!;
+      if (payload.returnDate != null && payload.returnDate!.isNotEmpty) {
+        parts.add('$dep → ${payload.returnDate}');
+      } else {
+        parts.add(dep);
+      }
+    }
+    if (payload.cabinClass != null && payload.cabinClass!.isNotEmpty) {
+      parts.add(payload.cabinClass!.replaceAll('_', ' ').split(' ').map((w) => w.isEmpty ? '' : '${w[0].toUpperCase()}${w.substring(1).toLowerCase()}').join(' '));
+    }
+    if (payload.durationDays != null && payload.durationDays! > 0) {
+      parts.add('${payload.durationDays} day${payload.durationDays! > 1 ? 's' : ''}');
+    }
+    return parts.join(' · ');
+  }
+
   @override
   Widget build(BuildContext context) {
     final tm = context.tm;
@@ -48,6 +72,7 @@ class FlightOptionsCard extends StatelessWidget {
             return _FlightOfferCard(
               offer: payload.offers[i],
               number: i + 1,
+              tripType: payload.tripType,
               onSelect: onSelectFlight != null
                   ? () => onSelectFlight!(payload.offers[i])
                   : null,
@@ -90,7 +115,7 @@ class FlightOptionsCard extends StatelessWidget {
                 ),
                 const SizedBox(height: Spacing.xxs),
                 Text(
-                  '${payload.offers.length} option${payload.offers.length > 1 ? 's' : ''} found',
+                  _tripInfo,
                   style: GoogleFonts.inter(fontSize: 13, color: tm.textTertiary, fontWeight: FontWeight.w500),
                 ),
               ],
@@ -107,13 +132,21 @@ class FlightOptionsCard extends StatelessWidget {
 class _FlightOfferCard extends StatelessWidget {
   final FlightOffer offer;
   final int number;
+  final String? tripType;
   final VoidCallback? onSelect;
 
   const _FlightOfferCard({
     required this.offer,
     required this.number,
+    this.tripType,
     this.onSelect,
   });
+
+  /// Format trip type for display ("one-way" → "One Way", "round-trip" → "Round Trip")
+  String get _formattedTripType {
+    if (tripType == null || tripType!.isEmpty) return '';
+    return tripType!.replaceAll('-', ' ').split(' ').map((w) => w.isEmpty ? '' : '${w[0].toUpperCase()}${w.substring(1)}').join(' ');
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -235,16 +268,92 @@ class _FlightOfferCard extends StatelessWidget {
                     ],
                   ),
 
-                  // ── sapphire-accented stops / cabin info ────────
-                  if (offer.stops != null || offer.cabin != null) ...[
+                  // ── Return segment (round-trip only) ────────────────────
+                  if (offer.returnSegments.isNotEmpty) ...[
+                    const SizedBox(height: Spacing.lg),
+                    Container(height: 1, color: tm.divider.withValues(alpha: 0.5)),
+                    const SizedBox(height: Spacing.lg),
+
+                    // Return header
+                    Row(
+                      children: [
+                        Icon(Icons.flight_land_rounded, size: 16, color: tm.sapphire),
+                        const SizedBox(width: Spacing.sm),
+                        Text(
+                          'Return',
+                          style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w700, color: tm.textSecondary, letterSpacing: 0.5),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: Spacing.md),
+
+                    // Return route timeline
+                    ...offer.returnSegments.map((seg) {
+                      final rOrigin = (seg['origin_iata'] ?? '').toString();
+                      final rDest = (seg['destination_iata'] ?? '').toString();
+                      final rDepTime = (seg['departure_at_formatted'] ?? '').toString();
+                      final rArrTime = (seg['arrival_at_formatted'] ?? '').toString();
+                      final rFlight = (seg['flight_number'] ?? '').toString();
+                      final rAirline = (seg['airline_code'] ?? '').toString();
+                      final rDuration = (seg['duration'] ?? '').toString();
+                      return Padding(
+                        padding: const EdgeInsets.only(bottom: Spacing.sm),
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: _timeStation(tm,
+                                time: rDepTime,
+                                iata: rOrigin,
+                                label: 'Departure',
+                                alignLeft: true,
+                              ),
+                            ),
+                            Padding(
+                              padding: const EdgeInsets.symmetric(horizontal: Spacing.md),
+                              child: Column(
+                                children: [
+                                  Icon(Icons.flight_rounded, size: 14, color: tm.sapphire.withValues(alpha: 0.7)),
+                                  if (rDuration.isNotEmpty && rDuration != 'PT')
+                                    Text(
+                                      rDuration.replaceAll('PT', '').replaceAll('H', 'h ').replaceAll('M', 'm'),
+                                      style: GoogleFonts.inter(fontSize: 10, color: tm.textTertiary),
+                                    ),
+                                ],
+                              ),
+                            ),
+                            Expanded(
+                              child: _timeStation(tm,
+                                time: rArrTime,
+                                iata: rDest,
+                                label: 'Arrival',
+                                alignLeft: false,
+                              ),
+                            ),
+                          ],
+                        ),
+                      );
+                    }),
+                  ],
+
+                  // ── Trip type / stops / cabin info chips ────────
+                  if (_formattedTripType.isNotEmpty || offer.stops != null || offer.cabin != null) ...[
                     const SizedBox(height: Spacing.sm),
                     Row(
                       children: [
-                        if (offer.stops != null)
+                        if (_formattedTripType.isNotEmpty)
                           _infoChip(
-                            offer.stops == 0 ? 'Non-stop' : '${offer.stops} stop${offer.stops! > 1 ? 's' : ''}',
-                            Icons.flight,
+                            _formattedTripType,
+                            Icons.flight_takeoff_rounded,
                             tm.sapphire,
+                          ),
+                        if (offer.stops != null)
+                          Padding(
+                            padding: EdgeInsets.only(left: _formattedTripType.isNotEmpty ? Spacing.sm : 0),
+                            child: _infoChip(
+                              offer.stops == 0 ? 'Non-stop' : '${offer.stops} stop${offer.stops! > 1 ? 's' : ''}',
+                              Icons.flight,
+                              tm.sapphire,
+                            ),
                           ),
                         if (offer.cabin != null && offer.cabin!.isNotEmpty)
                           Padding(

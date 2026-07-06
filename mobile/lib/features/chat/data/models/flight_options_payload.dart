@@ -7,11 +7,21 @@ class FlightOptionsPayload {
   final List<FlightOffer> offers;
   final String? message;
   final String? tripId;
+  final String? tripType;
+  final String? departureDate;
+  final String? returnDate;
+  final String? cabinClass;
+  final int? durationDays;
 
   const FlightOptionsPayload({
     required this.offers,
     this.message,
     this.tripId,
+    this.tripType,
+    this.departureDate,
+    this.returnDate,
+    this.cabinClass,
+    this.durationDays,
   });
 
   factory FlightOptionsPayload.fromJson(Map<String, dynamic> json) {
@@ -37,6 +47,15 @@ class FlightOptionsPayload {
       offers: offers,
       message: json['message']?.toString(),
       tripId: json['trip_id']?.toString(),
+      tripType: json['trip_type']?.toString(),
+      departureDate: json['departure_date']?.toString(),
+      returnDate: json['return_date']?.toString(),
+      cabinClass: json['cabin_class']?.toString(),
+      durationDays: json['duration_days'] is int
+          ? json['duration_days'] as int
+          : (json['duration_days'] != null
+              ? int.tryParse(json['duration_days'].toString())
+              : null),
     );
   }
 }

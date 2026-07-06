@@ -10,6 +10,7 @@ import asyncio
 import contextlib
 import copy
 import logging
+import re
 from collections import OrderedDict
 from datetime import datetime, timezone, timedelta
 from typing import Optional, Iterator
@@ -509,7 +510,41 @@ async def _process_message_inner(
         return response
 
     # ── SAFETY OVERRIDE ────────────────────────────────────────────────────
-    elif action == "ask_clarification" and state.slots.is_complete():
+    # Flight change requests can arrive after flight selection has moved on.
+    # The interpreter may route these as hotel picks, itinerary edits, or booking
+    # choices depending on the current phase. Detect the cheap intent here and
+    # send the user back through the existing flight search path.
+    flight_change = None
+    if state.phase in (
+        ConversationPhase.FLIGHT_SELECTION,
+        ConversationPhase.HOTEL_SELECTION,
+        ConversationPhase.BOOKING,
+    ):
+        flight_change = _is_flight_change_request(
+            effective_message,
+            router_result.extracted,
+        )
+
+    if flight_change:
+        logger.info(
+            "[FlightChangeRequest] Intercepted during phase=%s updates=%s",
+            state.phase.value, flight_change,
+        )
+        state.transition_to(ConversationPhase.FLIGHT_SELECTION)
+        state.slots.selected_flight_offer = None
+        _apply_flight_change_updates(state, flight_change)
+
+        response = await _handle_search_flights(
+            state, effective_message, router_result, image_features,
+        )
+        acknowledgement = _flight_change_acknowledgment(flight_change)
+        if response.get("message"):
+            response["message"] = f"{acknowledgement}\n\n{response['message']}"
+        if response.get("message"):
+            state.add_assistant_message(response["message"])
+        return response
+
+    if action == "ask_clarification" and state.slots.is_complete():
         action = "plan_trip"
 
     # ── BOOKING phase: route "1" / "2" / pay / do it later → approve ────
@@ -749,6 +784,21 @@ async def _process_message_inner(
             response = await _handle_modify_itinerary(
                 user_id, state, effective_message, router_result, image_features, token,
             )
+        elif state.phase == ConversationPhase.HOTEL_SELECTION:
+            # During hotel selection, accommodation type changes (e.g. "provide resorts")
+            # should re-run hotel selection, not return the full itinerary.
+            acc_type_change = _is_accommodation_type_change(effective_message)
+            if acc_type_change:
+                response = await _handle_select_hotel(
+                    state, effective_message, router_result, image_features,
+                )
+            else:
+                response = {
+                    "response_type": "chat",
+                    "message": router_result.response,
+                    "itinerary": None,
+                    "image_features": image_features,
+                }
         else:
             response = {
                 "response_type": "chat",
@@ -990,7 +1040,7 @@ async def handle_chat_stream(user_id, user_message, image_bytes=None, token=None
             result_data["itinerary"] = response["itinerary"]
 
         # Common optional fields
-        for field in ("profile", "explanation", "agent_messages", "agent_metrics", "validation", "pool_state", "image_features"):
+        for field in ("profile", "explanation", "agent_messages", "agent_metrics", "validation", "pool_state", "image_features", "accommodation_preferences"):
             if response.get(field):
                 result_data[field] = response[field].model_dump() if hasattr(response[field], "model_dump") else response[field]
 
@@ -1025,6 +1075,18 @@ async def handle_chat_stream(user_id, user_message, image_bytes=None, token=None
         # Flight search results (for Flutter to display)
         if response.get("flight_search_results"):
             result_data["flight_search_results"] = response["flight_search_results"]
+
+        # Flight metadata (trip type, dates)
+        if response.get("trip_type"):
+            result_data["trip_type"] = response["trip_type"]
+        if response.get("departure_date"):
+            result_data["departure_date"] = response["departure_date"]
+        if response.get("return_date"):
+            result_data["return_date"] = response["return_date"]
+        if response.get("cabin_class"):
+            result_data["cabin_class"] = response["cabin_class"]
+        if response.get("duration_days"):
+            result_data["duration_days"] = response["duration_days"]
 
         yield {"type": "result", "data": result_data}
 
@@ -1110,6 +1172,33 @@ def _parse_date_to_iso(date_str: str | None) -> str | None:
     logger.info("[DateParser] Could not parse date: %r — falling back to 30-days-from-now default", date_str)
     return None
 
+
+def _extract_departure_from_range(date_str: str | None) -> str | None:
+    """Strip a date-range suffix so the result can be parsed as a single departure date.
+
+    The LLM sometimes emits ``travel_dates`` as a range like
+    ``"2026-07-28 to 2026-07-31"`` or ``"July 28 - August 1"``.
+    This helper extracts the start date so ``_parse_date_to_iso`` can handle it.
+
+    Returns the cleaned string (unchanged if no range pattern is found).
+    """
+    if not date_str:
+        return None
+    # Match: first-date SPACE (to|-|\u2013|through) SPACE rest
+    m = re.match(
+        r"^(.+?)\s+(?:to|\u2013|\u2014|-|through)\s+.+$",
+        date_str.strip(),
+        re.IGNORECASE,
+    )
+    if m:
+        logger.info(
+            '[DateRange] Stripped range suffix from %r -- using "%s" as departure',
+            date_str, m.group(1),
+        )
+        return m.group(1).strip()
+    return date_str
+
+
 async def _handle_search_flights(
     state: ConversationState,
     effective_message: str,
@@ -1155,7 +1244,7 @@ async def _handle_search_flights(
     # If the user has a multi-day trip planned, auto-infer round-trip and
     # compute the return date from departure_date + duration_days.
     # No need to ask "one-way or round-trip?" or "what date returning?".
-    if not state.slots.is_round_trip and state.slots.duration_days and state.slots.duration_days >= 1:
+    if state.slots.is_round_trip is None and state.slots.duration_days and state.slots.duration_days >= 1:
         state.slots.is_round_trip = True
         logger.info(
             "[FlightSelection] Auto-set round-trip from duration=%d days",
@@ -1166,6 +1255,13 @@ async def _handle_search_flights(
     is_round_trip = extracted.get("is_round_trip")
     if is_round_trip is not None:
         state.slots.is_round_trip = is_round_trip
+        if is_round_trip is False:
+            if state.slots.return_date:
+                logger.info(
+                    "[FlightSelection] Clearing return date for one-way flight: %s",
+                    state.slots.return_date,
+                )
+            state.slots.return_date = None
 
     # ── Check for departure date ────────────────────────────────────────
     travel_dates = extracted.get("travel_dates") or state.slots.travel_dates or None
@@ -1185,12 +1281,28 @@ async def _handle_search_flights(
             "image_features": image_features,
         }
 
+    # Strip any range prefix before parsing (e.g. "2026-07-28 to 2026-07-31" → "2026-07-28")
+    travel_dates = _extract_departure_from_range(travel_dates) or travel_dates
+
     # Parse date to ISO format
     departure_date = _parse_date_to_iso(travel_dates)
 
     # ── Auto-compute return date from departure + duration ────────────
     return_date = None
-    if state.slots.is_round_trip and departure_date and state.slots.duration_days:
+    explicit_return_date = extracted.get("return_date")
+    if not explicit_return_date and extracted.get("is_round_trip") is None:
+        explicit_return_date = state.slots.return_date
+    if not state.slots.is_round_trip:
+        state.slots.return_date = None
+    elif explicit_return_date:
+        parsed_return_date = _parse_date_to_iso(explicit_return_date)
+        return_date = parsed_return_date or explicit_return_date
+        state.slots.return_date = return_date
+        logger.info(
+            "[FlightSelection] Using explicit return date: %s",
+            return_date,
+        )
+    elif departure_date and state.slots.duration_days:
         try:
             dep = datetime.strptime(departure_date, "%Y-%m-%d")
             ret = dep + timedelta(days=state.slots.duration_days)
@@ -1248,6 +1360,11 @@ async def _handle_search_flights(
         "itinerary": state.itinerary,
         "image_features": image_features,
         "flight_search_results": offers[:3] if offers else [],
+        "trip_type": trip_type,
+        "departure_date": departure_date,
+        "return_date": return_date,
+        "cabin_class": cabin_class,
+        "duration_days": state.slots.duration_days,
     }
 
 async def _handle_select_flight(
@@ -1385,6 +1502,8 @@ async def _handle_select_flight(
         "image_features": image_features,
         "flight_booking": flight_booking,
         "agent_messages": hotel_response.get("agent_messages", []),
+        "accommodation_preferences": hotel_response.get("accommodation_preferences")
+            or state.slots.accommodation_preferences or [],
     }
 
 async def _run_hotel_selection_and_present(
@@ -1476,6 +1595,7 @@ async def _run_hotel_selection_and_present(
         "itinerary": state.itinerary,
         "image_features": image_features,
         "agent_messages": hotel_agent_msgs,
+        "accommodation_preferences": state.slots.accommodation_preferences or [],
     }
 
 
@@ -1559,6 +1679,19 @@ def _display_message_for_response(response: Optional[dict], phase_value: str) ->
     if flight_results:
         count = len(flight_results)
         option_label = "option" if count == 1 else "options"
+        trip_type = response.get("trip_type")
+        depart = response.get("departure_date")
+        ret = response.get("return_date")
+        if trip_type or depart:
+            parts = [f"I found {count} {trip_type or 'flight'} {option_label}"]
+            if depart:
+                parts.append(f"departing {depart}")
+                if ret:
+                    parts.append(f"returning {ret}")
+                elif trip_type == "one-way":
+                    parts.append("(one-way)")
+            parts.append("Choose one from the card below.")
+            return " · ".join(parts)
         return f"I found {count} flight {option_label}. Choose one from the card below."
 
     if itinerary and phase_value == ConversationPhase.HOTEL_SELECTION.value:
@@ -1921,6 +2054,8 @@ def _itinerary_response(
     }
     if agent_messages:
         response["agent_messages"] = agent_messages
+    if state.slots.accommodation_preferences:
+        response["accommodation_preferences"] = state.slots.accommodation_preferences
     if validation:
         response["validation"] = validation
     return response
@@ -1946,6 +2081,7 @@ def _modifier_blocked_response(
         "pool_state": state.get_pool_state(),
         "agent_messages": msgs,
         "ui": {"actions": ["replace_itinerary_card"]},
+        "accommodation_preferences": state.slots.accommodation_preferences or [],
     }
 
 
@@ -2193,6 +2329,149 @@ def _apply_accommodation_change(slots, new_type: str) -> None:
         current.append(new_type)
     slots.accommodation_preferences = current
 
+def _is_flight_change_request(message: str, extracted: dict) -> dict | None:
+    """Detect trip-type/date edits for the existing flight-selection workflow.
+
+    Returns a dict of slot updates to apply, or None if the message does not
+    look like a flight edit. Dates are never parsed here; the interpreter owns
+    date extraction and passes them through ``extracted``.
+    """
+    msg_lower = message.lower()
+    if not msg_lower:
+        return None
+
+    extracted = extracted or {}
+    updates: dict = {}
+
+    one_way_patterns = [
+        r"\bone[-\s]?way\b",
+        r"\bsingle flight\b",
+        r"\bsingle ticket\b",
+        r"\bno return(?: flight| ticket)?\b",
+        r"\bwithout (?:a )?return(?: flight| ticket)?\b",
+        r"\bskip (?:the )?return(?: flight)?\b",
+        r"\bdo(?:n't| not) need (?:a )?return(?: flight| ticket)?\b",
+        r"\bnot (?:a )?round[-\s]?trip\b",
+        r"\bjust (?:the )?(?:outbound|departure)(?: flight)?\b",
+        r"\bonly (?:the )?(?:outbound|departure)(?: flight)?\b",
+    ]
+    round_trip_patterns = [
+        r"\bround[-\s]?trip\b",
+        r"\breturn flight\b",
+        r"\breturn ticket\b",
+        r"\bboth ways\b",
+        r"\bthere and back\b",
+        r"\bwith (?:a )?return(?: flight| ticket)?\b",
+        r"\badd (?:a )?return(?: flight| ticket)?\b",
+        r"\binclude (?:a )?return(?: flight| ticket)?\b",
+        r"\bneed (?:a )?return(?: flight| ticket)?\b",
+    ]
+
+    one_way_change = any(re.search(pattern, msg_lower) for pattern in one_way_patterns)
+    round_trip_change = any(re.search(pattern, msg_lower) for pattern in round_trip_patterns)
+
+    return_date_context = any(kw in msg_lower for kw in (
+        "return date",
+        "different return",
+        "new return",
+        "change my return",
+        "change the return",
+        "push back my return",
+        "move my return",
+        "returning",
+        "come back",
+        "coming back",
+        "fly back",
+        "flight back",
+        "back home",
+    ))
+    departure_date_context = any(kw in msg_lower for kw in (
+        "departure date",
+        "departing",
+        "depart on",
+        "leave on",
+        "leaving on",
+        "fly out",
+        "outbound date",
+        "travel date",
+        "flight date",
+    ))
+    date_change_context = departure_date_context and any(kw in msg_lower for kw in (
+        "actually",
+        "change",
+        "different",
+        "instead",
+        "move",
+        "new",
+        "push",
+        "switch",
+        "update",
+    ))
+
+    if one_way_change:
+        updates["is_round_trip"] = False
+    elif round_trip_change:
+        updates["is_round_trip"] = True
+
+    if not one_way_change:
+        extracted_round_trip = extracted.get("is_round_trip")
+        if extracted_round_trip is not None and (round_trip_change or return_date_context):
+            updates["is_round_trip"] = extracted_round_trip
+
+        return_date = extracted.get("return_date")
+        if return_date and (return_date_context or round_trip_change):
+            updates["is_round_trip"] = True
+            updates["return_date"] = return_date
+
+    travel_dates = extracted.get("travel_dates")
+    if travel_dates and date_change_context:
+        updates["travel_dates"] = travel_dates
+
+    if not updates:
+        return None
+
+    logger.info(
+        "[FlightChangeRequest] Detected flight change updates=%s in '%s'",
+        updates, message[:60],
+    )
+    return updates
+
+def _apply_flight_change_updates(state: ConversationState, updates: dict) -> None:
+    """Apply flight edit slot updates and clear stale round-trip state."""
+    travel_dates = updates.get("travel_dates")
+    if travel_dates:
+        state.slots.travel_dates = travel_dates
+
+    if updates.get("is_round_trip") is False:
+        state.slots.is_round_trip = False
+        if state.slots.return_date:
+            logger.info(
+                "[FlightChangeRequest] Clearing return date for one-way flight: %s",
+                state.slots.return_date,
+            )
+        state.slots.return_date = None
+        return
+
+    if "is_round_trip" in updates:
+        state.slots.is_round_trip = updates["is_round_trip"]
+
+    return_date = updates.get("return_date")
+    if return_date:
+        state.slots.return_date = return_date
+        state.slots.is_round_trip = True
+
+def _flight_change_acknowledgment(updates: dict) -> str:
+    """Build a short acknowledgement to prefix the refreshed flight search."""
+    if updates.get("is_round_trip") is False:
+        return "Got it - switching to one-way."
+    if updates.get("return_date"):
+        return f"Got it - updating the return date to {updates['return_date']}."
+    if updates.get("is_round_trip") is True:
+        return "Got it - switching to round-trip."
+    if updates.get("travel_dates"):
+        return "Got it - updating the flight date."
+    return "Got it - updating the flight search."
+
 def _is_cabin_class_request(modification_request: str) -> str | None:
     """Detect if the user is asking for a specific cabin class during flight selection.
 
@@ -2211,7 +2490,9 @@ def _is_cabin_class_request(modification_request: str) -> str | None:
     # a class keyword strongly suggests a cabin class request.
     has_travel_context = any(kw in msg_lower for kw in (
         "class", "flights", "flight", "tickets", "seats", "cabin",
+        "premium", "business", "economy", "coach", "first",
         "provide", "show", "give me", "i want", "change to",
+        "let it be", "make it", "switch to",
         "upgrade", "downgrade",
     ))
 
@@ -2842,6 +3123,9 @@ async def _fallback_full_regeneration(
             "The itinerary above reflects the best available alternatives."
         )
         result["message"] = message + fallback_note
+
+    if state.slots.accommodation_preferences:
+        result["accommodation_preferences"] = state.slots.accommodation_preferences
 
     return result
 

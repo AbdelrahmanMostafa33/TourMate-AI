@@ -65,6 +65,11 @@ class FlightOffer extends Equatable {
   /// Price per adult (flights API format)
   final double pricePerAdult;
 
+  /// Return (inbound) segments for round-trip offers.
+  /// Each segment has: airline_code, flight_number, origin_iata,
+  /// destination_iata, departure_at_formatted, arrival_at_formatted.
+  final List<Map<String, dynamic>> returnSegments;
+
   /// Raw offer JSON for downstream booking (flights API format)
   final Map<String, dynamic> rawOffer;
 
@@ -86,6 +91,7 @@ class FlightOffer extends Equatable {
     this.arrivalAt,
     this.cabinClass,
     this.pricePerAdult = 0,
+    this.returnSegments = const [],
     this.rawOffer = const {},
   });
 
@@ -150,12 +156,16 @@ class FlightOffer extends Equatable {
       currency: (json['currency'] ?? 'USD').toString(),
       duration: json['duration']?.toString(),
       stops: (json['stops'] as num?)?.toInt(),
-      cabin: json['cabin']?.toString(),
+      cabin: json['cabin']?.toString() ?? json['cabin_class']?.toString(),
       offerIndex: (json['offer_index'] as num?)?.toInt() ?? 0,
       departureAt: depDt,
       arrivalAt: arrDt,
       cabinClass: json['cabin_class']?.toString(),
       pricePerAdult: (json['price_per_adult'] as num?)?.toDouble() ?? 0,
+      returnSegments: (json['return_segments'] as List<dynamic>?)
+              ?.map((e) => Map<String, dynamic>.from(e as Map))
+              .toList() ??
+          const [],
       rawOffer: rawOfferRaw as Map<String, dynamic>? ?? {},
     );
   }
@@ -205,5 +215,6 @@ class FlightOffer extends Equatable {
         pricePerAdult,
         stops,
         cabin,
+        returnSegments,
       ];
 }

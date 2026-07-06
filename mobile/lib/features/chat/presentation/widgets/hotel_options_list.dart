@@ -66,7 +66,7 @@ class HotelOptionsList extends StatelessWidget {
                         style: GoogleFonts.inter(fontSize: 18, fontWeight: FontWeight.w700, color: tm.textPrimary, letterSpacing: -0.3),
                       ),
                       Text(
-                        '${payload.options.length} option${payload.options.length > 1 ? 's' : ''} available',
+                        _headerInfo,
                         style: GoogleFonts.inter(fontSize: 13, color: tm.textTertiary, fontWeight: FontWeight.w500),
                       ),
                     ],
@@ -91,6 +91,15 @@ class HotelOptionsList extends StatelessWidget {
         ],
       ),
     );
+  }
+
+  String get _headerInfo {
+    final parts = <String>[];
+    if (payload.preferenceLabel.isNotEmpty) {
+      parts.add('${payload.preferenceLabel} preference');
+    }
+    parts.add('${payload.options.length} option${payload.options.length > 1 ? 's' : ''}');
+    return parts.join(' \u00b7 ');
   }
 }
 
@@ -122,7 +131,7 @@ class _HotelOptionCard extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // ── Top row: badge + name + rating ──
+              // ── Top row: badge + name + star rating ──
               Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -148,60 +157,68 @@ class _HotelOptionCard extends StatelessWidget {
                   const SizedBox(width: Spacing.lg),
                   // Name
                   Expanded(
-                    child: Text(
-                      hotel.name,
-                      style: GoogleFonts.inter(fontSize: 15, fontWeight: FontWeight.w700, color: tm.textPrimary),
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ),
-                  // rating
-                  if (hotel.rating != null)
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: Spacing.md, vertical: Spacing.xs),
-                      decoration: BoxDecoration(
-                        color: tm.sapphire.withValues(alpha: 0.08),
-                        borderRadius: BorderRadius.circular(RadiusTokens.xl4),
-                        border: Border.all(color: tm.sapphire.withValues(alpha: 0.2)),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(Icons.star_rounded, size: 14, color: tm.sapphire),
-                          const SizedBox(width: Spacing.xxs),
-                          Text(
-                            hotel.rating!.toStringAsFixed(1),
-                            style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w700, color: tm.sapphire),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          hotel.name,
+                          style: GoogleFonts.inter(fontSize: 15, fontWeight: FontWeight.w700, color: tm.textPrimary),
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        // Star rating — show star count label (e.g. "5-star")
+                        if (_starCount > 0) ...[
+                          const SizedBox(height: Spacing.xxs),
+                          Row(
+                            children: [
+                              ...List.generate(_starCount, (i) =>
+                                Icon(Icons.star_rounded, size: 14, color: Colors.amber),
+                              ),
+                              const SizedBox(width: Spacing.xs),
+                              Text(
+                                '$_starCount-star',
+                                style: GoogleFonts.inter(fontSize: 11, color: tm.textTertiary, fontWeight: FontWeight.w500),
+                              ),
+                            ],
                           ),
                         ],
-                      ),
+                      ],
                     ),
+                  ),
                 ],
               ),
 
               const SizedBox(height: Spacing.sm),
 
-              // ── sapphire-accented Type + Price + Distance ────
-              Row(
+              // ── sapphire-accented Type + Sub-category + Price + Distance ────
+              Wrap(
+                spacing: Spacing.sm,
+                runSpacing: Spacing.xs,
                 children: [
                   if (hotel.accommodationType.isNotEmpty)
                     _accentChip(tm, hotel.accommodationType, Icons.home_outlined),
-                  if (hotel.pricePerNight != null) ...[
-                    const SizedBox(width: Spacing.sm),
+                  if (hotel.subCategory.isNotEmpty)
+                    _accentChip(tm, hotel.subCategory, Icons.category_outlined),
+                  if (hotel.pricePerNight != null)
                     _accentChip(
                       tm,
                       '${_formatPrice(hotel.pricePerNight!)}${hotel.currency != null ? ' ${hotel.currency}' : ''}/night',
                       Icons.attach_money,
                     ),
-                  ],
-                  if (hotel.distanceFromCenter != null) ...[
-                    const SizedBox(width: Spacing.sm),
+                  if (hotel.distanceFromCenter != null)
                     _accentChip(
                       tm,
                       '${hotel.distanceFromCenter!.toStringAsFixed(1)} km',
                       Icons.location_on_outlined,
                     ),
-                  ],
+                  if (hotel.address != null && hotel.address!.isNotEmpty)
+                    _accentChip(
+                      tm,
+                      hotel.address!.length > 40
+                          ? '${hotel.address!.substring(0, 40)}...'
+                          : hotel.address!,
+                      Icons.pin_drop_outlined,
+                    ),
                 ],
               ),
 
@@ -291,6 +308,11 @@ class _HotelOptionCard extends StatelessWidget {
         ],
       ),
     );
+  }
+
+  int get _starCount {
+    if (hotel.rating == null) return 0;
+    return hotel.rating!.round().clamp(0, 5);
   }
 
   String _formatPrice(double price) {
