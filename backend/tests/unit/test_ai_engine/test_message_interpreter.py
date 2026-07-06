@@ -559,6 +559,7 @@ class FakeInterpreterOutput:
                     "selected_hotel_name": None, "selected_hotel_number": None,
                     "origin_city": None, "selected_flight_number": None,
                     "cabin_class": None, "is_round_trip": None, "return_date": None,
+                    "preferred_hotel_star_class": None,
                 }
                 self._fields.update(fields)
                 for k, v in self._fields.items():

@@ -833,6 +833,19 @@ class ChatService:
             # Duration from start/end dates
             if trip.start_date and trip.end_date:
                 slots_data["duration_days"] = (trip.end_date - trip.start_date).days + 1
+            # Fallback: derive duration from the itinerary's day count
+            # (covers the common case where the user said "1-day trip" without
+            # specifying exact dates — trip.start_date/end_date are None)
+            if "duration_days" not in slots_data and trip.itineraries:
+                days_count = len(trip.itineraries[0].days)
+                if days_count:
+                    slots_data["duration_days"] = days_count
+            # Final fallback: check the state_snapshot (most reliable because
+            # it's saved directly from ConversationState.slots.to_dict())
+            if "duration_days" not in slots_data and conversation and conversation.state_snapshot:
+                snap_slots = conversation.state_snapshot.get("slots", {})
+                if snap_slots.get("duration_days") is not None:
+                    slots_data["duration_days"] = snap_slots["duration_days"]
             # Group size
             if trip.number_of_travelers:
                 slots_data["group_size"] = trip.number_of_travelers
@@ -858,7 +871,7 @@ class ChatService:
                                     "category": snapshot.get("category", ""),
                                     "suggested_time_of_day": snapshot.get("suggested_time_of_day", ""),
                                     "estimated_duration_minutes": stop.duration_minutes or 60,
-                                    "why_recommended": snapshot.get("why_recommended") or stop.ai_notes or '',
+                                    "why_recommended": snapshot.get("why_recommended", ""),
                                     "rating": snapshot.get("rating"),
                                     "address": snapshot.get("address", ""),
                                     "lat": snapshot.get("lat"),

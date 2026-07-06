@@ -109,6 +109,15 @@ class ExtractedSlots(BaseModel):
         default=None,
         description="Budget level: 'budget', 'moderate', or 'luxury'",
     )
+
+    preferred_hotel_star_class: Optional[str] = Field(
+        default=None,
+        description=(
+            "Preferred hotel star rating, e.g. '4-star', '5 star', 'four star'. "
+            "Extract as a simple string like '4' or '5'."
+        ),
+    )
+
     travel_style: Optional[str] = Field(
         default=None,
         description="Travel style: 'romantic', 'adventure', 'family', 'solo', 'cultural', or 'relaxation'",
