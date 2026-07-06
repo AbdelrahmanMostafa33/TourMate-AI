@@ -332,7 +332,7 @@ class StopDetail extends Equatable {
           (json['minutes_from_prev_stop'] as num?)?.toInt(),
       travelMode: _serializeTravelMode(json['travel_mode']),
       estimatedCost: (json['estimated_cost'] as num?)?.toDouble(),
-      aiNotes: json['ai_notes'] as String?,
+      aiNotes: (snapshot?['why_recommended'] as String?) ?? json['ai_notes'] as String?,
       userNotes: json['user_notes'] as String?,
       status: json['status'] as String? ?? 'planned',
     );

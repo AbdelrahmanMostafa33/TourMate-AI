@@ -68,6 +68,7 @@ def _build_place_snapshot(stop: dict) -> dict:
         "website": stop.get("website", ""),
         "photo": (stop.get("photos") or [None])[0],
         "maps_link": stop.get("maps_link", ""),
+        "why_recommended": stop.get("why_recommended", ""),
     }
 
 

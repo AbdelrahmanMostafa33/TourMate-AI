@@ -477,14 +477,88 @@ class _ChatViewState extends State<_ChatView>
 
 
   /// Called when the user taps "Do It Later" on the booking card.
-  /// Sets the trip status to `awaiting_booking` so the trip is ready
-  /// for payment later.  Does NOT reset the chat — the booking card
-  /// stays visible so the user can tap Pay Now at any time.
+  /// Creates pending booking records + sets trip status so bookings
+  /// appear in the Trip Detail → Bookings tab immediately.
+  /// Does NOT reset the chat — the booking card stays visible so the
+  /// user can tap Pay Now at any time.
   Future<void> _onBookingLater(ChatCubit cubit) async {
     final messenger = ScaffoldMessenger.of(context);
     final tripId = cubit.bookingTripId;
     if (tripId == null || tripId.isEmpty) return;
 
+    final hotelInfo = cubit.selectedHotelInfo;
+    final flightBooking = cubit.flightBookingData;
+    final rawOffer = flightBooking?['raw_offer'] as Map<String, dynamic>?;
+    final dio = locator<Dio>();
+    String? error;
+
+    // ── 1. Create pending hotel booking ────────────────────────────
+    if (hotelInfo != null) {
+      final placeId = hotelInfo['place_id'] as String?;
+      final totalCost = (hotelInfo['total_cost'] as num?)?.toDouble() ??
+          (hotelInfo['nightly_rate'] as num?)?.toDouble() ?? 0;
+      final currency = hotelInfo['currency'] as String? ?? 'USD';
+
+      if (placeId != null && placeId.isNotEmpty && totalCost > 0) {
+        try {
+          await dio.post('/api/v1/bookings/', data: {
+            'trip_id': tripId,
+            'booking_type': 'hotel',
+            'place_id': placeId,
+            'total_cost': totalCost,
+            'currency': currency,
+          });
+          debugPrint('[ChatScreen] Created pending hotel booking for trip $tripId');
+        } catch (e) {
+          error = e.toString();
+          debugPrint('[ChatScreen] Failed to create pending hotel booking: $e');
+        }
+      }
+    }
+
+    // ── 2. Create pending flight booking (from raw_offer) ───────────
+    final hasFlight = rawOffer != null && rawOffer.isNotEmpty;
+    if (hasFlight) {
+      try {
+        // Extract flight details from Amadeus raw_offer
+        final price = rawOffer['price'] as Map<String, dynamic>? ?? {};
+        final totalCost = double.tryParse(price['total']?.toString() ?? '') ?? 0;
+        final currency = price['currency'] as String? ?? 'USD';
+
+        // Extract departure/arrival from first itinerary's segments
+        final itineraries = rawOffer['itineraries'] as List? ?? [];
+        String? startDatetime;
+        String? endDatetime;
+        if (itineraries.isNotEmpty) {
+          final segments = itineraries[0]['segments'] as List? ?? [];
+          if (segments.isNotEmpty) {
+            final firstSeg = segments[0] as Map<String, dynamic>? ?? {};
+            final lastSeg = segments.last as Map<String, dynamic>? ?? {};
+            final dep = firstSeg['departure'] as Map<String, dynamic>? ?? {};
+            final arr = lastSeg['arrival'] as Map<String, dynamic>? ?? {};
+            startDatetime = dep['at'] as String?;
+            endDatetime = arr['at'] as String?;
+          }
+        }
+
+        final flightBody = <String, dynamic>{
+          'trip_id': tripId,
+          'booking_type': 'flight',
+          'total_cost': totalCost,
+          'currency': currency,
+        };
+        if (startDatetime != null) flightBody['start_datetime'] = startDatetime;
+        if (endDatetime != null) flightBody['end_datetime'] = endDatetime;
+
+        await dio.post('/api/v1/bookings/', data: flightBody);
+        debugPrint('[ChatScreen] Created pending flight booking for trip $tripId');
+      } catch (e) {
+        error = e.toString();
+        debugPrint('[ChatScreen] Failed to create pending flight booking: $e');
+      }
+    }
+
+    // ── 3. Update trip status ───────────────────────────────────────
     String? patchError;
     try {
       await locator<ApiServices>().updateTripStatus(
@@ -496,7 +570,21 @@ class _ChatViewState extends State<_ChatView>
       debugPrint('[ChatScreen] updateTripStatus (book later) failed: $e');
     }
 
-    if (patchError != null && mounted) {
+    // ── 3. Show result ─────────────────────────────────────────────
+    if (error != null && mounted) {
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text('Could not save booking: $error.'),
+          backgroundColor: tm.error,
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(RadiusTokens.xl2)),
+          margin: const EdgeInsets.fromLTRB(Spacing.xl3, 0, Spacing.xl3, Spacing.xl5),
+          padding: const EdgeInsets.symmetric(horizontal: Spacing.xl3, vertical: Spacing.xl2),
+          duration: const Duration(seconds: 4),
+          dismissDirection: DismissDirection.horizontal,
+        ),
+      );
+    } else if (patchError != null && mounted) {
       messenger.showSnackBar(
         SnackBar(
           content: Text('Could not update trip status: $patchError.'),
@@ -512,13 +600,13 @@ class _ChatViewState extends State<_ChatView>
     } else if (mounted) {
       messenger.showSnackBar(
         SnackBar(
-          content: const Text('Trip saved — you can pay whenever you\'re ready.'),
-          backgroundColor: tm.info,
+          content: const Text('Booking saved! Pay whenever you\'re ready — find it in the Bookings tab.'),
+          backgroundColor: tm.success,
           behavior: SnackBarBehavior.floating,
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(RadiusTokens.xl2)),
           margin: const EdgeInsets.fromLTRB(Spacing.xl3, 0, Spacing.xl3, Spacing.xl5),
           padding: const EdgeInsets.symmetric(horizontal: Spacing.xl3, vertical: Spacing.xl2),
-          duration: const Duration(seconds: 3),
+          duration: const Duration(seconds: 4),
           dismissDirection: DismissDirection.horizontal,
         ),
       );

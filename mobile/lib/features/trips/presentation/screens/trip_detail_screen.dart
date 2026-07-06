@@ -1,3 +1,4 @@
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_map/flutter_map.dart';
@@ -12,6 +13,7 @@ import '../../../../core/widgets/app_snackbar.dart';
 import '../../../../core/widgets/premium_widgets.dart';
 import '../../../bookings/data/models/booking_models.dart';
 import '../../../chat/presentation/screens/chat_screen.dart';
+import '../../../payments/data/datasource/payment_service.dart';
 import '../../data/models/trip_detail_model.dart';
 import '../../data/models/trip_profile_data.dart';
 import '../../logic/trip_detail_cubit.dart';
@@ -948,6 +950,64 @@ class _TripDetailScreenState extends State<TripDetailScreen> {
                   booking.payment!.status == 'completed' ? 'Paid' : booking.payment!.status,
                 ),
               ],
+
+              // ── Pay Now button (pending bookings only) ─────
+              if (booking.status.toLowerCase() == 'pending') ...[
+                const SizedBox(height: Spacing.xl3),
+                SizedBox(
+                  width: double.infinity,
+                  child: Material(
+                    color: Colors.transparent,
+                    child: InkWell(
+                      borderRadius: BorderRadius.circular(RadiusTokens.lg),
+                      onTap: () => _onPayNowFromBooking(booking),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          vertical: Spacing.xl2,
+                        ),
+                        decoration: BoxDecoration(
+                          gradient: const LinearGradient(
+                            colors: [
+                              Color(0xFF0F172A),
+                              Color(0xFF1E3A8A),
+                            ],
+                            begin: Alignment.centerLeft,
+                            end: Alignment.centerRight,
+                          ),
+                          borderRadius: BorderRadius.circular(RadiusTokens.lg),
+                          boxShadow: [
+                            BoxShadow(
+                              color: tm.deepRoyalBlue.withValues(alpha: 0.25),
+                              blurRadius: 8,
+                              offset: const Offset(0, 3),
+                            ),
+                          ],
+                        ),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(
+                              Icons.lock_outline_rounded,
+                              size: 16,
+                              color: tm.sapphireLight,
+                            ),
+                            const SizedBox(width: Spacing.sm),
+                            Text(
+                              'Pay Now',
+                              style: GoogleFonts.inter(
+                                fontSize: 14,
+                                fontWeight: FontWeight.w700,
+                                color: tm.sapphireLight,
+                                letterSpacing: 0.3,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
             ],
           ),
         ),
@@ -1367,13 +1427,104 @@ class _TripDetailScreenState extends State<TripDetailScreen> {
   /// Navigate to the chat screen connected to this trip.
   /// Pushes a new ChatScreen directly so the trip_id is always passed
   /// correctly, regardless of route argument forwarding.
-  void _continueChat(BuildContext context, TripDetailModel trip) {
-    Navigator.push(
+  /// Refreshes trip detail + bookings when returning from chat.
+  Future<void> _continueChat(BuildContext context, TripDetailModel trip) async {
+    // Capture cubit before async gap to avoid use_build_context_synchronously.
+    final cubit = context.read<TripDetailCubit>();
+    await Navigator.push(
       context,
       MaterialPageRoute(
         builder: (_) => ChatScreen(initialTripId: trip.tripId),
       ),
     );
+    // Refresh data when coming back — bookings may have been created
+    // or trip status may have changed (e.g. Book Later / Pay Now).
+    if (!mounted) return;
+    cubit.fetchTripDetail(widget.tripId);
+  }
+
+  /// Pay Now for a specific pending booking from the Bookings tab.
+  /// Uses the individual booking payment flow:
+  ///   1. POST /bookings/{booking_id}/initiate-payment → client_secret
+  ///   2. Open Stripe Payment Sheet via PaymentService
+  ///   3. POST /bookings/{booking_id}/confirm-after-payment
+  ///   4. Refresh trip detail to reflect the updated status
+  Future<void> _onPayNowFromBooking(BookingResponse booking) async {
+    final messenger = ScaffoldMessenger.of(context);
+    final dio = locator<Dio>();
+    final paymentService = locator<PaymentService>();
+
+    final bookingId = booking.bookingId;
+    final amount = booking.totalCost ?? 0;
+    final currency = booking.currency ?? 'USD';
+
+    if (amount <= 0) {
+      AppSnackbar.error(context, 'Cannot process payment: invalid amount.');
+      return;
+    }
+
+    // ── 1. Initiate payment ───────────────────────────────
+    final result = await paymentService.processBookingPayment(
+      payFuture: () async {
+        final resp = await dio.post(
+          '/api/v1/bookings/$bookingId/initiate-payment',
+          data: {
+            'amount': amount,
+            'currency': currency,
+            'payment_method': 'credit_card',
+          },
+        );
+        return resp.data as Map<String, dynamic>;
+      },
+      bookingId: bookingId,
+    );
+
+    if (!result.success) {
+      if (mounted) {
+        messenger.showSnackBar(
+          SnackBar(
+            content: Text(result.error ?? 'Payment was cancelled or failed.'),
+            backgroundColor: tm.warning,
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(RadiusTokens.xl2),
+            ),
+            margin: const EdgeInsets.fromLTRB(
+              Spacing.xl3, 0, Spacing.xl3, Spacing.xl5,
+            ),
+            padding: const EdgeInsets.symmetric(
+              horizontal: Spacing.xl3, vertical: Spacing.xl2,
+            ),
+            duration: const Duration(seconds: 4),
+          ),
+        );
+      }
+      return;
+    }
+
+    // ── 2. Confirm after payment ─────────────────────────
+    try {
+      await dio.post(
+        '/api/v1/bookings/$bookingId/confirm-after-payment',
+        data: {
+          'stripe_payment_intent_id': result.stripePaymentIntentId,
+        },
+      );
+    } catch (e) {
+      if (mounted) {
+        AppSnackbar.error(
+          context,
+          'Payment received but confirmation failed: $e',
+        );
+      }
+      return;
+    }
+
+    // ── 3. Refresh trip detail ────────────────────────────
+    if (mounted) {
+      AppSnackbar.success(context, '✅ Booking confirmed!');
+      context.read<TripDetailCubit>().fetchTripDetail(widget.tripId);
+    }
   }
 
   /// Show premium confirmation dialog before deleting the trip.

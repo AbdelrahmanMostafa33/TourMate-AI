@@ -858,7 +858,7 @@ class ChatService:
                                     "category": snapshot.get("category", ""),
                                     "suggested_time_of_day": snapshot.get("suggested_time_of_day", ""),
                                     "estimated_duration_minutes": stop.duration_minutes or 60,
-                                    "why_recommended": snapshot.get("why_recommended", ""),
+                                    "why_recommended": snapshot.get("why_recommended") or stop.ai_notes or '',
                                     "rating": snapshot.get("rating"),
                                     "address": snapshot.get("address", ""),
                                     "lat": snapshot.get("lat"),
