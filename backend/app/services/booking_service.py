@@ -304,7 +304,39 @@ class BookingService:
         if booking.status == BookingStatus.confirmed:
             raise ValueError(f"Booking {booking_id} is already confirmed")
         if booking.payment:
-            raise ValueError(f"Booking {booking_id} already has a payment")
+            # Booking already has a payment record — this can happen when the
+            # booking was created through the combined/initiate flow (which
+            # attaches a Payment record immediately).  Instead of rejecting,
+            # check if the existing payment has a pending Stripe PaymentIntent
+            # and, if so, return its client_secret so the user can retry the
+            # Stripe sheet without having to call initiate-payment again.
+            if booking.payment.status == PaymentStatus.pending:
+                existing_pi_id = booking.payment.stripe_payment_intent_id
+                if existing_pi_id and self._stripe is not None:
+                    try:
+                        intent = self._stripe.PaymentIntent.retrieve(existing_pi_id)
+                        existing_secret = intent.client_secret or booking.payment.raw_response.get("client_secret") if isinstance(booking.payment.raw_response, dict) else None
+                        if existing_secret:
+                            logger.info(
+                                "[BookingService] Re-using existing PaymentIntent %s for booking %s",
+                                existing_pi_id, booking_id,
+                            )
+                            return {
+                                "success": True,
+                                "payment_id": booking.payment.payment_id,
+                                "client_secret": existing_secret,
+                                "stripe_payment_intent_id": existing_pi_id,
+                                "simulated": False,
+                                "message": "Resuming existing payment. Complete via Stripe Payment Sheet.",
+                            }
+                    except Exception:
+                        logger.info(
+                            "[BookingService] Existing PaymentIntent %s expired — will create new one",
+                            existing_pi_id,
+                        )
+            # If the existing payment is already completed/confirmed, reject.
+            if booking.payment.status in (PaymentStatus.completed, PaymentStatus.refunded):
+                raise ValueError(f"Booking {booking_id} already has a completed payment")
 
         amount = data.amount if data.amount is not None else (booking.total_cost or 0)
         currency = (data.currency or booking.currency or "USD").lower()
