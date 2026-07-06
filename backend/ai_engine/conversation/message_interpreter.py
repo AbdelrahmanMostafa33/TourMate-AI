@@ -134,6 +134,17 @@ class ExtractedSlots(BaseModel):
             "Examples: ['boutique hotel'], ['hostel'], ['beach resort'], ['luxury hotel']"
         ),
     )
+    preferred_hotel_star_class: Optional[str] = Field(
+        default=None,
+        description=(
+            "The hotel star class the user wants (1-5). "
+            "Extract when the user mentions a star rating like '4-star', '5-star', "
+            "'3 stars', 'four star', etc. "
+            "Valid values: '1', '2', '3', '4', '5'. "
+            "Only used for accommodation/hotel selection. "
+            "Examples: 'provide 4-star hotels' → '4', '5 star hotel' → '5'."
+        ),
+    )
     selected_hotel_name: Optional[str] = Field(
         default=None,
         description=(
@@ -409,6 +420,13 @@ def _build_extracted_dict(extracted: ExtractedSlots) -> dict:
     raw = {k: v for k, v in raw.items() if v is not None}
     # Keep select_hotel fields even if they are the only extracted fields
     normalized = normalize_extracted_slots(raw)
+    if extracted.preferred_hotel_star_class is not None:
+        try:
+            star = int(extracted.preferred_hotel_star_class)
+            if 1 <= star <= 5:
+                normalized["preferred_hotel_star_class"] = star
+        except (ValueError, TypeError):
+            pass
     if extracted.selected_hotel_name:
         normalized["selected_hotel_name"] = extracted.selected_hotel_name
     if extracted.selected_hotel_number is not None:

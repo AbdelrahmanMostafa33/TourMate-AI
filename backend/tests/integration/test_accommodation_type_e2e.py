@@ -163,7 +163,7 @@ class TestAccommodationTypeEndToEnd:
             id="hostel_preference_filters_to_hostels_only",
         ),
         pytest.param(
-            ["five star hotel"],
+            ["luxury"],
             ["hotel_001"],
             ["hotel_002", "hotel_003", "hotel_004"],
             id="luxury_preference_filters_to_luxury_only",

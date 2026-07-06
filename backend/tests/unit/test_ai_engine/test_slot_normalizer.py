@@ -232,7 +232,8 @@ class TestNormalizeAccommodation:
 
     def test_luxury_keywords(self):
         assert normalize_accommodation(["boutique hotel"]) == ["luxury"]
-        assert normalize_accommodation(["five star"]) == ["luxury"]
+        # "five star" was removed from accommodation keywords — star class
+        # is now handled by normalize_hotel_star_class separately.
         assert normalize_accommodation(["high-end"]) == ["luxury"]
         assert normalize_accommodation(["upscale"]) == ["luxury"]
         assert normalize_accommodation(["palace"]) == ["luxury"]
@@ -343,9 +344,11 @@ class TestAccommodationConsistency:
         assert map_accommodation_to_type(["all-inclusive"]) == "resort"
         assert normalize_accommodation(["all-inclusive"]) == ["resort"]
 
-    def test_five_star_luxury(self):
-        assert map_accommodation_to_type(["5-star"]) == "luxury"
-        assert normalize_accommodation(["5-star"]) == ["luxury"]
+    def test_five_star_is_not_accommodation_type(self):
+        """Star class mentions are no longer mapped to accommodation types.
+        They are handled separately by normalize_hotel_star_class."""
+        assert map_accommodation_to_type(["5-star"]) == ""
+        assert normalize_accommodation(["5-star"]) is None
 
     def test_premium_hotel(self):
         assert map_accommodation_to_type(["premium hotel"]) == "luxury"

@@ -671,13 +671,13 @@ async def _process_message_inner(
     elif action == "approve_itinerary":
         # Check accommodation type change FIRST, regardless of phase,
         # so it's applied whether we go to FLIGHT_SELECTION or HOTEL_SELECTION.
-        acc_type_change = _is_accommodation_type_change(effective_message)
-        if acc_type_change:
+        acc_type_change, star_class_change = _is_accommodation_type_change(effective_message) or (None, None)
+        if acc_type_change or star_class_change is not None:
             logger.info(
                 "[ConversationAgent] Accommodation type change '%s' intercepted during approval",
                 acc_type_change,
             )
-            _apply_accommodation_change(state.slots, acc_type_change)
+            _apply_accommodation_change(state.slots, acc_type_change, star_class=star_class_change)
 
         # ── If in BOOKING phase, user approves → proceed to COMPLETED ──
         if state.phase == ConversationPhase.BOOKING:
@@ -718,7 +718,7 @@ async def _process_message_inner(
         elif state.phase == ConversationPhase.HOTEL_SELECTION:
             # If the user asked for an accommodation type change (e.g. "provide resorts"),
             # re-run hotel selection with the new preference instead of finalizing.
-            if acc_type_change:
+            if acc_type_change or star_class_change is not None:
                 logger.info(
                     "[ConversationAgent] Re-running hotel selection with type '%s'",
                     acc_type_change,
@@ -793,7 +793,7 @@ async def _process_message_inner(
         elif state.phase == ConversationPhase.HOTEL_SELECTION:
             # During hotel selection, accommodation type changes (e.g. "provide resorts")
             # should re-run hotel selection, not return the full itinerary.
-            acc_type_change = _is_accommodation_type_change(effective_message)
+            acc_type_change, star_class_change = _is_accommodation_type_change(effective_message) or (None, None)
             if acc_type_change:
                 response = await _handle_select_hotel(
                     state, effective_message, router_result, image_features,
@@ -1529,13 +1529,13 @@ async def _run_hotel_selection_and_present(
     or when the user approves from ITINERARY_REVIEW with no flights needed.
     """
     # Check if the user's message implies an accommodation type change
-    acc_type_change = _is_accommodation_type_change(effective_message)
-    if acc_type_change:
+    acc_type_change, star_class_change = _is_accommodation_type_change(effective_message) or (None, None)
+    if acc_type_change or star_class_change is not None:
         logger.info(
             "[ConversationAgent] Accommodation type change '%s' intercepted during approval",
             acc_type_change,
         )
-        _apply_accommodation_change(state.slots, acc_type_change)
+        _apply_accommodation_change(state.slots, acc_type_change, star_class=star_class_change)
 
     # Select hotels now that the stops are finalized
     hotel_agent_msgs: list[str] = []
@@ -1548,6 +1548,7 @@ async def _run_hotel_selection_and_present(
                 "accommodation_preferences": state.slots.accommodation_preferences or [],
                 "budget_level": state.slots.budget_level or "",
                 "travel_style": state.slots.travel_style or "",
+                "hotel_star_class": state.slots.preferred_hotel_star_class,
             },
             "agent_messages": [],
         }
@@ -1561,7 +1562,7 @@ async def _run_hotel_selection_and_present(
         hotel_agent_msgs = approval_result.get("agent_messages", [])
 
     # ── Accommodation type change during approval ────────────
-    if acc_type_change:
+    if acc_type_change or star_class_change is not None:
         if state.itinerary and state.itinerary.get("accommodation_suggestions"):
             return {
                 "response_type": "itinerary",
@@ -1972,6 +1973,7 @@ def _build_profile_from_slots(slots: TripSlots, trip_id: str) -> dict:
         interests=slots.interests or [],
         food_preferences=slots.food_preferences or [],
         accommodation_preferences=slots.accommodation_preferences or [],
+        preferred_hotel_star_class=slots.preferred_hotel_star_class,
         generated_at=None,
         updated_at=None,
     )
@@ -2371,16 +2373,19 @@ def _build_conversation_context(state) -> str:
         lines.append(f"{role}: {content}")
     return "\n".join(lines)
 
-def _apply_accommodation_change(slots, new_type: str) -> None:
+def _apply_accommodation_change(slots, new_type: str, star_class: int | None = None) -> None:
     """Apply accommodation type change with add/remove semantics.
 
     Adds the new type to existing preferences without removing old ones,
     so preferences accumulate over time rather than being overwritten.
+    Also sets preferred_hotel_star_class if provided.
     """
     current = list(slots.accommodation_preferences or [])
-    if new_type not in current:
+    if new_type and new_type not in current:
         current.append(new_type)
     slots.accommodation_preferences = current
+    if star_class is not None:
+        slots.preferred_hotel_star_class = star_class
 
 def _is_flight_change_request(message: str, extracted: dict) -> dict | None:
     """Detect trip-type/date edits for the existing flight-selection workflow.
@@ -2598,11 +2603,13 @@ def _might_need_preference_update(classification: dict) -> bool:
     edit_type = (classification.get("edit_type") or "").upper()
     return edit_type != "REGENERATE"
 
-def _is_accommodation_type_change(modification_request: str) -> str | None:
+def _is_accommodation_type_change(modification_request: str) -> tuple[str | None, int | None]:
     """Detect if the user is asking to change accommodation type (e.g. 'resorts instead of hotels').
 
-    Returns the canonical accommodation type string (e.g. 'resort', 'hostel', 'luxury', 'hotel')
-    if an accommodation type change is detected, or None otherwise.
+    Returns a tuple of (accommodation_type, star_class).
+    accommodation_type is a canonical type string (e.g. 'resort', 'hostel', 'luxury', 'hotel')
+    or None if no type change is detected.
+    star_class is an int (1-5) if a star class change is detected, or None otherwise.
     """
     msg_lower = modification_request.lower()
 
@@ -2616,13 +2623,37 @@ def _is_accommodation_type_change(modification_request: str) -> str | None:
     # "i want resorts"
     # "give me resorts"
 
+    # Check for star class patterns first (e.g. "4-star", "5 star", "four star")
+    star_class_match = re.search(r'(\\d+)\s*-?\s*star' + '|four star|five star|three star', msg_lower)
+    star_class = None
+    if star_class_match:
+        num_str = star_class_match.group(1) if star_class_match.group(1) else {
+            "four star": 4, "five star": 5, "three star": 3
+        }.get(star_class_match.group(0))
+        if num_str:
+            try:
+                star_class = int(num_str)
+                if not (1 <= star_class <= 5):
+                    star_class = None
+            except (ValueError, TypeError):
+                star_class = None
+    if star_class is not None:
+        logger.info(
+            "[AccommodationTypeChange] Detected star class change: %d-star in '%s'",
+            star_class, modification_request[:60],
+        )
+
     # Check for "instead of" / "instead" patterns
     has_instead = "instead" in msg_lower
     has_switch = any(kw in msg_lower for kw in ("switch to", "change to", "replace with", "use "))
     has_want = any(kw in msg_lower for kw in ("i want ", "give me ", "provide ", "show me "))
 
+    # Also treat bare star class mentions as changes (e.g. "4-star hotels" with no switch keyword)
+    if star_class is not None:
+        has_want = True  # A star class mention implies intent
+
     if not (has_instead or has_switch or has_want):
-        return None
+        return None, None
 
     # Extract the accommodation type keyword mentioned
     # Use word-boundary matching and break on FIRST match since
@@ -2639,9 +2670,7 @@ def _is_accommodation_type_change(modification_request: str) -> str | None:
             "[AccommodationTypeChange] Detected accommodation type change: %s in '%s'",
             matched_type, modification_request[:60],
         )
-        return matched_type
-
-    return None
+    return matched_type, star_class
 
 def _format_hotel_options(itinerary: dict) -> str:
     """Format hotel suggestions as numbered options for user selection."""
@@ -2896,14 +2925,14 @@ async def _handle_modify_itinerary(
     # This intercepts BEFORE the classifier so that accommodation type changes are
     # handled by _swap_accommodation_surgically (which replaces ALL hotels) rather
     # than the modifier agent (which only changes one hotel at a time).
-    acc_type_change = _is_accommodation_type_change(effective_message)
+    acc_type_change, star_class_change = _is_accommodation_type_change(effective_message) or (None, None)
     if acc_type_change and state.itinerary and state.slots.destination_city:
         logger.info(
             "[ConversationAgent] Intercepted accommodation type change: %s → '%s'",
             effective_message[:60], acc_type_change,
         )
         # Update slots with new accommodation preference
-        _apply_accommodation_change(state.slots, acc_type_change)
+        _apply_accommodation_change(state.slots, acc_type_change, star_class=star_class_change)
         surgically_swapped = await _swap_accommodation_surgically(
             itinerary=state.itinerary,
             destination_city=state.slots.destination_city,
@@ -3134,13 +3163,13 @@ async def _handle_select_hotel(
     hotel selection with the updated preference.
     """
     # ── Check for accommodation type change first ─────────────────────
-    acc_type_change = _is_accommodation_type_change(effective_message)
-    if acc_type_change:
+    acc_type_change, star_class_change = _is_accommodation_type_change(effective_message) or (None, None)
+    if acc_type_change or star_class_change is not None:
         logger.info(
             "[SelectHotel] Accommodation type change '%s' intercepted — re-running hotel selection",
             acc_type_change,
         )
-        _apply_accommodation_change(state.slots, acc_type_change)
+        _apply_accommodation_change(state.slots, acc_type_change, star_class=star_class_change)
         return await _run_hotel_selection_and_present(
             state, effective_message, image_features,
         )

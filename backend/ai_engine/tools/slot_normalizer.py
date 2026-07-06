@@ -57,6 +57,78 @@ VALID_ACCOMMODATION_TYPES = {"hostel", "resort", "hotel", "luxury"}
 
 
 # ══════════════════════════════════════════════════════════════════════════════
+# Hotel star class normalization
+# ══════════════════════════════════════════════════════════════════════════════
+
+def normalize_hotel_star_class(value: Optional[str | int]) -> Optional[int]:
+    """
+    Normalize a raw hotel star class value to an integer (1-5).
+
+    Handles both digit-based patterns ("4-star", "5 star", "3-star")
+    and word-based patterns ("four star", "five-star", "three star").
+    Also accepts bare integers (4, 5) directly.
+
+    Examples::
+
+        normalize_hotel_star_class("4-star")     → 4
+        normalize_hotel_star_class("5 star")     → 5
+        normalize_hotel_star_class(5)            → 5
+        normalize_hotel_star_class("four star")  → 4
+        normalize_hotel_star_class("five-star")  → 5
+        normalize_hotel_star_class("3")          → 3
+        normalize_hotel_star_class("luxury")     → None  (not a star class)
+        normalize_hotel_star_class(None)          → None
+    """
+    if value is None:
+        return None
+
+    # Fast-path: if already a valid int, return it directly
+    if isinstance(value, int):
+        if 1 <= value <= 5:
+            return value
+        return None
+
+    if not isinstance(value, str):
+        return None
+
+    normalized = value.lower().strip()
+
+    # Try direct integer parsing first (e.g. "4", "5")
+    try:
+        star = int(normalized)
+        if 1 <= star <= 5:
+            return star
+    except (ValueError, TypeError):
+        pass
+
+    # Try digit-based pattern: "4-star", "5 star"
+    match = re.search(r"(\d+)\s*-?\s*star", normalized)
+    if match:
+        try:
+            star = int(match.group(1))
+            if 1 <= star <= 5:
+                return star
+        except (ValueError, TypeError):
+            pass
+
+    # Try word-based patterns: "four star", "five-star"
+    word_map = {
+        "one": 1, "two": 2, "three": 3, "four": 4, "five": 5,
+    }
+    word_match = re.search(r"(one|two|three|four|five)\s*-?\s*star", normalized)
+    if word_match:
+        return word_map.get(word_match.group(1))
+
+    # Fallback: standalone single digit 1-5
+    single_digit = re.search(r"\b([1-5])\b", normalized)
+    if single_digit:
+        return int(single_digit.group(1))
+
+    logger.debug("[SlotNormalizer] Could not normalize hotel star class: %r", value)
+    return None
+
+
+# ══════════════════════════════════════════════════════════════════════════════
 # Budget normalization
 # ══════════════════════════════════════════════════════════════════════════════
 
@@ -518,10 +590,6 @@ _ACCOMMODATION_KEYWORDS: list[tuple[str, str]] = [
     ("boutique",      "luxury"),
     ("boutique hotel","luxury"),
     ("palace",        "luxury"),
-    ("five star",     "luxury"),
-    ("five-star",     "luxury"),
-    ("5-star",        "luxury"),
-    ("5 star",        "luxury"),
     ("premium",       "luxury"),
     ("high-end",      "luxury"),
     ("high end",      "luxury"),
@@ -1004,6 +1072,13 @@ def normalize_extracted_slots(extracted: Dict[str, Any]) -> Dict[str, Any]:
 
     if "interests" in result:
         result["interests"] = normalize_interests(result["interests"])
+
+    # ── Hotel star class normalization ────────────────────────────────────
+
+    if "preferred_hotel_star_class" in result:
+        result["preferred_hotel_star_class"] = normalize_hotel_star_class(
+            result["preferred_hotel_star_class"]
+        )
 
     # ── Drop None values ─────────────────────────────────────────────────
 

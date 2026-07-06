@@ -108,6 +108,7 @@ class TripSlots:
     interests:                      Optional[List[str]] = None
     food_preferences:               Optional[List[str]] = None
     accommodation_preferences:      Optional[List[str]] = None
+    preferred_hotel_star_class:     Optional[int] = None
 
     # ── Smart defaults ────────────────────────────────────────────────
     SMART_DEFAULTS = {
@@ -192,6 +193,7 @@ class TripSlots:
             interests              = data.get("interests"),
             food_preferences       = data.get("food_preferences"),
             accommodation_preferences = data.get("accommodation_preferences"),
+            preferred_hotel_star_class = data.get("preferred_hotel_star_class"),
             origin_city            = data.get("origin_city"),
             selected_flight_offer  = data.get("selected_flight_offer"),
             flight_search_results  = data.get("flight_search_results"),
@@ -217,6 +219,7 @@ class TripSlots:
             "is_round_trip":          "is_round_trip",
             "return_date":            "return_date",
             "origin_city":            "origin_city",
+            "preferred_hotel_star_class": "preferred_hotel_star_class",
         }
         for intent_key, slot_key in field_map.items():
             value = intent.get(intent_key)

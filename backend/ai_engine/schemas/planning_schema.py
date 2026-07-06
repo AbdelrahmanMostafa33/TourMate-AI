@@ -23,6 +23,7 @@ class AccommodationSuggestion(BaseModel):
     lon: float = Field(default=0.0, description="Longitude")
     why_recommended: str = Field(default="", description="Reason this hotel fits the user")
     rating: float = Field(default=0, description="Hotel rating (1-5)")
+    star_class: int | None = Field(default=None, description="Official hotel star class, e.g. 4 for a 4-star hotel")
     amenities: list[str] = Field(default_factory=list, description="List of amenities")
     nightly_rate: float = Field(default=0, description="Nightly rate in local currency")
 

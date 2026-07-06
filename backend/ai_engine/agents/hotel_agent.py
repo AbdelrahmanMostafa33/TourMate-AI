@@ -134,6 +134,53 @@ def _score_rating(hotel: dict) -> float:
     return min(max((rating - 1.0) / 4.0, 0.0), 1.0)
 
 
+def _coerce_star_class(value) -> int | None:
+    """Return a valid 1-5 hotel star class from loose profile data."""
+    if value is None:
+        return None
+    try:
+        star_class = int(value)
+    except (TypeError, ValueError):
+        return None
+    if 1 <= star_class <= 5:
+        return star_class
+    return None
+
+
+def _hotel_matches_accommodation_type(hotel: dict, canonical_pref: str | None) -> bool:
+    """Return True when a hotel matches the requested accommodation type."""
+    if not canonical_pref:
+        return True
+    hotel_type = (hotel.get("accommodation_type") or "").lower().strip()
+    return bool(
+        hotel_type
+        and (
+            canonical_pref in hotel_type
+            or hotel_type in canonical_pref
+        )
+    )
+
+
+def _hotel_matches_star_class(hotel: dict, preferred_star_class: int | None) -> bool:
+    """Return True when a hotel matches the requested official star class."""
+    if preferred_star_class is None:
+        return True
+    return _coerce_star_class(hotel.get("star_class")) == preferred_star_class
+
+
+def _filter_hotel_candidates(
+    hotels: list[dict],
+    canonical_pref: str | None,
+    preferred_star_class: int | None,
+) -> list[dict]:
+    """Filter hotels by accommodation type and/or official star class."""
+    return [
+        hotel for hotel in hotels
+        if _hotel_matches_accommodation_type(hotel, canonical_pref)
+        and _hotel_matches_star_class(hotel, preferred_star_class)
+    ]
+
+
 def _compute_hotel_composite(
     hotel: dict,
     centroids: list[dict],
@@ -195,25 +242,24 @@ async def run_hotel_selection(state: TripState) -> TripState:
     # ── User preferences ─────────────────────────────────────────────────
     profile = state.get("profile") or {}
     pref_list: list[str] = profile.get("accommodation_preferences") or []
+    preferred_star_class = _coerce_star_class(
+        profile.get("hotel_star_class")
+        or profile.get("preferred_hotel_star_class")
+    )
     budget = profile.get("budget_level") or ""
     style = profile.get("travel_style") or ""
 
-    # ── Filter by accommodation type when user has a specific preference ──
-    # Rather than just scoring preferred types higher, we EXCLUDE non-matching
-    # types so the user's explicit request (e.g. "hostels instead of hotels")
-    # is honored even when hotels have higher proximity or rating scores.
-    if pref_list:
-        canonical_pref = pref_list[0].lower().strip()
+    # ── Filter by accommodation type and/or star class when user has preferences ──
+    if pref_list or preferred_star_class is not None:
+        canonical_pref = pref_list[0].lower().strip() if pref_list else None
         before = len(hotel_candidates)
-        hotel_candidates = [
-            p for p in hotel_candidates
-            if canonical_pref in (p.get("accommodation_type") or "").lower()
-            or (p.get("accommodation_type") or "").lower() in canonical_pref
-        ]
+        hotel_candidates = _filter_hotel_candidates(
+            hotel_candidates, canonical_pref, preferred_star_class
+        )
         after = len(hotel_candidates)
         if after == 0:
-            print(f"[HotelAgent] No candidates matching preference '{canonical_pref}' in current pool — re-querying database")
-            # Re-query database for specific accommodation type
+            print(f"[HotelAgent] No candidates matching preferences in current pool — re-querying database")
+            # Re-query database for specific accommodation type and/or star class
             from ai_engine.tools.places_tool import get_places_for_city
             city = itinerary.get("destination", "")
             if city:
@@ -223,22 +269,21 @@ async def run_hotel_selection(state: TripState) -> TripState:
                         p for p in all_places
                         if p.get("category") == "hotel" 
                         and p.get("id")
-                        and (
-                            canonical_pref in (p.get("accommodation_type") or "").lower()
-                            or (p.get("accommodation_type") or "").lower() in canonical_pref
-                        )
                     ]
+                    hotel_candidates = _filter_hotel_candidates(
+                        hotel_candidates, canonical_pref, preferred_star_class
+                    )
                     after = len(hotel_candidates)
                     if after > 0:
-                        print(f"[HotelAgent] Re-queried database: found {after} hotels matching '{canonical_pref}'")
+                        print(f"[HotelAgent] Re-queried database: found {after} hotels matching preferences")
                     else:
-                        print(f"[HotelAgent] No hotels matching '{canonical_pref}' found in database — falling back to all hotels")
+                        print(f"[HotelAgent] No hotels matching preferences found in database — falling back to all hotels")
                         hotel_candidates = [
                             p for p in candidates
                             if p.get("category") == "hotel" and p.get("id")
                         ]
         else:
-            print(f"[HotelAgent] Filtered to {after}/{before} candidates matching '{canonical_pref}'")
+            print(f"[HotelAgent] Filtered to {after}/{before} candidates matching preferences")
 
     # ── Daily centroids ──────────────────────────────────────────────────
     centroids = _compute_daily_centroids(itinerary)

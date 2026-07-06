@@ -26,6 +26,7 @@ class TripProfile(TypedDict):
     interests: List[str]               # e.g. ["history", "food", "art"]
     food_preferences: List[str]        # e.g. ["local cuisine", "street food"]
     accommodation_preferences: List[str]  # e.g. ["boutique hotel", "airbnb"]
+    preferred_hotel_star_class: Optional[int]  # e.g. 4 for "4-star hotels"
 
     # ── Metadata ─────────────────────────────────────────────────
     generated_at: Optional[str]        # ISO-8601 timestamp of profile creation
