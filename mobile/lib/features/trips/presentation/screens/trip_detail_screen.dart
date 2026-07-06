@@ -216,9 +216,9 @@ class _TripDetailScreenState extends State<TripDetailScreen> {
     return Hero(
       tag: 'booking-summary-${widget.tripId}',
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(Spacing.xl3, Spacing.xs, Spacing.xl3, Spacing.xl3),
+        padding: const EdgeInsets.fromLTRB(Spacing.xl3, Spacing.xs, Spacing.xl3, Spacing.md),
       child: Container(
-        padding: const EdgeInsets.all(Spacing.xl3),
+        padding: const EdgeInsets.all(Spacing.xl2),
         decoration: BoxDecoration(
           color: tm.brandWhite,
           borderRadius: BorderRadius.circular(RadiusTokens.xl3),
@@ -248,7 +248,7 @@ class _TripDetailScreenState extends State<TripDetailScreen> {
             ),
 
             if (trip.startDate != null || trip.endDate != null) ...[
-              const SizedBox(height: Spacing.sm),
+              const SizedBox(height: Spacing.xs),
               Row(
                 children: [
                   Icon(Icons.date_range_outlined, size: 14, color: tm.sapphireLight),
@@ -262,7 +262,7 @@ class _TripDetailScreenState extends State<TripDetailScreen> {
             ],
 
             if (trip.numberOfTravelers > 1) ...[
-              const SizedBox(height: Spacing.sm),
+              const SizedBox(height: Spacing.xs),
               Row(
                 children: [
                   Icon(Icons.people_outline, size: 14, color: tm.sapphireLight),
@@ -270,32 +270,6 @@ class _TripDetailScreenState extends State<TripDetailScreen> {
                   Text(
                     '${trip.numberOfTravelers} travelers',
                     style: GoogleFonts.inter(fontSize: 13, color: tm.textSecondary),
-                  ),
-                ],
-              ),
-            ],
-
-            // Premium stats row
-            if (trip.itineraries.isNotEmpty) ...[
-              const SizedBox(height: Spacing.xl3),
-              Container(
-                height: 1,
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    colors: [tm.divider.withValues(alpha: 0), tm.divider, tm.divider.withValues(alpha: 0)],
-                  ),
-                ),
-              ),
-              const SizedBox(height: Spacing.xl3),
-              Row(
-                children: [
-                  _statItem('${trip.allStops.length}', 'Stops', Icons.flag_outlined),
-                  _statItem('${trip.durationDays}', 'Days', Icons.wb_sunny_outlined),
-                  _statItem('${trip.itineraries.length}', 'Versions', Icons.layers_outlined),
-                  _statItem(
-                    trip.tripName != null ? 'Named' : 'Auto',
-                    'Trip',
-                    Icons.auto_awesome_outlined,
                   ),
                 ],
               ),
@@ -354,41 +328,6 @@ class _TripDetailScreenState extends State<TripDetailScreen> {
           Text(
             label,
             style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w600, color: tm.textPrimary),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _statItem(String value, String label, IconData icon) {
-    return Expanded(
-      child: Column(
-        children: [
-          Container(
-            padding: const EdgeInsets.all(Spacing.md),
-            decoration: BoxDecoration(
-              gradient: const LinearGradient(
-                colors: [Color(0xFF0F172A), Color(0xFF1E3A8A)],
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-              ),
-              borderRadius: BorderRadius.circular(RadiusTokens.lg),
-            ),
-            child: Icon(icon, size: 16, color: tm.sapphireLight),
-          ),
-          const SizedBox(height: Spacing.md),
-          Text(
-            value,
-            style: GoogleFonts.inter(
-              fontSize: 18,
-              fontWeight: FontWeight.w700,
-              color: tm.textPrimary,
-              letterSpacing: -0.3,
-            ),
-          ),
-          Text(
-            label,
-            style: GoogleFonts.inter(fontSize: 11, color: tm.textTertiary, letterSpacing: 0.2),
           ),
         ],
       ),
@@ -485,10 +424,9 @@ class _TripDetailScreenState extends State<TripDetailScreen> {
     final bool hasChips = chips.isNotEmpty;
 
     return Padding(
-      padding: const EdgeInsets.fromLTRB(Spacing.xl3, 0, Spacing.xl3, Spacing.md),
-      child: Container(
+      padding: const EdgeInsets.fromLTRB(Spacing.xl3, 0, Spacing.xl3, Spacing.md),        child: Container(
         width: double.infinity,
-        padding: const EdgeInsets.all(Spacing.xl3),
+        padding: const EdgeInsets.all(Spacing.xl2),
         decoration: BoxDecoration(
           color: tm.brandWhite,
           borderRadius: BorderRadius.circular(RadiusTokens.xl3),
@@ -530,11 +468,11 @@ class _TripDetailScreenState extends State<TripDetailScreen> {
                 ),
               ],
             ),
-            const SizedBox(height: Spacing.md),
+            const SizedBox(height: Spacing.sm),
             hasChips
                 ? Wrap(
-                    spacing: Spacing.md,
-                    runSpacing: Spacing.md,
+                    spacing: Spacing.sm,
+                    runSpacing: Spacing.sm,
                     children: chips,
                   )
                 : Row(
