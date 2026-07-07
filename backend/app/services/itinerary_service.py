@@ -126,8 +126,10 @@ class ItineraryService:
 
         # ── Pre-validate place_ids to avoid FK violations ────────────────
         all_stops = [s for d in days_data for s in (d.get("stops") or [])]
+        # Hotels are NOT validated here — they are handled in the
+        # post-approval HOTEL_SELECTION phase (like flights).
         valid_place_ids = await self._resolve_valid_place_ids(
-            all_stops, accommodation_suggestions,
+            all_stops, None,
         )
 
         for day_data in days_data:
@@ -186,44 +188,9 @@ class ItineraryService:
                 )
                 total_stops += 1
 
-        if accommodation_suggestions and days_data:
-            last_day_number = days_data[-1].get("day_number", 1)
-            result = await self.db.execute(
-                select(DayModel)
-                .where(DayModel.itinerary_id == itinerary_id)
-                .where(DayModel.day_number == last_day_number)
-            )
-            last_day = result.scalar_one_or_none()
-
-            if last_day:
-                max_order_result = await self.db.execute(
-                    select(func.coalesce(func.max(StopModel.order_in_day), 0))
-                    .where(StopModel.day_id == last_day.day_id)
-                )
-                next_order = (max_order_result.scalar() or 0) + 1
-
-                for hotel in accommodation_suggestions:
-                    hotel_id = hotel.get("id")
-                    resolved_hotel_id = hotel_id if hotel_id in valid_place_ids else None
-                    await self.repo.create_stop(
-                        day_id=last_day.day_id,
-                        place_id=resolved_hotel_id,
-                        place_snapshot={
-                            "name": hotel.get("name", ""),
-                            "category": "hotel",
-                            "sub_category": hotel.get("accommodation_type", "hotel"),
-                            "rating": hotel.get("rating"),
-                            "lat": hotel.get("lat"),
-                            "lon": hotel.get("lon"),
-                            "address": hotel.get("address", ""),
-                        },
-                        duration_minutes=None,
-                        order_in_day=next_order,
-                        time_of_day=TimeOfDay.NIGHT,
-                        ai_notes=hotel.get("why_recommended"),
-                    )
-                    total_stops += 1
-                    next_order += 1
+        # Hotels are NOT stored as itinerary stops.
+        # They are handled independently in the post-approval HOTEL_SELECTION
+        # phase (like flights), so no accommodation creation occurs here.
 
         if total_stops > 0:
             logger.info(
@@ -277,7 +244,10 @@ class ItineraryService:
             return {"itinerary_id": None, "stops_created": 0}
 
         days_data = itinerary_data.get("days", [])
-        accommodations = itinerary_data.get("accommodation_suggestions")
+        # Hotels are NOT stored as itinerary stops.
+        # They are handled independently in the post-approval HOTEL_SELECTION
+        # phase (like flights). The itinerary only contains stops.
+        accommodations = None
 
         if not days_data:
             logger.info(

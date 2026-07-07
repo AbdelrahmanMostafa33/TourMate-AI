@@ -91,8 +91,7 @@ class PlaceSearchService:
             interests_set = set(interests)
             places = [
                 p for p in places
-                if p["category"] == "hotel"
-                or p["category"] in interests_set
+                if p["category"] in interests_set
             ]
             # Safety fallback
             if not places:

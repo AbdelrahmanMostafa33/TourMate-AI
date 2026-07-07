@@ -198,8 +198,8 @@ class TestItineraryStopCreation:
 
         # Day 1: 3 activity stops + 1 hotel (accommodation appended to last day)
         assert len(day1_stops) == 3, f"Day 1 should have 3 stops, got {len(day1_stops)}"
-        # Day 2: 2 activity stops + 1 hotel (accommodation)
-        assert len(day2_stops) == 3, f"Day 2 should have 3 stops (2 activities + 1 hotel), got {len(day2_stops)}"
+        # Day 2: 2 activity stops (hotels are now handled in HOTEL_SELECTION phase)
+        assert len(day2_stops) == 2, f"Day 2 should have 2 stops, got {len(day2_stops)}"
 
         # ── Verify stop data integrity ────────────────────────────────────
         # Stop 1: Pyramids of Giza
@@ -245,13 +245,8 @@ class TestItineraryStopCreation:
         assert s4.order_in_day == 2
         assert s4.time_of_day == TimeOfDay.AFTERNOON
 
-        # Stop 6 (Day 2 Stop 3): Hotel accommodation appended to last day
-        s5 = day2_stops[2]
-        assert s5.place_snapshot["name"] == "Marriott Mena House"
-        assert s5.place_snapshot["category"] == "hotel"
-        assert s5.order_in_day == 3
-        assert s5.time_of_day == TimeOfDay.NIGHT
-        assert s5.duration_minutes is None
+        # NOTE: Hotels are handled in the post-approval HOTEL_SELECTION phase
+        # (like flights), so they are no longer stored as itinerary stops.
 
     @pytest.mark.asyncio
     async def test_stops_count_returns_correct_value(self, db_session):
@@ -263,8 +258,8 @@ class TestItineraryStopCreation:
         )
         await db_session.commit()
 
-        # 3 stops on day 1 + 3 stops on day 2 (2 activities + 1 hotel)
-        expected_stops = 3 + 3
+        # 3 stops on day 1 + 2 stops on day 2 (hotels now handled in HOTEL_SELECTION phase)
+        expected_stops = 3 + 2
         assert (
             result["stops_created"] == expected_stops
         ), f"Expected {expected_stops} stops, got {result['stops_created']}"

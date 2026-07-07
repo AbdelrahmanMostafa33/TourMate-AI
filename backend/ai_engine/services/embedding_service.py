@@ -79,8 +79,6 @@ def build_query_text(preferences: dict) -> str:
     interests = preferences.get("interests") or []
     travel_style = (preferences.get("travel_style") or "").strip()
     food_prefs = preferences.get("food_preferences") or []
-    acc_prefs = preferences.get("accommodation_preferences") or []
-    accommodation = acc_prefs[0].strip() if acc_prefs else ""
     budget = (preferences.get("budget_level") or "").strip()
     pace = (preferences.get("pace") or "").strip()
 
@@ -104,10 +102,6 @@ def build_query_text(preferences: dict) -> str:
     if food_prefs:
         formatted = ", ".join(food_prefs)
         parts.append(f"food: {formatted}")
-
-    # Accommodation
-    if accommodation:
-        parts.append(f"accommodation: {accommodation}")
 
     # Fallback if nothing was provided
     if not parts:

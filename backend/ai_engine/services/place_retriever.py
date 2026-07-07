@@ -4,8 +4,8 @@ Place Retriever — Stage 2 of the multi-agent pipeline.
 Responsibilities:
 1. Filter places from the database using structured preference criteria.
 2. Apply SQL-style filters: city, category, rating, price_level.
-3. Preserve category diversity (always include hotels for accommodation).
-4. Return the filtered set to the Candidate Scorer.
+3. Return the filtered set to the Candidate Scorer.
+4. Hotels are excluded entirely — handled in post-approval HOTEL_SELECTION phase.
 
 This service acts as the bridge between raw place data and the
 scoring/relevance layer. It answers: "Which places *could* be relevant?"
@@ -20,7 +20,7 @@ from pydantic import BaseModel, Field
 from ai_engine.graph.state import TripState
 from ai_engine.tools.places_tool import get_places_for_city  # async
 from ai_engine.tools.haversine import haversine
-from ai_engine.tools.slot_normalizer import map_accommodation_to_type
+
 
 logger = logging.getLogger(__name__)
 
@@ -299,14 +299,14 @@ def _apply_filters(
     Apply structured filtering to a list of candidate places.
 
     The goal is to remove places that do not match the user's
-    preferences while preserving accommodation options.
+    Hotels are excluded entirely — they are handled in the post-approval
+    ``HOTEL_SELECTION`` phase, independent of the itinerary pipeline.
 
     ``interest_subcats`` is a pre-computed set of subcategory names that
     semantically match the user's interests (from the lightweight LLM
     call in ``_compute_semantic_interest_subcats``).
 
     **When ``interest_subcats`` is non-empty:**
-    - Hotels:         filtered by accommodation_type (always pass through)
     - Restaurants:    pass through with standard rating threshold
     - Attractions:    ONLY those whose ``sub_category`` is in
                       ``interest_subcats`` are kept. Non-matching
@@ -320,21 +320,11 @@ def _apply_filters(
         interest_subcats = set()
 
     center = _compute_city_center(places)
-    acc_prefs = preferences.get("accommodation_preferences") or []
-    accommodation_type = map_accommodation_to_type(acc_prefs)
-
     filtered = []
     for place in places:
-        # HOTEL FILTERING
+        # Skip hotels entirely — they are handled in the post-approval
+        # HOTEL_SELECTION phase, independent of the itinerary pipeline.
         if place.get("category") == "hotel":
-            if accommodation_type:
-                place_acc = (place.get("accommodation_type") or "").lower()
-                if not (
-                    accommodation_type in place_acc
-                    or place_acc in accommodation_type
-                ):
-                    continue
-            filtered.append(place)
             continue
         # INTEREST-BASED EXCLUSION
         # When the user has interests that mapped to subcategories,
@@ -346,7 +336,7 @@ def _apply_filters(
         sub_category = (place.get("sub_category") or "").lower()
         if (
             interest_subcats
-            and place.get("category") not in ("hotel", "restaurant")
+            and place.get("category") != "restaurant"
             and sub_category not in interest_subcats
         ):
             continue
@@ -375,13 +365,14 @@ def _cap_candidates(
     places: list[dict],
     max_attractions: int = 150,
     max_restaurants: int = 25,
-    max_hotels: int = 15,
     samples_per_subcategory: int = 8,
 ) -> list[dict]:
     """
     Cap the number of candidates per category using per-subcategory sampling.
+
+    Hotels are excluded entirely — they are handled independently in the
+    post-approval HOTEL_SELECTION phase (like flights).
     """
-    hotels = [p for p in places if p.get("category") == "hotel"]
     restaurants = [p for p in places if p.get("category") == "restaurant"]
     attractions = [
         p for p in places
@@ -390,44 +381,9 @@ def _cap_candidates(
 
     restaurants.sort(key=lambda p: p.get("popularity_score", 0) or 0, reverse=True)
 
-    # ── Hotels: sample by accommodation_type (like DB query) ─────────────
-    # Group by accommodation_type so hostels, resorts, luxury, and hotels
-    # all get representation instead of just taking the top N by popularity.
-    by_accommodation: dict[str, list[dict]] = {}
-    for p in hotels:
-        acc_type = (p.get("accommodation_type") or "hotel").lower().strip()
-        if not acc_type:
-            acc_type = "hotel"
-        by_accommodation.setdefault(acc_type, []).append(p)
-
-    for acc_type in by_accommodation:
-        by_accommodation[acc_type].sort(
-            key=lambda p: p.get("popularity_score", 0) or 0, reverse=True
-        )    # Round-robin selection across accommodation types to guarantee
-    # diverse representation (hostels, resorts, luxury, hotels all get
-    # a fair share instead of the top N by popularity).
-    selected_hotels: list[dict] = []
-    seen_ids: set[str] = set()
-    type_names = sorted(by_accommodation.keys())
-    ptrs = {t: 0 for t in type_names}
-
-    while len(selected_hotels) < max_hotels:
-        added = False
-        for acc_type in type_names:
-            if len(selected_hotels) >= max_hotels:
-                break
-            group = by_accommodation[acc_type]
-            while ptrs[acc_type] < len(group):
-                p = group[ptrs[acc_type]]
-                ptrs[acc_type] += 1
-                pid = p.get("id", "")
-                if pid not in seen_ids:
-                    selected_hotels.append(p)
-                    seen_ids.add(pid)
-                    added = True
-                    break
-        if not added:
-            break
+    # ── Hotels are excluded from the pipeline entirely.
+    # They are handled independently in the post-approval HOTEL_SELECTION
+    # phase (modeled after flight selection), so no hotel capping is needed.
 
     # ── Attractions: per-subcategory sampling (existing logic) ───────────
     by_subcategory: dict[str, list[dict]] = {}
@@ -452,7 +408,8 @@ def _cap_candidates(
 
     result = result[:max_attractions]
     result.extend(restaurants[:max_restaurants])
-    result.extend(selected_hotels)
+    # Hotels are NOT included — they are handled in the post-approval
+    # HOTEL_SELECTION phase, independent of the itinerary pipeline.
     return result
 
 
@@ -511,7 +468,6 @@ async def retrieve_places(state: TripState) -> TripState:
         filtered,
         max_attractions=150,
         max_restaurants=25,
-        max_hotels=15,
     )
 
     state["filtered_places"] = diverse

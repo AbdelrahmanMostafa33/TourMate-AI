@@ -147,8 +147,8 @@ class TestStreamToTripCreation:
         assert created["trip_id"] is not None
         assert created["conversation_id"] is not None
 
-        # 2 activity stops + 1 hotel accommodation = 3 stops
-        expected_stops = 3
+        # 2 activity stops (hotels are now handled in HOTEL_SELECTION phase)
+        expected_stops = 2
         assert created["stops_created"] == expected_stops, (
             f"Expected {expected_stops} stops, got {created['stops_created']}"
         )
@@ -179,18 +179,15 @@ class TestStreamToTripCreation:
         assert s1.duration_minutes == 180
         assert s1.time_of_day == TimeOfDay.MORNING
 
-        # Day 2: 1 activity + 1 hotel stop
+        # Day 2: 1 activity stop (hotels are now handled in HOTEL_SELECTION phase)
         day2 = days[1]
         assert day2.day_number == 2
         assert day2.theme == "City Tour"
         assert day2.date == date(2026, 7, 2)
 
         day2_stops = sorted(day2.stops, key=lambda s: s.order_in_day)
-        assert len(day2_stops) == 2
+        assert len(day2_stops) == 1
         assert day2_stops[0].place_snapshot["name"] == "Egyptian Museum"
-        assert day2_stops[1].place_snapshot["name"] == "Steigenberger Tahrir"
-        assert day2_stops[1].place_snapshot["category"] == "hotel"
-        assert day2_stops[1].time_of_day == TimeOfDay.NIGHT
 
     @pytest.mark.asyncio
     async def test_no_itinerary_in_stream_result(self, db_session):

@@ -34,7 +34,6 @@ from ai_engine.services.operations import (
     _detect_category_hints,
     _reorder_pool_by_category,
     _build_subcategory_texts,
-    _embedding_category_hints,
     filter_places_by_semantics,
     place_matches_semantic_tag,
     # Context
@@ -1239,7 +1238,8 @@ class TestDetectCategoryHints:
 
     def test_detects_restaurant(self):
         hints = _detect_category_hints("I want more food options")
-        assert hints == {"category": ["restaurant"]}
+        assert hints.get("category") == ["restaurant"]
+        # sub_category is also returned for food matches
 
     def test_no_match_returns_empty(self):
         hints = _detect_category_hints("do something random")
@@ -1253,7 +1253,7 @@ class TestDetectCategoryHints:
         """A single request that mentions multiple categories should collect all."""
         hints = _detect_category_hints("add a museum and a restaurant")
         assert hints.get("category", []) == ["attraction", "restaurant"]
-        assert hints.get("sub_category", []) == ["museums"]
+        assert hints.get("sub_category", []) == ["museums", "restaurants", "dining"]
 
     def test_multiple_hints_subcategories_collected(self):
         hints = _detect_category_hints("find a museum and a nice park")

@@ -366,7 +366,10 @@ class ChatService:
                 stops_created = await itin_svc.create_stops_from_ai_days(
                     itinerary_id=itinerary.itinerary_id,
                     days_data=days_data,
-                    accommodation_suggestions=itinerary_data.get("accommodation_suggestions"),
+                    # Hotels are NOT stored as itinerary stops.
+                    # They are handled independently in the post-approval
+                    # HOTEL_SELECTION phase (like flights).
+                    accommodation_suggestions=None,
                     start_date=start_date,
                 )
                 await self.db.flush()
@@ -458,15 +461,12 @@ class ChatService:
             user_id,
         )
 
-        # ── 5. Save candidate pool + accommodation_suggestions ────────────────
+        # ── 5. Save candidate pool only (accommodation is handled separately,
+        #    in the post-approval HOTEL_SELECTION phase like flights)
         pool_state = ai_result.get("pool_state") or {}
-        accommodations = itinerary_data.get("accommodation_suggestions")
-        if pool_state or accommodations:
-            combined = dict(pool_state)  # copy so we don't mutate the original
-            if accommodations:
-                combined["_accommodation_suggestions"] = accommodations
+        if pool_state:
             itin_svc = ItineraryService(self.db)
-            await itin_svc.save_candidate_pool(itinerary.itinerary_id, combined)
+            await itin_svc.save_candidate_pool(itinerary.itinerary_id, pool_state)
 
         return {
             "trip_id": trip.trip_id,
@@ -879,17 +879,13 @@ class ChatService:
                                 })
                         days_list.append(entry)
 
-                    # Load stops from ItineraryStop relationships
-                    # Rebuild accommodation_suggestions from candidate_pool_json
-                    # (stored there during create_trip_from_ai_result)
-                    pool = itinerary.candidate_pool_json or {}
-                    accommodations = pool.get("_accommodation_suggestions", [])
-
+                    # Hotels are handled in the post-approval HOTEL_SELECTION
+                    # phase (like flights), so accommodation_suggestions is
+                    # no longer rebuilt from the candidate pool.
                     itinerary_data = {
                         "destination": trip.destination or "",
                         "days": days_list,
                         "duration_days": slots_data.get("duration_days", len(days_list)),
-                        "accommodation_suggestions": accommodations,
                     }
 
             # TripProfile data

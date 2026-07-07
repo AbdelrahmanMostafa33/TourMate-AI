@@ -50,10 +50,9 @@ def extract_used_place_ids(itinerary: dict | None) -> set[str]:
             if pid:
                 used.add(pid)
 
-    for hotel in itinerary.get("accommodation_suggestions", []):
-        hid = hotel.get("id")
-        if hid:
-            used.add(hid)
+    # Hotels are handled in the post-approval HOTEL_SELECTION phase
+    # (like flights), so they are no longer part of the itinerary
+    # pool management. They are not tracked as used IDs.
 
     return used
 

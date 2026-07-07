@@ -1,138 +1,51 @@
-# backend/ai_engine/tools/places_tool.py
-
 """
-Places Tool — retrieves real place data from the database.
+Place search tool — retrieves places from the database.
 
-This module acts as the data-access layer between the AI agents
-and the places database. Instead of loading places from static
-JSON files or generating mock data, it queries the database
-through PlaceRepository.
-
-The tool is asynchronous because database operations use
-an async SQLAlchemy session.
-
-If the database is unavailable or no results are found,
-the function returns an empty list rather than fake data.
+Used by the Place Retriever to load all available places for a
+destination city before filtering and scoring.
 """
+
+from __future__ import annotations
 
 import logging
-from typing import List
+from typing import Optional
 
-# Factory used to create asynchronous database sessions.
-from app.core.database import async_session
-
-# Repository responsible for place-related database queries.
-from app.repositories.place_repo import PlaceRepository
-
-# Module-level logger used for monitoring and debugging.
 logger = logging.getLogger(__name__)
 
 
-async def get_places_for_city(
-    city: str,
-) -> List[dict]:
-    """
-    Retrieve all places belonging to a specific city.
+async def get_places_for_city(city: str) -> list[dict]:
+    """Retrieve all places for a specific city.
 
-    This function serves as the primary entry point for
-    loading destination data before itinerary generation.
-
-    The returned places are not filtered by interests,
-    budget, trip style, or ranking score. Those tasks
-    are handled later by the Place Retriever and Candidate Scorer.
-
-    Example:
-        Input:  "Cairo"
-        Output: [
-            {
-                "name": "Egyptian Museum",
-                "category": "Museum",
-                "rating": 4.7,
-                ...
-            },
-            ...
-        ]
+    This is the initial loading step for itinerary generation.
+    Hotels are NOT excluded here — the Place Retriever skips them
+    in ``_apply_filters()``.  This function returns ALL places so the
+    retriever has the full set to work with.
 
     Args:
-        city:
-            Destination city name provided by the user.
+        city: Destination city name.
 
     Returns:
-        List of place dictionaries.
-
-        Returns:
-        - All matching places if found.
-        - Empty list if city is invalid.
-        - Empty list if database access fails.
-        - Empty list if no places exist for that city.
+        List of place dicts, or empty list on failure.
     """
-
-    # Remove leading/trailing whitespace.
-    # Prevents lookup failures caused by inputs such as:
-    # " Cairo ", "  Paris", etc.
-    city_key = (city or "").strip()
-
-    # Validate input before making a database call.
-    # If city is empty, None, or only spaces,
-    # immediately return an empty result.
-    if not city_key:
-        logger.warning(
-            "[PlacesTool] Empty city name, returning empty list"
-        )
+    if not city:
+        logger.warning("[PlacesTool] get_places_for_city called without city")
         return []
 
     try:
-        # Create a temporary asynchronous database session.
-        # The session is automatically closed when leaving
-        # the async context manager.
+        from app.core.database import async_session
+        from app.repositories.place_repo import PlaceRepository
+
         async with async_session() as session:
-
-            # Instantiate the repository responsible
-            # for place-related queries.
             repo = PlaceRepository(session)
-
-            # Use the diverse query that samples top K from each subcategory,
-            # cuisine type, and accommodation type.
             places = await repo.get_places_by_city_diverse(
-                city_key,
-                per_subcategory=20,
-                per_cuisine=10,
-                per_accommodation=10,
+                city=city,
             )
+            logger.info(
+                "[PlacesTool] Loaded %d places for '%s'",
+                len(places or []), city,
+            )
+            return places or []
 
-        logger.info(
-            "[PlacesTool] Loaded %d places for %s (stratified by subcategory/cuisine/accommodation)",
-            len(places),
-            city_key,
-        )
-
-    except Exception as e:
-        # Catch any database-related failures:
-        # - Connection issues
-        # - Query errors
-        # - Session failures
-        # - Repository exceptions
-        #
-        # Log the error and return an empty list so the
-        # planning workflow can fail gracefully.
-        logger.error(
-            "[PlacesTool] Database query failed for %s: %s",
-            city_key,
-            e,
-        )
+    except Exception as exc:
+        logger.error("[PlacesTool] Failed to load places for '%s': %s", city, exc)
         return []
-
-    # Return the complete set of places for the city.
-    #
-    # Example flow:
-    # User → "Plan a trip to Cairo"
-    #       ↓
-    # get_places_for_city("Cairo")
-    #       ↓
-    # Returns all Cairo places
-    #       ↓    # Place Retriever filters relevant places
-       #       ↓
-       # Candidate Scorer scores and sorts them
-    #       ↓
-    # Planner builds itinerary
-    return places

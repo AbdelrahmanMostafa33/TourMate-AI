@@ -1,470 +1,95 @@
 """
-Hotel Agent — post-optimization accommodation selection.
+Hotel Agent — compatibility shim for the _orchestrator compiled handler.
 
-Placed AFTER the Route Optimizer so hotels are chosen based on actual
-stop locations (daily centroids) rather than guessed before routing.
+The new hotel_selection_agent.py handles all hotel search/selection via
+direct DB queries (like flights). This shim provides ``run_hotel_selection``
+in the format expected by the compiled ``hotel_handler.pyc`` so the
+_orchestrator module continues to work without source reconstruction.
 
-Hybrid approach:
-  1. **Rule-based scoring**: preference match + proximity to daily
-     centroids + rating → composite score
-  2. **LLM selection**: top candidates + itinerary context sent to
-     a focused LLM that picks 2-3 hotels and writes why_recommended
+Hotels are now completely decoupled from the itinerary pipeline.
 """
+from __future__ import annotations
 
-from typing import List
+import logging
+from typing import Any
 
-from langchain_core.messages import SystemMessage, HumanMessage
+from ai_engine.agents.hotel_selection_agent import (
+    search_hotels_for_trip,
+    extract_hotel_selection,
+    format_hotel_options,
+)
+from ai_engine.conversation.conversation_state import ConversationState
 
-from ai_engine.llm import invoke_with_fallback
-from ai_engine.graph.state import TripState
-from ai_engine.schemas.planning_schema import AccommodationSuggestion
-from ai_engine.tools.haversine import haversine
-from pydantic import BaseModel, Field
-
-
-# ── Hotel Selection Output Schema ───────────────────────────────────────────
-
-
-class HotelSelection(BaseModel):
-    """Structured output: selected hotels for the itinerary."""
-    accommodation_suggestions: List[AccommodationSuggestion] = Field(
-        default_factory=list,
-        description="2-3 selected hotel recommendations",
-    )
+logger = logging.getLogger(__name__)
 
 
-# ── Scoring Weights ──────────────────────────────────────────────────────────
+async def run_hotel_selection(state: ConversationState, **kwargs) -> ConversationState:
+    """Run hotel selection by querying the database directly.
 
-WEIGHT_PREFERENCE = 0.35  # accommodation_type matches user preference
-WEIGHT_PROXIMITY   = 0.40  # proximity to daily centroids
-WEIGHT_RATING      = 0.25  # hotel rating
+    Called by the compiled ``hotel_handler._run_hotel_selection_and_present``.
+    Instead of the old pipeline approach (pool-based sampling),
+    this searches fresh from the DB every time.
 
-# ── LLM Prompt ───────────────────────────────────────────────────────────────
-
-HOTEL_SYSTEM_PROMPT = """\
-You are the Hotel Selection Agent for TourMate AI. Your job: choose 2–3 hotels
-for the user's trip and write a short why_recommended for each.
-
-You will receive:
-1. Itinerary summary — days with themes and the approximate location centroids
-2. Candidate hotels — pre-scored for preference match, proximity, and rating
-3. User preferences — accommodation type, budget, travel style
-
-Rules:
-- Pick 2–3 hotels that collectively offer variety (e.g. one near Day 1's
-  centroid, one near Day 2's centroid, or different vibes/locations).
-- Prefer hotels whose accommodation_type matches the user's preference.
-- If multiple hotels match, favor higher-rated ones.
-- Every hotel MUST have a why_recommended (1–2 sentences explaining
-  why it fits this itinerary and user).
-- Only pick from the candidate hotels listed — do NOT invent hotels.
-
-Output schema is enforced automatically — fill all fields.
-"""
-
-
-# ── Proximity Scoring ────────────────────────────────────────────────────────
-
-
-def _compute_daily_centroids(itinerary: dict) -> list[dict]:
-    """Compute the geographic centroid of each day's stops.
-
-    Returns a list of dicts: [{day_number, centroid_lat, centroid_lon, n_stops}]
+    Returns the updated ``ConversationState`` with:
+      - ``state.slots.hotel_search_results`` populated
     """
-    centroids = []
-    for day in itinerary.get("days", []):
-        stops = day.get("stops", [])
-        if not stops:
-            continue
-        lat_sum = sum(s.get("lat", 0) for s in stops)
-        lon_sum = sum(s.get("lon", 0) for s in stops)
-        n = len(stops)
-        centroids.append({
-            "day_number": day.get("day_number"),
-            "centroid_lat": lat_sum / n,
-            "centroid_lon": lon_sum / n,
-            "n_stops": n,
-        })
-    return centroids
-
-
-def _score_preference_match(hotel: dict, preferences: List[str]) -> float:
-    """Score how well the hotel's accommodation_type matches user preferences."""
-    hotel_type = (hotel.get("accommodation_type") or "").lower().strip()
-    if not hotel_type or not preferences:
-        return 0.5  # neutral
-
-    for pref in preferences:
-        pref_lower = pref.lower().strip()
-        if pref_lower in hotel_type or hotel_type in pref_lower:
-            return 1.0
-    return 0.0
-
-
-def _score_proximity_to_centroids(
-    hotel: dict,
-    centroids: list[dict],
-) -> float:
-    """Score hotel proximity as the weighted inverse of distance to centroids.
-
-    Closer to more stops = higher score.
-    Returns 0–1.
-    """
-    if not centroids:
-        return 0.5
-
-    total_stops = sum(c["n_stops"] for c in centroids)
-    weighted_dist = 0.0
-    for c in centroids:
-        dist = haversine(
-            hotel["lat"], hotel["lon"],
-            c["centroid_lat"], c["centroid_lon"],
-        )
-        weight = c["n_stops"] / total_stops
-        # Inverse: 10 km → ~0.8, 50 km → ~0.0
-        proximity = max(0.0, 1.0 - (dist / 50.0))
-        weighted_dist += weight * proximity
-
-    return weighted_dist
-
-
-def _score_rating(hotel: dict) -> float:
-    """Normalize hotel rating (1–5) → 0–1."""
-    rating = hotel.get("rating", 3.0) or 3.0
-    return min(max((rating - 1.0) / 4.0, 0.0), 1.0)
-
-
-def _coerce_star_class(value) -> int | None:
-    """Return a valid 1-5 hotel star class from loose profile data."""
-    if value is None:
-        return None
-    try:
-        star_class = int(value)
-    except (TypeError, ValueError):
-        return None
-    if 1 <= star_class <= 5:
-        return star_class
-    return None
-
-
-def _hotel_matches_accommodation_type(hotel: dict, canonical_pref: str | None) -> bool:
-    """Return True when a hotel matches the requested accommodation type."""
-    if not canonical_pref:
-        return True
-    hotel_type = (hotel.get("accommodation_type") or "").lower().strip()
-    return bool(
-        hotel_type
-        and (
-            canonical_pref in hotel_type
-            or hotel_type in canonical_pref
-        )
-    )
-
-
-def _hotel_matches_star_class(hotel: dict, preferred_star_class: int | None) -> bool:
-    """Return True when a hotel matches the requested official star class."""
-    if preferred_star_class is None:
-        return True
-    return _coerce_star_class(hotel.get("star_class")) == preferred_star_class
-
-
-def _filter_hotel_candidates(
-    hotels: list[dict],
-    canonical_pref: str | None,
-    preferred_star_class: int | None,
-) -> list[dict]:
-    """Filter hotels by accommodation type and/or official star class."""
-    return [
-        hotel for hotel in hotels
-        if _hotel_matches_accommodation_type(hotel, canonical_pref)
-        and _hotel_matches_star_class(hotel, preferred_star_class)
-    ]
-
-
-def _compute_hotel_composite(
-    hotel: dict,
-    centroids: list[dict],
-    preferences: List[str],
-) -> float:
-    """Compute composite score for a hotel candidate."""
-    pref_score = _score_preference_match(hotel, preferences)
-    prox_score = _score_proximity_to_centroids(hotel, centroids)
-    rating_score = _score_rating(hotel)
-
-    composite = (
-        pref_score * WEIGHT_PREFERENCE
-        + prox_score * WEIGHT_PROXIMITY
-        + rating_score * WEIGHT_RATING
-    )
-    return round(composite, 4)
-
-
-# ── Main Agent Function ──────────────────────────────────────────────────────
-
-
-async def run_hotel_selection(state: TripState) -> TripState:
-    """Run the Hotel Agent — select 2-3 hotels based on optimized itinerary.
-
-    Reads from ``state["optimized_itinerary"]`` and ``state["candidate_places"]``,
-    writes to ``state["draft_itinerary"]["accommodation_suggestions"]``.
-
-    Args:
-        state: LangGraph workflow state (post-optimization).
-
-    Returns:
-        State with ``accommodation_suggestions`` populated on the itinerary.
-    """
-    itinerary = state.get("optimized_itinerary") or state.get("draft_itinerary")
-    if not itinerary:
-        print("[HotelAgent] No itinerary to select hotels for")
-        state["agent_messages"] = (
-            state.get("agent_messages", [])
-            + ["[HotelAgent] No itinerary — skipping hotel selection"]
-        )
+    if not state.slots.destination_city:
+        logger.warning("[HotelAgentShim] No destination city for hotel search")
         return state
 
-    # ── Hotel candidates ─────────────────────────────────────────────────
-    candidates = state.get("candidate_places") or []
-    hotel_candidates = [
-        p for p in candidates
-        if p.get("category") == "hotel" and p.get("id")
-    ]
+    city = state.slots.destination_city
+    acc_prefs = state.slots.accommodation_preferences or []
+    star_class = state.slots.preferred_hotel_star_class
+    budget = state.slots.budget_level
 
-    if not hotel_candidates:
-        print("[HotelAgent] No hotel candidates available")
-        itinerary["accommodation_suggestions"] = []
-        state["agent_messages"] = (
-            state.get("agent_messages", [])
-            + ["[HotelAgent] No hotel candidates — accommodation left empty"]
-        )
-        return state
+    # Derive canonical accommodation type from preferences
+    accommodation_type = None
+    if acc_prefs:
+        from ai_engine.tools.slot_normalizer import map_accommodation_to_type
+        accommodation_type = map_accommodation_to_type(acc_prefs)
 
-    # ── User preferences ─────────────────────────────────────────────────
-    profile = state.get("profile") or {}
-    pref_list: list[str] = profile.get("accommodation_preferences") or []
-    preferred_star_class = _coerce_star_class(
-        profile.get("hotel_star_class")
-        or profile.get("preferred_hotel_star_class")
+    logger.info(
+        "[HotelAgentShim] Searching hotels in '%s' (type=%s, stars=%s, budget=%s)",
+        city, accommodation_type, star_class, budget,
     )
-    budget = profile.get("budget_level") or ""
-    style = profile.get("travel_style") or ""
-
-    # ── Filter by accommodation type and/or star class when user has preferences ──
-    if pref_list or preferred_star_class is not None:
-        canonical_pref = pref_list[0].lower().strip() if pref_list else None
-        before = len(hotel_candidates)
-        hotel_candidates = _filter_hotel_candidates(
-            hotel_candidates, canonical_pref, preferred_star_class
-        )
-        after = len(hotel_candidates)
-        if after == 0:
-            print(f"[HotelAgent] No candidates matching preferences in current pool — re-querying database")
-            # Re-query database for specific accommodation type and/or star class
-            from ai_engine.tools.places_tool import get_places_for_city
-            city = itinerary.get("destination", "")
-            if city:
-                all_places = await get_places_for_city(city)
-                if all_places:
-                    hotel_candidates = [
-                        p for p in all_places
-                        if p.get("category") == "hotel" 
-                        and p.get("id")
-                    ]
-                    hotel_candidates = _filter_hotel_candidates(
-                        hotel_candidates, canonical_pref, preferred_star_class
-                    )
-                    after = len(hotel_candidates)
-                    if after > 0:
-                        print(f"[HotelAgent] Re-queried database: found {after} hotels matching preferences")
-                    else:
-                        print(f"[HotelAgent] No hotels matching preferences found in database — falling back to all hotels")
-                        hotel_candidates = [
-                            p for p in candidates
-                            if p.get("category") == "hotel" and p.get("id")
-                        ]
-        else:
-            print(f"[HotelAgent] Filtered to {after}/{before} candidates matching preferences")
-
-    # ── Daily centroids ──────────────────────────────────────────────────
-    centroids = _compute_daily_centroids(itinerary)
-    print(f"[HotelAgent] Computing centroids for {len(centroids)} days")
-
-    # ── Score each hotel ──────────────────────────────────────────────────
-    scored_hotels = []
-    for hotel in hotel_candidates:
-        composite = _compute_hotel_composite(hotel, centroids, pref_list)
-        scored_hotels.append((hotel, composite))
-
-    scored_hotels.sort(key=lambda x: x[1], reverse=True)
-
-    # Take top 6 for LLM consideration
-    top_candidates = scored_hotels[:6]
-
-    # ── If we have very few candidates, skip LLM and use rules directly ──
-    # This saves an LLM call when there's little to choose between.
-    SKIP_LLM_THRESHOLD = 3
-    if len(top_candidates) <= SKIP_LLM_THRESHOLD:
-        selected = []
-        for hotel, score in top_candidates:
-            acc_type = hotel.get("accommodation_type", "")
-            acc_display = acc_type.capitalize() if acc_type else "Accommodation"
-            selected.append({
-                "id": hotel["id"],
-                "name": hotel["name"],
-                "sub_category": hotel.get("sub_category", ""),
-                "accommodation_type": acc_type,
-                "lat": hotel["lat"],
-                "lon": hotel["lon"],
-                "why_recommended": (
-                    f"This {acc_display} is highly-rated and conveniently "
-                    f"located near your daily route."
-                ),
-                "rating": hotel.get("rating", 0),
-                "amenities": hotel.get("amenities", []),
-                "nightly_rate": hotel.get("nightly_rate", 0),
-            })
-        print(
-            f"[HotelAgent] Rule-based selection ({len(selected)} candidates): "
-            f"{[h['name'] for h in selected]}"
-        )
-    else:
-        # ── LLM-based selection ──────────────────────────────────────────
-        selected = await _llm_select_hotels(
-            itinerary=itinerary,
-            centroids=centroids,
-            top_candidates=top_candidates,
-            preferences=pref_list,
-            budget=budget,
-            style=style,
-        )
-
-    # ── Hydrate with full metadata ───────────────────────────────────────
-    place_index = {p["id"]: p for p in hotel_candidates}
-    for hotel in selected:
-        full = place_index.get(hotel["id"])
-        if full:
-            hotel["accommodation_type"] = full.get("accommodation_type", "")
-            hotel["amenities"] = full.get("amenities", [])
-            hotel["photos"] = (full.get("photos") or [])[:1]
-            hotel["address"] = full.get("address")
-            hotel["maps_link"] = full.get("maps_link")
-            hotel["category"] = "hotel"
-            # Overwrite nightly_rate from DB (LLM may output 0 if it doesn't know)
-            hotel["nightly_rate"] = full.get("nightly_rate", hotel.get("nightly_rate", 0))
-
-    # ── Store on itinerary ──────────────────────────────────────────────
-    itinerary["accommodation_suggestions"] = selected
-
-    print(
-        f"[HotelAgent] Selected {len(selected)} hotels from {len(hotel_candidates)} candidates: "
-        f"{[h['name'] for h in selected]}"
-    )
-    state["agent_messages"] = (
-        state.get("agent_messages", [])
-        + [f"[HotelAgent] {len(selected)}/{len(hotel_candidates)} hotels selected"]
-    )
-
-    return state
-
-
-# ── LLM Selection ────────────────────────────────────────────────────────────
-
-
-async def _llm_select_hotels(
-    itinerary: dict,
-    centroids: list[dict],
-    top_candidates: list[tuple[dict, float]],
-    preferences: list[str],
-    budget: str,
-    style: str,
-) -> list[dict]:
-    """Use LLM to select 2-3 hotels from pre-scored candidates."""
-    # Build itinerary context
-    days_summary = []
-    for day in itinerary.get("days", []):
-        centroid = next(
-            (c for c in centroids if c["day_number"] == day.get("day_number")),
-            None,
-        )
-        centroid_str = (
-            f"~({centroid['centroid_lat']:.3f}, {centroid['centroid_lon']:.3f})"
-            if centroid else "unknown"
-        )
-        stops_list = [s.get("name", "?") for s in day.get("stops", [])]
-        days_summary.append(
-            f"  Day {day.get('day_number')} — {day.get('theme', '')}\n"
-            f"    Centroid: {centroid_str}\n"
-            f"    Stops: {', '.join(stops_list[:5])}"
-        )
-
-    # Build hotel list
-    hotel_lines = []
-    for hotel, score in top_candidates:
-        acc_type = hotel.get("accommodation_type", "")
-        rating = hotel.get("rating", 0)
-        lat = hotel.get("lat", 0)
-        lon = hotel.get("lon", 0)
-        hotel_lines.append(
-            f"  • {hotel['name']} (id={hotel['id']})\n"
-            f"    Type: {acc_type} | Rating: {rating} | Score: {score:.3f}\n"
-            f"    Location: ({lat:.4f}, {lon:.4f})"
-        )
-
-    pref_str = ", ".join(preferences) if preferences else "no preference"
-    prompt = f"""\
-Itinerary Summary:
-{chr(10).join(days_summary)}
-
-User Preferences:
-  Accommodation: {pref_str}
-  Budget: {budget or "not specified"}
-  Travel Style: {style or "not specified"}
-
-Scored Hotel Candidates ({len(top_candidates)}):
-{chr(10).join(hotel_lines)}
-
-Select 2-3 hotels that best fit this itinerary and user.
-Consider: proximity to daily centroids, accommodation type match, rating, and variety.
-"""
-
-    messages = [
-        SystemMessage(content=HOTEL_SYSTEM_PROMPT),
-        HumanMessage(content=prompt),
-    ]
 
     try:
-        # Use structured output for reliable parsing
-        response: HotelSelection = await invoke_with_fallback(
-            "hotel_selector",
-            messages,
-            structured_output=HotelSelection,
+        hotels = await search_hotels_for_trip(
+            city=city,
+            accommodation_type=accommodation_type,
+            preferred_star_class=star_class,
+            budget_level=budget,
+            max_results=10,
         )
 
-        if response and response.accommodation_suggestions:
-            return [
-                h.model_dump() for h in response.accommodation_suggestions
+        state.slots.hotel_search_results = hotels
+
+        # Compatibility: also populate itinerary.accommodation_suggestions
+        # for the compiled _orchestrator/handlers/hotel_handler.pyc which
+        # reads from this key after run_hotel_selection returns.
+        # TODO: Remove when hotel_handler.py source is created.
+        if state.itinerary is not None:
+            state.itinerary["accommodation_suggestions"] = [
+                {
+                    "id": h.get("id", ""),
+                    "name": h.get("name", ""),
+                    "sub_category": h.get("sub_category", ""),
+                    "accommodation_type": h.get("accommodation_type", ""),
+                    "lat": h.get("lat", 0),
+                    "lon": h.get("lon", 0),
+                    "rating": h.get("rating", 0),
+                    "why_recommended": f"{h.get('accommodation_type', 'Hotel').capitalize()} near your route.",
+                    "nightly_rate": h.get("nightly_rate", 0),
+                }
+                for h in hotels
             ]
 
-        print("[HotelAgent] LLM returned empty selection — using rule fallback")
+        logger.info(
+            "[HotelAgentShim] Found %d hotels in '%s'",
+            len(hotels), city,
+        )
     except Exception as exc:
-        print(f"[HotelAgent] LLM selection failed ({exc}) — using rule fallback")
+        logger.error("[HotelAgentShim] Hotel search failed: %s", exc)
+        state.slots.hotel_search_results = []
 
-    # Fallback: return top 2-3 by composite score
-    return [
-        {
-            "id": hotel["id"],
-            "name": hotel["name"],
-            "sub_category": hotel.get("sub_category", ""),
-            "accommodation_type": hotel.get("accommodation_type", ""),
-            "lat": hotel["lat"],
-            "lon": hotel["lon"],
-            "why_recommended": (
-                f"Top-rated {hotel.get('accommodation_type', 'accommodation')} "
-                f"with great proximity to your daily route."
-            ),
-            "rating": hotel.get("rating", 0),
-            "amenities": hotel.get("amenities", []),
-            "nightly_rate": hotel.get("nightly_rate", 0),
-        }
-        for hotel, _ in top_candidates[:3]
-    ]
+    return state

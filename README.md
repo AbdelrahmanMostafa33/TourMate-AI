@@ -288,6 +288,14 @@ TourMate-AI/
 
 ---
 
+## 📚 Documentation
+
+| Document | Description |
+|----------|-------------|
+| [Orchestrator Architecture](docs/architecture/orchestrator-architecture.md) | AI conversation orchestrator — phase router, handlers, services, state machine, and testing strategy |
+
+---
+
 ## 📡 API Reference
 
 ### Authentication

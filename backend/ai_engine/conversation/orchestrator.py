@@ -69,7 +69,11 @@ from ai_engine.tools.places_tool import get_places_for_city
 # Direct agent imports for re-ranking (skip retrieval, go straight to rank→plan→optimize→hotel→validate)
 from ai_engine.services.candidate_scorer import score_candidates
 from ai_engine.agents.planning_agent import run_planning_agent
-from ai_engine.agents.hotel_agent import run_hotel_selection
+from ai_engine.agents.hotel_selection_agent import (
+    search_hotels_for_trip as hs_search_hotels,
+    format_hotel_options as hs_format_options,
+    extract_hotel_selection as hs_extract_selection,
+)
 from ai_engine.services.route_optimizer import optimize_route, optimize_itinerary_days
 from ai_engine.services.itinerary_validator import validate_itinerary
 
@@ -677,10 +681,9 @@ async def _process_message_inner(
     ) or (None, None)
         if acc_type_change or star_class_change is not None:
             logger.info(
-                "[ConversationAgent] Accommodation type change '%s' intercepted during approval",
+                "[ConversationAgent] Accommodation type change '%s' intercepted during approval (deferred to _run_hotel_selection_and_present)",
                 acc_type_change,
             )
-            _apply_accommodation_change(state.slots, acc_type_change, star_class=star_class_change)
 
         # ── If in BOOKING phase, user approves → proceed to COMPLETED ──
         if state.phase == ConversationPhase.BOOKING:
@@ -1557,29 +1560,52 @@ async def _run_hotel_selection_and_present(
         )
         _apply_accommodation_change(state.slots, acc_type_change, star_class=star_class_change)
 
-    # Select hotels now that the stops are finalized
+    # ── Search hotels directly from the DB (like flights) ─────────
     hotel_agent_msgs: list[str] = []
-    if state.itinerary and state.candidate_places:
-        approval_state = {
-            "optimized_itinerary": state.itinerary,
-            "draft_itinerary": None,
-            "candidate_places": state.candidate_places,
-            "profile": {
-                "accommodation_preferences": state.slots.accommodation_preferences or [],
-                "budget_level": state.slots.budget_level or "",
-                "travel_style": state.slots.travel_style or "",
-                "hotel_star_class": state.slots.preferred_hotel_star_class,
-            },
-            "agent_messages": [],
-        }
-        approval_result = await run_hotel_selection(approval_state)
-        hotel_itinerary = (
-            approval_result.get("optimized_itinerary")
-            or approval_result.get("draft_itinerary")
-            or state.itinerary
-        )
-        state.itinerary = hotel_itinerary
-        hotel_agent_msgs = approval_result.get("agent_messages", [])
+    if state.itinerary:
+        city = state.slots.destination_city or state.itinerary.get("destination", "")
+        if city:
+            acc_prefs = state.slots.accommodation_preferences or []
+            accommodation_type = None
+            if acc_prefs:
+                from ai_engine.tools.slot_normalizer import map_accommodation_to_type
+                accommodation_type = map_accommodation_to_type(acc_prefs)
+
+            hotels = await hs_search_hotels(
+                city=city,
+                accommodation_type=accommodation_type,
+                preferred_star_class=state.slots.preferred_hotel_star_class,
+                budget_level=state.slots.budget_level,
+                max_results=10,
+            )
+
+            state.slots.hotel_search_results = hotels
+            # Populate itinerary.accommodation_suggestions for Flutter compat
+            state.itinerary["accommodation_suggestions"] = [
+                {
+                    "id": h.get("id", ""),
+                    "name": h.get("name", ""),
+                    "sub_category": h.get("sub_category", ""),
+                    "accommodation_type": h.get("accommodation_type", "hotel"),
+                    "lat": h.get("lat", 0),
+                    "lon": h.get("lon", 0),
+                    "rating": h.get("rating", 0),
+                    "why_recommended": (
+                        f"{h.get('accommodation_type', 'Hotel').capitalize()} "
+                        f"near your route."
+                    ),
+                    "nightly_rate": h.get("nightly_rate", 0),
+                    "address": h.get("address", ""),
+                    "photos": (h.get("photos") or [])[:1],
+                }
+                for h in hotels
+            ]
+            hotel_agent_msgs.append(
+                f"[HotelAgent] Found {len(hotels)} hotels in {city}"
+            )
+            logger.info(
+                "[HotelAgent] Found %d hotels in '%s'", len(hotels), city,
+            )
 
     # ── Accommodation type change during approval ────────────
     if acc_type_change or star_class_change is not None:
@@ -2690,7 +2716,11 @@ def _is_accommodation_type_change(modification_request: str, current_preferences
     # Check for "instead of" / "instead" patterns
     has_instead = "instead" in msg_lower
     has_switch = any(kw in msg_lower for kw in ("switch to", "change to", "replace with", "use "))
-    has_want = any(kw in msg_lower for kw in ("i want ", "give me ", "provide ", "show me "))
+    has_want = any(kw in msg_lower for kw in (
+        "i want ", "give me ", "provide ", "show me ",
+        "let it be ", "i'd like ", "i would like ",
+        "prefer ", "make it ",
+    ))
 
     # Also treat bare star class mentions as changes (e.g. "4-star hotels" with no switch keyword)
     if star_class is not None:
@@ -3255,7 +3285,6 @@ async def _handle_select_hotel(
             "[SelectHotel] Accommodation type change '%s' intercepted re-running hotel selection",
             acc_type_change,
         )
-        _apply_accommodation_change(state.slots, acc_type_change, star_class=star_class_change)
         return await _run_hotel_selection_and_present(
             state, effective_message, image_features,
             acc_type_change=acc_type_change,

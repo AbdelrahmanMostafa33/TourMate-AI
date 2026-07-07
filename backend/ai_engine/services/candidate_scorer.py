@@ -165,10 +165,11 @@ def _diversity_optimize(
     if interest_subcats is None:
         interest_subcats = set()
 
+    # Hotels are NOT scored in the pipeline — they are handled in the
+    # post-approval HOTEL_SELECTION phase (like flights).
     category_caps = {
         "attraction": min(duration_days * 8, 30),
         "restaurant": min(duration_days * 2, 6),
-        "hotel":      min(duration_days + 2, 7),
         "_default":   5,
     }
     by_category: dict[str, list] = {}
@@ -266,42 +267,8 @@ def _diversity_optimize(
                         break
 
             selected.extend(cat_selected)
-        elif cat == "hotel":
-            # ── Accommodation-type diversity for hotels ─────────────
-            # Same round-robin approach as _cap_candidates in place_retriever:
-            # group by accommodation_type so hostels, resorts, luxury, and
-            # hotels all get representation instead of just top N by score.
-            by_accommodation: dict[str, list[tuple[dict, float]]] = {}
-            for place, score in items:
-                acc_type = (place.get("accommodation_type") or "hotel").lower().strip()
-                if not acc_type:
-                    acc_type = "hotel"
-                by_accommodation.setdefault(acc_type, []).append((place, score))
-
-            type_names = sorted(by_accommodation.keys())
-            cat_selected: list[tuple[dict, float]] = []
-            seen_ids: set[str] = set()
-            ptrs = {t: 0 for t in type_names}
-
-            while len(cat_selected) < cap:
-                added = False
-                for acc_type in type_names:
-                    if len(cat_selected) >= cap:
-                        break
-                    group = by_accommodation[acc_type]
-                    while ptrs[acc_type] < len(group):
-                        place, score = group[ptrs[acc_type]]
-                        ptrs[acc_type] += 1
-                        pid = place.get("id", "")
-                        if pid not in seen_ids:
-                            cat_selected.append((place, score))
-                            seen_ids.add(pid)
-                            added = True
-                            break
-                if not added:
-                    break
-
-            selected.extend(cat_selected)
+        # Hotels are NOT included in the pipeline — they are handled in the
+        # post-approval HOTEL_SELECTION phase (like flights).
         else:
             selected.extend(items[:cap])
 
@@ -361,7 +328,8 @@ async def score_candidates(state: TripState) -> TripState:
     target_per_category = {
         "attraction": max(duration_days * 2, 4),
         "restaurant": max(duration_days, 3),
-        "hotel":      max(duration_days // 2 + 1, 2),
+        # Hotels are NOT scored in the pipeline — they are handled in the
+        # post-approval HOTEL_SELECTION phase (like flights).
     }
 
     # 5. Score every place

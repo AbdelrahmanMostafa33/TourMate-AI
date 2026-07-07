@@ -101,6 +101,10 @@ class TripSlots:
     is_round_trip:           Optional[bool] = None      # True if round-trip, False if one-way
     return_date:             Optional[str] = None       # ISO date for return flight (round-trip only)
 
+    # ── Hotel Related (independent of itinerary pipeline) ────────────
+    selected_hotel:          Optional[dict] = None      # The hotel the user selected
+    hotel_search_results:    Optional[List[dict]] = None # Cached hotel search results
+
     # ── Profile Preferences (required) ─────────────────────────────
     budget_level:                   Optional[str] = None   # "budget" | "moderate" | "luxury"
     travel_style:                   Optional[str] = None   # "romantic" | "adventure" | "family" | "solo" | "cultural" | "relaxation"
@@ -200,6 +204,8 @@ class TripSlots:
             preferred_cabin_class  = data.get("preferred_cabin_class"),
             is_round_trip          = data.get("is_round_trip"),
             return_date            = data.get("return_date"),
+            selected_hotel         = data.get("selected_hotel"),
+            hotel_search_results   = data.get("hotel_search_results"),
         )
 
     def merge(self, intent: Dict[str, Any]) -> None:

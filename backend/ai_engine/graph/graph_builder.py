@@ -27,15 +27,9 @@ def build_trip_graph():
     Pipeline:
       load_profile → retrieval → scorer → planner → optimizer → validator
 
-    Hotels are NOT selected during the pipeline — they are selected
-    after the user approves the itinerary via
-    ``orchestrator._run_hotel_selection_and_present()``, so modifications
-    to stops don't waste hotel selections.
-
-    The graph node ``hotel_selection_node`` was previously implemented
-    in ``nodes.py`` but has been removed (it was never wired into the
-    graph).  The underlying ``run_hotel_selection()`` from
-    ``hotel_agent.py`` is called directly in the orchestrator instead.
+    Hotels are completely separated from the pipeline — they are handled
+    in the post-approval HOTEL_SELECTION phase (like flights). The
+    pipeline generates stops only (attractions + restaurants).
 
     Each node handles one concern:
       - load_profile: Load trip profile from DB

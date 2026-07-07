@@ -31,6 +31,7 @@ class PlaceRepository(BaseRepository):
         lat: Optional[float] = None,
         lng: Optional[float] = None,
         accommodation_type: Optional[str] = None,
+        star_class: Optional[int] = None,
         max_distance_km: Optional[float] = None,
         limit: int = 50,
         offset: int = 0,
@@ -73,11 +74,15 @@ class PlaceRepository(BaseRepository):
         if min_rating is not None:
             filters.append(Place.rating >= min_rating)
 
-        # Price level filter
+        # Price level filter (include NULL — many places lack price_level)
         if min_price_level is not None:
-            filters.append(Place.price_level >= min_price_level)
+            filters.append(
+                or_(Place.price_level.is_(None), Place.price_level >= min_price_level)
+            )
         if max_price_level is not None:
-            filters.append(Place.price_level <= max_price_level)
+            filters.append(
+                or_(Place.price_level.is_(None), Place.price_level <= max_price_level)
+            )
 
         # Accommodation type filter (requires HotelDetails join)
         # Cast enum to text for safe comparison with asyncpg
@@ -88,6 +93,20 @@ class PlaceRepository(BaseRepository):
             )
             filters.append(
                 func.lower(cast(HotelDetails.accommodation_type, SAString)) == accommodation_type.lower()
+            )
+
+        # Star class filter (requires HotelDetails join; include NULLs)
+        # Avoid adding a second outerjoin if accommodation_type or interests
+        # already added one.
+        if star_class is not None:
+            needs_hotel_join = not accommodation_type and not interests
+            if needs_hotel_join:
+                query = query.outerjoin(
+                    HotelDetails,
+                    Place.place_id == HotelDetails.place_id,
+                )
+            filters.append(
+                or_(HotelDetails.star_class.is_(None), HotelDetails.star_class == star_class)
             )
 
         # Interest/Tag filter (broad search across multiple sources)

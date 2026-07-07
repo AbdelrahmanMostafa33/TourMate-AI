@@ -3,9 +3,13 @@ Itinerary Modifier Agent — delta-based itinerary editing.
 
 Fully rewritten to use **delta operations** instead of full itinerary
 regeneration.  The LLM receives a compact textual summary and outputs
-a tiny operation (REMOVE, SWAP, EXCHANGE, ADD, CHANGE_HOTEL, REORDER, RE_THEME)
+a tiny operation (REMOVE, SWAP, EXCHANGE, ADD, ADD_CATEGORY, REORDER, RE_THEME)
 via structured output.  Deterministic Python code in ``operations.py``
 applies the operation to the in-memory itinerary.
+
+Hotels are NOT modified through this agent — they are handled in the
+post-approval HOTEL_SELECTION phase (like flights), independent of
+the modifier.
 
 Benefits:
   - No JSON formatting errors (structured output)
@@ -58,15 +62,15 @@ MODIFIER_SYSTEM_INSTRUCTION = (
     "count (how many to add, default 1), "
     "day_number (optional, specific day), "
     "suggested_time_of_day (optional, auto-assign if omitted).\n"
-    "  • CHANGE_HOTEL — Replace/add a hotel. "
-    "Fields: op=\"CHANGE_HOTEL\", old_hotel_id (optional), new_hotel_id, why_recommended\n"
+    # CHANGE_HOTEL removed — hotels are handled in the post-approval
+    # HOTEL_SELECTION phase (like flights), independent of the modifier.
     "  • REORDER — Change visit sequence within a day WITHOUT changing time slots. "
     "Fields: op=\"REORDER\", day_number, new_order (list of place IDs)\n"
     "  • RE_THEME — Update a day's theme. Fields: op=\"RE_THEME\", day_number, new_theme\n"
     "\n"
     "CRITICAL RULES:\n"
     "1. The `op` value MUST be exactly one of: REMOVE, SWAP, EXCHANGE, ADD, ADD_CATEGORY, "
-    "CHANGE_HOTEL, REORDER, RE_THEME. Do NOT use any other value.\n"
+    "REORDER, RE_THEME. Do NOT use any other value.\n"
     "2. For ADD and SWAP operations, you MUST provide the `add_place_id` field with the EXACT "
     "ID from the Available Places list (shown in parentheses after each place name). "
     "Copy the ID exactly as shown — do NOT invent IDs or use the place name.\n"
@@ -81,7 +85,7 @@ MODIFIER_SYSTEM_INSTRUCTION = (
     "8. If the modification cannot be done (no matching place, wrong category), "
     "explain clearly in `note`. Do NOT substitute a different type of place.\n"
     "9. Explain your reasoning briefly in the `note` field.\n"
-    "10. NEVER leave required fields (place_id, add_place_id, remove_place_id, new_hotel_id) "
+    "10. NEVER leave required fields (place_id, add_place_id, remove_place_id) "
     "as null or empty. Always provide the exact ID from the lists.\n"
     "\n"
     "WHEN TO USE ADD_CATEGORY instead of ADD:\n"
@@ -199,9 +203,9 @@ async def run_itinerary_modifier(
     if pre_selected_places:
         context += "\n\nPRE-SELECTED PLACES (from hybrid search):\n"
         for i, place in enumerate(pre_selected_places, 1):
-            best_day, best_score = _find_best_day_for_place(current_itinerary, place)
+            best_day = _find_best_day_for_place(place, current_itinerary.get("days", []))
             day_hint = (
-                f"  Best day to insert: Day {best_day} (score: {best_score})"
+                f"  Best day to insert: Day {best_day}"
                 if best_day else ""
             )
             context += (
@@ -279,8 +283,8 @@ async def run_itinerary_modifier(
                     f"Matched your request for '{pre_selected_place.get('name')}'"
                 )
                 if not response.day_number or response.day_number <= 0:
-                    best_day, best_score = _find_best_day_for_place(
-                        current_itinerary, pre_selected_place
+                    best_day = _find_best_day_for_place(
+                        pre_selected_place, current_itinerary.get("days", [])
                     )
                     response.day_number = best_day or 1
                 if not response.suggested_time_of_day:
@@ -499,11 +503,8 @@ def _get_validation_error(
             "You MUST provide both `day_number` and `new_order` (list of place IDs)."
         )
 
-    if operation.op == "CHANGE_HOTEL" and not operation.new_hotel_id:
-        return (
-            "CHANGE_HOTEL operation is missing the required `new_hotel_id` field. "
-            "You MUST provide the exact hotel ID."
-        )
+    # CHANGE_HOTEL removed — hotels are handled in the post-approval
+    # HOTEL_SELECTION phase (like flights), independent of the modifier.
 
     if operation.op == "ADD_CATEGORY" and not operation.category:
         return (

@@ -27,11 +27,6 @@ _FIELDS_STOP_KEEP = {
     "rating", "cuisine_type",
 }
 
-_FIELDS_HOTEL_KEEP = {
-    "id", "name", "accommodation_type", "rating",
-    "category", "lat", "lon",
-}
-
 _FIELDS_DAY_KEEP = {
     "day_number", "theme", "stops", "total_travel_time_minutes",
 }
@@ -46,18 +41,9 @@ def _strip_unnecessary_fields(itinerary: dict) -> dict:
         if key in itinerary:
             pruned[key] = itinerary[key]
 
-    # Strip accommodation suggestions entirely since they are handled
-    # in the post-approval hotel selection phase. Keeping them in the
-    # prompt wastes tokens and may trigger false-positive validation flags.
-    hotels = itinerary.get("accommodation_suggestions", [])
-    if hotels:
-        pruned["accommodation_suggestions"] = []
-        for h in hotels:
-            pruned_h = {k: h[k] for k in _FIELDS_HOTEL_KEEP if k in h}
-            why = h.get("why_recommended", "")
-            if why:
-                pruned_h["why_recommended"] = why if len(why) <= _MAX_WHY_LENGTH else why[:_MAX_WHY_LENGTH - 3] + "..."
-            pruned["accommodation_suggestions"].append(pruned_h)
+    # Accommodation suggestions have been fully removed from the pipeline.
+    # Hotels are handled in the post-approval HOTEL_SELECTION phase
+    # (like flights), so no stripping is needed here.
 
     days = itinerary.get("days", [])
     pruned["days"] = []
@@ -99,10 +85,10 @@ Your task:
     (e.g. ``"relaxed"`` → 2–3 stops/day; ``"moderate"`` → 3–5;
     ``"packed"`` → 5–7)
 
-**IMPORTANT**: Accommodation suggestions are handled in a separate
-post-approval phase and are NOT part of the pipeline. Do NOT penalize
-the itinerary for missing or having too few accommodation suggestions.
-Focus validation only on the day-by-day stops, themes, and routing.
+**IMPORTANT**: Accommodation suggestions are NOT part of the pipeline.
+They are handled in the post-approval HOTEL_SELECTION phase (like flights).
+Do NOT penalize the itinerary for missing or having too few accommodation
+suggestions. Focus validation only on the day-by-day stops, themes, and routing.
 
 - Rate the itinerary on a scale of 0-100.
 - Respond ONLY with a valid JSON object.

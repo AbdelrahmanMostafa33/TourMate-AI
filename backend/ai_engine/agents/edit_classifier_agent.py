@@ -24,7 +24,8 @@ EditType = Literal[
     "ADD_PLACE",
     "ADD_CATEGORY",
     "REPLACE_PLACE",
-    "CHANGE_HOTEL",
+    # CHANGE_HOTEL removed — hotels are handled in the post-approval
+    # HOTEL_SELECTION phase (like flights), independent of the modifier.
     "CHANGE_PREFERENCES",
     "CHANGE_BUDGET",
     "CHANGE_PACE",
@@ -47,7 +48,7 @@ class EditClassification(BaseModel):
     edit_type: EditType = Field(
         description=(
             "Primary edit type. Use REMOVE, REORDER, MOVE_DAY, ADD_PLACE, "
-            "ADD_CATEGORY, REPLACE_PLACE, CHANGE_HOTEL, RE_THEME for surgical edits; "
+            "ADD_CATEGORY, REPLACE_PLACE, RE_THEME for surgical edits; "
             "CHANGE_PREFERENCES / CHANGE_BUDGET / CHANGE_PACE / CHANGE_INTERESTS "
             "for vibe or preference shifts; REGENERATE for major overhauls."
         )
@@ -126,7 +127,8 @@ Edit types:
 - ADD_CATEGORY — add places of a specific TYPE (e.g. \"add museums\", \"add more churches\", \"add restaurants\")
   Use ADD_CATEGORY when the user asks for a category/type of place rather than a specific named place.
 - REPLACE_PLACE — swap one stop for another (use EXCHANGE when both are already in the itinerary)
-- CHANGE_HOTEL — change accommodation suggestions
+# CHANGE_HOTEL removed — hotels are handled in the post-approval
+# HOTEL_SELECTION phase (like flights), independent of the modifier.
 - RE_THEME — update a day's theme only
 - CHANGE_BUDGET — make trip cheaper or more luxury
 - CHANGE_PACE — faster/slower pace
@@ -239,7 +241,7 @@ def is_surgical_edit(classification: dict) -> bool:
         "ADD_PLACE",
         "ADD_CATEGORY",
         "REPLACE_PLACE",
-        "CHANGE_HOTEL",
+        # CHANGE_HOTEL removed — hotels are handled separately.
         "RE_THEME",
         "UNKNOWN",
     }
