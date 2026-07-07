@@ -242,6 +242,13 @@ class TripSlots:
                     for v in new_values:
                         if v not in combined:
                             combined.append(v)
+                    old_val = getattr(self, list_field)
+                    if old_val != combined:
+                        import logging
+                        logging.getLogger(__name__).info(
+                            "[DEBUG_HOTEL_CARD] TripSlots.merge: '%s' changed %s -> %s (merged from intent=%s)",
+                            list_field, old_val, combined, new_values,
+                        )
                     setattr(self, list_field, combined)
                 # Ignore empty lists from the LLM — they are often default
                 # values from structured output, not intentional opt-outs.

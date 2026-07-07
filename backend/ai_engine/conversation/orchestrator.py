@@ -433,7 +433,16 @@ async def _process_message_inner(
 
     # ── STEP 1: Call message interpreter ──────────────────────────────────
     router_result = await interpret_message(state, effective_message)
+    logger.info(
+        "[DEBUG_HOTEL_CARD] Before merge: accom_prefs=%s LLM_extracted=%s",
+        state.slots.accommodation_preferences,
+        router_result.extracted.get("accommodation_preferences"),
+    )
     state.slots.merge(router_result.extracted)
+    logger.info(
+        "[DEBUG_HOTEL_CARD] After merge: accom_prefs=%s",
+        state.slots.accommodation_preferences,
+    )
     state.add_user_message(effective_message, metadata={"action": router_result.action})
 
     # ── Guard: clear hallucinated interests ────────────────────────────────
@@ -2487,6 +2496,10 @@ def _apply_accommodation_change(slots, new_type: str, star_class: int | None = N
     slots.accommodation_preferences = current
     if star_class is not None:
         slots.preferred_hotel_star_class = star_class
+    logger.info(
+        "[DEBUG_HOTEL_CARD] _apply_accommodation_change: new_type=%s star_class=%s result_prefs=%s",
+        new_type, star_class, slots.accommodation_preferences,
+    )
 
 def _is_flight_change_request(message: str, extracted: dict) -> dict | None:
     """Detect trip-type/date edits for the existing flight-selection workflow.
