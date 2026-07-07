@@ -1038,11 +1038,15 @@ async def handle_chat_stream(user_id, user_message, image_bytes=None, token=None
 
     # Only yield a result event when there's meaningful structured data.
     # Skip it for simple clarification/chat responses that only stream text.
+    # NOTE: We use _card_backed_itinerary_response instead of raw
+    # "response.get("itinerary")" so that hotel modification responses
+    # (which carry itinerary data silently for Flutter but don't need a
+    # card refresh) don't trigger a result event with full itinerary data.
     if response and (
         response.get("response_type") == "itinerary"
         or response.get("response_type") == "booking"
         or response.get("response_type") == "booking_confirmed"
-        or response.get("itinerary")
+        or _card_backed_itinerary_response(response)
         or response.get("validation")
         or response.get("flight_search_results")
         or response.get("flight_booking")
@@ -1058,8 +1062,9 @@ async def handle_chat_stream(user_id, user_message, image_bytes=None, token=None
         if response.get("action"):
             result_data["action"] = response["action"]
 
-        # Itinerary data
-        if response.get("itinerary"):
+        # Itinerary data — only include when card-backed (avoids leaking
+        # full itinerary into result events during hotel modifications).
+        if response.get("itinerary") and _card_backed_itinerary_response(response):
             result_data["itinerary"] = response["itinerary"]
 
         # Common optional fields
@@ -1609,19 +1614,24 @@ async def _run_hotel_selection_and_present(
 
     # ── Accommodation type change during approval ────────────
     if acc_type_change or star_class_change is not None:
+        change_desc = acc_type_change or f"{star_class_change}-star"
         if state.itinerary and state.itinerary.get("accommodation_suggestions"):
+            count = len(state.itinerary["accommodation_suggestions"])
             return {
-                "response_type": "itinerary",
-                "message": _format_itinerary(state.itinerary, approved=False),
+                "response_type": "chat",
+                "message": (
+                    f"Updated your accommodation to {change_desc}. "
+                    f"I found {count} option{'s' if count != 1 else ''}."
+                ),
                 "itinerary": state.itinerary,
                 "image_features": image_features,
                 "agent_messages": hotel_agent_msgs,
-                "ui": {"actions": ["replace_itinerary_card"]},
+                "accommodation_preferences": state.slots.accommodation_preferences or [],
             }
         else:
             return {
                 "response_type": "chat",
-                "message": f"Updated your accommodation to {acc_type_change}. "
+                "message": f"Updated your accommodation to {change_desc}. "
                           "You can approve or modify further.",
                 "itinerary": None,
                 "image_features": image_features,
