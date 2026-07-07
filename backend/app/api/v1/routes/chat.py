@@ -130,15 +130,28 @@ def _build_cards_from_ai_result(
             "presentation": _itinerary_card_presentation(result, itinerary_presentation),
         })
 
+    # Check for hotel data from TWO sources:
+    # 1. From itinerary.accommodation_suggestions (normal path)
+    # 2. From result.hotel_options (hotel modification path — itinerary is
+    #    excluded from result_data by _card_backed_itinerary_response guard)
     accommodation = itinerary.get("accommodation_suggestions", []) if isinstance(itinerary, dict) else []
-    should_show_hotels = bool(accommodation) and phase == "hotel_selection"
+    hotel_options = result.get("hotel_options", {})
+    hotel_options_list = hotel_options.get("options", []) if isinstance(hotel_options, dict) else []
+    should_show_hotels = (
+        (bool(accommodation) or bool(hotel_options_list))
+        and phase == "hotel_selection"
+    )
     if should_show_hotels:
+        options = accommodation if accommodation else hotel_options_list
+        prefs = result.get("accommodation_preferences")
+        if not prefs and isinstance(hotel_options, dict):
+            prefs = hotel_options.get("accommodation_preferences")
         cards.append({
             "card_type": ChatCardType.HOTEL_OPTIONS.value,
             "data": {
-                "options": accommodation,
+                "options": options,
                 "message": None,
-                "accommodation_preferences": result.get("accommodation_preferences"),
+                "accommodation_preferences": prefs,
             },
             "presentation": "append",
         })

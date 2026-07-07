@@ -686,16 +686,29 @@ class ChatCubit extends Cubit<ChatState> {
   }
 
   void _handleHotelOptionsCard(Map<String, dynamic> rawData) {
+    debugPrint(
+      '[DEBUG_HOTEL_CARD] chat_cubit: _handleHotelOptionsCard called '
+      'data_keys=${rawData.keys.toList()} '
+      'has_options=${rawData.containsKey('options')} '
+      'has_accom_prefs=${rawData.containsKey('accommodation_preferences')}');
     try {
       final payload = HotelOptionsPayload.fromJson(rawData);
-      if (payload.options.isEmpty) return;
+      debugPrint(
+        '[DEBUG_HOTEL_CARD] chat_cubit: HotelOptionsPayload parsed '
+        'options_count=${payload.options.length} '
+        'accom_prefs=${payload.accommodationPreferences}');
+      if (payload.options.isEmpty) {
+        debugPrint('[DEBUG_HOTEL_CARD] chat_cubit: options empty — skipping card');
+        return;
+      }
 
       _assembler.onEvent(
           events.CardDataEvent(cardType: 'hotel_options', data: rawData));
       _updateOrCreateAssistantMessage();
       _emitConnected(isTyping: false, bumpRefresh: true);
+      debugPrint('[DEBUG_HOTEL_CARD] chat_cubit: hotel_options card attached and UI refreshed');
     } catch (e) {
-      debugPrint('[ChatCubit] Failed to parse hotel_options: $e');
+      debugPrint('[DEBUG_HOTEL_CARD] chat_cubit: Failed to parse hotel_options: $e');
     }
   }
 

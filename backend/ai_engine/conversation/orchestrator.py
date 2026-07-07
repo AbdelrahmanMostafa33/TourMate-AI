@@ -1042,6 +1042,20 @@ async def handle_chat_stream(user_id, user_message, image_bytes=None, token=None
     # "response.get("itinerary")" so that hotel modification responses
     # (which carry itinerary data silently for Flutter but don't need a
     # card refresh) don't trigger a result event with full itinerary data.
+    logger.info(
+        "[DEBUG_HOTEL_CARD] handle_chat_stream condition check: '"
+        "response_type=%s has_itinerary=%s has_accom_prefs=%s '"
+        "has_flight_results=%s has_flight_booking=%s has_image=%s '"
+        "has_validation=%s is_card_backed=%s",
+        response.get('response_type') if response else 'None',
+        bool(response and response.get('itinerary')),
+        bool(response and response.get('accommodation_preferences')),
+        bool(response and response.get('flight_search_results')),
+        bool(response and response.get('flight_booking')),
+        bool(response and response.get('image_features')),
+        bool(response and response.get('validation')),
+        _card_backed_itinerary_response(response) if response else False,
+    )
     if response and (
         response.get("response_type") == "itinerary"
         or response.get("response_type") == "booking"
@@ -1051,6 +1065,7 @@ async def handle_chat_stream(user_id, user_message, image_bytes=None, token=None
         or response.get("flight_search_results")
         or response.get("flight_booking")
         or response.get("image_features")
+        or response.get("accommodation_preferences")
     ):
         result_data = {
             "message": message,
@@ -1071,6 +1086,15 @@ async def handle_chat_stream(user_id, user_message, image_bytes=None, token=None
         for field in ("profile", "explanation", "agent_messages", "agent_metrics", "validation", "pool_state", "image_features", "accommodation_preferences"):
             if response.get(field):
                 result_data[field] = response[field].model_dump() if hasattr(response[field], "model_dump") else response[field]
+
+        # Hotel options for the hotel_options card
+        if response.get("accommodation_preferences") and response.get("itinerary"):
+            accom_suggestions = response["itinerary"].get("accommodation_suggestions", [])
+            if accom_suggestions:
+                result_data["hotel_options"] = {
+                    "options": accom_suggestions,
+                    "accommodation_preferences": response["accommodation_preferences"],
+                }
 
         # Booking data (flight + hotel selection for Flutter)
         if response.get("booking_data"):
@@ -1115,6 +1139,16 @@ async def handle_chat_stream(user_id, user_message, image_bytes=None, token=None
             result_data["cabin_class"] = response["cabin_class"]
         if response.get("duration_days"):
             result_data["duration_days"] = response["duration_days"]
+
+        logger.info(
+            "[DEBUG_HOTEL_CARD] Yielding result event: keys=%s '"
+            "has_hotel_options=%s has_accom_prefs=%s '"
+            "accom_suggestions_in_itinerary=%s",
+            list(result_data.keys()),
+            bool(result_data.get('hotel_options')),
+            bool(result_data.get('accommodation_preferences')),
+            bool(result_data.get('hotel_options', {}).get('options')),
+        )
 
         yield {"type": "result", "data": result_data}
 
@@ -1611,6 +1645,17 @@ async def _run_hotel_selection_and_present(
             logger.info(
                 "[HotelAgent] Found %d hotels in '%s'", len(hotels), city,
             )
+
+    logger.info(
+        "[DEBUG_HOTEL_CARD] _run_hotel_selection_and_present: acc_type_change=%s '"
+        "star_class_change=%s itinerary_has_accom=%s accom_suggestions_count=%d '"
+        "accom_prefs=%s phase=%s",
+        acc_type_change, star_class_change,
+        bool(state.itinerary and state.itinerary.get('accommodation_suggestions')),
+        len(state.itinerary.get('accommodation_suggestions', [])) if state.itinerary else 0,
+        state.slots.accommodation_preferences or [],
+        state.phase.value if hasattr(state, 'phase') else '?',
+    )
 
     # ── Accommodation type change during approval ────────────
     if acc_type_change or star_class_change is not None:

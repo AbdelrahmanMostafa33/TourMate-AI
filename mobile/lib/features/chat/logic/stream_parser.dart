@@ -171,14 +171,32 @@ class StreamParser {
         return CardDataEvent(cardType: 'hotel_options', data: Map.from(data));
 
       case 'result':
-        // Legacy `result` events may carry image_features.
+        // Legacy `result` events may carry image_features or hotel_options.
         final data = raw['data'] as Map<String, dynamic>?;
         if (data == null) return null;
         final imageFeatures = data['image_features'] as Map<String, dynamic>?;
         if (imageFeatures != null && imageFeatures.isNotEmpty) {
+          debugPrint(
+            '[DEBUG_HOTEL_CARD] stream_parser: extracted image_features from result event');
           return CardDataEvent(
             cardType: 'image_features',
             data: Map.from(imageFeatures),
+          );
+        }
+        final hotelOptions = data['hotel_options'] as Map<String, dynamic>?;
+        debugPrint(
+          '[DEBUG_HOTEL_CARD] stream_parser: result event keys=${data.keys.toList()} '
+          'has_hotel_options=${hotelOptions != null} '
+          'hotel_options_isEmpty=${hotelOptions == null || hotelOptions.isEmpty} '
+          'options_count=${hotelOptions?['options'] is List ? (hotelOptions!['options'] as List).length : "N/A"}');
+        if (hotelOptions != null && hotelOptions.isNotEmpty) {
+          debugPrint(
+            '[DEBUG_HOTEL_CARD] stream_parser: extracted hotel_options card with '
+            'options_count=${hotelOptions['options'] is List ? (hotelOptions['options'] as List).length : "?"} '
+            'accom_prefs=${hotelOptions['accommodation_preferences']}');
+          return CardDataEvent(
+            cardType: 'hotel_options',
+            data: Map.from(hotelOptions),
           );
         }
         return null;

@@ -57,9 +57,9 @@ async def test_hotel_type_change_returns_chat():
     state.slots.budget_level = "moderate"
 
     # Override search_hotels_for_trip to avoid DB call
-    import ai_engine.agents.hotel_selection_agent as hsa
-    original_search = hsa.search_hotels_for_trip
-    hsa.search_hotels_for_trip = _mock_search_hotels
+    import ai_engine.conversation.orchestrator as orch
+    original_search = orch.hs_search_hotels
+    orch.hs_search_hotels = _mock_search_hotels
 
     try:
         response = await _run_hotel_selection_and_present(
@@ -67,7 +67,7 @@ async def test_hotel_type_change_returns_chat():
             acc_type_change="resort",
         )
     finally:
-        hsa.search_hotels_for_trip = original_search
+        orch.hs_search_hotels = original_search
 
     logger.info("=== TEST 1: Direct _run_hotel_selection_and_present ===")
     logger.info("response_type: %s", response.get("response_type"))
@@ -135,11 +135,10 @@ async def test_all_three_routes_return_chat():
         ConversationState, ConversationPhase,
     )
 
-    # Patch the search function
-    import ai_engine.agents.hotel_selection_agent as hsa
+    # Patch the search function — must patch orchestrator's local reference
     import ai_engine.conversation.orchestrator as orch
 
-    original_search = hsa.search_hotels_for_trip
+    original_search = orch.hs_search_hotels
 
     class MockRouterResult:
         """Minimal mock for router_result."""
@@ -148,7 +147,7 @@ async def test_all_three_routes_return_chat():
         action = "select_hotel"
 
     try:
-        hsa.search_hotels_for_trip = _mock_search_hotels
+        orch.hs_search_hotels = _mock_search_hotels
 
         # ── Path A: simulate modify_itinerary action → _handle_select_hotel ──
         state_a = ConversationState()
@@ -207,7 +206,7 @@ async def test_all_three_routes_return_chat():
         )
 
     finally:
-        hsa.search_hotels_for_trip = original_search
+        orch.hs_search_hotels = original_search
 
 
 def _make_dummy_itinerary():
@@ -243,9 +242,8 @@ async def test_full_flow_with_mocked_interpreter():
     We mock interpret_message to return a known action and verify the response.
     """
     import ai_engine.conversation.orchestrator as orch
-    import ai_engine.agents.hotel_selection_agent as hsa
 
-    original_search = hsa.search_hotels_for_trip
+    original_search = orch.hs_search_hotels
     original_interpreter = orch.interpret_message
 
     # Create a mock interpreter that returns specific actions
@@ -265,7 +263,7 @@ async def test_full_flow_with_mocked_interpreter():
         return MockResult()
 
     try:
-        hsa.search_hotels_for_trip = _mock_search_hotels
+        orch.hs_search_hotels = _mock_search_hotels
         orch.interpret_message = mock_interpret_message
 
         from ai_engine.conversation.conversation_state import (
@@ -295,7 +293,7 @@ async def test_full_flow_with_mocked_interpreter():
         )
 
     finally:
-        hsa.search_hotels_for_trip = original_search
+        orch.hs_search_hotels = original_search
         orch.interpret_message = original_interpreter
 
 
