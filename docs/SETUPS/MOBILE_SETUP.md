@@ -1,6 +1,7 @@
 # TourMate AI — Mobile Setup Guide (Flutter + Android Studio)
 
 > Complete guide for setting up the Flutter mobile app from scratch after cloning the repo for the first time.
+> 📖 **For the full project overview (features, architecture, API reference, tech stack), see the [main README](../../README.md).**
 
 ---
 
@@ -350,105 +351,10 @@ flutter run
 
 ## 13. Project Structure Overview
 
-The mobile app uses a **feature-first** folder architecture:
+> 📖 A full project structure tree with all files and descriptions is in the [main README](../../README.md#-project-structure).
+> Below is the architecture pattern used in the mobile app:
 
-```
-mobile/
-│
-├── lib/
-│   ├── main.dart                         # App entry point
-│   ├── firebase_options.dart             # Firebase config (auto-generated)
-│   │
-│   ├── app/
-│   │   ├── app.dart                      # MaterialApp + providers
-│   │   └── app_router.dart               # Route definitions
-│   │
-│   ├── core/                             # Shared infrastructure
-│   │   ├── errors/
-│   │   │   ├── api_result.dart           # API result wrapper (freezed)
-│   │   │   └── auth_error_handler.dart   # Auth error handling
-│   │   ├── layout/
-│   │   │   └── main_shell.dart           # Bottom nav shell
-│   │   └── network/
-│   │       ├── api_services.dart         # Retrofit API client (generated)
-│   │       ├── dio_factory.dart          # Dio HTTP client setup
-│   │       └── service_locator.dart      # get_it dependency injection
-│   │
-│   └── features/                         # Feature modules
-│       ├── auth/                         # Authentication
-│       │   ├── data/
-│       │   │   ├── datasource/
-│       │   │   │   └── firebase_auth_service.dart
-│       │   │   ├── models/
-│       │   │   │   ├── register_request.dart
-│       │   │   │   ├── user_response.dart
-│       │   │   │   └── full_profile_response.dart
-│       │   │   └── repository/
-│       │   │       ├── auth_repository.dart
-│       │   │       └── profile_repository.dart
-│       │   ├── logic/
-│       │   │   ├── profile_cubit.dart
-│       │   │   └── profile_state.dart (+freezed)
-│       │   └── presentation/
-│       │       ├── screens/
-│       │       │   ├── signin_screen.dart
-│       │       │   ├── signup_screen.dart
-│       │       │   ├── profile_screen.dart
-│       │       └── widgets/
-│       │           └── custom_textfield.dart
-│       │
-│       ├── chat/                         # AI Chat interface
-│       │   ├── data/
-│       │   │   ├── datasource/
-│       │   │   │   └── chat_ws_service.dart  # WebSocket client
-│       │   │   ├── models/
-│       │   │   │   └── chat_message.dart
-│       │   │   └── repository/
-│       │   │       └── chat_repository.dart
-│       │   ├── logic/
-│       │   │   ├── chat_cubit.dart
-│       │   │   └── chat_state.dart (+freezed)
-│       │   └── presentation/
-│       │       ├── screens/
-│       │       │   └── chat_screen.dart
-│       │       └── widgets/
-│       │           └── message_bubble.dart
-│       │
-│       ├── trips/                        # Trip management
-│       │   ├── data/
-│       │   │   ├── models/
-│       │   │   │   ├── trip_summary_model.dart
-│       │   │   │   └── create_trip_request.dart
-│       │   │   └── repository/
-│       │   │       └── trips_repository.dart
-│       │   ├── logic/
-│       │   │   ├── trips_cubit.dart
-│       │   │   └── trips_state.dart (+freezed)
-│       │   └── presentation/
-│       │       └── screens/
-│       │           ├── trips_screen.dart
-│       │           └── create_trip_screen.dart
-│       │
-│       └── splash/                       # Splash / loading screen
-│           └── splash_screen.dart
-│
-├── android/                              # Android native config
-│   └── app/
-│       ├── build.gradle.kts
-│       └── google-services.json          # Firebase config (NOT in Git)
-│
-├── ios/                                  # iOS native config
-│   └── Runner/
-│       └── GoogleService-Info.plist      # Firebase config (NOT in Git)
-│
-├── assets/images/                        # App images and icons
-├── pubspec.yaml                          # Flutter dependencies
-└── pubspec.lock                          # Locked dependency versions
-```
-
-### Feature Module Pattern
-
-Each feature follows the same internal structure:
+The mobile app uses a **feature-first** folder architecture with a consistent internal structure for each feature:
 
 ```
 feature/
@@ -463,6 +369,8 @@ feature/
     ├── screens/       # Full-screen widgets
     └── widgets/       # Reusable feature-specific widgets
 ```
+
+Key feature modules: `auth/`, `chat/`, `trips/`, `explore/`, `places/`, `saved/`, `flights/`, `bookings/`, `payments/`, `splash/`.
 
 ---
 
@@ -608,4 +516,4 @@ Use this before asking for help:
 
 ---
 
-*Last updated: June 2026 — TourMate AI Team*
+*Last updated: July 2026 — TourMate AI Team*
